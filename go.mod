@@ -13,7 +13,7 @@ require (
 	github.com/labstack/echo/v5 v5.1.0
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/redis/go-redis/v9 v9.18.0
-	modernc.org/sqlite v1.49.1
+	modernc.org/sqlite v1.50.0
 )
 
 require (
