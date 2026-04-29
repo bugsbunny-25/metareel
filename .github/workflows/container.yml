@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set image metadata
         id: meta
@@ -75,11 +75,11 @@ jobs:
           file: Dockerfile
           push: true
           tags: ${{ steps.tags.outputs.tags }}
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
 
       - name: Trivy scan (PR image)
         if: github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.30.0
         with:
           scan-type: image
           image-ref: metareel:ci-${{ github.sha }}
@@ -90,7 +90,7 @@ jobs:
 
       - name: Trivy scan (published image)
         if: github.event_name != 'pull_request'
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.30.0
         with:
           scan-type: image
           image-ref: ${{ steps.meta.outputs.image_name }}@${{ steps.build_push.outputs.digest }}
@@ -101,7 +101,7 @@ jobs:
 
       - name: Generate SBOM (PR image)
         if: github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.30.0
         with:
           scan-type: image
           image-ref: metareel:ci-${{ github.sha }}
@@ -111,7 +111,7 @@ jobs:
 
       - name: Generate SBOM (published image)
         if: github.event_name != 'pull_request'
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.30.0
         with:
           scan-type: image
           image-ref: ${{ steps.meta.outputs.image_name }}@${{ steps.build_push.outputs.digest }}

@@ -34,7 +34,9 @@ COPY . .
 #   -trimpath    => reproducible, no local paths in binary.
 #   -ldflags     => strip symbol + DWARF tables (-s -w).
 ARG VERSION=dev
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+ARG TARGETOS
+ARG TARGETARCH
+ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
