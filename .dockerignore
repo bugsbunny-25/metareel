@@ -1,0 +1,28 @@
+.git
+.gitignore
+.dockerignore
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+bin/
+tmp/
+data/
+web/node_modules/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Docs
+*.md
+!README.md
+
+# Tests
+**/*_test.go

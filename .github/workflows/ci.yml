@@ -1,0 +1,107 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  go-quality:
+    name: go-quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.2
+          cache: true
+
+      - name: Run local CI parity checks
+        run: make ci-local
+
+      - name: Generate additional CI artifacts (HTML/JUnit/JSON)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: make ci-artifacts
+
+      - name: Coverage summary
+        run: |
+          TOTAL="$(make -s coverage-total)"
+          echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Total coverage: ${TOTAL}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage.out
+          path: coverage.out
+          if-no-files-found: error
+
+      - name: Upload CI artifacts bundle
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-artifacts
+          path: tmp/ci-artifacts
+          if-no-files-found: error
+
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      REDIS_ADDR: localhost:6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: "0"
+      DATABASE_URL: file:./tmp/integration.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)
+      DATABASE_MIGRATIONS_DIR: db/migrations
+      APP_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.2
+          cache: true
+
+      - name: Prepare runtime directories
+        run: mkdir -p tmp data
+
+      - name: Run integration-oriented test suite
+        run: make integration-local
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.2
+          cache: true
+
+      - name: Run govulncheck
+        run: make security-local
