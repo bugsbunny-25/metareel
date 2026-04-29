@@ -56,7 +56,6 @@ FROM scratch AS runtime
 
 # Minimal filesystem scaffolding.
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
 # App binary + migration files + compiled frontend.
 COPY --from=builder /out/metareel        /app/metareel

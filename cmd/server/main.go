@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	_ "time/tzdata"
 
 	"github.com/bugsbunny-25/metareel/internal/config"
 	"github.com/bugsbunny-25/metareel/internal/server"
