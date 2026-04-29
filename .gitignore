@@ -1,0 +1,29 @@
+# Binaries
+/bin/
+/tmp/
+/.tools/
+*.exe
+*.test
+*.out
+
+# Go
+vendor/
+*.prof
+
+# Local data & secrets
+.env
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+/data/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Frontend
+web/node_modules/
+web/dist/
+!web/dist/.gitkeep
