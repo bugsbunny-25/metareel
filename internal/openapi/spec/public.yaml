@@ -1,0 +1,419 @@
+openapi: 3.0.3
+info:
+  title: metareel Public API
+  version: "1.0.0"
+servers:
+  - url: /
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      summary: Liveness probe
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+  /readyz:
+    get:
+      operationId: readyz
+      summary: Readiness probe
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /api/v1/test:
+    get:
+      operationId: test
+      summary: Test endpoint
+      responses:
+        "200":
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/titles:
+    get:
+      operationId: listTitles
+      summary: List titles (paged)
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Title kind (e.g. movies, tv_shows)
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Search query
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Titles page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitlesPageResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/{id}:
+    patch:
+      operationId: patchTitle
+      summary: Patch title external IDs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchTitleIDsInput"
+      responses:
+        "200":
+          description: Updated title
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/top10/movies/{country}:
+    get:
+      operationId: getTop10MoviesAllProviders
+      summary: Get Top 10 movies across all providers
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - $ref: "#/components/parameters/DateParam"
+      responses:
+        "200":
+          description: Top 10 response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Top10Response"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No data found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/top10/movies/{country}/{provider}:
+    get:
+      operationId: getTop10MoviesByProvider
+      summary: Get Top 10 movies for a provider
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - $ref: "#/components/parameters/ProviderParam"
+        - $ref: "#/components/parameters/DateParam"
+      responses:
+        "200":
+          description: Top 10 response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Top10Response"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No data found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/top10/tv-shows/{country}:
+    get:
+      operationId: getTop10TVShowsAllProviders
+      summary: Get Top 10 TV shows across all providers
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - $ref: "#/components/parameters/DateParam"
+      responses:
+        "200":
+          description: Top 10 response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Top10Response"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No data found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/top10/tv-shows/{country}/{provider}:
+    get:
+      operationId: getTop10TVShowsByProvider
+      summary: Get Top 10 TV shows for a provider
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - $ref: "#/components/parameters/ProviderParam"
+        - $ref: "#/components/parameters/DateParam"
+      responses:
+        "200":
+          description: Top 10 response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Top10Response"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No data found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  parameters:
+    CountryParam:
+      name: country
+      in: path
+      required: true
+      schema:
+        type: string
+        description: ISO country code (e.g. US)
+    ProviderParam:
+      name: provider
+      in: path
+      required: true
+      schema:
+        type: string
+        description: Provider slug
+    DateParam:
+      name: date
+      in: query
+      required: true
+      schema:
+        type: string
+        format: date
+        description: Date in YYYY-MM-DD
+
+  schemas:
+    StatusResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    PatchTitleIDsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        tmdb_id:
+          type: string
+          nullable: true
+        imdb_id:
+          type: string
+          nullable: true
+        rt_url:
+          type: string
+          nullable: true
+
+    TitleResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        slug:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        tmdb_id:
+          type: string
+          nullable: true
+        imdb_id:
+          type: string
+          nullable: true
+        rt_url:
+          type: string
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, slug, name, kind, updated_at]
+
+    TitlesPageResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TitleResponse"
+        total:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int64
+        offset:
+          type: integer
+          format: int64
+      required: [items, total, limit, offset]
+
+    Top10Result:
+      type: object
+      additionalProperties: false
+      properties:
+        rank:
+          type: integer
+          format: int64
+        provider:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        tmdb_id:
+          type: string
+          nullable: true
+        imdb_id:
+          type: string
+          nullable: true
+        rotten_tomatoes_url:
+          type: string
+          nullable: true
+      required: [rank, provider, slug, name, kind]
+
+    Top10Response:
+      type: object
+      additionalProperties: false
+      properties:
+        date:
+          type: string
+          format: date
+        country:
+          type: string
+        category:
+          type: string
+        provider:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Top10Result"
+      required: [date, country, category, items]

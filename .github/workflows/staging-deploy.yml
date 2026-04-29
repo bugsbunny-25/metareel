@@ -1,0 +1,41 @@
+name: staging-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: "Image tag or digest to deploy (e.g. ghcr.io/org/metareel:sha-...)"
+        required: true
+        type: string
+      base_url:
+        description: "Staging base URL for smoke tests (e.g. https://staging.example.com)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-and-smoke:
+    name: deploy-and-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy placeholder
+        run: |
+          echo "TODO: wire this workflow to your staging platform."
+          echo "Requested image: ${{ inputs.image_ref }}"
+          echo "Once target is selected, replace this step with deployment commands."
+
+      - name: Smoke test /healthz
+        if: inputs.base_url != ''
+        run: |
+          curl -fsS "${{ inputs.base_url }}/healthz"
+
+      - name: Smoke test /api/v1/test
+        if: inputs.base_url != ''
+        run: |
+          curl -fsS "${{ inputs.base_url }}/api/v1/test"
+
+      - name: Smoke tests skipped notice
+        if: inputs.base_url == ''
+        run: echo "No base_url provided; smoke tests skipped."

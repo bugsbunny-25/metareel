@@ -1,0 +1,608 @@
+openapi: 3.0.3
+info:
+  title: metareel Admin API
+  version: "1.0.0"
+servers:
+  - url: /
+paths:
+  /api/v1/admin/task-schedules:
+    get:
+      operationId: listTaskSchedules
+      summary: List task schedules
+      parameters:
+        - name: enabled
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: task_type
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of task schedules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskScheduleListResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createTaskSchedule
+      summary: Create a task schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskScheduleInput"
+      responses:
+        "200":
+          description: Created schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskScheduleResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/task-schedules/{id}:
+    get:
+      operationId: getTaskScheduleById
+      summary: Get task schedule by ID
+      parameters:
+        - $ref: "#/components/parameters/ScheduleIdParam"
+      responses:
+        "200":
+          description: Task schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskScheduleResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: patchTaskSchedule
+      summary: Update a task schedule
+      parameters:
+        - $ref: "#/components/parameters/ScheduleIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskScheduleInput"
+      responses:
+        "200":
+          description: Updated schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskScheduleResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/task-schedules/{id}/run-now:
+    post:
+      operationId: runTaskScheduleNow
+      summary: Enqueue a schedule to run immediately
+      parameters:
+        - $ref: "#/components/parameters/ScheduleIdParam"
+      responses:
+        "202":
+          description: Enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunTaskNowResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/task-schedules/{id}/runs:
+    get:
+      operationId: listTaskRunsByScheduleId
+      summary: List task runs for a schedule (paged)
+      parameters:
+        - $ref: "#/components/parameters/ScheduleIdParam"
+        - $ref: "#/components/parameters/LimitParam"
+        - $ref: "#/components/parameters/OffsetParam"
+      responses:
+        "200":
+          description: Task runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskRunResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/task-schedules/{id}/flixpatrol-targets:
+    post:
+      operationId: addFlixPatrolTargets
+      summary: Add FlixPatrol targets to a schedule
+      parameters:
+        - $ref: "#/components/parameters/ScheduleIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddFlixPatrolTargetsInput"
+      responses:
+        "200":
+          description: Updated schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskScheduleResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/task-runs:
+    get:
+      operationId: listTaskRuns
+      summary: List task runs (paged)
+      parameters:
+        - name: task_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/LimitParam"
+        - $ref: "#/components/parameters/OffsetParam"
+      responses:
+        "200":
+          description: Task runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskRunResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/task-runs/{run_id}:
+    get:
+      operationId: getTaskRunById
+      summary: Get task run by ID
+      parameters:
+        - $ref: "#/components/parameters/RunIdParam"
+      responses:
+        "200":
+          description: Task run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskRunResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/task-runs/{run_id}/logs:
+    get:
+      operationId: listTaskRunLogsByRunId
+      summary: List task run logs
+      parameters:
+        - $ref: "#/components/parameters/RunIdParam"
+      responses:
+        "200":
+          description: Task run logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskRunLogResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  parameters:
+    ScheduleIdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    RunIdParam:
+      name: run_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        default: 50
+    OffsetParam:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+        default: 0
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    FlixPatrolTargetPayload:
+      type: object
+      additionalProperties: false
+      properties:
+        country_code:
+          type: string
+        provider_slug:
+          type: string
+      required: [country_code, provider_slug]
+
+    TaskScheduleResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        task_type:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+        max_retries:
+          type: integer
+          format: int64
+        request_delay_seconds:
+          type: integer
+          format: int64
+        respect_robots:
+          type: boolean
+        user_agent:
+          type: string
+        utc_runtimes:
+          type: array
+          items:
+            type: string
+        flixpatrol_targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlixPatrolTargetPayload"
+      required:
+        - id
+        - task_type
+        - name
+        - enabled
+        - max_retries
+        - request_delay_seconds
+        - respect_robots
+        - user_agent
+        - utc_runtimes
+
+    TaskScheduleListResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        task_type:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+        utc_runtimes:
+          type: array
+          items:
+            type: string
+      required: [id, task_type, name, enabled, utc_runtimes]
+
+    CreateTaskScheduleInput:
+      type: object
+      additionalProperties: false
+      properties:
+        task_type:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+          nullable: true
+        max_retries:
+          type: integer
+          format: int64
+          nullable: true
+        request_delay_seconds:
+          type: integer
+          format: int64
+          nullable: true
+        respect_robots:
+          type: boolean
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        utc_runtimes:
+          type: array
+          items:
+            type: string
+        task_details:
+          nullable: true
+      required: [task_type, name, utc_runtimes]
+
+    UpdateTaskScheduleInput:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        enabled:
+          type: boolean
+        max_retries:
+          type: integer
+          format: int64
+          nullable: true
+        request_delay_seconds:
+          type: integer
+          format: int64
+          nullable: true
+        respect_robots:
+          type: boolean
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        utc_runtimes:
+          type: array
+          items:
+            type: string
+      required: [name, enabled, utc_runtimes]
+
+    AddFlixPatrolTargetsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        targets:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              country_code:
+                type: string
+              provider_slug:
+                type: string
+            required: [country_code, provider_slug]
+      required: [targets]
+
+    RunTaskNowResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        schedule_id:
+          type: integer
+          format: int64
+        task_type:
+          type: string
+        queue:
+          type: string
+        status:
+          type: string
+      required: [schedule_id, task_type, queue, status]
+
+    TaskRunResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        schedule_id:
+          type: integer
+          format: int64
+        task_type:
+          type: string
+        asynq_task_id:
+          type: string
+        status:
+          type: string
+        retry_count:
+          type: integer
+          format: int64
+        max_retry:
+          type: integer
+          format: int64
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+      required: [id, schedule_id, task_type, status, retry_count, max_retry, started_at]
+
+    TaskRunLogResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          format: int64
+        run_id:
+          type: integer
+          format: int64
+        level:
+          type: string
+        message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required: [id, run_id, level, message, created_at]
