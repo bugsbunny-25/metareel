@@ -3,7 +3,7 @@ module github.com/bugsbunny-25/metareel/tools
 go 1.25.0
 
 require (
-	github.com/air-verse/air v1.65.1
+	github.com/air-verse/air v1.65.2
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/go-delve/delve v1.26.3
 	github.com/hibiken/asynqmon v0.7.2
