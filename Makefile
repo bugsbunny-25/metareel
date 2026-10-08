@@ -16,8 +16,8 @@ ASYNQMON_PID  := tmp/asynqmon.pid
 ASYNQMON_LOG  := tmp/asynqmon.log
 
 # Tool versions (installed via `go install`).
-SQLC_VERSION    := v1.29.0
-GOOSE_VERSION   := v3.25.0
+SQLC_VERSION    := v1.31.1
+GOOSE_VERSION   := v3.28.0
 
 GO           ?= go
 DOCKER       ?= docker
