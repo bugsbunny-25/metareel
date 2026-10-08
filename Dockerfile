@@ -67,6 +67,11 @@ COPY --from=frontend /web/dist           /app/web/dist
 WORKDIR /app
 VOLUME ["/app/data"]
 
+# `scratch` has no /tmp, and SQLite needs a temp directory for index builds and
+# large sorts (without one: "disk I/O error (6410)" during migrations). Point it
+# at the writable data volume.
+ENV SQLITE_TMPDIR=/app/data
+
 # Drop privileges. User `65532:65532` is the distroless/nonroot convention –
 # /etc/passwd isn't required for Go to run as a numeric UID.
 USER 65532:65532
