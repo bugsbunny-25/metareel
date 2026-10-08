@@ -51,60 +51,6 @@ func (q *Queries) CreateTaskSchedule(ctx context.Context, arg CreateTaskSchedule
 	return i, err
 }
 
-const deleteTaskScheduleRunTimesByScheduleID = `-- name: DeleteTaskScheduleRunTimesByScheduleID :exec
-DELETE FROM task_schedule_run_times WHERE schedule_id = ?
-`
-
-func (q *Queries) DeleteTaskScheduleRunTimesByScheduleID(ctx context.Context, scheduleID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteTaskScheduleRunTimesByScheduleID, scheduleID)
-	return err
-}
-
-const updateTaskSchedule = `-- name: UpdateTaskSchedule :one
-UPDATE task_schedules
-SET name = ?, enabled = ?, max_retries = ?,
-    request_delay_seconds = ?, respect_robots = ?, user_agent = ?,
-    updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
-RETURNING id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, created_at, updated_at
-`
-
-type UpdateTaskScheduleParams struct {
-	Name                string `json:"name"`
-	Enabled             bool   `json:"enabled"`
-	MaxRetries          int64  `json:"max_retries"`
-	RequestDelaySeconds int64  `json:"request_delay_seconds"`
-	RespectRobots       bool   `json:"respect_robots"`
-	UserAgent           string `json:"user_agent"`
-	ID                  int64  `json:"id"`
-}
-
-func (q *Queries) UpdateTaskSchedule(ctx context.Context, arg UpdateTaskScheduleParams) (TaskSchedule, error) {
-	row := q.db.QueryRowContext(ctx, updateTaskSchedule,
-		arg.Name,
-		arg.Enabled,
-		arg.MaxRetries,
-		arg.RequestDelaySeconds,
-		arg.RespectRobots,
-		arg.UserAgent,
-		arg.ID,
-	)
-	var i TaskSchedule
-	err := row.Scan(
-		&i.ID,
-		&i.TaskType,
-		&i.Name,
-		&i.Enabled,
-		&i.MaxRetries,
-		&i.RequestDelaySeconds,
-		&i.RespectRobots,
-		&i.UserAgent,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const createTaskScheduleRunTime = `-- name: CreateTaskScheduleRunTime :exec
 INSERT INTO task_schedule_run_times (schedule_id, run_time_utc)
 VALUES (?, ?)
@@ -135,6 +81,15 @@ type CreateTaskScheduleTargetParams struct {
 
 func (q *Queries) CreateTaskScheduleTarget(ctx context.Context, arg CreateTaskScheduleTargetParams) error {
 	_, err := q.db.ExecContext(ctx, createTaskScheduleTarget, arg.ScheduleID, arg.CountrySlug, arg.ProviderSlug)
+	return err
+}
+
+const deleteTaskScheduleRunTimesByScheduleID = `-- name: DeleteTaskScheduleRunTimesByScheduleID :exec
+DELETE FROM task_schedule_run_times WHERE schedule_id = ?
+`
+
+func (q *Queries) DeleteTaskScheduleRunTimesByScheduleID(ctx context.Context, scheduleID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteTaskScheduleRunTimesByScheduleID, scheduleID)
 	return err
 }
 
@@ -320,4 +275,49 @@ func (q *Queries) ListTaskSchedules(ctx context.Context, arg ListTaskSchedulesPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateTaskSchedule = `-- name: UpdateTaskSchedule :one
+UPDATE task_schedules
+SET name = ?, enabled = ?, max_retries = ?,
+    request_delay_seconds = ?, respect_robots = ?, user_agent = ?,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, created_at, updated_at
+`
+
+type UpdateTaskScheduleParams struct {
+	Name                string `json:"name"`
+	Enabled             bool   `json:"enabled"`
+	MaxRetries          int64  `json:"max_retries"`
+	RequestDelaySeconds int64  `json:"request_delay_seconds"`
+	RespectRobots       bool   `json:"respect_robots"`
+	UserAgent           string `json:"user_agent"`
+	ID                  int64  `json:"id"`
+}
+
+func (q *Queries) UpdateTaskSchedule(ctx context.Context, arg UpdateTaskScheduleParams) (TaskSchedule, error) {
+	row := q.db.QueryRowContext(ctx, updateTaskSchedule,
+		arg.Name,
+		arg.Enabled,
+		arg.MaxRetries,
+		arg.RequestDelaySeconds,
+		arg.RespectRobots,
+		arg.UserAgent,
+		arg.ID,
+	)
+	var i TaskSchedule
+	err := row.Scan(
+		&i.ID,
+		&i.TaskType,
+		&i.Name,
+		&i.Enabled,
+		&i.MaxRetries,
+		&i.RequestDelaySeconds,
+		&i.RespectRobots,
+		&i.UserAgent,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

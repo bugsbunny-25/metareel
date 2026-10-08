@@ -21,7 +21,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	e.Use(emw.Gzip())
 	e.Use(emw.CORSWithConfig(emw.CORSConfig{
 		AllowOrigins: []string{"*"},
-		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 	}))
 	e.Use(emw.BodyLimit(1 * 1024 * 1024))
 
@@ -30,16 +30,19 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	e.GET("/healthz", h.Health)
 	e.GET("/readyz", h.Health)
 
-	api := e.Group("/api/v1")
-	api.GET("/test", h.Test)
-	api.GET("/titles", h.ListTitles)
-	api.PATCH("/titles/:id", h.PatchTitle)
-	api.GET("/top10/movies/:country", h.GetTop10MoviesAllProviders)
-	api.GET("/top10/movies/:country/:provider", h.GetTop10MoviesByProvider)
-	api.GET("/top10/tv-shows/:country", h.GetTop10TVShowsAllProviders)
-	api.GET("/top10/tv-shows/:country/:provider", h.GetTop10TVShowsByProvider)
+	// Public API: needs an API key (unless disabled in the admin settings)
+	// and is rate limited per key.
+	public := e.Group("/api/v1", h.RequireAPIKey)
+	registerReadRoutes(public, h)
 
-	admin := api.Group("/admin")
+	// Admin API and UI. The UI reads the same data through these admin
+	// copies of the public routes, so it needs no API key. The admin API is
+	// not authenticated: keep it off the public internet (e.g. expose only
+	// /api/v1 except /api/v1/admin through your reverse proxy).
+	admin := e.Group("/api/v1/admin")
+	registerReadRoutes(admin, h)
+	admin.GET("/stats", h.GetAdminStats)
+	admin.GET("/titles/:id/candidates", h.GetTitleCandidates)
 	admin.GET("/task-schedules", h.GetTaskSchedules)
 	admin.PATCH("/task-schedules/:id", h.PatchTaskSchedule)
 	admin.GET("/task-schedules/:id", h.GetTaskScheduleByID)
@@ -50,10 +53,37 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.GET("/task-runs/:run_id/logs", h.GetTaskRunLogsByRunID)
 	admin.POST("/task-schedules", h.CreateTaskSchedule)
 	admin.POST("/task-schedules/:id/flixpatrol-targets", h.AddFlixPatrolTargets)
+	admin.GET("/api-keys", h.ListAPIKeys)
+	admin.POST("/api-keys", h.CreateAPIKey)
+	admin.PATCH("/api-keys/:id", h.RenameAPIKey)
+	admin.POST("/api-keys/:id/rotate", h.RotateAPIKey)
+	admin.DELETE("/api-keys/:id", h.DeleteAPIKey)
+	admin.GET("/settings", h.GetSettings)
+	admin.PATCH("/settings", h.PatchSettings)
 
 	if cfg.UI.ServeStatic {
 		registerStatic(e, cfg.UI.StaticDir)
 	}
+}
+
+// registerReadRoutes adds the data routes shared by the public API and the
+// admin API.
+func registerReadRoutes(g *echo.Group, h *handler.Handler) {
+	g.GET("/test", h.Test)
+	g.GET("/titles", h.ListTitles)
+	g.GET("/titles/:id", h.GetTitle)
+	g.PATCH("/titles/:id", h.PatchTitle)
+	g.GET("/titles/:id/rankings", h.GetTitleRankingsByID)
+	g.GET("/titles/tmdb/rankings", h.GetTitleRankingsBatch)
+	g.GET("/titles/tmdb/:kind/:id/rankings", h.GetTitleRankings)
+	g.GET("/titles/tmdb/:kind/:id/ratings", h.GetTitleRatings)
+	g.GET("/titles/new/:country/:service", h.GetNewTitles)
+	g.GET("/titles/upcoming/:country/:service", h.GetUpcomingTitles)
+	g.GET("/services/:country", h.GetServices)
+	g.GET("/top10/movies/:country", h.GetTop10MoviesAllProviders)
+	g.GET("/top10/movies/:country/:provider", h.GetTop10MoviesByProvider)
+	g.GET("/top10/tv-shows/:country", h.GetTop10TVShowsAllProviders)
+	g.GET("/top10/tv-shows/:country/:provider", h.GetTop10TVShowsByProvider)
 }
 
 func registerOpenAPI(e *echo.Echo) {

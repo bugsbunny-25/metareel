@@ -6,36 +6,84 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
 	CompleteTaskRun(ctx context.Context, arg CompleteTaskRunParams) error
+	CountTaskRuns(ctx context.Context, arg CountTaskRunsParams) (int64, error)
+	// since is a SQLite datetime modifier, e.g. '-24 hours'.
+	CountTaskRunsByStatusSince(ctx context.Context, since string) ([]CountTaskRunsByStatusSinceRow, error)
 	CountTitles(ctx context.Context, arg CountTitlesParams) (int64, error)
+	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskRunLog(ctx context.Context, arg CreateTaskRunLogParams) error
 	CreateTaskSchedule(ctx context.Context, arg CreateTaskScheduleParams) (TaskSchedule, error)
 	CreateTaskScheduleRunTime(ctx context.Context, arg CreateTaskScheduleRunTimeParams) error
 	CreateTaskScheduleTarget(ctx context.Context, arg CreateTaskScheduleTargetParams) error
+	DeleteAPIKey(ctx context.Context, id int64) (int64, error)
+	DeleteTaskScheduleRunTimesByScheduleID(ctx context.Context, scheduleID int64) error
+	DeleteTitleRatingSourcesByProvider(ctx context.Context, arg DeleteTitleRatingSourcesByProviderParams) error
+	// Runs still "started" long after the task timeout were interrupted (e.g. the
+	// server restarted mid-run); asynq retries the task as a new run.
+	FailStaleTaskRuns(ctx context.Context, olderThan string) (int64, error)
+	// Back-fill IDs found while rating onto scraped titles that lack them.
+	FillTitleExternalIDs(ctx context.Context, arg FillTitleExternalIDsParams) error
 	GetTaskRunByID(ctx context.Context, id int64) (TaskRun, error)
 	GetTaskScheduleByID(ctx context.Context, id int64) (TaskSchedule, error)
 	GetTitleByID(ctx context.Context, id int64) (Title, error)
 	GetTitleBySlug(ctx context.Context, slug string) (Title, error)
+	// On-demand ratings cache, keyed by TMDB namespace ('movie' | 'tv') + ID.
+	GetTitleRatings(ctx context.Context, arg GetTitleRatingsParams) (TitleRating, error)
+	InsertTitleRatingSource(ctx context.Context, arg InsertTitleRatingSourceParams) error
+	// API keys for the public API, and admin-editable settings.
+	ListAPIKeys(ctx context.Context) ([]ApiKey, error)
+	ListAppSettings(ctx context.Context) ([]AppSetting, error)
 	ListEnabledTaskSchedules(ctx context.Context) ([]TaskSchedule, error)
-	ListTitles(ctx context.Context, arg ListTitlesParams) ([]Title, error)
+	ListLastSuccessPerSchedule(ctx context.Context) ([]ListLastSuccessPerScheduleRow, error)
+	ListLatestTaskRunPerSchedule(ctx context.Context) ([]TaskRun, error)
+	// The slice must stay last: sqlc numbers the named params ?1..?3 and SQLite
+	// numbers the expanded "?" list after them.
+	ListRankingsByTitleIDs(ctx context.Context, arg ListRankingsByTitleIDsParams) ([]ListRankingsByTitleIDsRow, error)
 	ListTaskRunLogsByRunID(ctx context.Context, runID int64) ([]TaskRunLog, error)
+	// Empty / zero filters match everything.
 	ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]TaskRun, error)
 	ListTaskRunsByScheduleID(ctx context.Context, arg ListTaskRunsByScheduleIDParams) ([]TaskRun, error)
 	ListTaskScheduleRunTimesByScheduleID(ctx context.Context, scheduleID int64) ([]TaskScheduleRunTime, error)
 	ListTaskScheduleTargetsByScheduleID(ctx context.Context, scheduleID int64) ([]TaskScheduleTarget, error)
 	ListTaskSchedules(ctx context.Context, arg ListTaskSchedulesParams) ([]TaskSchedule, error)
+	ListTitleRatingSources(ctx context.Context, arg ListTitleRatingSourcesParams) ([]ListTitleRatingSourcesRow, error)
+	// sort: name_asc | name_desc | updated_desc | updated_asc | last_ranked_desc |
+	// last_ranked_asc | rankings_desc | rankings_asc | id_asc; anything else is
+	// newest first.
+	// sqlc does not rewrite params inside ORDER BY, so the sort key comes in
+	// through this one-row subquery.
+	ListTitles(ctx context.Context, arg ListTitlesParams) ([]ListTitlesRow, error)
+	// Ranking history by TMDB ID. Several FlixPatrol slugs can map to the same
+	// TMDB title, so these return every matching title row.
+	ListTitlesByTmdbIDs(ctx context.Context, tmdbIds []sql.NullString) ([]Title, error)
+	// With ranked_on NULL, each provider's own latest chart is returned, so
+	// providers scraped at different times of day are all present.
 	ListTop10AllProviders(ctx context.Context, arg ListTop10AllProvidersParams) ([]ListTop10AllProvidersRow, error)
+	// Top 10 chart reads. A chart is (country, streaming_provider, category).
+	// ranked_on may be NULL to mean the chart's latest scraped date.
+	// previous_rank is the title's rank on the chart's previous scraped date
+	// (not necessarily the previous calendar day, since scrapes can be missed);
+	// NULL means the title was not on that chart. days_in_top10 counts every
+	// date the title has been on the chart up to and including ranked_on.
 	ListTop10ByProvider(ctx context.Context, arg ListTop10ByProviderParams) ([]ListTop10ByProviderRow, error)
-	DeleteTaskScheduleRunTimesByScheduleID(ctx context.Context, scheduleID int64) error
+	RankingStats(ctx context.Context) (RankingStatsRow, error)
+	RenameAPIKey(ctx context.Context, arg RenameAPIKeyParams) (ApiKey, error)
+	RotateAPIKey(ctx context.Context, arg RotateAPIKeyParams) (ApiKey, error)
+	TitleMappingStats(ctx context.Context) (TitleMappingStatsRow, error)
+	TouchAPIKey(ctx context.Context, id int64) error
 	UpdateTaskSchedule(ctx context.Context, arg UpdateTaskScheduleParams) (TaskSchedule, error)
 	UpdateTitleIDs(ctx context.Context, arg UpdateTitleIDsParams) (Title, error)
+	UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) error
 	UpsertRanking(ctx context.Context, arg UpsertRankingParams) (Ranking, error)
 	// Titles (movies + tv shows) + daily rankings (Top 10).
 	UpsertTitle(ctx context.Context, arg UpsertTitleParams) (Title, error)
+	UpsertTitleRatings(ctx context.Context, arg UpsertTitleRatingsParams) (TitleRating, error)
 }
 
 var _ Querier = (*Queries)(nil)

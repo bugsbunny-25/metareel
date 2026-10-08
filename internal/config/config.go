@@ -11,16 +11,19 @@ import (
 // Config is the top-level application configuration populated from the
 // environment (optionally seeded by a `.env` file in local development).
 type Config struct {
-	App      App
-	Server   Server
-	Log      Log
-	Database Database
-	Redis    Redis
-	Asynq    Asynq
-	HTTP     HTTPClient
-	Scraper  Scraper
-	UI       UI
-	TMDB     TMDB
+	App          App
+	Server       Server
+	Log          Log
+	Database     Database
+	Redis        Redis
+	Asynq        Asynq
+	HTTP         HTTPClient
+	Scraper      Scraper
+	FlareSolverr FlareSolverr
+	UI           UI
+	TMDB         TMDB
+	Ratings      Ratings
+	MDBList      MDBList
 }
 
 type App struct {
@@ -73,6 +76,19 @@ type Scraper struct {
 	RequestTimeout time.Duration `env:"SCRAPER_REQUEST_TIMEOUT" envDefault:"20s"`
 }
 
+// FlareSolverr routes FlixPatrol page fetches through a FlareSolverr instance
+// when URL is set (e.g. "http://flaresolverr:8191"); otherwise pages are
+// fetched directly with Colly.
+type FlareSolverr struct {
+	URL        string        `env:"FLARESOLVERR_URL" envDefault:""`
+	MaxTimeout time.Duration `env:"FLARESOLVERR_MAX_TIMEOUT" envDefault:"60s"`
+	// Session, when set, reuses one FlareSolverr browser session (and its
+	// Cloudflare clearance cookie) across requests instead of starting a new
+	// browser per page.
+	Session    string        `env:"FLARESOLVERR_SESSION" envDefault:"metareel"`
+	SessionTTL time.Duration `env:"FLARESOLVERR_SESSION_TTL" envDefault:"30m"`
+}
+
 type UI struct {
 	StaticDir   string `env:"UI_STATIC_DIR" envDefault:"web/dist"`
 	ServeStatic bool   `env:"UI_SERVE_STATIC" envDefault:"true"`
@@ -80,6 +96,22 @@ type UI struct {
 
 type TMDB struct {
 	APIKey string `env:"TMDB_API_KEY" envDefault:""`
+}
+
+// Ratings configures GET /api/v1/titles/tmdb/{kind}/{id}/ratings.
+type Ratings struct {
+	// TTL is how long stored ratings are served before the next request
+	// refreshes them.
+	TTL time.Duration `env:"RATINGS_TTL" envDefault:"12h"`
+	// PreferredProvider ("justwatch" or "mdblist") wins when both have an
+	// IMDb / RT value; RT's own scores always win for RT. Falls back to
+	// justwatch when MDBLIST_API_KEY is not set.
+	PreferredProvider string `env:"RATINGS_PREFERRED_PROVIDER" envDefault:"justwatch"`
+}
+
+type MDBList struct {
+	// APIKey enables MDBList ratings (https://mdblist.com/preferences/).
+	APIKey string `env:"MDBLIST_API_KEY" envDefault:""`
 }
 
 // Load reads configuration from environment variables. If a `.env` file is

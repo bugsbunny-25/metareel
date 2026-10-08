@@ -179,11 +179,38 @@ make reports-open
 | GET    | `/healthz`, `/readyz`                       | Liveness / readiness                        |
 | GET    | `/docs`, `/docs/admin`                      | Swagger UI (public + admin)                 |
 | GET    | `/openapi/public.yaml`, `/openapi/admin.yaml` | OpenAPI specs (YAML)                      |
-| GET    | `/api/v1/top10/...`                         | Read API: Top 10 rankings                   |
+| GET    | `/api/v1/top10/...`                         | Read API: Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`) |
 | GET    | `/api/v1/titles`                            | List titles (paged)                         |
-| PATCH  | `/api/v1/titles/:id`                        | Patch title external IDs                    |
-| GET/POST/PATCH | `/api/v1/admin/...`                  | Admin API for task schedules and runs       |
+| PATCH  | `/api/v1/titles/:id`                        | Patch title kind / external IDs             |
+| GET    | `/api/v1/titles/tmdb/:kind/:id/rankings`    | Ranking history by TMDB ID (`kind` = movie or tv; `country`, `from`, `to` optional) |
+| GET    | `/api/v1/titles/tmdb/rankings?ids=movie:425,tv:1` | Batch ranking history (max 50 ids)    |
+| GET    | `/api/v1/titles/tmdb/:kind/:id/ratings`     | IMDb + Rotten Tomatoes ratings by TMDB ID, cached for `RATINGS_TTL` (`?refresh=true` to force) |
+| GET    | `/api/v1/titles/new/:country/:service`      | Titles added to a service per day, live from JustWatch (`from`, `to` default last 7 days; `type`) |
+| GET    | `/api/v1/titles/upcoming/:country/:service` | Titles announced for a service, live from JustWatch (`from`, `to`, `type`) |
+| GET    | `/api/v1/services/:country`                 | JustWatch service codes in a country (for `:service`) |
+| GET/POST/PATCH/DELETE | `/api/v1/admin/...`           | Admin API: schedules, runs, stats, API keys, settings, and admin copies of the read routes above |
 | GET    | `/` (and any unmatched path)                | Serves `web/dist/` SPA if present           |
+
+## Public API keys
+
+Every `/api/v1` route outside `/api/v1/admin` needs an API key, sent as
+`X-API-Key: <key>` (or `Authorization: Bearer <key>`). Health checks and
+`/docs` stay open.
+
+- Create, rotate, rename and revoke keys in the admin console under
+  **Settings & API keys**. A key is shown once; only its SHA-256 hash is stored.
+  Rotating replaces the secret immediately.
+- Requests are rate limited per key (default 300/min, 0 = off); over the
+  limit the API answers 429 with `Retry-After`.
+- Key enforcement can be switched off in the same page (e.g. local dev);
+  requests are then rate limited per client IP.
+- The admin console and `/api/v1/admin` are **not** authenticated. Expose only
+  the public API to the internet, e.g. block `/` and `/api/v1/admin` at the
+  reverse proxy.
+
+```bash
+curl -H "X-API-Key: mr_..." http://localhost:8080/api/v1/top10/movies/US
+```
 
 ## Adding a future UI
 

@@ -1,127 +1,84 @@
-const BASE = '/api/v1'
+// The admin UI talks only to /api/v1/admin, which serves the same data as the
+// public API without needing an API key.
+const BASE = '/api/v1/admin'
 
-async function req(path, options) {
-  const res = await fetch(BASE + path, options)
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error ?? `HTTP ${res.status}`)
+export class ApiError extends Error {
+  constructor(message, status) {
+    super(message)
+    this.status = status
   }
-  return res.json()
 }
 
-export function listTitles({ limit = 50, offset = 0, kind = '', q = '' } = {}) {
-  const p = new URLSearchParams({ limit, offset })
-  if (kind) p.set('kind', kind)
-  if (q)    p.set('q', q)
-  return req(`/titles?${p}`)
-}
-
-export function patchTitle(id, body) {
-  return req(`/titles/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+async function req(path, { method = 'GET', body, query, withTotal = false } = {}) {
+  let url = BASE + path
+  if (query) {
+    const p = new URLSearchParams()
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== '' && v !== null && v !== undefined) p.set(k, String(v))
+    }
+    const qs = p.toString()
+    if (qs) url += `?${qs}`
+  }
+  const res = await fetch(url, {
+    method,
+    cache: 'no-store',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
   })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new ApiError(data.error ?? `Request failed (HTTP ${res.status})`, res.status)
+  }
+  if (res.status === 204) return null
+  const data = await res.json()
+  if (withTotal) return { items: data, total: Number(res.headers.get('X-Total-Count') ?? data.length) }
+  return data
 }
 
+// ── Dashboard ───────────────────────────────────────────────────────
+export const getStats = () => req('/stats')
+
+// ── Titles ──────────────────────────────────────────────────────────
+export const listTitles = (q) => req('/titles', { query: q })
+export const getTitle = (id) => req(`/titles/${id}`)
+export const patchTitle = (id, body) => req(`/titles/${id}`, { method: 'PATCH', body })
+export const getTitleRankings = (id, q) => req(`/titles/${id}/rankings`, { query: q })
+export const getTitleCandidates = (id, q) => req(`/titles/${id}/candidates`, { query: q })
+export const getRatings = (kind, tmdbId, refresh = false) =>
+  req(`/titles/tmdb/${kind}/${tmdbId}/ratings`, { query: { refresh: refresh || '' } })
+
+// ── Top 10 ──────────────────────────────────────────────────────────
 export function getTop10({ country, provider, category, date }) {
   const seg = category === 'tv_shows' ? 'tv-shows' : 'movies'
-  const path = provider
-    ? `/top10/${seg}/${country}/${provider}`
-    : `/top10/${seg}/${country}`
-  return req(`${path}?date=${date}`).catch(err => {
-    if (err.message.includes('404') || err.message === 'HTTP 404') return { items: [] }
+  const path = provider ? `/top10/${seg}/${country}/${provider}` : `/top10/${seg}/${country}`
+  return req(path, { query: { date } }).catch((err) => {
+    if (err.status === 404) return { items: [], date: date || null }
     throw err
   })
 }
 
-export function listSchedules() {
-  return req('/admin/task-schedules', { cache: 'no-store' })
-}
+// ── Releases ────────────────────────────────────────────────────────
+export const listServices = (country) => req(`/services/${country}`)
+export const getReleases = (type, country, service, q) =>
+  req(`/titles/${type}/${country}/${service}`, { query: q })
 
-export function getSchedule(id) {
-  return req(`/admin/task-schedules/${id}`, { cache: 'no-store' })
-}
+// ── Schedules & runs ────────────────────────────────────────────────
+export const listSchedules = () => req('/task-schedules')
+export const getSchedule = (id) => req(`/task-schedules/${id}`)
+export const createSchedule = (body) => req('/task-schedules', { method: 'POST', body })
+export const updateSchedule = (id, body) => req(`/task-schedules/${id}`, { method: 'PATCH', body })
+export const addScheduleTargets = (id, targets) =>
+  req(`/task-schedules/${id}/flixpatrol-targets`, { method: 'POST', body: { targets } })
+export const runScheduleNow = (id) => req(`/task-schedules/${id}/run-now`, { method: 'POST' })
+export const listRuns = (q) => req('/task-runs', { query: q, withTotal: true })
+export const getRun = (id) => req(`/task-runs/${id}`)
+export const getRunLogs = (id) => req(`/task-runs/${id}/logs`)
 
-export function createSchedule(body) {
-  return req('/admin/task-schedules', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-}
-
-export function updateSchedule(id, body) {
-  return req(`/admin/task-schedules/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-}
-
-export function runScheduleNow(id) {
-  return req(`/admin/task-schedules/${id}/run-now`, { method: 'POST' })
-}
-
-export const PROVIDERS = [
-  { value: '',              label: 'All providers' },
-  { value: 'netflix',       label: 'Netflix' },
-  { value: 'hbo-max',       label: 'Max (HBO)' },
-  { value: 'disney',        label: 'Disney+' },
-  { value: 'amazon-prime',  label: 'Amazon Prime' },
-  { value: 'paramount-plus',label: 'Paramount+' },
-  { value: 'peacock',       label: 'Peacock' },
-  { value: 'apple-tv',      label: 'Apple TV+' },
-]
-
-export const COUNTRIES = [
-  { code: 'AR', name: 'Argentina' },
-  { code: 'AU', name: 'Australia' },
-  { code: 'AT', name: 'Austria' },
-  { code: 'BE', name: 'Belgium' },
-  { code: 'BR', name: 'Brazil' },
-  { code: 'CA', name: 'Canada' },
-  { code: 'CL', name: 'Chile' },
-  { code: 'CO', name: 'Colombia' },
-  { code: 'HR', name: 'Croatia' },
-  { code: 'CZ', name: 'Czech Republic' },
-  { code: 'DK', name: 'Denmark' },
-  { code: 'EG', name: 'Egypt' },
-  { code: 'FI', name: 'Finland' },
-  { code: 'FR', name: 'France' },
-  { code: 'DE', name: 'Germany' },
-  { code: 'GR', name: 'Greece' },
-  { code: 'HK', name: 'Hong Kong' },
-  { code: 'HU', name: 'Hungary' },
-  { code: 'IN', name: 'India' },
-  { code: 'ID', name: 'Indonesia' },
-  { code: 'IE', name: 'Ireland' },
-  { code: 'IL', name: 'Israel' },
-  { code: 'IT', name: 'Italy' },
-  { code: 'JP', name: 'Japan' },
-  { code: 'MX', name: 'Mexico' },
-  { code: 'NL', name: 'Netherlands' },
-  { code: 'NZ', name: 'New Zealand' },
-  { code: 'NG', name: 'Nigeria' },
-  { code: 'NO', name: 'Norway' },
-  { code: 'PK', name: 'Pakistan' },
-  { code: 'PH', name: 'Philippines' },
-  { code: 'PL', name: 'Poland' },
-  { code: 'PT', name: 'Portugal' },
-  { code: 'RO', name: 'Romania' },
-  { code: 'SA', name: 'Saudi Arabia' },
-  { code: 'SG', name: 'Singapore' },
-  { code: 'ZA', name: 'South Africa' },
-  { code: 'KR', name: 'South Korea' },
-  { code: 'ES', name: 'Spain' },
-  { code: 'SE', name: 'Sweden' },
-  { code: 'CH', name: 'Switzerland' },
-  { code: 'TW', name: 'Taiwan' },
-  { code: 'TH', name: 'Thailand' },
-  { code: 'TR', name: 'Turkey' },
-  { code: 'UA', name: 'Ukraine' },
-  { code: 'AE', name: 'UAE' },
-  { code: 'GB', name: 'United Kingdom' },
-  { code: 'US', name: 'United States' },
-  { code: 'VN', name: 'Vietnam' },
-]
+// ── Settings & API keys ─────────────────────────────────────────────
+export const getSettings = () => req('/settings')
+export const updateSettings = (body) => req('/settings', { method: 'PATCH', body })
+export const listApiKeys = () => req('/api-keys')
+export const createApiKey = (name) => req('/api-keys', { method: 'POST', body: { name } })
+export const renameApiKey = (id, name) => req(`/api-keys/${id}`, { method: 'PATCH', body: { name } })
+export const rotateApiKey = (id) => req(`/api-keys/${id}/rotate`, { method: 'POST' })
+export const deleteApiKey = (id) => req(`/api-keys/${id}`, { method: 'DELETE' })

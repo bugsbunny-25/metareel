@@ -61,17 +61,87 @@ func (r *FlixPatrolRepository) GetTitleBySlug(ctx context.Context, slug string) 
 	return &t, nil
 }
 
-func (r *FlixPatrolRepository) ListTitles(ctx context.Context, kind, search string, limit, offset int64) ([]sqlc.Title, error) {
-	return r.q.ListTitles(ctx, sqlc.ListTitlesParams{
-		Kind:   kind,
-		Name:   search,
-		Limit:  limit,
-		Offset: offset,
-	})
+// TitleListFilter narrows ListTitles / CountTitles; empty fields match all.
+type TitleListFilter struct {
+	Kind    string // "movie" | "tv_show"
+	Search  string // name or slug substring
+	Missing string // "tmdb" | "imdb" | "rt": only titles without that ID
+	Sort    string // see ListTitles in db/queries/flixpatrol.sql
 }
 
-func (r *FlixPatrolRepository) CountTitles(ctx context.Context, kind, search string) (int64, error) {
-	return r.q.CountTitles(ctx, sqlc.CountTitlesParams{Kind: kind, Name: search})
+type TitleListItem struct {
+	sqlc.Title
+	LastRankedOn  *time.Time
+	RankingsCount int64
+}
+
+func (r *FlixPatrolRepository) ListTitles(ctx context.Context, f TitleListFilter, limit, offset int64) ([]TitleListItem, error) {
+	rows, err := r.q.ListTitles(ctx, sqlc.ListTitlesParams{
+		Sort:    f.Sort,
+		Kind:    f.Kind,
+		Name:    f.Search,
+		Missing: f.Missing,
+		Limit:   limit,
+		Offset:  offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list titles: %w", err)
+	}
+	out := make([]TitleListItem, 0, len(rows))
+	for _, row := range rows {
+		item := TitleListItem{
+			Title: sqlc.Title{
+				ID: row.ID, Slug: row.Slug, Name: row.Name, Kind: row.Kind,
+				TmdbID: row.TmdbID, ImdbID: row.ImdbID, RtUrl: row.RtUrl,
+				CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+			},
+			RankingsCount: row.RankingsCount,
+		}
+		item.LastRankedOn = parseStoredDate(row.LastRankedOn)
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (r *FlixPatrolRepository) CountTitles(ctx context.Context, f TitleListFilter) (int64, error) {
+	return r.q.CountTitles(ctx, sqlc.CountTitlesParams{Kind: f.Kind, Name: f.Search, Missing: f.Missing})
+}
+
+type TitleStats struct {
+	Total       int64
+	MissingTmdb int64
+	MissingImdb int64
+	MissingRT   int64
+	Rankings    int64
+	LatestChart *time.Time
+}
+
+func (r *FlixPatrolRepository) TitleStats(ctx context.Context) (*TitleStats, error) {
+	t, err := r.q.TitleMappingStats(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("title mapping stats: %w", err)
+	}
+	rk, err := r.q.RankingStats(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("ranking stats: %w", err)
+	}
+	return &TitleStats{
+		Total: t.Total, MissingTmdb: t.MissingTmdb, MissingImdb: t.MissingImdb, MissingRT: t.MissingRt,
+		Rankings: rk.Rankings, LatestChart: parseStoredDate(rk.LatestRankedOn),
+	}, nil
+}
+
+// parseStoredDate parses a ranked_on value as SQLite returns it from an
+// aggregate (the driver's text form of a time.Time).
+func parseStoredDate(v string) *time.Time {
+	if len(v) < 10 {
+		return nil
+	}
+	t, err := time.Parse("2006-01-02", v[:10])
+	if err != nil {
+		return nil
+	}
+	return &t
 }
 
 func (r *FlixPatrolRepository) GetTitleByID(ctx context.Context, id int64) (*sqlc.Title, error) {
@@ -84,14 +154,19 @@ func (r *FlixPatrolRepository) GetTitleByID(ctx context.Context, id int64) (*sql
 
 type UpdateTitleIDsInput struct {
 	ID     int64
+	Kind   string // "movie" | "tv_show"; the TMDB namespace of TmdbID
 	TmdbID sql.NullString
 	ImdbID sql.NullString
 	RtURL  sql.NullString
 }
 
 func (r *FlixPatrolRepository) UpdateTitleIDs(ctx context.Context, in UpdateTitleIDsInput) (sqlc.Title, error) {
+	if in.Kind != "movie" && in.Kind != "tv_show" {
+		return sqlc.Title{}, fmt.Errorf("invalid kind: %s", in.Kind)
+	}
 	return r.q.UpdateTitleIDs(ctx, sqlc.UpdateTitleIDsParams{
 		ID:     in.ID,
+		Kind:   in.Kind,
 		TmdbID: in.TmdbID,
 		ImdbID: in.ImdbID,
 		RtUrl:  in.RtURL,

@@ -2,12 +2,22 @@ openapi: 3.0.3
 info:
   title: metareel Public API
   version: "1.0.0"
+  description: >
+    Every /api/v1 endpoint needs an API key, sent as `X-API-Key: <key>` or
+    `Authorization: Bearer <key>` (unless keys are turned off in the admin
+    console). Keys are created and rotated in the admin console under
+    Settings & API keys. Requests are rate limited per key; over the limit
+    the API returns 429 with Retry-After. Missing or invalid keys get 401.
 servers:
   - url: /
+security:
+  - ApiKeyHeader: []
+  - BearerKey: []
 paths:
   /healthz:
     get:
       operationId: healthz
+      security: []
       summary: Liveness probe
       responses:
         "200":
@@ -19,6 +29,7 @@ paths:
   /readyz:
     get:
       operationId: readyz
+      security: []
       summary: Readiness probe
       responses:
         "200":
@@ -50,13 +61,27 @@ paths:
           required: false
           schema:
             type: string
-            description: Title kind (e.g. movies, tv_shows)
+            enum: [movie, tv_show]
         - name: q
           in: query
           required: false
           schema:
             type: string
-            description: Search query
+            description: Name or slug substring
+        - name: missing
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [tmdb, imdb, rt]
+            description: Only titles without this ID
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [id_desc, id_asc, name_asc, name_desc, updated_desc, updated_asc, last_ranked_desc, last_ranked_asc, rankings_desc, rankings_asc]
+            description: Default id_desc (newest first)
         - name: limit
           in: query
           required: false
@@ -94,6 +119,29 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/titles/{id}:
+    get:
+      operationId: getTitle
+      summary: Get one scraped title
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Title
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     patch:
       operationId: patchTitle
       summary: Patch title external IDs
@@ -132,6 +180,349 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/{id}/rankings:
+    get:
+      operationId: getTitleRankingsById
+      summary: Ranking history of one scraped title (mapped to TMDB or not)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/FromParam"
+        - $ref: "#/components/parameters/ToParam"
+      responses:
+        "200":
+          description: Ranking history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleRankingsResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/tmdb/{kind}/{id}/rankings:
+    get:
+      operationId: getTitleRankings
+      summary: Ranking history of one title, looked up by TMDB ID
+      description: >
+        Every Top 10 chart appearance of the title, oldest first, plus a
+        per-chart summary. All FlixPatrol titles mapped to the TMDB ID are
+        included. Returns 404 if no scraped title is mapped to the TMDB ID.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            description: TMDB ID (numeric)
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/FromParam"
+        - $ref: "#/components/parameters/ToParam"
+      responses:
+        "200":
+          description: Ranking history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleRankingsResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No title mapped to this TMDB ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/tmdb/{kind}/{id}/ratings:
+    get:
+      operationId: getTitleRatings
+      summary: IMDb and Rotten Tomatoes ratings of a title, looked up by TMDB ID
+      description: >
+        Served from the database when refreshed within RATINGS_TTL (12h by
+        default), otherwise refreshed from JustWatch, MDBList (when
+        MDBLIST_API_KEY is set) and Rotten Tomatoes' own search index. Rotten
+        Tomatoes scores come from RT directly when it has a match (by stored
+        slug, MDBList's RT link, or a title + year search), else from MDBList /
+        JustWatch. Every rating each provider returned is listed in sources.
+        If a refresh fails, the previous ratings are returned with stale=true.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            description: TMDB ID (numeric)
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+            description: Refresh from the providers even if the stored ratings are fresh
+      responses:
+        "200":
+          description: Ratings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RatingsResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No provider knows this TMDB title
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Every provider failed and nothing was stored yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/tmdb/rankings:
+    get:
+      operationId: getTitleRankingsBatch
+      summary: Ranking history of several titles, looked up by TMDB ID
+      description: >
+        Batch version of getTitleRankings. Items come back in request order;
+        IDs with no mapped title are listed in not_found.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema:
+            type: string
+            example: movie:425,tv:154385
+            description: Comma-separated kind:tmdb_id pairs (kind is movie or tv), at most 50
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/FromParam"
+        - $ref: "#/components/parameters/ToParam"
+      responses:
+        "200":
+          description: Ranking histories
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleRankingsBatchResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/new/{country}/{service}:
+    get:
+      operationId: getNewTitles
+      summary: Titles added to a streaming service, per day (live from JustWatch)
+      description: >
+        One JustWatch query per day from `from` to `to` (default: the last 7
+        days, at most 31). Newest day first. Seasons are listed under their
+        show. Nothing is stored.
+      parameters:
+        - name: country
+          in: path
+          required: true
+          schema:
+            type: string
+            description: ISO country code (e.g. US)
+        - name: service
+          in: path
+          required: true
+          schema:
+            type: string
+            description: >
+              FlixPatrol slug (netflix, hbo-max, disney, amazon-prime,
+              paramount-plus, peacock, apple-tv; resolved to the country's
+              JustWatch code) or any JustWatch package short / technical name
+              from /api/v1/services/{country} (e.g. nfx, ppa)
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [movie, tv]
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+            default: en
+            description: 2-letter language for titles, descriptions and genres
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+            description: Default today (UTC)
+      responses:
+        "200":
+          description: New titles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleasesResponse"
+        "400":
+          description: Validation error (country, service, dates, type)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: JustWatch request failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/upcoming/{country}/{service}:
+    get:
+      operationId: getUpcomingTitles
+      summary: Titles announced for a streaming service (live from JustWatch)
+      description: >
+        Soonest first. date is the title's release date on this service
+        (digital release preferred), not its theatrical or original premiere.
+        Titles without a date on the service come last, and only when no
+        from / to range is given. Nothing is stored.
+      parameters:
+        - name: country
+          in: path
+          required: true
+          schema:
+            type: string
+            description: ISO country code (e.g. US)
+        - name: service
+          in: path
+          required: true
+          schema:
+            type: string
+            description: >
+              FlixPatrol slug (netflix, hbo-max, disney, amazon-prime,
+              paramount-plus, peacock, apple-tv; resolved to the country's
+              JustWatch code) or any JustWatch package short / technical name
+              from /api/v1/services/{country} (e.g. nfx, ppa)
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [movie, tv]
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+            default: en
+            description: 2-letter language for titles, descriptions and genres
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+            description: Earliest release date on the service
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+            description: Latest release date on the service
+      responses:
+        "200":
+          description: Upcoming titles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleasesResponse"
+        "400":
+          description: Validation error (country, service, dates, type)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: JustWatch request failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/services/{country}:
+    get:
+      operationId: listServices
+      summary: Streaming services JustWatch knows in a country
+      parameters:
+        - name: country
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Services
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicesResponse"
+        "400":
+          description: Validation error (country, service, dates, type)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: JustWatch request failed
           content:
             application/json:
               schema:
@@ -272,6 +663,15 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
 components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerKey:
+      type: http
+      scheme: bearer
+      description: 'The same API key, as "Authorization: Bearer <key>"'
   parameters:
     CountryParam:
       name: country
@@ -290,11 +690,45 @@ components:
     DateParam:
       name: date
       in: query
-      required: true
+      required: false
       schema:
         type: string
         format: date
-        description: Date in YYYY-MM-DD
+        description: >
+          Chart date in YYYY-MM-DD. Omit for the latest scraped chart; on the
+          all-providers endpoints that is each provider's own latest chart
+          (see the per-item date).
+    TmdbKindParam:
+      name: kind
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [movie, tv]
+        description: TMDB namespace of the ID
+    HistoryCountryParam:
+      name: country
+      in: query
+      required: false
+      schema:
+        type: string
+        description: ISO country code (e.g. US); omit for all countries
+    FromParam:
+      name: from
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+        description: First chart date to include (YYYY-MM-DD)
+    ToParam:
+      name: to
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+        description: Last chart date to include (YYYY-MM-DD)
 
   schemas:
     StatusResponse:
@@ -317,6 +751,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        kind:
+          type: string
+          enum: [movie, tv_show]
+          description: What the title is, i.e. the TMDB namespace of tmdb_id
         tmdb_id:
           type: string
           nullable: true
@@ -352,6 +790,13 @@ components:
         updated_at:
           type: string
           format: date-time
+        last_ranked_on:
+          type: string
+          format: date
+          description: List responses only
+        rankings_count:
+          type: integer
+          description: List responses only
       required: [id, slug, name, kind, updated_at]
 
     TitlesPageResponse:
@@ -377,17 +822,40 @@ components:
       type: object
       additionalProperties: false
       properties:
+        date:
+          type: string
+          format: date
+          description: Chart date of this entry
         rank:
           type: integer
           format: int64
+        previous_rank:
+          type: integer
+          format: int64
+          nullable: true
+          description: >
+            Rank on this chart's previous scraped date (not necessarily the
+            previous calendar day); null if the title was not on that chart.
+        days_in_top10:
+          type: integer
+          format: int64
+          description: Number of dates the title has been on this chart, up to and including date
         provider:
           type: string
+        title_id:
+          type: integer
+          format: int64
         slug:
           type: string
         name:
           type: string
         kind:
           type: string
+          enum: [movie, tv_show]
+          description: >
+            What the title is (the TMDB namespace of tmdb_id). It can differ
+            from the chart category, e.g. a stand-up special in the TV chart
+            is a movie.
         tmdb_id:
           type: string
           nullable: true
@@ -397,7 +865,7 @@ components:
         rotten_tomatoes_url:
           type: string
           nullable: true
-      required: [rank, provider, slug, name, kind]
+      required: [date, rank, previous_rank, days_in_top10, provider, slug, name, kind]
 
     Top10Response:
       type: object
@@ -406,6 +874,7 @@ components:
         date:
           type: string
           format: date
+          description: Requested date, or the newest item date when date was omitted
         country:
           type: string
         category:
@@ -417,3 +886,371 @@ components:
           items:
             $ref: "#/components/schemas/Top10Result"
       required: [date, country, category, items]
+
+    TitleRankingsResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [movie, tv]
+        tmdb_id:
+          type: string
+        titles:
+          type: array
+          description: FlixPatrol titles mapped to this TMDB ID
+          items:
+            $ref: "#/components/schemas/RankedTitle"
+        charts:
+          type: array
+          description: One summary per country / provider / category the title charted on
+          items:
+            $ref: "#/components/schemas/ChartSummary"
+        rankings:
+          type: array
+          description: Every chart appearance in the requested range, oldest first
+          items:
+            $ref: "#/components/schemas/RankingSnapshot"
+      required: [kind, tmdb_id, titles, charts, rankings]
+
+    RankedTitle:
+      type: object
+      additionalProperties: false
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        imdb_id:
+          type: string
+        rotten_tomatoes_url:
+          type: string
+      required: [slug, name]
+
+    ChartSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        country:
+          type: string
+        provider:
+          type: string
+        category:
+          type: string
+        days_in_top10:
+          type: integer
+          format: int64
+          description: Dates on this chart within the requested range
+        best_rank:
+          type: integer
+          format: int64
+        first_date:
+          type: string
+          format: date
+        last_date:
+          type: string
+          format: date
+        last_rank:
+          type: integer
+          format: int64
+          description: Rank on last_date
+      required: [country, provider, category, days_in_top10, best_rank, first_date, last_date, last_rank]
+
+    RankingSnapshot:
+      type: object
+      additionalProperties: false
+      properties:
+        date:
+          type: string
+          format: date
+        country:
+          type: string
+        provider:
+          type: string
+        category:
+          type: string
+        rank:
+          type: integer
+          format: int64
+        slug:
+          type: string
+      required: [date, country, provider, category, rank, slug]
+
+    TitleRankingsBatchResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TitleRankingsResponse"
+        not_found:
+          type: array
+          description: Requested kind:tmdb_id pairs with no mapped title
+          items:
+            type: string
+      required: [items, not_found]
+
+    RatingsResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [movie, tv]
+        tmdb_id:
+          type: string
+        imdb_id:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        year:
+          type: integer
+          nullable: true
+        imdb:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/IMDbRating"
+        rotten_tomatoes:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/RottenTomatoesRating"
+        sources:
+          type: array
+          description: Every rating each provider returned
+          items:
+            $ref: "#/components/schemas/RatingSource"
+        refreshed_at:
+          type: string
+          format: date-time
+        cached:
+          type: boolean
+          description: Served from the database without refreshing
+        stale:
+          type: boolean
+          description: A refresh was due but failed; the data is older than RATINGS_TTL
+      required: [kind, tmdb_id, imdb_id, title, year, imdb, rotten_tomatoes, sources, refreshed_at, cached, stale]
+
+    IMDbRating:
+      type: object
+      additionalProperties: false
+      properties:
+        rating:
+          type: number
+          description: 0-10
+        votes:
+          type: integer
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        source:
+          type: string
+          enum: [justwatch, mdblist]
+          description: Provider the value came from
+      required: [rating, votes, url, source]
+
+    RottenTomatoesRating:
+      type: object
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          nullable: true
+        critics_score:
+          type: integer
+          nullable: true
+          description: Tomatometer, 0-100
+        critics_rating:
+          type: string
+          nullable: true
+          enum: [Certified Fresh, Fresh, Rotten]
+        certified_fresh:
+          type: boolean
+          nullable: true
+          description: Movies only
+        critics_source:
+          type: string
+          nullable: true
+          enum: [rottentomatoes, justwatch, mdblist]
+        audience_score:
+          type: integer
+          nullable: true
+          description: Popcornmeter, 0-100
+        audience_rating:
+          type: string
+          nullable: true
+          enum: [Upright, Spilled]
+        audience_source:
+          type: string
+          nullable: true
+          enum: [rottentomatoes, justwatch, mdblist]
+      required: [url, critics_score, critics_rating, certified_fresh, critics_source, audience_score, audience_rating, audience_source]
+
+    RatingSource:
+      type: object
+      additionalProperties: false
+      properties:
+        provider:
+          type: string
+          enum: [justwatch, mdblist, rottentomatoes]
+        source:
+          type: string
+          description: >
+            e.g. imdb, tomatoes (RT critics), popcorn (RT audience),
+            tomatoes_certified (1/0), tmdb, tmdb_popularity, justwatch,
+            metacritic, letterboxd, trakt, mdblist, mdblist_average
+        value:
+          type: number
+          description: On the provider's own scale for this source
+        votes:
+          type: integer
+        url:
+          type: string
+        fetched_at:
+          type: string
+          format: date-time
+      required: [provider, source, value, fetched_at]
+
+    ReleaseService:
+      type: object
+      additionalProperties: false
+      properties:
+        requested:
+          type: string
+        justwatch_package:
+          type: string
+          example: nfx
+        name:
+          type: string
+          example: Netflix
+      required: [requested, justwatch_package, name]
+
+    ServicesResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        country:
+          type: string
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReleaseService"
+      required: [country, services]
+
+    ReleasesResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [new, upcoming]
+        country:
+          type: string
+        service:
+          $ref: "#/components/schemas/ReleaseService"
+        from:
+          type: string
+          format: date
+          nullable: true
+        to:
+          type: string
+          format: date
+          nullable: true
+        count:
+          type: integer
+        truncated:
+          type: boolean
+          description: JustWatch had more than 1000 titles for a day (new) or in total (upcoming)
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReleaseItem"
+      required: [type, country, service, from, to, count, truncated, items]
+
+    ReleaseItem:
+      type: object
+      additionalProperties: false
+      properties:
+        date:
+          type: string
+          format: date
+          nullable: true
+          description: Date added to the service (new), or release date on the service (upcoming; null if not dated yet)
+        kind:
+          type: string
+          enum: [movie, tv]
+        title:
+          type: string
+          description: Movie title, or the show title for a season
+        season_number:
+          type: integer
+        season_title:
+          type: string
+        year:
+          type: integer
+          nullable: true
+        original_release_date:
+          type: string
+          format: date
+          nullable: true
+        tmdb_id:
+          type: string
+          nullable: true
+          description: Movie or show TMDB ID (use with /api/v1/titles/tmdb/{movie|tv}/{id}/...)
+        imdb_id:
+          type: string
+          nullable: true
+        justwatch_id:
+          type: string
+        justwatch_url:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        runtime_minutes:
+          type: integer
+          nullable: true
+        genres:
+          type: array
+          items:
+            type: string
+        poster_url:
+          type: string
+          nullable: true
+        imdb_rating:
+          type: number
+          nullable: true
+        imdb_votes:
+          type: integer
+          nullable: true
+        tomatometer:
+          type: integer
+          nullable: true
+        certified_fresh:
+          type: boolean
+          nullable: true
+        offer:
+          type: object
+          description: New titles only
+          additionalProperties: false
+          properties:
+            url:
+              type: string
+              nullable: true
+              description: Deep link on the service
+            monetization_type:
+              type: string
+              nullable: true
+              example: FLATRATE
+            presentation_type:
+              type: string
+              nullable: true
+              example: HD
+        release_type:
+          type: string
+          description: Upcoming titles only, e.g. DIGITAL
+      required: [date, kind, title, year, original_release_date, tmdb_id, imdb_id, justwatch_id, justwatch_url, description, runtime_minutes, genres, poster_url, imdb_rating, imdb_votes, tomatometer, certified_fresh]

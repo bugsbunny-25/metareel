@@ -11,27 +11,28 @@ import (
 	"time"
 )
 
-const getTitleBySlug = `-- name: GetTitleBySlug :one
-SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at
+const countTitles = `-- name: CountTitles :one
+SELECT COUNT(*)
 FROM titles
-WHERE slug = ?
+WHERE (CAST(?1 AS TEXT) = '' OR kind = ?1)
+  AND (CAST(?2 AS TEXT) = '' OR name LIKE '%' || ?2 || '%' OR slug LIKE '%' || ?2 || '%')
+  AND (CAST(?3 AS TEXT) = ''
+    OR (?3 = 'tmdb' AND COALESCE(tmdb_id, '') = '')
+    OR (?3 = 'imdb' AND COALESCE(imdb_id, '') = '')
+    OR (?3 = 'rt' AND COALESCE(rt_url, '') = ''))
 `
 
-func (q *Queries) GetTitleBySlug(ctx context.Context, slug string) (Title, error) {
-	row := q.db.QueryRowContext(ctx, getTitleBySlug, slug)
-	var i Title
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Name,
-		&i.Kind,
-		&i.TmdbID,
-		&i.ImdbID,
-		&i.RtUrl,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+type CountTitlesParams struct {
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	Missing string `json:"missing"`
+}
+
+func (q *Queries) CountTitles(ctx context.Context, arg CountTitlesParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTitles, arg.Kind, arg.Name, arg.Missing)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const getTitleByID = `-- name: GetTitleByID :one
@@ -57,36 +58,99 @@ func (q *Queries) GetTitleByID(ctx context.Context, id int64) (Title, error) {
 	return i, err
 }
 
-const listTitles = `-- name: ListTitles :many
+const getTitleBySlug = `-- name: GetTitleBySlug :one
 SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at
 FROM titles
-WHERE (? = '' OR kind = ?)
-  AND (? = '' OR name LIKE '%' || ? || '%')
-ORDER BY id ASC
-LIMIT ? OFFSET ?
+WHERE slug = ?
+`
+
+func (q *Queries) GetTitleBySlug(ctx context.Context, slug string) (Title, error) {
+	row := q.db.QueryRowContext(ctx, getTitleBySlug, slug)
+	var i Title
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Kind,
+		&i.TmdbID,
+		&i.ImdbID,
+		&i.RtUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listTitles = `-- name: ListTitles :many
+SELECT
+    t.id, t.slug, t.name, t.kind, t.tmdb_id, t.imdb_id, t.rt_url, t.created_at, t.updated_at,
+    CAST(COALESCE((SELECT MAX(r.ranked_on) FROM rankings r WHERE r.title_id = t.id), '') AS TEXT) AS last_ranked_on,
+    (SELECT COUNT(*) FROM rankings r WHERE r.title_id = t.id) AS rankings_count
+FROM titles t, (SELECT CAST(?1 AS TEXT) AS sort_key) o
+WHERE (CAST(?2 AS TEXT) = '' OR t.kind = ?2)
+  AND (CAST(?3 AS TEXT) = '' OR t.name LIKE '%' || ?3 || '%' OR t.slug LIKE '%' || ?3 || '%')
+  AND (CAST(?4 AS TEXT) = ''
+    OR (?4 = 'tmdb' AND COALESCE(t.tmdb_id, '') = '')
+    OR (?4 = 'imdb' AND COALESCE(t.imdb_id, '') = '')
+    OR (?4 = 'rt' AND COALESCE(t.rt_url, '') = ''))
+ORDER BY
+    CASE WHEN o.sort_key = 'name_asc' THEN t.name END COLLATE NOCASE ASC,
+    CASE WHEN o.sort_key = 'name_desc' THEN t.name END COLLATE NOCASE DESC,
+    CASE WHEN o.sort_key = 'updated_desc' THEN t.updated_at END DESC,
+    CASE WHEN o.sort_key = 'updated_asc' THEN t.updated_at END ASC,
+    CASE WHEN o.sort_key = 'last_ranked_desc' THEN last_ranked_on END DESC,
+    CASE WHEN o.sort_key = 'last_ranked_asc' THEN last_ranked_on END ASC,
+    CASE WHEN o.sort_key = 'rankings_desc' THEN rankings_count END DESC,
+    CASE WHEN o.sort_key = 'rankings_asc' THEN rankings_count END ASC,
+    CASE WHEN o.sort_key = 'id_asc' THEN t.id END ASC,
+    t.id DESC
+LIMIT ?6 OFFSET ?5
 `
 
 type ListTitlesParams struct {
-	Kind   string `json:"kind"`
-	Name   string `json:"name"`
-	Limit  int64  `json:"limit"`
-	Offset int64  `json:"offset"`
+	Sort    string `json:"sort"`
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	Missing string `json:"missing"`
+	Offset  int64  `json:"offset"`
+	Limit   int64  `json:"limit"`
 }
 
-func (q *Queries) ListTitles(ctx context.Context, arg ListTitlesParams) ([]Title, error) {
+type ListTitlesRow struct {
+	ID            int64          `json:"id"`
+	Slug          string         `json:"slug"`
+	Name          string         `json:"name"`
+	Kind          string         `json:"kind"`
+	TmdbID        sql.NullString `json:"tmdb_id"`
+	ImdbID        sql.NullString `json:"imdb_id"`
+	RtUrl         sql.NullString `json:"rt_url"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	LastRankedOn  string         `json:"last_ranked_on"`
+	RankingsCount int64          `json:"rankings_count"`
+}
+
+// sort: name_asc | name_desc | updated_desc | updated_asc | last_ranked_desc |
+// last_ranked_asc | rankings_desc | rankings_asc | id_asc; anything else is
+// newest first.
+// sqlc does not rewrite params inside ORDER BY, so the sort key comes in
+// through this one-row subquery.
+func (q *Queries) ListTitles(ctx context.Context, arg ListTitlesParams) ([]ListTitlesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTitles,
-		arg.Kind, arg.Kind,
-		arg.Name, arg.Name,
-		arg.Limit,
+		arg.Sort,
+		arg.Kind,
+		arg.Name,
+		arg.Missing,
 		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Title
+	items := []ListTitlesRow{}
 	for rows.Next() {
-		var i Title
+		var i ListTitlesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Slug,
@@ -97,39 +161,71 @@ func (q *Queries) ListTitles(ctx context.Context, arg ListTitlesParams) ([]Title
 			&i.RtUrl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LastRankedOn,
+			&i.RankingsCount,
 		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
 	}
-	return items, rows.Err()
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-const countTitles = `-- name: CountTitles :one
-SELECT COUNT(*)
-FROM titles
-WHERE (? = '' OR kind = ?)
-  AND (? = '' OR name LIKE '%' || ? || '%')
+const rankingStats = `-- name: RankingStats :one
+SELECT COUNT(*) AS rankings, CAST(COALESCE(MAX(ranked_on), '') AS TEXT) AS latest_ranked_on
+FROM rankings
 `
 
-type CountTitlesParams struct {
-	Kind string `json:"kind"`
-	Name string `json:"name"`
+type RankingStatsRow struct {
+	Rankings       int64  `json:"rankings"`
+	LatestRankedOn string `json:"latest_ranked_on"`
 }
 
-func (q *Queries) CountTitles(ctx context.Context, arg CountTitlesParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countTitles,
-		arg.Kind, arg.Kind,
-		arg.Name, arg.Name,
+func (q *Queries) RankingStats(ctx context.Context) (RankingStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, rankingStats)
+	var i RankingStatsRow
+	err := row.Scan(&i.Rankings, &i.LatestRankedOn)
+	return i, err
+}
+
+const titleMappingStats = `-- name: TitleMappingStats :one
+SELECT
+    COUNT(*) AS total,
+    CAST(COALESCE(SUM(CASE WHEN COALESCE(tmdb_id, '') = '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missing_tmdb,
+    CAST(COALESCE(SUM(CASE WHEN COALESCE(imdb_id, '') = '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missing_imdb,
+    CAST(COALESCE(SUM(CASE WHEN COALESCE(rt_url, '') = '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missing_rt
+FROM titles
+`
+
+type TitleMappingStatsRow struct {
+	Total       int64 `json:"total"`
+	MissingTmdb int64 `json:"missing_tmdb"`
+	MissingImdb int64 `json:"missing_imdb"`
+	MissingRt   int64 `json:"missing_rt"`
+}
+
+func (q *Queries) TitleMappingStats(ctx context.Context) (TitleMappingStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, titleMappingStats)
+	var i TitleMappingStatsRow
+	err := row.Scan(
+		&i.Total,
+		&i.MissingTmdb,
+		&i.MissingImdb,
+		&i.MissingRt,
 	)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+	return i, err
 }
 
 const updateTitleIDs = `-- name: UpdateTitleIDs :one
 UPDATE titles
 SET
+    kind       = ?,
     tmdb_id    = ?,
     imdb_id    = ?,
     rt_url     = ?,
@@ -139,6 +235,7 @@ RETURNING id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at
 `
 
 type UpdateTitleIDsParams struct {
+	Kind   string         `json:"kind"`
 	TmdbID sql.NullString `json:"tmdb_id"`
 	ImdbID sql.NullString `json:"imdb_id"`
 	RtUrl  sql.NullString `json:"rt_url"`
@@ -147,6 +244,7 @@ type UpdateTitleIDsParams struct {
 
 func (q *Queries) UpdateTitleIDs(ctx context.Context, arg UpdateTitleIDsParams) (Title, error) {
 	row := q.db.QueryRowContext(ctx, updateTitleIDs,
+		arg.Kind,
 		arg.TmdbID,
 		arg.ImdbID,
 		arg.RtUrl,

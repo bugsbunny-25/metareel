@@ -78,17 +78,10 @@ func Top10URL(provider Provider, countrySlug string, date time.Time) string {
 	)
 }
 
-func ScrapeTop10(ctx context.Context, base *colly.Collector, top10URL string, userAgent string, respectRobots bool) (*Top10, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
+func ScrapeTop10(ctx context.Context, fetcher Fetcher, top10URL string, userAgent string, respectRobots bool) (*Top10, error) {
 	u, err := url.Parse(top10URL)
 	if err != nil {
 		return nil, fmt.Errorf("parse url: %w", err)
-	}
-	if !isFlixPatrolHost(u.Host) {
-		return nil, fmt.Errorf("refusing to scrape non-flixpatrol host: %s", u.Host)
 	}
 
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
@@ -100,12 +93,68 @@ func ScrapeTop10(ctx context.Context, base *colly.Collector, top10URL string, us
 		return nil, fmt.Errorf("parse date: %w", err)
 	}
 
-	c := base.Clone()
+	doc, err := fetchDocument(ctx, fetcher, top10URL, userAgent, respectRobots)
+	if err != nil {
+		return nil, err
+	}
+
+	movies, err := parseTop10Table(doc, "TOP 10 Movies", TitleKindMovie)
+	if err != nil {
+		return nil, fmt.Errorf("scrape %s: %w", top10URL, err)
+	}
+	tv, err := parseTop10Table(doc, "TOP 10 TV Shows", TitleKindTVShow)
+	if err != nil {
+		return nil, fmt.Errorf("scrape %s: %w", top10URL, err)
+	}
+
+	return &Top10{
+		Provider:    Provider(parts[1]),
+		CountrySlug: parts[2],
+		Date:        date,
+		Movies:      movies,
+		TVShows:     tv,
+	}, nil
+}
+
+// Fetcher retrieves a FlixPatrol page as parsed HTML. Non-200 responses and
+// non-HTML bodies are returned as errors.
+type Fetcher interface {
+	Fetch(ctx context.Context, pageURL string, userAgent string, respectRobots bool) (*goquery.Document, error)
+}
+
+// fetchDocument checks pageURL is a FlixPatrol URL before handing it to fetcher.
+func fetchDocument(ctx context.Context, fetcher Fetcher, pageURL string, userAgent string, respectRobots bool) (*goquery.Document, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	u, err := url.Parse(pageURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse url: %w", err)
+	}
+	if !isFlixPatrolHost(u.Host) {
+		return nil, fmt.Errorf("refusing to scrape non-flixpatrol host: %s", u.Host)
+	}
+
+	doc, err := fetcher.Fetch(ctx, pageURL, userAgent, respectRobots)
+	if err != nil {
+		return nil, fmt.Errorf("scrape %s: %w", pageURL, err)
+	}
+	return doc, nil
+}
+
+// CollyFetcher fetches pages directly with a cloned base collector.
+type CollyFetcher struct {
+	Base *colly.Collector
+}
+
+func (f CollyFetcher) Fetch(ctx context.Context, pageURL string, userAgent string, respectRobots bool) (*goquery.Document, error) {
+	c := f.Base.Clone()
 	// Colly default is to respect robots.txt; we make it explicit.
 	c.IgnoreRobotsTxt = !respectRobots
 
 	var (
-		out     *Top10
+		doc     *goquery.Document
 		scrapeE error
 	)
 
@@ -124,47 +173,7 @@ func ScrapeTop10(ctx context.Context, base *colly.Collector, top10URL string, us
 			// Base collector has CheckHead enabled; HEAD is expected to have no body.
 			return
 		}
-
-		contentType := strings.ToLower(strings.TrimSpace(r.Headers.Get("Content-Type")))
-		if r.StatusCode != 200 {
-			scrapeE = fmt.Errorf("unexpected status %d content_type=%q body_preview=%q", r.StatusCode, contentType, previewBody(r.Body))
-			return
-		}
-		if len(bytes.TrimSpace(r.Body)) == 0 {
-			scrapeE = errors.New("empty html response body")
-			return
-		}
-		if contentType != "" &&
-			!strings.Contains(contentType, "text/html") &&
-			!strings.Contains(contentType, "application/xhtml+xml") {
-			scrapeE = fmt.Errorf("unexpected content type %q body_preview=%q", contentType, previewBody(r.Body))
-			return
-		}
-
-		doc, err := goquery.NewDocumentFromReader(bytes.NewReader(r.Body))
-		if err != nil {
-			scrapeE = fmt.Errorf("parse html: %w body_preview=%q", err, previewBody(r.Body))
-			return
-		}
-
-		movies, err := parseTop10Table(doc, "TOP 10 Movies", TitleKindMovie)
-		if err != nil {
-			scrapeE = err
-			return
-		}
-		tv, err := parseTop10Table(doc, "TOP 10 TV Shows", TitleKindTVShow)
-		if err != nil {
-			scrapeE = err
-			return
-		}
-
-		out = &Top10{
-			Provider:    Provider(parts[1]),
-			CountrySlug: parts[2],
-			Date:        date,
-			Movies:      movies,
-			TVShows:     tv,
-		}
+		doc, scrapeE = parseHTMLResponse(r.StatusCode, r.Headers.Get("Content-Type"), r.Body)
 	})
 
 	c.OnError(func(r *colly.Response, err error) {
@@ -178,18 +187,41 @@ func ScrapeTop10(ctx context.Context, base *colly.Collector, top10URL string, us
 		}
 	})
 
-	if err := c.Visit(top10URL); err != nil {
-		return nil, fmt.Errorf("colly visit %s: %w", top10URL, err)
+	if err := c.Visit(pageURL); err != nil {
+		return nil, fmt.Errorf("colly visit %s: %w", pageURL, err)
 	}
 	c.Wait()
 
 	if scrapeE != nil {
-		return nil, fmt.Errorf("scrape %s: %w", top10URL, scrapeE)
+		return nil, scrapeE
 	}
-	if out == nil {
+	if doc == nil {
 		return nil, errors.New("no scrape result produced")
 	}
-	return out, nil
+	return doc, nil
+}
+
+// parseHTMLResponse validates a page response and parses its body as HTML.
+// An empty contentType is accepted.
+func parseHTMLResponse(status int, contentType string, body []byte) (*goquery.Document, error) {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if status != 200 {
+		return nil, fmt.Errorf("unexpected status %d content_type=%q body_preview=%q", status, contentType, previewBody(body))
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil, errors.New("empty html response body")
+	}
+	if contentType != "" &&
+		!strings.Contains(contentType, "text/html") &&
+		!strings.Contains(contentType, "application/xhtml+xml") {
+		return nil, fmt.Errorf("unexpected content type %q body_preview=%q", contentType, previewBody(body))
+	}
+
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("parse html: %w body_preview=%q", err, previewBody(body))
+	}
+	return doc, nil
 }
 
 func isFlixPatrolHost(hostport string) bool {

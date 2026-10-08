@@ -464,8 +464,12 @@ sqlc: ## Generate typed query code from db/queries
 MIGRATION_NAME ?= new_migration
 
 .PHONY: migrate-new
-migrate-new: ## Create a new migration pair: make migrate-new MIGRATION_NAME=add_users
-	goose -dir $(DATABASE_MIGRATIONS_DIR) create $(MIGRATION_NAME) sql
+migrate-new: ## Create the next sequential migration (000NNN_name.sql): make migrate-new MIGRATION_NAME=add_users
+	@last=$$(ls $(DATABASE_MIGRATIONS_DIR) | sed -n 's/^\([0-9]\{6\}\)_.*\.sql$$/\1/p' | sort | tail -1); \
+	next=$$(printf '%06d' $$(expr $${last:-0} + 1)); \
+	file=$(DATABASE_MIGRATIONS_DIR)/$${next}_$(MIGRATION_NAME).sql; \
+	printf -- '-- +goose Up\n\n-- +goose Down\n' > $$file; \
+	echo "Created $$file"
 
 .PHONY: migrate-up
 migrate-up: ## Apply all pending migrations

@@ -76,6 +76,7 @@ func (p *DBPeriodicTaskConfigProvider) buildFlixPatrolTop10Configs(schedules []r
 
 			opts := []asynq.Option{
 				asynq.MaxRetry(int(schedule.MaxRetries) * len(payload.Targets)),
+				asynq.Timeout(tasks.FlixPatrolTop10Timeout),
 			}
 			if p.queueName != "" {
 				opts = append(opts, asynq.Queue(p.queueName))

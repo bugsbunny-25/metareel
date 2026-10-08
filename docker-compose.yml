@@ -34,6 +34,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
       REDIS_DEFAULT_TTL: ${REDIS_DEFAULT_TTL:-5m}
+      FLARESOLVERR_URL: ${FLARESOLVERR_URL:-}
     ports:
       - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
     volumes:

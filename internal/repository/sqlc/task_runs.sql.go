@@ -27,6 +27,63 @@ func (q *Queries) CompleteTaskRun(ctx context.Context, arg CompleteTaskRunParams
 	return err
 }
 
+const countTaskRuns = `-- name: CountTaskRuns :one
+SELECT COUNT(*)
+FROM task_runs
+WHERE (CAST(?1 AS TEXT) = '' OR task_type = ?1)
+  AND (CAST(?2 AS TEXT) = '' OR status = ?2)
+  AND (CAST(?3 AS INTEGER) = 0 OR schedule_id = ?3)
+`
+
+type CountTaskRunsParams struct {
+	TaskType   string `json:"task_type"`
+	Status     string `json:"status"`
+	ScheduleID int64  `json:"schedule_id"`
+}
+
+func (q *Queries) CountTaskRuns(ctx context.Context, arg CountTaskRunsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTaskRuns, arg.TaskType, arg.Status, arg.ScheduleID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTaskRunsByStatusSince = `-- name: CountTaskRunsByStatusSince :many
+SELECT status, COUNT(*) AS runs
+FROM task_runs
+WHERE started_at >= datetime('now', CAST(?1 AS TEXT))
+GROUP BY status
+`
+
+type CountTaskRunsByStatusSinceRow struct {
+	Status string `json:"status"`
+	Runs   int64  `json:"runs"`
+}
+
+// since is a SQLite datetime modifier, e.g. '-24 hours'.
+func (q *Queries) CountTaskRunsByStatusSince(ctx context.Context, since string) ([]CountTaskRunsByStatusSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, countTaskRunsByStatusSince, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountTaskRunsByStatusSinceRow{}
+	for rows.Next() {
+		var i CountTaskRunsByStatusSinceRow
+		if err := rows.Scan(&i.Status, &i.Runs); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createTaskRun = `-- name: CreateTaskRun :one
 INSERT INTO task_runs (schedule_id, task_type, asynq_task_id, status, retry_count, max_retry)
 VALUES (?, ?, ?, ?, ?, ?)
@@ -83,6 +140,25 @@ func (q *Queries) CreateTaskRunLog(ctx context.Context, arg CreateTaskRunLogPara
 	return err
 }
 
+const failStaleTaskRuns = `-- name: FailStaleTaskRuns :execrows
+UPDATE task_runs
+SET status = 'failed',
+    finished_at = CURRENT_TIMESTAMP,
+    error_message = 'interrupted: no result recorded (server restarted or task timed out)'
+WHERE status = 'started'
+  AND started_at < datetime('now', CAST(?1 AS TEXT))
+`
+
+// Runs still "started" long after the task timeout were interrupted (e.g. the
+// server restarted mid-run); asynq retries the task as a new run.
+func (q *Queries) FailStaleTaskRuns(ctx context.Context, olderThan string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, failStaleTaskRuns, olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getTaskRunByID = `-- name: GetTaskRunByID :one
 SELECT id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message
 FROM task_runs
@@ -105,6 +181,81 @@ func (q *Queries) GetTaskRunByID(ctx context.Context, id int64) (TaskRun, error)
 		&i.ErrorMessage,
 	)
 	return i, err
+}
+
+const listLastSuccessPerSchedule = `-- name: ListLastSuccessPerSchedule :many
+SELECT schedule_id, CAST(MAX(finished_at) AS TEXT) AS finished_at
+FROM task_runs
+WHERE status = 'succeeded'
+GROUP BY schedule_id
+`
+
+type ListLastSuccessPerScheduleRow struct {
+	ScheduleID int64  `json:"schedule_id"`
+	FinishedAt string `json:"finished_at"`
+}
+
+func (q *Queries) ListLastSuccessPerSchedule(ctx context.Context) ([]ListLastSuccessPerScheduleRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLastSuccessPerSchedule)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLastSuccessPerScheduleRow{}
+	for rows.Next() {
+		var i ListLastSuccessPerScheduleRow
+		if err := rows.Scan(&i.ScheduleID, &i.FinishedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestTaskRunPerSchedule = `-- name: ListLatestTaskRunPerSchedule :many
+SELECT id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message
+FROM task_runs r
+WHERE r.id = (SELECT MAX(x.id) FROM task_runs x WHERE x.schedule_id = r.schedule_id)
+`
+
+func (q *Queries) ListLatestTaskRunPerSchedule(ctx context.Context) ([]TaskRun, error) {
+	rows, err := q.db.QueryContext(ctx, listLatestTaskRunPerSchedule)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskRun{}
+	for rows.Next() {
+		var i TaskRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.ScheduleID,
+			&i.TaskType,
+			&i.AsynqTaskID,
+			&i.Status,
+			&i.RetryCount,
+			&i.MaxRetry,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.ErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTaskRunLogsByRunID = `-- name: ListTaskRunLogsByRunID :many
@@ -146,24 +297,29 @@ func (q *Queries) ListTaskRunLogsByRunID(ctx context.Context, runID int64) ([]Ta
 const listTaskRuns = `-- name: ListTaskRuns :many
 SELECT id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message
 FROM task_runs
-WHERE (? = 0 OR task_type = ?)
-ORDER BY started_at DESC
-LIMIT ? OFFSET ?
+WHERE (CAST(?1 AS TEXT) = '' OR task_type = ?1)
+  AND (CAST(?2 AS TEXT) = '' OR status = ?2)
+  AND (CAST(?3 AS INTEGER) = 0 OR schedule_id = ?3)
+ORDER BY started_at DESC, id DESC
+LIMIT ?5 OFFSET ?4
 `
 
 type ListTaskRunsParams struct {
-	Column1  interface{} `json:"column_1"`
-	TaskType string      `json:"task_type"`
-	Limit    int64       `json:"limit"`
-	Offset   int64       `json:"offset"`
+	TaskType   string `json:"task_type"`
+	Status     string `json:"status"`
+	ScheduleID int64  `json:"schedule_id"`
+	Offset     int64  `json:"offset"`
+	Limit      int64  `json:"limit"`
 }
 
+// Empty / zero filters match everything.
 func (q *Queries) ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]TaskRun, error) {
 	rows, err := q.db.QueryContext(ctx, listTaskRuns,
-		arg.Column1,
 		arg.TaskType,
-		arg.Limit,
+		arg.Status,
+		arg.ScheduleID,
 		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err

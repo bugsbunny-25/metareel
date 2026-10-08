@@ -176,6 +176,7 @@ func (s *TaskScheduleAdminService) RunTaskScheduleNow(ctx context.Context, sched
 	}
 	enqueueOpts := []asynq.Option{
 		asynq.MaxRetry(int(schedule.MaxRetries) * len(schedule.Targets)),
+		asynq.Timeout(tasks.FlixPatrolTop10Timeout),
 	}
 	if s.queueName != "" {
 		enqueueOpts = append(enqueueOpts, asynq.Queue(s.queueName))
@@ -213,22 +214,41 @@ func (s *TaskScheduleAdminService) ListTaskRunsByScheduleID(ctx context.Context,
 	return out, nil
 }
 
-func (s *TaskScheduleAdminService) ListTaskRuns(ctx context.Context, taskType string, limit int64, offset int64) ([]TaskRunResponse, error) {
+// TaskRunsQuery filters ListTaskRuns; zero values match all.
+type TaskRunsQuery struct {
+	TaskType   string
+	Status     string // started | succeeded | failed
+	ScheduleID int64
+}
+
+// ListTaskRuns returns one page of runs, newest first, and the total
+// number of runs matching the filter.
+func (s *TaskScheduleAdminService) ListTaskRuns(ctx context.Context, q TaskRunsQuery, limit int64, offset int64) ([]TaskRunResponse, int64, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := s.repo.ListTaskRuns(ctx, taskType, limit, offset)
+	switch q.Status {
+	case "", "started", "succeeded", "failed":
+	default:
+		return nil, 0, &ValidationError{Message: "invalid status, expected started, succeeded or failed"}
+	}
+	f := repository.TaskRunFilter{TaskType: q.TaskType, Status: q.Status, ScheduleID: q.ScheduleID}
+	rows, err := s.repo.ListTaskRuns(ctx, f, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	total, err := s.repo.CountTaskRuns(ctx, f)
+	if err != nil {
+		return nil, 0, err
 	}
 	out := make([]TaskRunResponse, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, toTaskRunResponse(row))
 	}
-	return out, nil
+	return out, total, nil
 }
 
 func (s *TaskScheduleAdminService) GetTaskRunByID(ctx context.Context, runID int64) (*TaskRunResponse, error) {

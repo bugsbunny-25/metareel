@@ -164,7 +164,7 @@ sequenceDiagram
         FPHandler->>FlixJob: RunTargets(ctx, targets, date, opts)
 
         FlixJob->>Colly: Build URL:\nflixpatrol.com/top10/{provider}/{country}/{date}/
-        Colly->>FlixPatrol: HTTP GET (with User-Agent, robots.txt check)
+        Colly->>FlixPatrol: HTTP GET directly, or via FlareSolverr\nwhen FLARESOLVERR_URL is set
         FlixPatrol-->>Colly: HTML page
         Colly->>Colly: goquery parse:\nextract TOP 10 Movies + TV Shows tables
         Colly-->>FlixJob: []Entry{Rank, Name, Slug, Kind}
@@ -172,25 +172,32 @@ sequenceDiagram
         loop for each Entry
             FlixJob->>FlixRepo: GetTitleBySlug(slug)
 
-            alt title has both TMDB ID + IMDb ID
+            alt title has TMDB ID + IMDb ID + RT URL
                 FlixJob->>FlixRepo: UpsertRanking (skip ID lookup)
             else needs ID lookup
-                FlixJob->>JustWatch: GetTitlesByPath(/{country}/{type}/{slug})
-                JustWatch-->>FlixJob: ExternalIds{ImdbId, TmdbId}
-
-                alt JustWatch path lookup failed
-                    FlixJob->>JustWatch: GetTitlesByTopSearchPopular\n(slug, country, objectType, package)
-                    JustWatch-->>FlixJob: ExternalIds
+                alt TMDB ID missing
+                    FlixJob->>FlixPatrol: GET /title/{slug}/ (full title + premiere year;\nfalls back to Top 10 name + slug year suffix)
+                    FlixJob->>JustWatch: GetTitlesByPath(/{country}/{type}/{slug})
+                    alt no title + year match
+                        FlixJob->>JustWatch: GetTitlesByTopSearchPopular\n(name, country, objectType, package)
+                    end
+                    alt still no title + year match && TMDB_API_KEY set
+                        FlixJob->>TMDB: SearchMovie/SearchTV(name)
+                    end
+                    Note over FlixJob: a candidate is accepted only if its title matches<br/>and its year is within ±1 of the FlixPatrol year
                 end
 
-                alt TMDB ID still missing && TMDB_API_KEY set
-                    FlixJob->>TMDB: SearchMovie/SearchTV(name)
-                    TMDB-->>FlixJob: tmdbID
+                alt TMDB ID found && TMDB_API_KEY set
                     FlixJob->>TMDB: MovieExternalIDs/TVExternalIDs(tmdbID)
-                    TMDB-->>FlixJob: imdbID
+                    TMDB-->>FlixJob: imdbID, wikidataID
+                    FlixJob->>Wikidata: Rotten Tomatoes ID (P1258)
                 end
 
-                FlixJob->>FlixRepo: UpsertTitle(slug, name, kind, tmdbID, imdbID)
+                alt RT slug still missing && TMDB ID found
+                    FlixJob->>RT: Seerr-style search of RT's index: title × year score<br/>(TMDB title + year, else the JustWatch/TMDB match, else FlixPatrol name + slug year;<br/>skipped when the year is unknown)
+                end
+
+                FlixJob->>FlixRepo: UpsertTitle(slug, name, kind, tmdbID, imdbID, rtURL)
                 FlixJob->>FlixRepo: UpsertRanking(titleID, date, country, provider, rank)
             end
         end
@@ -215,18 +222,67 @@ sequenceDiagram
     participant FlixRepo as FlixPatrolRepository
     participant SQLite
 
-    Client->>Echo: GET /api/v1/top10/movies/{country}?date=YYYY-MM-DD
+    Client->>Echo: GET /api/v1/top10/movies/{country}[?date=YYYY-MM-DD]
     Echo->>Handler: GetTop10MoviesAllProviders(c)
-    Handler->>Handler: parseDate(date) — validate YYYY-MM-DD
+    Handler->>Handler: parseDate(date) — optional, validate YYYY-MM-DD
     Handler->>Top10Svc: GetMoviesAllProviders(ctx, Top10Query)
     Top10Svc->>Top10Svc: validateQuery — check country ISO code
-    Top10Svc->>FlixRepo: ListTop10AllProviders(date, country, "movies")
-    FlixRepo->>SQLite: SELECT rankings JOIN titles WHERE ranked_on=? AND country=? AND category=?
+    Top10Svc->>FlixRepo: ListTop10AllProviders(date or nil, country, "movies")
+    FlixRepo->>SQLite: SELECT rankings JOIN titles WHERE country=? AND category=?\nAND ranked_on = COALESCE(date, each provider's latest date)\n+ previous_rank (rank on the chart's previous scraped date)\n+ days_in_top10 (dates on the chart so far)
     SQLite-->>FlixRepo: rows
     FlixRepo-->>Top10Svc: []Top10Item
-    Top10Svc-->>Handler: *Top10Response{items: [{rank, provider, slug, name, tmdb_id, imdb_id}]}
+    Top10Svc-->>Handler: *Top10Response{items: [{date, rank, previous_rank, days_in_top10, provider, slug, name, kind, tmdb_id, imdb_id}]}
     Handler-->>Client: 200 JSON
 ```
+
+`kind` on a chart entry is what the title is (and so the TMDB namespace of
+`tmdb_id`), which can differ from the chart's category: a stand-up special
+in the TV chart is usually a movie on FlixPatrol's title page, JustWatch and
+TMDB. The scraper tries the title page's kind first, then the chart's.
+
+Ranking history (`GET /api/v1/titles/tmdb/{movie|tv}/{id}/rankings`, and the
+batch `GET /api/v1/titles/tmdb/rankings?ids=movie:425,tv:154385`) looks up
+every title row with that TMDB ID and kind, then returns its chart
+appearances and a per-chart summary.
+
+---
+
+## Ratings Flow
+
+`GET /api/v1/titles/tmdb/{movie|tv}/{id}/ratings` serves `title_ratings` +
+`title_rating_sources` if refreshed within `RATINGS_TTL`; otherwise (or with
+`?refresh=true`) it refreshes, collapsing concurrent refreshes of one title:
+
+```mermaid
+sequenceDiagram
+    participant Svc as RatingsService
+    participant DB as SQLite
+    participant MDB as MDBList
+    participant TMDB
+    participant JW as JustWatch
+    participant RT as RT Algolia index
+
+    Svc->>DB: title_ratings (stored JustWatch ID, RT slug, name, year)<br/>+ titles with this TMDB ID (name, imdb_id, rt_url)
+    opt MDBLIST_API_KEY set
+        Svc->>MDB: GET /tmdb/{movie|show}/{id}
+        MDB-->>Svc: title, year, imdb_id, all ratings (+ RT link → slug hint)
+    end
+    opt name still unknown && TMDB_API_KEY set
+        Svc->>TMDB: GET /{movie|tv}/{id}
+    end
+    Svc->>JW: node(stored id), else search name → match TMDB ID
+    JW-->>Svc: imdb score/votes, tomatoMeter, certifiedFresh, tmdb, jwRating
+    Svc->>RT: search by slug (stored / titles.rt_url / MDBList link) → exact vanity hit
+    alt no slug hit
+        Svc->>RT: Seerr-style search: title similarity × year closeness
+    end
+    Svc->>DB: upsert title_ratings; replace each successful provider's sources;<br/>back-fill titles.imdb_id / rt_url
+```
+
+Headline values: IMDb from the preferred provider (then the other); RT
+critics / audience / Certified Fresh from RT itself, falling back to the
+preferred provider, then the other. Providers that fail keep their previous
+rows; if every provider fails, stored ratings are returned with `stale: true`.
 
 ---
 
@@ -430,9 +486,16 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `SCRAPER_USER_AGENT` | `metareel-bot/0.1` | Colly User-Agent header |
 | `SCRAPER_PARALLELISM` | `4` | Colly concurrent requests per domain |
 | `SCRAPER_REQUEST_TIMEOUT` | `20s` | Colly per-request timeout |
+| `FLARESOLVERR_URL` | _(empty)_ | FlareSolverr base URL (e.g. `http://flaresolverr:8191`); when set, FlixPatrol pages are fetched through it instead of Colly |
+| `FLARESOLVERR_MAX_TIMEOUT` | `60s` | Max time FlareSolverr may spend on one page |
+| `FLARESOLVERR_SESSION` | `metareel` | FlareSolverr browser session reused across requests (blank = new browser per page) |
+| `FLARESOLVERR_SESSION_TTL` | `30m` | FlareSolverr recreates the session after this long |
 | `UI_STATIC_DIR` | `web/dist` | Directory to serve the SPA from |
 | `UI_SERVE_STATIC` | `true` | Enable / disable static file serving |
 | `TMDB_API_KEY` | _(empty)_ | TMDB v3 API key — ID enrichment disabled when blank |
+| `RATINGS_TTL` | `12h` | How long stored ratings are served before a request refreshes them |
+| `RATINGS_PREFERRED_PROVIDER` | `justwatch` | `justwatch` or `mdblist`: wins when both have an IMDb / RT value |
+| `MDBLIST_API_KEY` | _(empty)_ | Enables MDBList as a ratings provider |
 
 ---
 
