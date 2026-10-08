@@ -163,7 +163,6 @@ make reports-open
 - Container images are built from `Dockerfile` and use `linux/amd64`.
 - Published images use immutable SHA-based tags; tag pushes also publish version tags (`v*`).
 - Trivy fails the workflow on `HIGH`/`CRITICAL` vulnerabilities.
-- Dependabot is configured for Go modules (`/`, `/tools`), GitHub Actions, and `web` npm deps.
 
 ## Endpoints
 

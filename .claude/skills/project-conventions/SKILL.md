@@ -6,7 +6,7 @@ user-invocable: false
 
 # metareel conventions
 
-Go 1.26 service that scrapes FlixPatrol Top 10 charts on a schedule, maps titles to
+Go 1.27 service that scrapes FlixPatrol Top 10 charts on a schedule, maps titles to
 TMDB / IMDb / Rotten Tomatoes, and serves charts, ranking history, ratings and
 new/upcoming releases over a public API plus an admin API + Svelte admin UI.
 
@@ -48,6 +48,6 @@ new/upcoming releases over a public API plus an admin API + Svelte admin UI.
 ## Commands
 
 - `go build ./... && go vet ./... && go test -race -count=1 ./internal/...`
-- `make sqlc` (needs `make tools` once: sqlc v1.29.0, goose v3.25.0)
+- `make sqlc` (needs `make tools` once: sqlc v1.31.1, goose v3.28.0)
 - UI: `cd web && npm run build`
 - A PostToolUse hook gofmts edited Go files and vets their package; fix what it reports.
