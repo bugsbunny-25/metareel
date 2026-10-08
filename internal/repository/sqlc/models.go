@@ -9,6 +9,22 @@ import (
 	"time"
 )
 
+type ApiKey struct {
+	ID         int64        `json:"id"`
+	Name       string       `json:"name"`
+	KeyPrefix  string       `json:"key_prefix"`
+	KeyHash    string       `json:"key_hash"`
+	CreatedAt  time.Time    `json:"created_at"`
+	RotatedAt  sql.NullTime `json:"rotated_at"`
+	LastUsedAt sql.NullTime `json:"last_used_at"`
+}
+
+type AppSetting struct {
+	Key       string    `json:"key"`
+	Value     string    `json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type Ranking struct {
 	ID                int64         `json:"id"`
 	TitleID           int64         `json:"title_id"`
@@ -78,4 +94,30 @@ type Title struct {
 	RtUrl     sql.NullString `json:"rt_url"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+type TitleRating struct {
+	ID          int64          `json:"id"`
+	TmdbKind    string         `json:"tmdb_kind"`
+	TmdbID      string         `json:"tmdb_id"`
+	Title       sql.NullString `json:"title"`
+	Year        sql.NullInt64  `json:"year"`
+	ImdbID      sql.NullString `json:"imdb_id"`
+	JustwatchID sql.NullString `json:"justwatch_id"`
+	RtSlug      sql.NullString `json:"rt_slug"`
+	RefreshedAt time.Time      `json:"refreshed_at"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+type TitleRatingSource struct {
+	ID        int64          `json:"id"`
+	TmdbKind  string         `json:"tmdb_kind"`
+	TmdbID    string         `json:"tmdb_id"`
+	Provider  string         `json:"provider"`
+	Source    string         `json:"source"`
+	Value     float64        `json:"value"`
+	Votes     sql.NullInt64  `json:"votes"`
+	Url       sql.NullString `json:"url"`
+	FetchedAt time.Time      `json:"fetched_at"`
 }

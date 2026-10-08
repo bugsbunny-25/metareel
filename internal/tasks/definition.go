@@ -3,11 +3,17 @@ package tasks
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/hibiken/asynq"
 )
 
 const TypeFlixPatrolScheduleRun = "flixpatrol.top10.scrape"
+
+// FlixPatrolTop10Timeout bounds one schedule run. Runs fetch a FlixPatrol title
+// page for every unmapped title (each behind the schedule's request delay, and
+// slow when routed through FlareSolverr), so asynq's 30m default is too short.
+const FlixPatrolTop10Timeout = 2 * time.Hour
 
 type ScheduleRunPayload struct {
 	ScheduleID int64 `json:"schedule_id"`

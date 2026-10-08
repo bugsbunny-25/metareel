@@ -28,13 +28,13 @@ func NewTop10ReadService(repo *repository.FlixPatrolRepository) *Top10ReadServic
 }
 
 type Top10Query struct {
-	Date        time.Time
+	Date        time.Time // zero = latest scraped chart
 	CountryCode string
 	Provider    string
 }
 
 type Top10Response struct {
-	Date     string        `json:"date"`
+	Date     string        `json:"date"` // requested date, or the newest item date when date was omitted
 	Country  string        `json:"country"`
 	Category string        `json:"category"`
 	Provider string        `json:"provider,omitempty"`
@@ -42,8 +42,12 @@ type Top10Response struct {
 }
 
 type Top10Result struct {
+	Date              string  `json:"date"`
 	Rank              int64   `json:"rank"`
+	PreviousRank      *int64  `json:"previous_rank"` // rank on the chart's previous scraped date; null = new entry
+	DaysInTop10       int64   `json:"days_in_top10"` // dates on this chart up to and including date
 	Provider          string  `json:"provider"`
+	TitleID           int64   `json:"title_id"`
 	Slug              string  `json:"slug"`
 	Name              string  `json:"name"`
 	Kind              string  `json:"kind"`
@@ -74,7 +78,7 @@ func (s *Top10ReadService) getByProvider(ctx context.Context, q Top10Query, cate
 		return nil, err
 	}
 
-	items, err := s.repo.ListTop10ByProvider(ctx, q.Date.UTC(), countryCode, strings.TrimSpace(q.Provider), category)
+	items, err := s.repo.ListTop10ByProvider(ctx, datePtr(q.Date), countryCode, strings.TrimSpace(q.Provider), category)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +95,7 @@ func (s *Top10ReadService) getAllProviders(ctx context.Context, q Top10Query, ca
 		return nil, err
 	}
 
-	items, err := s.repo.ListTop10AllProviders(ctx, q.Date.UTC(), countryCode, category)
+	items, err := s.repo.ListTop10AllProviders(ctx, datePtr(q.Date), countryCode, category)
 	if err != nil {
 		return nil, err
 	}
@@ -103,9 +107,6 @@ func (s *Top10ReadService) getAllProviders(ctx context.Context, q Top10Query, ca
 }
 
 func validateQuery(q Top10Query, providerRequired bool) (string, error) {
-	if q.Date.IsZero() {
-		return "", &ValidationError{Message: "date is required (YYYY-MM-DD)"}
-	}
 	country := strings.TrimSpace(q.CountryCode)
 	if country == "" {
 		return "", &ValidationError{Message: "country is required (ISO code, e.g. US)"}
@@ -121,6 +122,13 @@ func validateQuery(q Top10Query, providerRequired bool) (string, error) {
 }
 
 func buildResponse(date time.Time, countryCode string, category string, provider string, items []repository.Top10Item) *Top10Response {
+	if date.IsZero() {
+		for _, item := range items {
+			if item.RankedOn.After(date) {
+				date = item.RankedOn
+			}
+		}
+	}
 	out := &Top10Response{
 		Date:     date.UTC().Format("2006-01-02"),
 		Country:  countryCode,
@@ -130,8 +138,12 @@ func buildResponse(date time.Time, countryCode string, category string, provider
 	}
 	for _, item := range items {
 		out.Items = append(out.Items, Top10Result{
+			Date:              item.RankedOn.UTC().Format("2006-01-02"),
 			Rank:              item.Rank,
+			PreviousRank:      item.PreviousRank,
+			DaysInTop10:       item.DaysInTop10,
 			Provider:          item.StreamingProvider,
+			TitleID:           item.TitleID,
 			Slug:              item.Slug,
 			Name:              item.Name,
 			Kind:              item.Kind,
@@ -143,3 +155,10 @@ func buildResponse(date time.Time, countryCode string, category string, provider
 	return out
 }
 
+// datePtr maps the zero date ("latest") to nil.
+func datePtr(d time.Time) *time.Time {
+	if d.IsZero() {
+		return nil
+	}
+	return &d
+}

@@ -89,18 +89,20 @@ func (r *TaskScheduleRepository) ListTaskRunsByScheduleID(ctx context.Context, s
 	return out, nil
 }
 
-func (r *TaskScheduleRepository) ListTaskRuns(ctx context.Context, taskType string, limit int64, offset int64) ([]TaskRunRecord, error) {
-	typeFilter := int64(0)
-	trimmedType := strings.TrimSpace(taskType)
-	if trimmedType != "" {
-		typeFilter = 1
-	}
+// TaskRunFilter narrows ListTaskRuns / CountTaskRuns; zero values match all.
+type TaskRunFilter struct {
+	TaskType   string
+	Status     string
+	ScheduleID int64
+}
 
+func (r *TaskScheduleRepository) ListTaskRuns(ctx context.Context, f TaskRunFilter, limit int64, offset int64) ([]TaskRunRecord, error) {
 	rows, err := r.q.ListTaskRuns(ctx, sqlc.ListTaskRunsParams{
-		Column1:  typeFilter,
-		TaskType: trimmedType,
-		Limit:    limit,
-		Offset:   offset,
+		TaskType:   strings.TrimSpace(f.TaskType),
+		Status:     strings.TrimSpace(f.Status),
+		ScheduleID: f.ScheduleID,
+		Limit:      limit,
+		Offset:     offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list task runs: %w", err)
@@ -108,6 +110,60 @@ func (r *TaskScheduleRepository) ListTaskRuns(ctx context.Context, taskType stri
 	out := make([]TaskRunRecord, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, *toTaskRunRecord(row))
+	}
+	return out, nil
+}
+
+func (r *TaskScheduleRepository) CountTaskRuns(ctx context.Context, f TaskRunFilter) (int64, error) {
+	n, err := r.q.CountTaskRuns(ctx, sqlc.CountTaskRunsParams{
+		TaskType:   strings.TrimSpace(f.TaskType),
+		Status:     strings.TrimSpace(f.Status),
+		ScheduleID: f.ScheduleID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("count task runs: %w", err)
+	}
+	return n, nil
+}
+
+// CountTaskRunsByStatusSince counts runs started within the window, keyed
+// by status; since is a SQLite datetime modifier such as "-24 hours".
+func (r *TaskScheduleRepository) CountTaskRunsByStatusSince(ctx context.Context, since string) (map[string]int64, error) {
+	rows, err := r.q.CountTaskRunsByStatusSince(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("count task runs by status: %w", err)
+	}
+	out := map[string]int64{}
+	for _, row := range rows {
+		out[row.Status] = row.Runs
+	}
+	return out, nil
+}
+
+// ListLatestTaskRunPerSchedule returns each schedule's most recent run.
+func (r *TaskScheduleRepository) ListLatestTaskRunPerSchedule(ctx context.Context) ([]TaskRunRecord, error) {
+	rows, err := r.q.ListLatestTaskRunPerSchedule(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list latest task runs: %w", err)
+	}
+	out := make([]TaskRunRecord, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, *toTaskRunRecord(row))
+	}
+	return out, nil
+}
+
+// ListLastSuccessPerSchedule returns when each schedule last succeeded.
+func (r *TaskScheduleRepository) ListLastSuccessPerSchedule(ctx context.Context) (map[int64]time.Time, error) {
+	rows, err := r.q.ListLastSuccessPerSchedule(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list last successful runs: %w", err)
+	}
+	out := map[int64]time.Time{}
+	for _, row := range rows {
+		if t, err := time.Parse("2006-01-02 15:04:05", row.FinishedAt); err == nil {
+			out[row.ScheduleID] = t.UTC()
+		}
 	}
 	return out, nil
 }
@@ -168,3 +224,13 @@ func toTaskRunRecord(row sqlc.TaskRun) *TaskRunRecord {
 	}
 }
 
+
+// FailStaleTaskRuns marks runs still "started" after olderThan (a SQLite
+// datetime modifier such as "-2 hours") as failed, returning how many.
+func (r *TaskScheduleRepository) FailStaleTaskRuns(ctx context.Context, olderThan string) (int64, error) {
+	n, err := r.q.FailStaleTaskRuns(ctx, olderThan)
+	if err != nil {
+		return 0, fmt.Errorf("fail stale task runs: %w", err)
+	}
+	return n, nil
+}

@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '\"file_path\"[[:space:]]*:[[:space:]]*\"[^\"]*\\.env\"'; then echo 'Blocked: .env contains real secrets. Edit .env.example instead.' >&2; exit 2; fi"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-edits.sh",
+            "statusMessage": "Checking protected files"
           }
         ]
       }
@@ -17,7 +18,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "file=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('file_path',''))\") && case \"$file\" in *.go) go vet ./... 2>&1;; esac"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/go-check.sh",
+            "timeout": 120,
+            "statusMessage": "gofmt + go vet"
           }
         ]
       }

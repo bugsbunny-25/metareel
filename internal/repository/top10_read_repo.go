@@ -11,6 +11,7 @@ import (
 
 type Top10Item struct {
 	Rank              int64
+	TitleID           int64
 	RankedOn          time.Time
 	Country           string
 	StreamingProvider string
@@ -21,11 +22,15 @@ type Top10Item struct {
 	TMDBID            *string
 	IMDbID            *string
 	RottenTomatoesURL *string
+	PreviousRank      *int64 // nil if not on the chart's previous scraped date
+	DaysInTop10       int64
 }
 
-func (r *FlixPatrolRepository) ListTop10ByProvider(ctx context.Context, rankedOn time.Time, countryCode string, provider string, category string) ([]Top10Item, error) {
+// ListTop10ByProvider returns one chart. A nil rankedOn means the chart's
+// latest scraped date.
+func (r *FlixPatrolRepository) ListTop10ByProvider(ctx context.Context, rankedOn *time.Time, countryCode string, provider string, category string) ([]Top10Item, error) {
 	rows, err := r.q.ListTop10ByProvider(ctx, sqlc.ListTop10ByProviderParams{
-		RankedOn:          rankedOn,
+		RankedOn:          nullTime(rankedOn),
 		Country:           countryCode,
 		StreamingProvider: provider,
 		Category:          category,
@@ -37,6 +42,7 @@ func (r *FlixPatrolRepository) ListTop10ByProvider(ctx context.Context, rankedOn
 	for _, row := range rows {
 		out = append(out, Top10Item{
 			Rank:              row.Rank,
+			TitleID:           row.TitleID,
 			RankedOn:          row.RankedOn,
 			Country:           toString(row.Country),
 			StreamingProvider: row.StreamingProvider,
@@ -47,14 +53,18 @@ func (r *FlixPatrolRepository) ListTop10ByProvider(ctx context.Context, rankedOn
 			TMDBID:            nullStringPtr(row.TmdbID),
 			IMDbID:            nullStringPtr(row.ImdbID),
 			RottenTomatoesURL: nullStringPtr(row.RtUrl),
+			PreviousRank:      rankPtr(row.PreviousRank),
+			DaysInTop10:       row.DaysInTop10,
 		})
 	}
 	return out, nil
 }
 
-func (r *FlixPatrolRepository) ListTop10AllProviders(ctx context.Context, rankedOn time.Time, countryCode string, category string) ([]Top10Item, error) {
+// ListTop10AllProviders returns every provider's chart for a country. A nil
+// rankedOn means each provider's own latest scraped date.
+func (r *FlixPatrolRepository) ListTop10AllProviders(ctx context.Context, rankedOn *time.Time, countryCode string, category string) ([]Top10Item, error) {
 	rows, err := r.q.ListTop10AllProviders(ctx, sqlc.ListTop10AllProvidersParams{
-		RankedOn: rankedOn,
+		RankedOn: nullTime(rankedOn),
 		Country:  countryCode,
 		Category: category,
 	})
@@ -65,6 +75,7 @@ func (r *FlixPatrolRepository) ListTop10AllProviders(ctx context.Context, ranked
 	for _, row := range rows {
 		out = append(out, Top10Item{
 			Rank:              row.Rank,
+			TitleID:           row.TitleID,
 			RankedOn:          row.RankedOn,
 			Country:           toString(row.Country),
 			StreamingProvider: row.StreamingProvider,
@@ -75,9 +86,99 @@ func (r *FlixPatrolRepository) ListTop10AllProviders(ctx context.Context, ranked
 			TMDBID:            nullStringPtr(row.TmdbID),
 			IMDbID:            nullStringPtr(row.ImdbID),
 			RottenTomatoesURL: nullStringPtr(row.RtUrl),
+			PreviousRank:      rankPtr(row.PreviousRank),
+			DaysInTop10:       row.DaysInTop10,
 		})
 	}
 	return out, nil
+}
+
+// ListTitlesByTmdbIDs returns every title row mapped to one of tmdbIDs, of
+// any kind; callers filter by kind since TMDB movie and TV IDs overlap.
+func (r *FlixPatrolRepository) ListTitlesByTmdbIDs(ctx context.Context, tmdbIDs []string) ([]sqlc.Title, error) {
+	if len(tmdbIDs) == 0 {
+		return nil, nil
+	}
+	ids := make([]sql.NullString, 0, len(tmdbIDs))
+	for _, id := range tmdbIDs {
+		ids = append(ids, sql.NullString{String: id, Valid: true})
+	}
+	rows, err := r.q.ListTitlesByTmdbIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list titles by tmdb ids: %w", err)
+	}
+	return rows, nil
+}
+
+type RankingHistoryFilter struct {
+	Country string     // ISO code; empty = all countries
+	From    *time.Time // inclusive; nil = unbounded
+	To      *time.Time // inclusive; nil = unbounded
+}
+
+type RankingHistoryItem struct {
+	TitleID           int64
+	RankedOn          time.Time
+	Country           string
+	StreamingProvider string
+	Category          string
+	Rank              int64
+}
+
+func (r *FlixPatrolRepository) ListRankingsByTitleIDs(ctx context.Context, titleIDs []int64, f RankingHistoryFilter) ([]RankingHistoryItem, error) {
+	if len(titleIDs) == 0 {
+		return nil, nil
+	}
+	params := sqlc.ListRankingsByTitleIDsParams{TitleIds: titleIDs}
+	if f.Country != "" {
+		params.Country = f.Country
+	}
+	if f.From != nil {
+		params.FromDate = f.From.UTC()
+	}
+	if f.To != nil {
+		params.ToDate = f.To.UTC()
+	}
+	rows, err := r.q.ListRankingsByTitleIDs(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("list rankings by title ids: %w", err)
+	}
+	out := make([]RankingHistoryItem, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, RankingHistoryItem{
+			TitleID:           row.TitleID,
+			RankedOn:          row.RankedOn,
+			Country:           toString(row.Country),
+			StreamingProvider: row.StreamingProvider,
+			Category:          row.Category,
+			Rank:              row.Rank,
+		})
+	}
+	return out, nil
+}
+
+func nullTime(t *time.Time) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: t.UTC(), Valid: true}
+}
+
+// rankPtr converts the queries' previous_rank (0 = not ranked) to a pointer.
+func rankPtr(v any) *int64 {
+	var n int64
+	switch x := v.(type) {
+	case int64:
+		n = x
+	case int:
+		n = int64(x)
+	case float64:
+		n = int64(x)
+	}
+	if n <= 0 {
+		return nil
+	}
+	return &n
 }
 
 func toString(v any) string {
@@ -120,4 +221,3 @@ func nullStringPtr(v any) *string {
 	}
 	return nil
 }
-

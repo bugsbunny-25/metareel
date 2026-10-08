@@ -8,34 +8,192 @@ package sqlc
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
+const listRankingsByTitleIDs = `-- name: ListRankingsByTitleIDs :many
+SELECT title_id, ranked_on, country, streaming_provider, category, rank
+FROM rankings
+WHERE (?1 IS NULL OR country = ?1)
+  AND (?2 IS NULL OR ranked_on >= ?2)
+  AND (?3 IS NULL OR ranked_on <= ?3)
+  AND title_id IN (/*SLICE:title_ids*/?)
+ORDER BY ranked_on, country, streaming_provider, category, rank
+`
+
+type ListRankingsByTitleIDsParams struct {
+	Country  interface{} `json:"country"`
+	FromDate interface{} `json:"from_date"`
+	ToDate   interface{} `json:"to_date"`
+	TitleIds []int64     `json:"title_ids"`
+}
+
+type ListRankingsByTitleIDsRow struct {
+	TitleID           int64       `json:"title_id"`
+	RankedOn          time.Time   `json:"ranked_on"`
+	Country           interface{} `json:"country"`
+	StreamingProvider string      `json:"streaming_provider"`
+	Category          string      `json:"category"`
+	Rank              int64       `json:"rank"`
+}
+
+// The slice must stay last: sqlc numbers the named params ?1..?3 and SQLite
+// numbers the expanded "?" list after them.
+func (q *Queries) ListRankingsByTitleIDs(ctx context.Context, arg ListRankingsByTitleIDsParams) ([]ListRankingsByTitleIDsRow, error) {
+	query := listRankingsByTitleIDs
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.Country)
+	queryParams = append(queryParams, arg.FromDate)
+	queryParams = append(queryParams, arg.ToDate)
+	if len(arg.TitleIds) > 0 {
+		for _, v := range arg.TitleIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:title_ids*/?", strings.Repeat(",?", len(arg.TitleIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:title_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRankingsByTitleIDsRow{}
+	for rows.Next() {
+		var i ListRankingsByTitleIDsRow
+		if err := rows.Scan(
+			&i.TitleID,
+			&i.RankedOn,
+			&i.Country,
+			&i.StreamingProvider,
+			&i.Category,
+			&i.Rank,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTitlesByTmdbIDs = `-- name: ListTitlesByTmdbIDs :many
+
+SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at
+FROM titles
+WHERE tmdb_id IN (/*SLICE:tmdb_ids*/?)
+ORDER BY tmdb_id, id
+`
+
+// Ranking history by TMDB ID. Several FlixPatrol slugs can map to the same
+// TMDB title, so these return every matching title row.
+func (q *Queries) ListTitlesByTmdbIDs(ctx context.Context, tmdbIds []sql.NullString) ([]Title, error) {
+	query := listTitlesByTmdbIDs
+	var queryParams []interface{}
+	if len(tmdbIds) > 0 {
+		for _, v := range tmdbIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:tmdb_ids*/?", strings.Repeat(",?", len(tmdbIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:tmdb_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Title{}
+	for rows.Next() {
+		var i Title
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Kind,
+			&i.TmdbID,
+			&i.ImdbID,
+			&i.RtUrl,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTop10AllProviders = `-- name: ListTop10AllProviders :many
+
 SELECT
     r.ranked_on,
     r.country,
     r.streaming_provider,
     r.category,
     r.rank,
+    t.id AS title_id,
     t.slug,
     t.name,
     t.kind,
     t.tmdb_id,
     t.imdb_id,
-    t.rt_url
+    t.rt_url,
+    COALESCE((
+        SELECT MIN(p.rank)
+        FROM rankings p
+        WHERE p.title_id = r.title_id
+          AND p.country = r.country
+          AND p.streaming_provider = r.streaming_provider
+          AND p.category = r.category
+          AND p.ranked_on = (
+              SELECT MAX(x.ranked_on)
+              FROM rankings x
+              WHERE x.country = r.country
+                AND x.streaming_provider = r.streaming_provider
+                AND x.category = r.category
+                AND x.ranked_on < r.ranked_on
+          )
+    ), 0) AS previous_rank, -- 0 = not on the previous chart
+    (
+        SELECT COUNT(DISTINCT d.ranked_on)
+        FROM rankings d
+        WHERE d.title_id = r.title_id
+          AND d.country = r.country
+          AND d.streaming_provider = r.streaming_provider
+          AND d.category = r.category
+          AND d.ranked_on <= r.ranked_on
+    ) AS days_in_top10
 FROM rankings r
 JOIN titles t ON t.id = r.title_id
-WHERE r.ranked_on = ?
-  AND r.country = ?
-  AND r.category = ?
+WHERE r.country = ?1
+  AND r.category = ?2
+  AND r.ranked_on = COALESCE(?3, (
+      SELECT MAX(l.ranked_on)
+      FROM rankings l
+      WHERE l.country = r.country
+        AND l.streaming_provider = r.streaming_provider
+        AND l.category = r.category
+  ))
 ORDER BY r.streaming_provider ASC, r.rank ASC
 `
 
 type ListTop10AllProvidersParams struct {
-	RankedOn time.Time   `json:"ranked_on"`
-	Country  interface{} `json:"country"`
-	Category string      `json:"category"`
+	Country  interface{}  `json:"country"`
+	Category string       `json:"category"`
+	RankedOn sql.NullTime `json:"ranked_on"`
 }
 
 type ListTop10AllProvidersRow struct {
@@ -44,16 +202,21 @@ type ListTop10AllProvidersRow struct {
 	StreamingProvider string         `json:"streaming_provider"`
 	Category          string         `json:"category"`
 	Rank              int64          `json:"rank"`
+	TitleID           int64          `json:"title_id"`
 	Slug              string         `json:"slug"`
 	Name              string         `json:"name"`
 	Kind              string         `json:"kind"`
 	TmdbID            sql.NullString `json:"tmdb_id"`
 	ImdbID            sql.NullString `json:"imdb_id"`
 	RtUrl             sql.NullString `json:"rt_url"`
+	PreviousRank      interface{}    `json:"previous_rank"`
+	DaysInTop10       int64          `json:"days_in_top10"`
 }
 
+// With ranked_on NULL, each provider's own latest chart is returned, so
+// providers scraped at different times of day are all present.
 func (q *Queries) ListTop10AllProviders(ctx context.Context, arg ListTop10AllProvidersParams) ([]ListTop10AllProvidersRow, error) {
-	rows, err := q.db.QueryContext(ctx, listTop10AllProviders, arg.RankedOn, arg.Country, arg.Category)
+	rows, err := q.db.QueryContext(ctx, listTop10AllProviders, arg.Country, arg.Category, arg.RankedOn)
 	if err != nil {
 		return nil, err
 	}
@@ -67,12 +230,15 @@ func (q *Queries) ListTop10AllProviders(ctx context.Context, arg ListTop10AllPro
 			&i.StreamingProvider,
 			&i.Category,
 			&i.Rank,
+			&i.TitleID,
 			&i.Slug,
 			&i.Name,
 			&i.Kind,
 			&i.TmdbID,
 			&i.ImdbID,
 			&i.RtUrl,
+			&i.PreviousRank,
+			&i.DaysInTop10,
 		); err != nil {
 			return nil, err
 		}
@@ -88,32 +254,65 @@ func (q *Queries) ListTop10AllProviders(ctx context.Context, arg ListTop10AllPro
 }
 
 const listTop10ByProvider = `-- name: ListTop10ByProvider :many
+
 SELECT
     r.ranked_on,
     r.country,
     r.streaming_provider,
     r.category,
     r.rank,
+    t.id AS title_id,
     t.slug,
     t.name,
     t.kind,
     t.tmdb_id,
     t.imdb_id,
-    t.rt_url
+    t.rt_url,
+    COALESCE((
+        SELECT MIN(p.rank)
+        FROM rankings p
+        WHERE p.title_id = r.title_id
+          AND p.country = r.country
+          AND p.streaming_provider = r.streaming_provider
+          AND p.category = r.category
+          AND p.ranked_on = (
+              SELECT MAX(x.ranked_on)
+              FROM rankings x
+              WHERE x.country = r.country
+                AND x.streaming_provider = r.streaming_provider
+                AND x.category = r.category
+                AND x.ranked_on < r.ranked_on
+          )
+    ), 0) AS previous_rank, -- 0 = not on the previous chart
+    (
+        SELECT COUNT(DISTINCT d.ranked_on)
+        FROM rankings d
+        WHERE d.title_id = r.title_id
+          AND d.country = r.country
+          AND d.streaming_provider = r.streaming_provider
+          AND d.category = r.category
+          AND d.ranked_on <= r.ranked_on
+    ) AS days_in_top10
 FROM rankings r
 JOIN titles t ON t.id = r.title_id
-WHERE r.ranked_on = ?
-  AND r.country = ?
-  AND r.streaming_provider = ?
-  AND r.category = ?
+WHERE r.country = ?1
+  AND r.streaming_provider = ?2
+  AND r.category = ?3
+  AND r.ranked_on = COALESCE(?4, (
+      SELECT MAX(l.ranked_on)
+      FROM rankings l
+      WHERE l.country = r.country
+        AND l.streaming_provider = r.streaming_provider
+        AND l.category = r.category
+  ))
 ORDER BY r.rank ASC
 `
 
 type ListTop10ByProviderParams struct {
-	RankedOn          time.Time   `json:"ranked_on"`
-	Country           interface{} `json:"country"`
-	StreamingProvider string      `json:"streaming_provider"`
-	Category          string      `json:"category"`
+	Country           interface{}  `json:"country"`
+	StreamingProvider string       `json:"streaming_provider"`
+	Category          string       `json:"category"`
+	RankedOn          sql.NullTime `json:"ranked_on"`
 }
 
 type ListTop10ByProviderRow struct {
@@ -122,20 +321,29 @@ type ListTop10ByProviderRow struct {
 	StreamingProvider string         `json:"streaming_provider"`
 	Category          string         `json:"category"`
 	Rank              int64          `json:"rank"`
+	TitleID           int64          `json:"title_id"`
 	Slug              string         `json:"slug"`
 	Name              string         `json:"name"`
 	Kind              string         `json:"kind"`
 	TmdbID            sql.NullString `json:"tmdb_id"`
 	ImdbID            sql.NullString `json:"imdb_id"`
 	RtUrl             sql.NullString `json:"rt_url"`
+	PreviousRank      interface{}    `json:"previous_rank"`
+	DaysInTop10       int64          `json:"days_in_top10"`
 }
 
+// Top 10 chart reads. A chart is (country, streaming_provider, category).
+// ranked_on may be NULL to mean the chart's latest scraped date.
+// previous_rank is the title's rank on the chart's previous scraped date
+// (not necessarily the previous calendar day, since scrapes can be missed);
+// NULL means the title was not on that chart. days_in_top10 counts every
+// date the title has been on the chart up to and including ranked_on.
 func (q *Queries) ListTop10ByProvider(ctx context.Context, arg ListTop10ByProviderParams) ([]ListTop10ByProviderRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTop10ByProvider,
-		arg.RankedOn,
 		arg.Country,
 		arg.StreamingProvider,
 		arg.Category,
+		arg.RankedOn,
 	)
 	if err != nil {
 		return nil, err
@@ -150,12 +358,15 @@ func (q *Queries) ListTop10ByProvider(ctx context.Context, arg ListTop10ByProvid
 			&i.StreamingProvider,
 			&i.Category,
 			&i.Rank,
+			&i.TitleID,
 			&i.Slug,
 			&i.Name,
 			&i.Kind,
 			&i.TmdbID,
 			&i.ImdbID,
 			&i.RtUrl,
+			&i.PreviousRank,
+			&i.DaysInTop10,
 		); err != nil {
 			return nil, err
 		}

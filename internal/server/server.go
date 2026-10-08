@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,16 +10,19 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v5"
 
+	"github.com/bugsbunny-25/metareel/internal/client"
 	"github.com/bugsbunny-25/metareel/internal/config"
 	"github.com/bugsbunny-25/metareel/internal/handler"
 	"github.com/bugsbunny-25/metareel/internal/repository"
 	"github.com/bugsbunny-25/metareel/internal/router"
 	"github.com/bugsbunny-25/metareel/internal/scheduler"
 	"github.com/bugsbunny-25/metareel/internal/service"
+	"github.com/bugsbunny-25/metareel/internal/tasks"
 	taskruntime "github.com/bugsbunny-25/metareel/internal/tasks/runtime"
 )
 
@@ -66,6 +70,8 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	worker := asynq.NewServer(redisOpt, asynq.Config{
 		Concurrency: cfg.Asynq.Concurrency,
 		Queues:      map[string]int{cfg.Asynq.Queue: 1},
+		Logger:      scheduler.NewAsynqLogger(log),
+		LogLevel:    scheduler.AsynqLogLevel(cfg.Log.Level),
 	})
 
 	workerErr := make(chan error, 1)
@@ -76,7 +82,9 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		close(workerErr)
 	}()
 
-	periodicManager, err := scheduler.NewPeriodicTaskManager(redisOpt, taskBootstrap.ConfigProvider)
+	go failStaleRuns(ctx, log, taskScheduleRepo)
+
+	periodicManager, err := scheduler.NewPeriodicTaskManager(redisOpt, taskBootstrap.ConfigProvider, log, cfg.Log.Level)
 	if err != nil {
 		return fmt.Errorf("create periodic task manager: %w", err)
 	}
@@ -89,7 +97,32 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}()
 
 	titlesAdmin := service.NewTitleAdminService(flixRepo)
-	h := handler.New(top10Read, taskScheduleAdmin, titlesAdmin)
+	ratings := newRatingsService(log, cfg, db, flixRepo)
+	httpClient := client.New(cfg.HTTP)
+	justWatch := client.NewJustWatchClient(httpClient.GetClient())
+	apiKeys := service.NewAPIKeyService(log, repository.NewAPIKeyRepository(db))
+	if err := apiKeys.Load(ctx); err != nil {
+		return fmt.Errorf("load api keys: %w", err)
+	}
+	keyCount, _ := apiKeys.List(ctx)
+	settings := apiKeys.Settings()
+	log.Info("public api access",
+		slog.Bool("require_api_key", settings.RequireAPIKey),
+		slog.Int("api_keys", len(keyCount)),
+		slog.Int("rate_limit_per_minute", settings.RateLimitPerMinute))
+	if settings.RequireAPIKey && len(keyCount) == 0 {
+		log.Warn("public api requires an API key but none exist yet; create one in the admin UI (Settings)")
+	}
+	h := &handler.Handler{
+		Top10:      top10Read,
+		AdminTasks: taskScheduleAdmin,
+		Titles:     titlesAdmin,
+		Ratings:    ratings,
+		Releases:   service.NewReleasesService(log, justWatch),
+		Candidates: service.NewTitleCandidatesService(log, flixRepo, justWatch, client.NewTMDB(httpClient, cfg.TMDB.APIKey), client.NewRottenTomatoes(cfg.HTTP.Timeout)),
+		Stats:      service.NewAdminStatsService(taskScheduleRepo, flixRepo),
+		APIKeys:    apiKeys,
+	}
 
 	// --- HTTP server ------------------------------------------------------
 	e := echo.New()
@@ -143,4 +176,52 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	log.Info("server stopped cleanly")
 	return nil
+}
+
+func newRatingsService(log *slog.Logger, cfg *config.Config, db *sql.DB, flixRepo *repository.FlixPatrolRepository) *service.RatingsService {
+	httpClient := client.New(cfg.HTTP)
+	mdb := client.NewMDBList(cfg.MDBList.APIKey, cfg.HTTP.Timeout)
+	svc := service.NewRatingsService(log,
+		repository.NewRatingsRepository(db),
+		flixRepo,
+		client.NewJustWatchClient(httpClient.GetClient()),
+		mdb,
+		client.NewRottenTomatoes(cfg.HTTP.Timeout),
+		client.NewTMDB(httpClient, cfg.TMDB.APIKey),
+		service.RatingsServiceConfig{TTL: cfg.Ratings.TTL, PreferredProvider: cfg.Ratings.PreferredProvider},
+	)
+	log.Info("ratings configured",
+		slog.Duration("ttl", cfg.Ratings.TTL),
+		slog.Bool("mdblist", mdb != nil),
+		slog.Bool("tmdb", cfg.TMDB.APIKey != ""),
+		slog.String("preferred_provider", svc.PreferredProvider()))
+	return svc
+}
+
+// failStaleRuns marks runs that never finished (server restarted mid-run, or
+// the task timed out) as failed, at startup and then hourly, so they don't
+// show as running forever.
+func failStaleRuns(ctx context.Context, log *slog.Logger, repo *repository.TaskScheduleRepository) {
+	olderThan := fmt.Sprintf("-%d minutes", int(tasks.FlixPatrolTop10Timeout.Minutes())+10)
+	sweep := func() {
+		n, err := repo.FailStaleTaskRuns(ctx, olderThan)
+		if err != nil {
+			log.Warn("failing stale task runs", slog.Any("err", err))
+			return
+		}
+		if n > 0 {
+			log.Warn("marked interrupted task runs as failed", slog.Int64("runs", n))
+		}
+	}
+	sweep()
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			sweep()
+		}
+	}
 }

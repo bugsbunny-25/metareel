@@ -25,14 +25,19 @@ const (
 
 type Package string
 
+// JustWatch package short names. Some services use a different code per
+// country (e.g. Prime Video is "amp" in US/GB/DE/JP but "prv" in IN/BR).
 const (
-	PackageAmazonPrime   Package = "amp"
-	PackageAppleTVPlus   Package = "apt"
-	PackageDisneyPlus    Package = "dnp"
-	PackageHBOMax        Package = "mxx"
-	PackageNetflix       Package = "nfx"
-	PackageParamountPlus Package = "ppp"
-	PackagePeacock       Package = "pct"
+	PackageAmazonPrime          Package = "amp"
+	PackageAmazonPrimeVideo     Package = "prv"
+	PackageAppleTVPlus          Package = "atp"
+	PackageDisneyPlus           Package = "dnp"
+	PackageHBOMax               Package = "mxx"
+	PackageHBOMaxUNext          Package = "mxu" // JP
+	PackageNetflix              Package = "nfx"
+	PackageParamountPlus        Package = "pmp"
+	PackageParamountPlusPremium Package = "ppp"
+	PackagePeacock              Package = "pct"
 )
 
 type Country string
@@ -64,9 +69,11 @@ type Scoring struct {
 type MovieOrShowFragment struct {
 	Id      string
 	Content struct {
-		Title       string
-		ExternalIds ExternalIds
-		Scoring     Scoring
+		Title               string
+		FullPath            *string
+		OriginalReleaseYear *int
+		ExternalIds         ExternalIds
+		Scoring             Scoring
 	} `graphql:"content(country: $country, language: $language)"`
 }
 
@@ -90,6 +97,12 @@ type GetTitlesByPathQuery struct {
 			MovieOrShowFragment `graphql:"... on MovieOrShow"`
 		}
 	} `graphql:"urlV2(fullPath: $fullPath)"`
+}
+
+type GetTitleByIDQuery struct {
+	Node struct {
+		MovieOrShowFragment `graphql:"... on MovieOrShow"`
+	} `graphql:"node(id: $id)"`
 }
 
 type PageInfo struct {
@@ -124,11 +137,17 @@ func (c *JustWatchClient) GetTitlesByPath(ctx context.Context, fullPath string, 
 	return &query, nil
 }
 
-func (c *JustWatchClient) GetTitlesByTopSearchPopular(ctx context.Context, slug string, country string, language string, objectType ObjectType, pack Package) (*GetTitlesByTopSearchPopularQuery, error) {
+// GetTitlesByTopSearchPopular returns up to first titles matching searchQuery
+// on any of packages, ordered by JustWatch trending rank. No packages
+// searches all services.
+func (c *JustWatchClient) GetTitlesByTopSearchPopular(ctx context.Context, searchQuery string, first int, country string, language string, objectType ObjectType, packages []Package) (*GetTitlesByTopSearchPopularQuery, error) {
 	var query GetTitlesByTopSearchPopularQuery
+	if packages == nil {
+		packages = []Package{}
+	}
 	variables := map[string]interface{}{
 		"popularTitlesSortBy": PopularTitlesSorting("TRENDING"),
-		"first":               graphql.Int(1),
+		"first":               graphql.Int(first),
 		"sortRandomSeed":      graphql.Int(0),
 		"popularAfterCursor":  graphql.String(""),
 		"offset":              graphql.Int(0),
@@ -139,11 +158,11 @@ func (c *JustWatchClient) GetTitlesByTopSearchPopular(ctx context.Context, slug 
 			Genres:                     []string{},
 			ObjectTypes:                []ObjectType{objectType},
 			ProductionCountries:        []string{},
-			Packages:                   []Package{pack},
+			Packages:                   packages,
 			ExcludeIrrelevantTitles:    false,
 			PresentationTypes:          []string{},
 			MonetizationTypes:          []string{},
-			SearchQuery:                slug,
+			SearchQuery:                searchQuery,
 		},
 		"language": Language(language),
 		"country":  Country(country),
@@ -153,4 +172,21 @@ func (c *JustWatchClient) GetTitlesByTopSearchPopular(ctx context.Context, slug 
 		return nil, err
 	}
 	return &query, nil
+}
+
+// GetTitleByID looks a title up by its JustWatch node ID (e.g. "tm1504418").
+func (c *JustWatchClient) GetTitleByID(ctx context.Context, id string, country string, language string) (*MovieOrShowFragment, error) {
+	var query GetTitleByIDQuery
+	variables := map[string]interface{}{
+		"id":       graphql.ID(id),
+		"country":  Country(country),
+		"language": Language(language),
+	}
+	if err := c.client.Query(ctx, &query, variables); err != nil {
+		return nil, err
+	}
+	if query.Node.Id == "" {
+		return nil, nil
+	}
+	return &query.Node.MovieOrShowFragment, nil
 }

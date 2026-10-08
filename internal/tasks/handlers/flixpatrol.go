@@ -49,6 +49,14 @@ func (h *FlixPatrolHandler) ProcessTask(ctx context.Context, t *asynq.Task) erro
 		return err
 	}
 	_ = h.repo.CreateTaskRunLog(ctx, run.ID, "info", fmt.Sprintf("task started (schedule=%d, task_id=%s)", payload.ScheduleID, taskID))
+	h.log.Info("flixpatrol task started",
+		slog.Int64("schedule_id", payload.ScheduleID),
+		slog.String("schedule_name", payload.ScheduleName),
+		slog.String("task_id", taskID),
+		slog.Int64("run_id", run.ID),
+		slog.Int("retry", retryCount),
+		slog.Int("max_retry", maxRetry),
+		slog.Int("targets", len(payload.Targets)))
 
 	targets := make([]service.FlixPatrolScrapeTarget, 0, len(payload.Targets))
 	for _, target := range payload.Targets {
@@ -62,18 +70,35 @@ func (h *FlixPatrolHandler) ProcessTask(ctx context.Context, t *asynq.Task) erro
 		RequestDelay:  time.Duration(payload.RequestDelaySeconds) * time.Second,
 		UserAgent:     payload.UserAgent,
 		RespectRobots: payload.RespectRobots,
+		RunLog: func(level, message string) {
+			// Use a fresh context so the log is kept even if the task's
+			// context was cancelled (e.g. timeout).
+			logCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			if err := h.repo.CreateTaskRunLog(logCtx, run.ID, level, message); err != nil {
+				h.log.Warn("writing task run log failed", slog.Int64("run_id", run.ID), slog.Any("err", err))
+			}
+		},
 	}
 	_ = h.repo.CreateTaskRunLog(ctx, run.ID, "info", fmt.Sprintf("running %d target(s)", len(targets)))
 
 	if err := h.job.RunTargets(ctx, targets, time.Now().UTC(), opts); err != nil {
 		_ = h.repo.CreateTaskRunLog(ctx, run.ID, "error", err.Error())
 		_ = h.repo.CompleteTaskRun(ctx, run.ID, "failed", err.Error())
+		h.log.Error("flixpatrol task failed",
+			slog.Int64("schedule_id", payload.ScheduleID),
+			slog.String("task_id", taskID),
+			slog.Int64("run_id", run.ID),
+			slog.String("schedule_name", payload.ScheduleName),
+			slog.Int("retry", retryCount),
+			slog.Int("max_retry", maxRetry),
+			slog.Any("err", err))
 		return err
 	}
 	_ = h.repo.CreateTaskRunLog(ctx, run.ID, "info", "task succeeded")
 	_ = h.repo.CompleteTaskRun(ctx, run.ID, "succeeded", "")
 
-	h.log.Info("flixpatrol task completed", slog.Int64("schedule_id", payload.ScheduleID), slog.String("schedule_name", payload.ScheduleName))
+	h.log.Info("flixpatrol task completed", slog.Int64("schedule_id", payload.ScheduleID), slog.String("schedule_name", payload.ScheduleName), slog.String("task_id", taskID), slog.Int64("run_id", run.ID))
 	return nil
 }
 

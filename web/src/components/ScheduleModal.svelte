@@ -1,198 +1,148 @@
 <script>
   import { untrack } from 'svelte'
-  import { COUNTRIES, PROVIDERS, createSchedule, updateSchedule } from '../lib/api.js'
+  import { createSchedule, updateSchedule, addScheduleTargets } from '../lib/api.js'
+  import { COUNTRIES, PROVIDERS, providerLabel, countryName } from '../lib/constants.js'
+  import { utcTimeToLocal } from '../lib/format.js'
+  import { toast } from '../lib/toast.svelte.js'
+  import Modal from './Modal.svelte'
+  import Icon from './Icon.svelte'
 
-  let { schedule, onclose, onsave } = $props()
+  let { schedule, onclose, onsaved } = $props()
 
   const isEdit = $derived(schedule != null)
+  const initial = untrack(() => schedule)
 
-  let name       = $state(untrack(() => schedule?.name ?? ''))
-  let enabled    = $state(untrack(() => schedule?.enabled ?? true))
-  let runtimes   = $state(untrack(() => (schedule?.utc_runtimes ?? []).join(', ')))
-  let maxRetries = $state(untrack(() => schedule?.max_retries ?? 3))
-  let delay      = $state(untrack(() => schedule?.request_delay_seconds ?? 10))
-  let robots     = $state(untrack(() => schedule?.respect_robots ?? true))
-  let userAgent  = $state(untrack(() => schedule?.user_agent ?? 'metareel-flixpatrol-bot/0.1'))
-  let selectedCountry = $state(COUNTRIES[0]?.code ?? '')
-  let selectedProvider = $state(
-    PROVIDERS.find((provider) => provider.value)?.value ?? ''
-  )
-  let targets = $state([])
-
+  let name = $state(initial?.name ?? '')
+  let enabled = $state(initial?.enabled ?? true)
+  let runtimes = $state([...(initial?.utc_runtimes ?? [])])
+  let newTime = $state('')
+  let maxRetries = $state(initial?.max_retries ?? 2)
+  let delay = $state(initial?.request_delay_seconds ?? 5)
+  let robots = $state(initial?.respect_robots ?? false)
+  let userAgent = $state(initial?.user_agent ?? 'metareel-flixpatrol-bot/0.1')
+  const existingTargets = initial?.flixpatrol_targets ?? []
+  let newTargets = $state([])
+  let country = $state('US')
+  let provider = $state('netflix')
   let saving = $state(false)
-  let error  = $state('')
+  let error = $state('')
 
-  function parseRuntimes(raw) {
-    return raw.split(',').map(s => s.trim()).filter(Boolean)
-  }
+  const tkey = (t) => `${t.country_code}/${t.provider_slug}`
 
-  function targetKey(target) {
-    return `${target.country_code}/${target.provider_slug}`
-  }
-
-  function addTarget() {
-    const countryCode = selectedCountry.trim().toUpperCase()
-    const providerSlug = selectedProvider.trim().toLowerCase()
-    if (!countryCode || !providerSlug) {
-      error = 'Select both country and provider to add a target.'
+  function addTime() {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(newTime)) {
+      error = 'Run time must be HH:MM (24-hour, UTC).'
       return
     }
-
-    const nextTarget = { country_code: countryCode, provider_slug: providerSlug }
-    if (targets.some((target) => targetKey(target) === targetKey(nextTarget))) {
-      error = 'That country/provider combination is already added.'
-      return
-    }
-
-    targets = [...targets, nextTarget]
+    if (!runtimes.includes(newTime)) runtimes = [...runtimes, newTime].sort()
+    newTime = ''
     error = ''
   }
 
-  function removeTarget(targetToRemove) {
-    targets = targets.filter((target) => targetKey(target) !== targetKey(targetToRemove))
+  function addTarget() {
+    const t = { country_code: country, provider_slug: provider }
+    if ([...existingTargets, ...newTargets].some((x) => tkey(x) === tkey(t))) {
+      error = `${countryName(country)} · ${providerLabel(provider)} is already a target.`
+      return
+    }
+    newTargets = [...newTargets, t]
+    error = ''
   }
 
   async function save() {
+    error = ''
+    if (!name.trim()) return (error = 'Name is required.')
+    if (runtimes.length === 0) return (error = 'Add at least one run time.')
+    if (!isEdit && newTargets.length === 0) return (error = 'Add at least one country / provider target.')
     saving = true
-    error  = ''
+    const body = {
+      name: name.trim(), enabled, utc_runtimes: runtimes, max_retries: Number(maxRetries),
+      request_delay_seconds: Number(delay), respect_robots: robots, user_agent: userAgent,
+    }
     try {
-      const utcRuntimes = parseRuntimes(runtimes)
-      if (utcRuntimes.length === 0) { error = 'At least one run time is required.'; saving = false; return }
-
-      let savedSchedule
       if (isEdit) {
-        savedSchedule = await updateSchedule(schedule.id, {
-          name, enabled,
-          utc_runtimes: utcRuntimes,
-          max_retries: Number(maxRetries),
-          request_delay_seconds: Number(delay),
-          respect_robots: robots,
-          user_agent: userAgent,
-        })
+        await updateSchedule(schedule.id, body)
+        if (newTargets.length) await addScheduleTargets(schedule.id, newTargets)
       } else {
-        if (targets.length === 0) { error = 'Add at least one country/provider target.'; saving = false; return }
-        savedSchedule = await createSchedule({
-          task_type: 'flixpatrol.top10.scrape',
-          name, enabled,
-          utc_runtimes: utcRuntimes,
-          max_retries: Number(maxRetries),
-          request_delay_seconds: Number(delay),
-          respect_robots: robots,
-          user_agent: userAgent,
-          task_details: { targets },
-        })
+        await createSchedule({ ...body, task_type: 'flixpatrol.top10.scrape', task_details: { targets: newTargets } })
       }
-      onsave(savedSchedule)
+      toast.success(`Schedule "${body.name}" ${isEdit ? 'updated' : 'created'}`)
+      onsaved()
     } catch (e) {
       error = e.message
     } finally {
       saving = false
     }
   }
-
-  function onBackdropClick(e) {
-    if (e.target === e.currentTarget) onclose()
-  }
 </script>
 
-<div
-  class="modal-backdrop"
-  onclick={onBackdropClick}
-  onkeydown={(e) => { if (e.key === 'Escape') onclose() }}
-  role="dialog"
-  aria-modal="true"
-  tabindex="-1"
->
-  <div class="modal modal-lg">
-    <div class="modal-title">{isEdit ? 'Edit schedule' : 'New schedule'}</div>
-    {#if isEdit}
-      <div class="modal-subtitle">{schedule.task_type}</div>
-    {/if}
-
-    <div class="form-row">
-      <div class="form-field" style="flex:1">
-        <label class="form-label" for="sched-name">Name</label>
-        <input id="sched-name" class="form-input" type="text" bind:value={name} placeholder="My schedule" />
-      </div>
-      <div class="form-field form-field-inline">
-        <label class="form-label" for="sched-enabled">Enabled</label>
-        <input id="sched-enabled" type="checkbox" bind:checked={enabled} class="form-checkbox" />
-      </div>
-    </div>
-
-    <div class="form-field">
-      <label class="form-label" for="sched-runtimes">Run times (UTC, comma-separated)</label>
-      <input id="sched-runtimes" class="form-input" type="text" bind:value={runtimes} placeholder="09:00, 18:00" />
-    </div>
-
-    <div class="form-row">
-      <div class="form-field" style="flex:1">
-        <label class="form-label" for="sched-retries">Max retries</label>
-        <input id="sched-retries" class="form-input" type="number" min="0" bind:value={maxRetries} />
-      </div>
-      <div class="form-field" style="flex:1">
-        <label class="form-label" for="sched-delay">Request delay (s)</label>
-        <input id="sched-delay" class="form-input" type="number" min="0" bind:value={delay} />
-      </div>
-      <div class="form-field form-field-inline">
-        <label class="form-label" for="sched-robots">Respect robots</label>
-        <input id="sched-robots" type="checkbox" bind:checked={robots} class="form-checkbox" />
-      </div>
-    </div>
-
-    <div class="form-field">
-      <label class="form-label" for="sched-ua">User agent</label>
-      <input id="sched-ua" class="form-input" type="text" bind:value={userAgent} />
-    </div>
-
-    {#if !isEdit}
-      <div class="form-field">
-        <div class="form-label">Targets (country + provider)</div>
-        <div class="form-row">
-          <div class="form-field" style="flex:1">
-            <label class="form-label" for="sched-target-country">Country</label>
-            <select id="sched-target-country" class="form-input" bind:value={selectedCountry}>
-              {#each COUNTRIES as country}
-                <option value={country.code}>{country.name} ({country.code})</option>
-              {/each}
-            </select>
-          </div>
-          <div class="form-field" style="flex:1">
-            <label class="form-label" for="sched-target-provider">Provider</label>
-            <select id="sched-target-provider" class="form-input" bind:value={selectedProvider}>
-              {#each PROVIDERS.filter((provider) => provider.value) as provider}
-                <option value={provider.value}>{provider.label}</option>
-              {/each}
-            </select>
-          </div>
-          <div class="form-field" style="justify-content:flex-end;display:flex">
-            <button class="btn" type="button" onclick={addTarget}>Add target</button>
-          </div>
-        </div>
-        {#if targets.length === 0}
-          <div class="state-msg" style="margin-top:8px">No targets added yet.</div>
-        {:else}
-          <div style="margin-top:8px">
-            {#each targets as target (targetKey(target))}
-              <div class="form-row" style="align-items:center; margin-bottom:6px">
-                <div class="cell-mono" style="flex:1">{target.country_code}/{target.provider_slug}</div>
-                <button class="btn btn-sm" type="button" onclick={() => removeTarget(target)}>Delete</button>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    {/if}
-
-    {#if error}
-      <div class="error-msg">{error}</div>
-    {/if}
-
-    <div class="modal-actions">
-      <button class="btn" onclick={onclose}>Cancel</button>
-      <button class="btn btn-primary" onclick={save} disabled={saving}>
-        {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create'}
-      </button>
+<Modal title={isEdit ? `Edit "${schedule.name}"` : 'New schedule'} {onclose} large>
+  <div class="field-row">
+    <label class="field">
+      <span class="field-label">Name</span>
+      <input class="input" bind:value={name} placeholder="e.g. us-daily" />
+    </label>
+    <div class="field">
+      <span class="field-label">Status</span>
+      <label class="checkbox" style="height:32px"><input type="checkbox" bind:checked={enabled} />Enabled</label>
     </div>
   </div>
-</div>
+
+  <div class="field">
+    <span class="field-label">Run times (UTC)</span>
+    <div class="row" style="flex-wrap:wrap">
+      {#each runtimes as rt (rt)}
+        <span class="chip"><span class="mono">{rt}</span><span class="muted small">{utcTimeToLocal(rt)} local</span>
+          <button onclick={() => (runtimes = runtimes.filter((x) => x !== rt))} aria-label="Remove {rt}"><Icon name="x" size={11} /></button></span>
+      {/each}
+      <input class="input mono" style="width:90px" bind:value={newTime} placeholder="HH:MM" onkeydown={(e) => e.key === 'Enter' && addTime()} />
+      <button class="btn btn-sm" onclick={addTime}><Icon name="plus" size={12} />Add</button>
+    </div>
+    <span class="field-hint">FlixPatrol publishes the day's chart around 12:00 UTC; earlier runs fetch the previous day.</span>
+  </div>
+
+  <div class="field-row">
+    <label class="field">
+      <span class="field-label">Max retries per target</span>
+      <input class="input" type="number" min="0" bind:value={maxRetries} />
+    </label>
+    <label class="field">
+      <span class="field-label">Delay between requests (s)</span>
+      <input class="input" type="number" min="0" bind:value={delay} />
+    </label>
+    <div class="field">
+      <span class="field-label">robots.txt</span>
+      <label class="checkbox" style="height:32px"><input type="checkbox" bind:checked={robots} />Respect</label>
+    </div>
+  </div>
+
+  <label class="field">
+    <span class="field-label">User agent</span>
+    <input class="input mono" bind:value={userAgent} />
+  </label>
+
+  <div class="field">
+    <span class="field-label">Targets</span>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">
+      {#each existingTargets as t (tkey(t))}<span class="chip">{countryName(t.country_code)} · {providerLabel(t.provider_slug)}</span>{/each}
+      {#each newTargets as t (tkey(t))}
+        <span class="chip" style="background:var(--accent-soft)">{countryName(t.country_code)} · {providerLabel(t.provider_slug)}
+          <button onclick={() => (newTargets = newTargets.filter((x) => tkey(x) !== tkey(t)))} aria-label="Remove"><Icon name="x" size={11} /></button></span>
+      {/each}
+      {#if !existingTargets.length && !newTargets.length}<span class="muted small">No targets yet.</span>{/if}
+    </div>
+    <div class="row">
+      <select class="select grow" bind:value={country}>{#each COUNTRIES as c (c.code)}<option value={c.code}>{c.name}</option>{/each}</select>
+      <select class="select grow" bind:value={provider}>{#each PROVIDERS as p (p.value)}<option value={p.value}>{p.label}</option>{/each}</select>
+      <button class="btn" onclick={addTarget}><Icon name="plus" size={14} />Add target</button>
+    </div>
+    {#if isEdit}<span class="field-hint">Existing targets can't be removed here yet; new ones are added when you save.</span>{/if}
+  </div>
+
+  {#if error}<div class="alert alert-error small"><Icon name="alert" size={14} />{error}</div>{/if}
+
+  {#snippet footer()}
+    <button class="btn" onclick={onclose}>Cancel</button>
+    <button class="btn btn-primary" onclick={save} disabled={saving}>{saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create schedule'}</button>
+  {/snippet}
+</Modal>

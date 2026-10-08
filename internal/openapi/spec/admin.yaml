@@ -253,13 +253,25 @@ paths:
   /api/v1/admin/task-runs:
     get:
       operationId: listTaskRuns
-      summary: List task runs (paged)
+      summary: List task runs (paged, newest first; the total is in the X-Total-Count header)
       parameters:
         - name: task_type
           in: query
           required: false
           schema:
             type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [started, succeeded, failed]
+        - name: schedule_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
         - $ref: "#/components/parameters/LimitParam"
         - $ref: "#/components/parameters/OffsetParam"
       responses:
@@ -343,6 +355,165 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/stats:
+    get:
+      operationId: getAdminStats
+      summary: Dashboard summary (run counts, schedule health, mapping coverage)
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                type: object
+                description: >
+                  schedules {total, enabled}; runs {running, last_24h, last_7d}
+                  (counts by status); schedule_health [{schedule_id, name,
+                  enabled, utc_runtimes, next_run_at, last_run, last_success_at}];
+                  titles {total, missing_tmdb, missing_imdb, missing_rt};
+                  rankings {total, latest_date}
+
+  /api/v1/admin/titles/{id}/candidates:
+    get:
+      operationId: getTitleCandidates
+      summary: Suggest TMDB / IMDb / Rotten Tomatoes matches for a title
+      description: Searches JustWatch, TMDB (needs TMDB_API_KEY) and Rotten Tomatoes by name.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: name
+          in: query
+          required: false
+          schema: { type: string, description: "Default: the title's name" }
+        - name: year
+          in: query
+          required: false
+          schema: { type: integer, description: "Default: the slug's year suffix" }
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string, enum: [movie, tv_show] }
+      responses:
+        "200":
+          description: Candidates per provider (justwatch, tmdb, rotten_tomatoes) and any provider errors
+        "404":
+          description: Title not found
+
+  /api/v1/admin/api-keys:
+    get:
+      operationId: listApiKeys
+      summary: List API keys (secrets are never returned)
+      responses:
+        "200":
+          description: Keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiKey"
+    post:
+      operationId: createApiKey
+      summary: Generate an API key for the public API
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+              required: [name]
+      responses:
+        "201":
+          description: The new key, including the secret `key` (shown only once)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeySecret"
+
+  /api/v1/admin/api-keys/{id}:
+    patch:
+      operationId: renameApiKey
+      summary: Rename an API key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+              required: [name]
+      responses:
+        "200":
+          description: Renamed key
+    delete:
+      operationId: deleteApiKey
+      summary: Revoke (delete) an API key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "204":
+          description: Revoked
+        "404":
+          description: Not found
+
+  /api/v1/admin/api-keys/{id}/rotate:
+    post:
+      operationId: rotateApiKey
+      summary: Replace a key's secret; the old secret stops working immediately
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: The key with its new secret (shown only once)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeySecret"
+
+  /api/v1/admin/settings:
+    get:
+      operationId: getSettings
+      summary: Public API access settings
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicApiSettings"
+    patch:
+      operationId: updateSettings
+      summary: Update public API access settings (omitted fields are unchanged)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicApiSettings"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicApiSettings"
 
 components:
   parameters:
@@ -606,3 +777,31 @@ components:
           type: string
           format: date-time
       required: [id, run_id, level, message, created_at]
+
+    ApiKey:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        prefix: { type: string, description: "First characters of the key, e.g. mr_Ab3dEf…" }
+        created_at: { type: string, format: date-time }
+        rotated_at: { type: string, format: date-time, nullable: true }
+        last_used_at: { type: string, format: date-time, nullable: true }
+
+    ApiKeySecret:
+      allOf:
+        - $ref: "#/components/schemas/ApiKey"
+        - type: object
+          properties:
+            key: { type: string, description: The full key. Not stored; copy it now. }
+
+    PublicApiSettings:
+      type: object
+      properties:
+        require_api_key:
+          type: boolean
+          description: Require a key on every non-admin /api/v1 endpoint (default true)
+        rate_limit_per_minute:
+          type: integer
+          minimum: 0
+          description: Requests per minute per key (or per client IP without keys); 0 = off. Default 300.
