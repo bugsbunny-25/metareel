@@ -6,7 +6,7 @@ user-invocable: false
 
 # metareel conventions
 
-Go 1.25 service that scrapes FlixPatrol Top 10 charts on a schedule, maps titles to
+Go 1.26 service that scrapes FlixPatrol Top 10 charts on a schedule, maps titles to
 TMDB / IMDb / Rotten Tomatoes, and serves charts, ranking history, ratings and
 new/upcoming releases over a public API plus an admin API + Svelte admin UI.
 
@@ -29,7 +29,7 @@ new/upcoming releases over a public API plus an admin API + Svelte admin UI.
 ## Rules
 
 - **Errors → HTTP status**: `*service.ValidationError` → 400, `sql.ErrNoRows` / `ErrTitleNotFound` → 404, upstream failures (`ErrUpstream`, `ErrRatingsUnavailable`) → 502, else 500 with a generic message. Never return internal error text for 500s.
-- **Secrets**: API keys never appear in logs, run logs, errors or task payloads. Wrap HTTP client errors from keyed APIs with `redactErr` (`internal/client/redact.go`). Public API keys are stored only as SHA-256 hashes.
+- **Secrets**: API keys never appear in logs, run logs, errors or task payloads. Wrap HTTP client errors from keyed APIs with `redactErr` (`internal/client/redact.go`). Public API keys are stored only as PBKDF2-SHA256 digests (`hashAPIKey`); never a bare fast hash (CodeQL flags it).
 - **Logging**: `log/slog` JSON. Log failures at warn/error with context (ids, url, provider), successes at info/debug. Background job progress also goes to the run log via `FlixPatrolRunOptions.RunLog` (shown in the admin UI) — keep those messages human-readable.
 - **External calls**: always a timeout and a `ctx`; long jobs check `ctx.Done()`; be polite (request delays for FlixPatrol).
 - **Kinds**: `titles.kind` is `movie | tv_show` and is the TMDB namespace of `tmdb_id`; it can differ from the chart category (a special in the TV chart can be a movie). TMDB-keyed URLs use `movie | tv`. `rankings.category` is `movies | tv_shows`.

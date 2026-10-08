@@ -22,7 +22,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: 1.26.2
+          go-version: 1.26.8
           cache: true
 
       - name: Run local CI parity checks
@@ -81,7 +81,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: 1.26.2
+          go-version: 1.26.8
           cache: true
 
       - name: Prepare runtime directories
@@ -100,7 +100,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: 1.26.2
+          go-version: 1.26.8
           cache: true
 
       - name: Run govulncheck

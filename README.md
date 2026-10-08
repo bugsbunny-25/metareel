@@ -198,7 +198,7 @@ Every `/api/v1` route outside `/api/v1/admin` needs an API key, sent as
 `/docs` stay open.
 
 - Create, rotate, rename and revoke keys in the admin console under
-  **Settings & API keys**. A key is shown once; only its SHA-256 hash is stored.
+  **Settings & API keys**. A key is shown once; only a PBKDF2-SHA256 digest of it is stored.
   Rotating replaces the secret immediately.
 - Requests are rate limited per key (default 300/min, 0 = off); over the
   limit the API answers 429 with `Retry-After`.

@@ -1,11 +1,11 @@
 -- +goose Up
--- API keys for the public (non-admin) API. Only a SHA-256 hash of each key
+-- API keys for the public (non-admin) API. Only a PBKDF2-SHA256 digest of each key
 -- is stored; the key itself is shown once, when created or rotated.
 CREATE TABLE api_keys (
     id            INTEGER PRIMARY KEY,
     name          TEXT NOT NULL,
     key_prefix    TEXT NOT NULL,          -- first characters, to recognise a key in the UI
-    key_hash      TEXT NOT NULL UNIQUE,   -- hex SHA-256 of the full key
+    key_hash      TEXT NOT NULL UNIQUE,   -- hex PBKDF2-SHA256 of the full key (see hashAPIKey)
     created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     rotated_at    DATETIME,
     last_used_at  DATETIME

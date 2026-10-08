@@ -8,7 +8,7 @@ first. Review the diff (and the code it touches) for:
 
 **Secrets**
 - API keys (TMDB_API_KEY, MDBLIST_API_KEY, public API keys) in logs, task-run logs (shown in the admin UI), error messages, HTTP responses or Asynq payloads. TMDB and MDBList put keys in the query string — transport errors must go through `redactErr`.
-- Public API keys must only be stored as SHA-256 hashes; plaintext is returned once (create/rotate) and never listed or logged.
+- Public API keys must only be stored as PBKDF2-SHA256 digests (`hashAPIKey`), never plaintext or a bare fast hash; plaintext is returned once (create/rotate) and never listed or logged.
 
 **Public vs admin API**
 - New data routes belong in `registerReadRoutes` (key-protected public copy + admin copy); admin-only actions only on the `/api/v1/admin` group. Flag anything mutating that becomes reachable without a key unintentionally, or admin features added to the public group.

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
@@ -46,7 +47,7 @@ type APIKeyService struct {
 	now  func() time.Time
 
 	mu         sync.RWMutex
-	keysByHash map[string]int64 // sha256 hex -> key id
+	keysByHash map[string]int64 // hashAPIKey digest -> key id
 	settings   PublicAPISettings
 	limiters   map[string]*rate.Limiter // by key id or client IP
 	lastTouch  map[int64]time.Time
@@ -325,9 +326,22 @@ func generateAPIKey() (key, prefix, hash string, err error) {
 	return key, key[:apiKeyDisplayLen], hashAPIKey(key), nil
 }
 
+// API keys are 256-bit random values, so a slow, salted-per-key hash isn't
+// needed against brute force; a deterministic PBKDF2 (fixed salt, modest
+// iterations, ~0.4ms) keeps lookups by digest possible while using a proper
+// KDF rather than a bare hash.
+var apiKeyHashSalt = []byte("metareel/api-key/v1")
+
+const apiKeyHashIterations = 4096
+
+// hashAPIKey returns the hex digest stored for a key ("" if hashing fails,
+// which matches no stored key).
 func hashAPIKey(key string) string {
-	sum := sha256.Sum256([]byte(key))
-	return hex.EncodeToString(sum[:])
+	sum, err := pbkdf2.Key(sha256.New, key, apiKeyHashSalt, apiKeyHashIterations, 32)
+	if err != nil {
+		return ""
+	}
+	return hex.EncodeToString(sum)
 }
 
 func toAPIKeyResponse(k repository.APIKeyRecord) APIKeyResponse {
