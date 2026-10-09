@@ -10,11 +10,19 @@ import (
 )
 
 type Querier interface {
+	// Forgets a title's IDs and queues it for a fresh match.
+	ClearTitleMatch(ctx context.Context, id int64) (Title, error)
 	CompleteTaskRun(ctx context.Context, arg CompleteTaskRunParams) error
+	CountIMDbRatings(ctx context.Context) (int64, error)
+	CountNetflixTitlesByMatchStatus(ctx context.Context) ([]CountNetflixTitlesByMatchStatusRow, error)
+	// Runs of a schedule started recently and not finished (overlap guard).
+	CountRunningTaskRuns(ctx context.Context, arg CountRunningTaskRunsParams) (int64, error)
 	CountTaskRuns(ctx context.Context, arg CountTaskRunsParams) (int64, error)
 	// since is a SQLite datetime modifier, e.g. '-24 hours'.
 	CountTaskRunsByStatusSince(ctx context.Context, since string) ([]CountTaskRunsByStatusSinceRow, error)
 	CountTitles(ctx context.Context, arg CountTitlesParams) (int64, error)
+	CountTitlesByMatchStatus(ctx context.Context) ([]CountTitlesByMatchStatusRow, error)
+	CountTmdbTitles(ctx context.Context) (CountTmdbTitlesRow, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskRunLog(ctx context.Context, arg CreateTaskRunLogParams) error
@@ -22,26 +30,87 @@ type Querier interface {
 	CreateTaskScheduleRunTime(ctx context.Context, arg CreateTaskScheduleRunTimeParams) error
 	CreateTaskScheduleTarget(ctx context.Context, arg CreateTaskScheduleTargetParams) error
 	DeleteAPIKey(ctx context.Context, id int64) (int64, error)
+	DeleteChartRankings(ctx context.Context, arg DeleteChartRankingsParams) error
+	DeleteNetflixMostPopular(ctx context.Context) error
+	// Retention: drop logs of runs that started before the cutoff.
+	DeleteTaskRunLogsBefore(ctx context.Context, olderThan string) (int64, error)
+	DeleteTaskRunsBefore(ctx context.Context, olderThan string) (int64, error)
 	DeleteTaskScheduleRunTimesByScheduleID(ctx context.Context, scheduleID int64) error
+	DeleteTaskScheduleTargets(ctx context.Context, scheduleID int64) error
 	DeleteTitleRatingSourcesByProvider(ctx context.Context, arg DeleteTitleRatingSourcesByProviderParams) error
+	DeleteTmdbWatchProviders(ctx context.Context, arg DeleteTmdbWatchProvidersParams) error
+	EnsureNetflixTitle(ctx context.Context, arg EnsureNetflixTitleParams) (NetflixTitle, error)
+	// Titles (movies + tv shows) + daily rankings (Top 10).
+	// Scrapes only record that a slug exists; matching (kind, IDs) is the
+	// enrichment job's, so an existing title keeps its kind and IDs.
+	EnsureTitle(ctx context.Context, arg EnsureTitleParams) (Title, error)
 	// Runs still "started" long after the task timeout were interrupted (e.g. the
 	// server restarted mid-run); asynq retries the task as a new run.
 	FailStaleTaskRuns(ctx context.Context, olderThan string) (int64, error)
 	// Back-fill IDs found while rating onto scraped titles that lack them.
 	FillTitleExternalIDs(ctx context.Context, arg FillTitleExternalIDsParams) error
+	// FlixPatrol titles of a kind with this exact name (case-insensitive) that
+	// charted on Netflix, to match Netflix titles without another lookup.
+	FindFlixPatrolTitlesByName(ctx context.Context, arg FindFlixPatrolTitlesByNameParams) ([]Title, error)
+	FindTitlesByIMDb(ctx context.Context, imdbID sql.NullString) ([]Title, error)
+	FindTmdbRefsByIMDb(ctx context.Context, imdbID sql.NullString) ([]FindTmdbRefsByIMDbRow, error)
+	// Operations: settings lookups, chart freshness.
+	GetAppSetting(ctx context.Context, key string) (string, error)
+	// File imports: Netflix official Top 10 and IMDb ratings.
+	GetDataImport(ctx context.Context, source string) (DataImport, error)
+	GetIMDbRating(ctx context.Context, imdbID string) (ImdbRating, error)
+	// The most recent chart a title appeared on (matching searches that
+	// country and service first).
+	GetLatestChartForTitle(ctx context.Context, titleID int64) (GetLatestChartForTitleRow, error)
+	GetPreviousChartSnapshot(ctx context.Context, arg GetPreviousChartSnapshotParams) (ChartSnapshot, error)
 	GetTaskRunByID(ctx context.Context, id int64) (TaskRun, error)
 	GetTaskScheduleByID(ctx context.Context, id int64) (TaskSchedule, error)
 	GetTitleByID(ctx context.Context, id int64) (Title, error)
 	GetTitleBySlug(ctx context.Context, slug string) (Title, error)
 	// On-demand ratings cache, keyed by TMDB namespace ('movie' | 'tv') + ID.
 	GetTitleRatings(ctx context.Context, arg GetTitleRatingsParams) (TitleRating, error)
+	GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (TmdbTitle, error)
+	InsertNetflixMostPopular(ctx context.Context, arg InsertNetflixMostPopularParams) error
+	InsertRanking(ctx context.Context, arg InsertRankingParams) error
 	InsertTitleRatingSource(ctx context.Context, arg InsertTitleRatingSourceParams) error
+	InsertTmdbWatchProvider(ctx context.Context, arg InsertTmdbWatchProviderParams) error
+	LatestNetflixCountryWeek(ctx context.Context, country string) (string, error)
+	LatestNetflixGlobalWeek(ctx context.Context) (string, error)
 	// API keys for the public API, and admin-editable settings.
 	ListAPIKeys(ctx context.Context) ([]ApiKey, error)
+	// Distinct targets of every FlixPatrol schedule (enabled or not).
+	ListAllFlixPatrolTargets(ctx context.Context) ([]ListAllFlixPatrolTargetsRow, error)
 	ListAppSettings(ctx context.Context) ([]AppSetting, error)
+	// Every stored chart: date range, number of dates, last scrape.
+	ListChartCatalog(ctx context.Context) ([]ListChartCatalogRow, error)
+	// Charts stored or re-scraped after a timestamp ('YYYY-MM-DD HH:MM:SS' UTC).
+	ListChartChangesSince(ctx context.Context, arg ListChartChangesSinceParams) ([]ChartSnapshot, error)
+	ListChartDates(ctx context.Context, arg ListChartDatesParams) ([]ListChartDatesRow, error)
+	// Chart entries over a date range, for history, movers, leaderboards and
+	// analytics (computed in Go). Empty filters match all.
+	ListChartEntries(ctx context.Context, arg ListChartEntriesParams) ([]ListChartEntriesRow, error)
+	// Dates with both categories stored for a chart in [from, to].
+	ListChartSnapshotDates(ctx context.Context, arg ListChartSnapshotDatesParams) ([]string, error)
+	ListChartSnapshotsForDate(ctx context.Context, arg ListChartSnapshotsForDateParams) ([]ChartSnapshot, error)
+	ListDataImports(ctx context.Context) ([]DataImport, error)
 	ListEnabledTaskSchedules(ctx context.Context) ([]TaskSchedule, error)
+	ListIMDbRatings(ctx context.Context, ids []string) ([]ImdbRating, error)
+	// Every IMDb ID metareel knows, for filtering the IMDb ratings dataset.
+	ListKnownIMDbIDs(ctx context.Context) ([]sql.NullString, error)
 	ListLastSuccessPerSchedule(ctx context.Context) ([]ListLastSuccessPerScheduleRow, error)
+	// Latest stored date and scrape time of each country and provider chart.
+	ListLatestChartDates(ctx context.Context) ([]ListLatestChartDatesRow, error)
 	ListLatestTaskRunPerSchedule(ctx context.Context) ([]TaskRun, error)
+	ListNetflixCountriesByTmdb(ctx context.Context, arg ListNetflixCountriesByTmdbParams) ([]NetflixTop10Country, error)
+	ListNetflixCountryWeek(ctx context.Context, arg ListNetflixCountryWeekParams) ([]ListNetflixCountryWeekRow, error)
+	ListNetflixGlobalByTmdb(ctx context.Context, arg ListNetflixGlobalByTmdbParams) ([]NetflixTop10Global, error)
+	// Global weekly rows with TMDB IDs in a week range, for calibration.
+	ListNetflixGlobalRange(ctx context.Context, arg ListNetflixGlobalRangeParams) ([]ListNetflixGlobalRangeRow, error)
+	ListNetflixGlobalWeek(ctx context.Context, arg ListNetflixGlobalWeekParams) ([]ListNetflixGlobalWeekRow, error)
+	ListNetflixMostPopular(ctx context.Context, category string) ([]ListNetflixMostPopularRow, error)
+	// first_week is the first week the title was in any imported list
+	// (YYYY-MM-DD, or '' if only in the most-popular list).
+	ListNetflixTitlesDueForMatch(ctx context.Context, limit int64) ([]ListNetflixTitlesDueForMatchRow, error)
 	// The slice must stay last: sqlc numbers the named params ?1..?3 and SQLite
 	// numbers the expanded "?" list after them.
 	ListRankingsByTitleIDs(ctx context.Context, arg ListRankingsByTitleIDsParams) ([]ListRankingsByTitleIDsRow, error)
@@ -59,9 +128,28 @@ type Querier interface {
 	// sqlc does not rewrite params inside ORDER BY, so the sort key comes in
 	// through this one-row subquery.
 	ListTitles(ctx context.Context, arg ListTitlesParams) ([]ListTitlesRow, error)
+	ListTitlesByIDs(ctx context.Context, ids []int64) ([]Title, error)
 	// Ranking history by TMDB ID. Several FlixPatrol slugs can map to the same
 	// TMDB title, so these return every matching title row.
 	ListTitlesByTmdbIDs(ctx context.Context, tmdbIds []sql.NullString) ([]Title, error)
+	ListTitlesByTmdbRef(ctx context.Context, arg ListTitlesByTmdbRefParams) ([]Title, error)
+	// Unmatched titles whose backoff has expired, never-tried first, then the
+	// most recently charting.
+	ListTitlesDueForMatch(ctx context.Context, limit int64) ([]Title, error)
+	// Matched titles still without a Rotten Tomatoes slug whose backoff has expired.
+	ListTitlesDueForRT(ctx context.Context, limit int64) ([]Title, error)
+	// Matched titles on any chart since a date (YYYY-MM-DD), most recent first.
+	ListTmdbRefsChartingSince(ctx context.Context, arg ListTmdbRefsChartingSinceParams) ([]ListTmdbRefsChartingSinceRow, error)
+	// Matched TMDB titles (from FlixPatrol or Netflix titles) whose details are
+	// missing or older than the refresh window. Recently charting titles use the
+	// short window (watch providers change), the rest the long one.
+	// Windows are SQLite datetime modifiers, e.g. '-3 days' and '-30 days'.
+	ListTmdbRefsDueForDetails(ctx context.Context, arg ListTmdbRefsDueForDetailsParams) ([]ListTmdbRefsDueForDetailsRow, error)
+	// Matched TMDB titles never looked up on Wikidata, or not in the window.
+	ListTmdbRefsDueForWikidata(ctx context.Context, arg ListTmdbRefsDueForWikidataParams) ([]ListTmdbRefsDueForWikidataRow, error)
+	// Callers filter by kind (TMDB movie and TV IDs overlap).
+	ListTmdbTitlesByIDs(ctx context.Context, ids []string) ([]TmdbTitle, error)
+	ListTmdbWatchProviders(ctx context.Context, arg ListTmdbWatchProvidersParams) ([]TmdbWatchProvider, error)
 	// With ranked_on NULL, each provider's own latest chart is returned, so
 	// providers scraped at different times of day are all present.
 	ListTop10AllProviders(ctx context.Context, arg ListTop10AllProvidersParams) ([]ListTop10AllProvidersRow, error)
@@ -74,16 +162,40 @@ type Querier interface {
 	ListTop10ByProvider(ctx context.Context, arg ListTop10ByProviderParams) ([]ListTop10ByProviderRow, error)
 	RankingStats(ctx context.Context) (RankingStatsRow, error)
 	RenameAPIKey(ctx context.Context, arg RenameAPIKeyParams) (ApiKey, error)
+	// Puts a title back in the matching queue (due now), clearing a manual lock.
+	ResetTitleMatch(ctx context.Context, id int64) (Title, error)
 	RotateAPIKey(ctx context.Context, arg RotateAPIKeyParams) (ApiKey, error)
+	SaveDataImport(ctx context.Context, arg SaveDataImportParams) error
+	SaveFlixPatrolDetails(ctx context.Context, arg SaveFlixPatrolDetailsParams) error
+	SaveNetflixTitleMatch(ctx context.Context, arg SaveNetflixTitleMatchParams) error
+	// Fills IDs found later (TMDB external IDs, Wikidata); never overwrites.
+	SaveTitleExternalIDs(ctx context.Context, arg SaveTitleExternalIDsParams) error
+	// Records one matching attempt. retry_after is a SQLite datetime modifier
+	// ('+3 days'); an empty tmdb_id leaves the title unmatched. Never touches
+	// manual titles.
+	SaveTitleMatch(ctx context.Context, arg SaveTitleMatchParams) (Title, error)
+	// Records one Rotten Tomatoes lookup; rt_url empty = not found, retry after
+	// retry_after (a SQLite datetime modifier).
+	SaveTitleRTAttempt(ctx context.Context, arg SaveTitleRTAttemptParams) error
+	SetAppSetting(ctx context.Context, arg SetAppSettingParams) error
 	TitleMappingStats(ctx context.Context) (TitleMappingStatsRow, error)
 	TouchAPIKey(ctx context.Context, id int64) error
+	// Unmatched titles per country they charted in, from a date on.
+	UnmatchedTitlesByCountry(ctx context.Context, since string) ([]UnmatchedTitlesByCountryRow, error)
 	UpdateTaskSchedule(ctx context.Context, arg UpdateTaskScheduleParams) (TaskSchedule, error)
+	// Admin correction: marks the title as a manual match so automation leaves it alone.
 	UpdateTitleIDs(ctx context.Context, arg UpdateTitleIDsParams) (Title, error)
 	UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) error
-	UpsertRanking(ctx context.Context, arg UpsertRankingParams) (Ranking, error)
-	// Titles (movies + tv shows) + daily rankings (Top 10).
-	UpsertTitle(ctx context.Context, arg UpsertTitleParams) (Title, error)
+	UpsertChartSnapshot(ctx context.Context, arg UpsertChartSnapshotParams) error
+	UpsertIMDbRating(ctx context.Context, arg UpsertIMDbRatingParams) error
+	UpsertNetflixCountry(ctx context.Context, arg UpsertNetflixCountryParams) error
+	UpsertNetflixGlobal(ctx context.Context, arg UpsertNetflixGlobalParams) error
 	UpsertTitleRatings(ctx context.Context, arg UpsertTitleRatingsParams) (TitleRating, error)
+	// TMDB metadata, watch providers and Wikidata IDs per TMDB title.
+	UpsertTmdbTitleDetails(ctx context.Context, arg UpsertTmdbTitleDetailsParams) error
+	UpsertTmdbTitleWikidata(ctx context.Context, arg UpsertTmdbTitleWikidataParams) error
+	// Share of chart entries whose title has a TMDB ID, per ISO week, from a date on.
+	WeeklyMappingCoverage(ctx context.Context, since string) ([]WeeklyMappingCoverageRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

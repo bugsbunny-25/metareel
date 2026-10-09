@@ -52,9 +52,11 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	log.Info("database ready", slog.String("dsn", cfg.Database.URL))
 
-	taskBootstrap := taskruntime.Build(log, cfg, db)
 	flixRepo := repository.NewFlixPatrolRepository(db)
 	taskScheduleRepo := repository.NewTaskScheduleRepository(db)
+	importsRepo := repository.NewImportsRepository(db)
+	metadataRepo := repository.NewMetadataRepository(db)
+	analyticsRepo := repository.NewAnalyticsRepository(db)
 	top10Read := service.NewTop10ReadService(flixRepo)
 
 	redisOpt := asynq.RedisClientOpt{
@@ -64,6 +66,9 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	asynqClient := asynq.NewClient(redisOpt)
 	defer asynqClient.Close()
+
+	ratings := newRatingsService(log, cfg, db, flixRepo).WithIMDbDataset(importsRepo)
+	taskBootstrap := taskruntime.Build(log, cfg, db, taskruntime.Deps{Asynq: asynqClient, Ratings: ratings})
 
 	taskScheduleAdmin := service.NewTaskScheduleAdminService(taskScheduleRepo, asynqClient, cfg.Asynq.Queue)
 
@@ -97,7 +102,6 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}()
 
 	titlesAdmin := service.NewTitleAdminService(flixRepo)
-	ratings := newRatingsService(log, cfg, db, flixRepo)
 	httpClient := client.New(cfg.HTTP)
 	justWatch := client.NewJustWatchClient(httpClient.GetClient())
 	apiKeys := service.NewAPIKeyService(log, repository.NewAPIKeyRepository(db))
@@ -122,6 +126,13 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Candidates: service.NewTitleCandidatesService(log, flixRepo, justWatch, client.NewTMDB(httpClient, cfg.TMDB.APIKey), client.NewRottenTomatoes(cfg.HTTP.Timeout)),
 		Stats:      service.NewAdminStatsService(taskScheduleRepo, flixRepo),
 		APIKeys:    apiKeys,
+		Health:     service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
+
+		Charts:    service.NewChartsService(analyticsRepo),
+		Overview:  service.NewTitleOverviewService(analyticsRepo, flixRepo, metadataRepo, ratings),
+		Analytics: service.NewAnalyticsService(analyticsRepo, metadataRepo, importsRepo, repository.NewRatingsRepository(db)),
+		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,
+			taskScheduleRepo, taskBootstrap.Maintenance),
 	}
 
 	// --- HTTP server ------------------------------------------------------
@@ -202,7 +213,7 @@ func newRatingsService(log *slog.Logger, cfg *config.Config, db *sql.DB, flixRep
 // the task timed out) as failed, at startup and then hourly, so they don't
 // show as running forever.
 func failStaleRuns(ctx context.Context, log *slog.Logger, repo *repository.TaskScheduleRepository) {
-	olderThan := fmt.Sprintf("-%d minutes", int(tasks.FlixPatrolTop10Timeout.Minutes())+10)
+	olderThan := fmt.Sprintf("-%d minutes", int(tasks.MaxTimeout.Minutes())+10)
 	sweep := func() {
 		n, err := repo.FailStaleTaskRuns(ctx, olderThan)
 		if err != nil {

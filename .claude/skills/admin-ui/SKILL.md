@@ -11,8 +11,8 @@ served by the Go server; the dev server proxies `/api` (`npm run dev`).
 ## Layout
 
 - `src/App.svelte` — sidebar `NAV` (path → page component), stats badges, theme toggle.
-- `src/pages/*` — one file per page; drawers (`TitleDrawer`, `RunDrawer`) are opened via the `open` query param.
-- `src/components/*` — `Pagination`, `SortTh`, `Drawer`, `Modal`, `ConfirmDialog`, `Toasts`, `Icon` (inline SVG set), `RunStatus`, `KindBadge`, `IdCell`, `RankChart`, `ScheduleModal`.
+- `src/pages/*` — one file per page; drawers (`TitleDrawer`, `RunDrawer`) are opened via the `open` query param. `Insights` (leaderboard / movers / Netflix official / analytics tabs, `tab` query param) and `DataHealth` (data-quality report + run-job buttons). Tabbed pages must tag loaded data with its tab (`loaded = {tab, data}`) — rendering one tab's data in another tab's markup throws and freezes the page.
+- `src/components/*` — `Pagination`, `SortTh`, `Drawer`, `Modal`, `ConfirmDialog`, `Toasts`, `Icon` (inline SVG set), `RunStatus` (incl. `partial`), `KindBadge`, `IdCell`, `RankChart`, `ScheduleModal` (all job types; targets only for scrapes), `BackfillModal`.
 - `src/lib/router.svelte.js` — hash router: `route.path`, `route.query`; `setQuery(patch, {replace})`, `navigate`, `href`, `intParam`.
 - `src/lib/api.js` — **all calls go to `/api/v1/admin`** (the UI never uses the key-protected public routes). `listRuns` returns `{items, total}` from `X-Total-Count`.
 - `src/lib/format.js` — dates (UTC-safe), durations, `shortError`, ID/URL parsers (`parseTmdbInput`, `parseImdbId`, `parseRtSlug`), `links`, `downloadCSV`.

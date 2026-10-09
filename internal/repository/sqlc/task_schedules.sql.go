@@ -10,9 +10,9 @@ import (
 )
 
 const createTaskSchedule = `-- name: CreateTaskSchedule :one
-INSERT INTO task_schedules (task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, created_at, updated_at
+INSERT INTO task_schedules (task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, backfill_days, recheck_hours)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, backfill_days, recheck_hours, created_at, updated_at
 `
 
 type CreateTaskScheduleParams struct {
@@ -23,6 +23,8 @@ type CreateTaskScheduleParams struct {
 	RequestDelaySeconds int64  `json:"request_delay_seconds"`
 	RespectRobots       bool   `json:"respect_robots"`
 	UserAgent           string `json:"user_agent"`
+	BackfillDays        int64  `json:"backfill_days"`
+	RecheckHours        int64  `json:"recheck_hours"`
 }
 
 func (q *Queries) CreateTaskSchedule(ctx context.Context, arg CreateTaskScheduleParams) (TaskSchedule, error) {
@@ -34,6 +36,8 @@ func (q *Queries) CreateTaskSchedule(ctx context.Context, arg CreateTaskSchedule
 		arg.RequestDelaySeconds,
 		arg.RespectRobots,
 		arg.UserAgent,
+		arg.BackfillDays,
+		arg.RecheckHours,
 	)
 	var i TaskSchedule
 	err := row.Scan(
@@ -45,6 +49,8 @@ func (q *Queries) CreateTaskSchedule(ctx context.Context, arg CreateTaskSchedule
 		&i.RequestDelaySeconds,
 		&i.RespectRobots,
 		&i.UserAgent,
+		&i.BackfillDays,
+		&i.RecheckHours,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -93,8 +99,17 @@ func (q *Queries) DeleteTaskScheduleRunTimesByScheduleID(ctx context.Context, sc
 	return err
 }
 
+const deleteTaskScheduleTargets = `-- name: DeleteTaskScheduleTargets :exec
+DELETE FROM task_schedule_targets WHERE schedule_id = ?
+`
+
+func (q *Queries) DeleteTaskScheduleTargets(ctx context.Context, scheduleID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteTaskScheduleTargets, scheduleID)
+	return err
+}
+
 const getTaskScheduleByID = `-- name: GetTaskScheduleByID :one
-SELECT id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, created_at, updated_at
+SELECT id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, backfill_days, recheck_hours, created_at, updated_at
 FROM task_schedules
 WHERE id = ?
 `
@@ -111,14 +126,53 @@ func (q *Queries) GetTaskScheduleByID(ctx context.Context, id int64) (TaskSchedu
 		&i.RequestDelaySeconds,
 		&i.RespectRobots,
 		&i.UserAgent,
+		&i.BackfillDays,
+		&i.RecheckHours,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const listAllFlixPatrolTargets = `-- name: ListAllFlixPatrolTargets :many
+SELECT DISTINCT t.country_slug, t.provider_slug
+FROM task_schedule_targets t
+JOIN task_schedules s ON s.id = t.schedule_id
+WHERE s.task_type = 'flixpatrol.top10.scrape'
+ORDER BY t.country_slug, t.provider_slug
+`
+
+type ListAllFlixPatrolTargetsRow struct {
+	CountrySlug  string `json:"country_slug"`
+	ProviderSlug string `json:"provider_slug"`
+}
+
+// Distinct targets of every FlixPatrol schedule (enabled or not).
+func (q *Queries) ListAllFlixPatrolTargets(ctx context.Context) ([]ListAllFlixPatrolTargetsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllFlixPatrolTargets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAllFlixPatrolTargetsRow{}
+	for rows.Next() {
+		var i ListAllFlixPatrolTargetsRow
+		if err := rows.Scan(&i.CountrySlug, &i.ProviderSlug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEnabledTaskSchedules = `-- name: ListEnabledTaskSchedules :many
-SELECT id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, created_at, updated_at
+SELECT id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, backfill_days, recheck_hours, created_at, updated_at
 FROM task_schedules
 WHERE enabled = 1
 ORDER BY id ASC
@@ -142,6 +196,8 @@ func (q *Queries) ListEnabledTaskSchedules(ctx context.Context) ([]TaskSchedule,
 			&i.RequestDelaySeconds,
 			&i.RespectRobots,
 			&i.UserAgent,
+			&i.BackfillDays,
+			&i.RecheckHours,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -224,7 +280,7 @@ func (q *Queries) ListTaskScheduleTargetsByScheduleID(ctx context.Context, sched
 }
 
 const listTaskSchedules = `-- name: ListTaskSchedules :many
-SELECT id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, created_at, updated_at
+SELECT id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, backfill_days, recheck_hours, created_at, updated_at
 FROM task_schedules
 WHERE (? = 0 OR enabled = ?)
   AND (? = 0 OR task_type = ?)
@@ -261,6 +317,8 @@ func (q *Queries) ListTaskSchedules(ctx context.Context, arg ListTaskSchedulesPa
 			&i.RequestDelaySeconds,
 			&i.RespectRobots,
 			&i.UserAgent,
+			&i.BackfillDays,
+			&i.RecheckHours,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -281,9 +339,10 @@ const updateTaskSchedule = `-- name: UpdateTaskSchedule :one
 UPDATE task_schedules
 SET name = ?, enabled = ?, max_retries = ?,
     request_delay_seconds = ?, respect_robots = ?, user_agent = ?,
+    backfill_days = ?, recheck_hours = ?,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, created_at, updated_at
+RETURNING id, task_type, name, enabled, max_retries, request_delay_seconds, respect_robots, user_agent, backfill_days, recheck_hours, created_at, updated_at
 `
 
 type UpdateTaskScheduleParams struct {
@@ -293,6 +352,8 @@ type UpdateTaskScheduleParams struct {
 	RequestDelaySeconds int64  `json:"request_delay_seconds"`
 	RespectRobots       bool   `json:"respect_robots"`
 	UserAgent           string `json:"user_agent"`
+	BackfillDays        int64  `json:"backfill_days"`
+	RecheckHours        int64  `json:"recheck_hours"`
 	ID                  int64  `json:"id"`
 }
 
@@ -304,6 +365,8 @@ func (q *Queries) UpdateTaskSchedule(ctx context.Context, arg UpdateTaskSchedule
 		arg.RequestDelaySeconds,
 		arg.RespectRobots,
 		arg.UserAgent,
+		arg.BackfillDays,
+		arg.RecheckHours,
 		arg.ID,
 	)
 	var i TaskSchedule
@@ -316,6 +379,8 @@ func (q *Queries) UpdateTaskSchedule(ctx context.Context, arg UpdateTaskSchedule
 		&i.RequestDelaySeconds,
 		&i.RespectRobots,
 		&i.UserAgent,
+		&i.BackfillDays,
+		&i.RecheckHours,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

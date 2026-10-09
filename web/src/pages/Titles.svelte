@@ -18,9 +18,12 @@
     id: 'id_asc', '-id': '',
   }
 
+  const MATCH_BADGE = { matched: 'badge-success', manual: 'badge-accent', unmatched: 'badge-warning', pending: '' }
+
   const q = $derived(route.query.q ?? '')
   const kind = $derived(route.query.kind ?? '')
   const missing = $derived(route.query.missing ?? '')
+  const matchStatus = $derived(route.query.match ?? '')
   const sort = $derived(route.query.sort ?? '-id')
   const page = $derived(intParam(route.query.page, 1))
   const size = $derived(intParam(route.query.size, 50))
@@ -33,7 +36,7 @@
   let searchInput = $state()
 
   $effect(() => {
-    const params = { q, kind, missing, sort: SERVER_SORT[sort] ?? '', limit: size, offset: (page - 1) * size }
+    const params = { q, kind, missing, match_status: matchStatus, sort: SERVER_SORT[sort] ?? '', limit: size, offset: (page - 1) * size }
     reloadTick
     loading = true
     let cancelled = false
@@ -53,7 +56,7 @@
 
   const set = (patch) => setQuery({ ...patch, page: '' })
   const activeFilters = $derived(
-    [q && ['q', `Search: ${q}`], kind && ['kind', kind === 'movie' ? 'Movies' : 'TV'], missing && ['missing', `Missing ${missing.toUpperCase()}`]].filter(Boolean)
+    [q && ['q', `Search: ${q}`], kind && ['kind', kind === 'movie' ? 'Movies' : 'TV'], missing && ['missing', `Missing ${missing.toUpperCase()}`], matchStatus && ['match', `Match: ${matchStatus}`]].filter(Boolean)
   )
 
   function onkeydown(e) {
@@ -105,6 +108,13 @@
       <option value="imdb">Missing IMDb ID</option>
       <option value="rt">Missing Rotten Tomatoes</option>
     </select>
+    <select class="select" value={matchStatus} onchange={(e) => set({ match: e.currentTarget.value, sort: e.currentTarget.value === 'unmatched' && sort === '-id' ? '-rankings' : sort })} aria-label="Match status">
+      <option value="">Any match status</option>
+      <option value="unmatched">Unmatched (review queue)</option>
+      <option value="pending">Pending (not tried yet)</option>
+      <option value="matched">Matched automatically</option>
+      <option value="manual">Fixed by hand</option>
+    </select>
     <span class="spacer"></span>
     {#if loading}<span class="spinner"></span>{/if}
   </div>
@@ -114,7 +124,7 @@
       {#each activeFilters as [key, label] (key)}
         <span class="chip">{label}<button onclick={() => set({ [key]: '' })} aria-label="Remove filter"><Icon name="x" size={11} /></button></span>
       {/each}
-      <button class="btn btn-ghost btn-sm" onclick={() => set({ q: '', kind: '', missing: '' })}>Clear all</button>
+      <button class="btn btn-ghost btn-sm" onclick={() => set({ q: '', kind: '', missing: '', match: '' })}>Clear all</button>
     </div>
   {/if}
 
@@ -127,6 +137,7 @@
           <tr>
             <SortTh label="Title" field="name" {sort} onsort={(s) => set({ sort: s })} />
             <th>Kind</th>
+            <th>Match</th>
             <th>TMDB</th>
             <th>IMDb</th>
             <th>Rotten Tomatoes</th>
@@ -143,6 +154,10 @@
                 <div class="cell-sub mono">{t.slug}</div>
               </td>
               <td><KindBadge kind={t.kind} /></td>
+              <td class="nowrap" title={t.next_match_at ? `Next attempt ${dateTime(t.next_match_at)}` : (t.match_source ?? '')}>
+                <span class="badge {MATCH_BADGE[t.match_status] ?? ''}">{t.match_status}</span>
+                {#if t.match_status === 'unmatched'}<span class="muted small"> ×{t.match_attempts}</span>{/if}
+              </td>
               <td><IdCell value={t.tmdb_id} url={links.tmdb(t.kind, t.tmdb_id)} /></td>
               <td><IdCell value={t.imdb_id} url={links.imdb(t.imdb_id)} /></td>
               <td><IdCell value={t.rt_url} url={links.rt(t.rt_url)} /></td>
@@ -151,7 +166,7 @@
               <td class="nowrap muted" title={dateTime(t.updated_at)}>{relativeTime(t.updated_at)}</td>
             </tr>
           {:else}
-            <tr><td colspan="8">
+            <tr><td colspan="9">
               <div class="empty">
                 {#if loading}Loading…{:else}<div class="empty-title">No titles match</div>Try a different search or clear the filters.{/if}
               </div>

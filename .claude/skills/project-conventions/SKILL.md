@@ -17,12 +17,12 @@ new/upcoming releases over a public API plus an admin API + Svelte admin UI.
 | `cmd/server` | Entry point. `cmd/fpcheck` = one-off scrape + mapping check (no DB). |
 | `internal/router` | Route registration. `registerReadRoutes` is mounted twice: on the public group (API-key middleware) and under `/api/v1/admin` (no key, used by the UI). Admin-only routes go on `admin` only. |
 | `internal/handler` | Thin: parse/validate input → call service → map errors to status. `admin.go` holds admin/key/settings handlers + `RequireAPIKey` middleware. |
-| `internal/service` | Business logic. One service per concern: `top10_read`, `title_rankings`, `title_admin`, `title_candidates`, `ratings`, `releases`, `api_keys`, `admin_stats`, `task_schedule_admin`, `flixpatrol_job` (+ `title_match`). |
+| `internal/service` | Business logic. One service per concern: reads (`top10_read`, `title_rankings`, `charts`, `title_overview`, `analytics`, `ratings` + `ratings_batch`, `releases`), admin (`title_admin`, `title_candidates`, `api_keys`, `admin_stats`, `task_schedule_admin`, `admin_jobs`, `data_quality`), jobs (`flixpatrol_job`, `title_enrich` + `title_matcher` + `title_match`, `title_metadata`, `netflix_import`, `imdb_import`, `maintenance`, `alerts`, `health`). |
 | `internal/repository` | Wrappers over sqlc code; convert `sql.Null*` ↔ pointers. Never put SQL here. |
 | `internal/repository/sqlc` | **Generated. Never edit** (a hook blocks it). See the `database-changes` skill. |
 | `internal/client` | Typed clients: JustWatch GraphQL, TMDB, Rotten Tomatoes (Algolia), MDBList, Wikidata, FlareSolverr. See `external-providers`. |
 | `internal/scraper/flixpatrol` | FlixPatrol parsing behind the `Fetcher` interface (`CollyFetcher` or `FlareSolverrFetcher`, wrapped in `LoggingFetcher`). |
-| `internal/tasks`, `internal/scheduler` | Asynq task payloads/handlers; DB-driven periodic schedules; slog adapter for asynq logs. |
+| `internal/tasks`, `internal/scheduler` | Task types (`tasks.Types`), payloads and `tasks.ForSchedule` (task + options incl. `asynq.Unique`); `handlers.Runner` records runs for every job; DB-driven periodic schedules for every type. |
 | `internal/config` | Env config (caarlos0/env). Every new var → `config.go`, `.env.example`, `docs/architecture.md` table. |
 | `web/` | Svelte 5 admin UI, built to `web/dist`, served by the Go server. See `admin-ui`. |
 
@@ -44,6 +44,14 @@ new/upcoming releases over a public API plus an admin API + Svelte admin UI.
 4. OpenAPI: `internal/openapi/spec/public.yaml` or `admin.yaml` (validate YAML; quote descriptions containing `: `).
 5. README endpoint table; `docs/architecture.md` if a flow changed.
 6. Verify live (see `local-verification`): auth (401 without key on public routes), happy path, error codes.
+
+## Adding a background job (checklist)
+
+1. Task type constant in `internal/tasks/definition.go` (+ `Types`, `Timeout`), description in `service/admin_jobs.go` (`taskTypeInfo`).
+2. Service with `Run(ctx, …, runLog)` returning a JSON-able summary; errors only for real failures.
+3. `handlers.JobFunc` in `tasks/handlers/jobs.go`, registered in `tasks/runtime/bootstrap.go`.
+4. Optional default schedule (migration insert); docs: README "Jobs", `docs/architecture.md` jobs table.
+5. FlixPatrol fetches must use the shared `SerialFetcher` (bootstrap), never a new fetcher.
 
 ## Commands
 

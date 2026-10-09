@@ -11,16 +11,20 @@
   import Schedules from './pages/Schedules.svelte'
   import Runs from './pages/Runs.svelte'
   import Settings from './pages/Settings.svelte'
+  import Insights from './pages/Insights.svelte'
+  import DataHealth from './pages/DataHealth.svelte'
 
   const NAV = [
     { section: 'Data' },
     { path: '/', label: 'Overview', icon: 'dashboard', page: Dashboard },
     { path: '/top10', label: 'Top 10 charts', icon: 'chart', page: Top10 },
+    { path: '/insights', label: 'Insights', icon: 'sparkles', page: Insights },
     { path: '/titles', label: 'Titles & mapping', icon: 'film', page: Titles, badge: 'missing' },
     { path: '/releases', label: 'New & upcoming', icon: 'calendar', page: Releases },
     { section: 'Jobs' },
     { path: '/schedules', label: 'Schedules', icon: 'clock', page: Schedules },
     { path: '/runs', label: 'Job runs', icon: 'list', page: Runs, badge: 'running' },
+    { path: '/data-health', label: 'Data health', icon: 'alert', page: DataHealth },
     { section: 'System' },
     { path: '/settings', label: 'Settings & API keys', icon: 'settings', page: Settings },
   ]

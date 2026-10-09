@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -15,48 +16,35 @@ import (
 	"github.com/bugsbunny-25/metareel/internal/tasks"
 )
 
+// recheckInterval is how often a target whose chart FlixPatrol has not
+// published yet is checked again (within the schedule's recheck_hours).
+const recheckInterval = time.Hour
+
 type FlixPatrolHandler struct {
-	log  *slog.Logger
-	job  *service.FlixPatrolJob
-	repo *repository.TaskScheduleRepository
+	log    *slog.Logger
+	runner *Runner
+	job    *service.FlixPatrolJob
+	asynq  *asynq.Client // enqueues re-checks and enrichment; optional
+	queue  string
 }
 
-func NewFlixPatrolHandler(log *slog.Logger, repo *repository.TaskScheduleRepository, job *service.FlixPatrolJob) *FlixPatrolHandler {
-	return &FlixPatrolHandler{log: log, repo: repo, job: job}
+func NewFlixPatrolHandler(log *slog.Logger, runner *Runner, job *service.FlixPatrolJob, asynqClient *asynq.Client, queue string) *FlixPatrolHandler {
+	return &FlixPatrolHandler{log: log, runner: runner, job: job, asynq: asynqClient, queue: queue}
 }
 
 func (h *FlixPatrolHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
 	var payload tasks.FlixPatrolTop10Payload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
-		return fmt.Errorf("unmarshal flixpatrol task payload: %w", err)
+		return fmt.Errorf("unmarshal flixpatrol task payload: %w: %w", err, asynq.SkipRetry)
 	}
 	if len(payload.Targets) == 0 {
-		return fmt.Errorf("schedule %d has no targets in payload", payload.ScheduleID)
+		return fmt.Errorf("schedule %d has no targets in payload: %w", payload.ScheduleID, asynq.SkipRetry)
 	}
 
-	taskID, _ := asynq.GetTaskID(ctx)
-	retryCount, _ := asynq.GetRetryCount(ctx)
-	maxRetry, _ := asynq.GetMaxRetry(ctx)
-
-	run, err := h.repo.CreateTaskRun(ctx, repository.CreateTaskRunInput{
-		ScheduleID:  payload.ScheduleID,
-		TaskType:    tasks.TypeFlixPatrolScheduleRun,
-		AsynqTaskID: taskID,
-		RetryCount:  int64(retryCount),
-		MaxRetry:    int64(maxRetry),
-	})
+	run, err := h.runner.Start(ctx, tasks.TypeFlixPatrolScheduleRun, payload.ScheduleID, payload.ScheduleName)
 	if err != nil {
 		return err
 	}
-	_ = h.repo.CreateTaskRunLog(ctx, run.ID, "info", fmt.Sprintf("task started (schedule=%d, task_id=%s)", payload.ScheduleID, taskID))
-	h.log.Info("flixpatrol task started",
-		slog.Int64("schedule_id", payload.ScheduleID),
-		slog.String("schedule_name", payload.ScheduleName),
-		slog.String("task_id", taskID),
-		slog.Int64("run_id", run.ID),
-		slog.Int("retry", retryCount),
-		slog.Int("max_retry", maxRetry),
-		slog.Int("targets", len(payload.Targets)))
 
 	targets := make([]service.FlixPatrolScrapeTarget, 0, len(payload.Targets))
 	for _, target := range payload.Targets {
@@ -66,43 +54,145 @@ func (h *FlixPatrolHandler) ProcessTask(ctx context.Context, t *asynq.Task) erro
 		})
 	}
 
+	now := time.Now().UTC()
+	recheckUntil, err := recheckDeadline(payload, now)
+	if err != nil {
+		run.Finish(repository.TaskRunResult{Status: repository.RunStatusFailed, ErrorMessage: err.Error()}, nil)
+		return fmt.Errorf("%w: %w", err, asynq.SkipRetry)
+	}
 	opts := service.FlixPatrolRunOptions{
 		RequestDelay:  time.Duration(payload.RequestDelaySeconds) * time.Second,
 		UserAgent:     payload.UserAgent,
 		RespectRobots: payload.RespectRobots,
-		RunLog: func(level, message string) {
-			// Use a fresh context so the log is kept even if the task's
-			// context was cancelled (e.g. timeout).
-			logCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			defer cancel()
-			if err := h.repo.CreateTaskRunLog(logCtx, run.ID, level, message); err != nil {
-				h.log.Warn("writing task run log failed", slog.Int64("run_id", run.ID), slog.Any("err", err))
-			}
-		},
+		RunID:         run.ID,
+		Force:         payload.Force,
+		BackfillDays:  int(payload.BackfillDays),
+		// Store an unchanged chart once re-checking is off or over.
+		AcceptUnchanged: recheckUntil.IsZero() || !now.Add(recheckInterval).Before(recheckUntil),
+		RunLog:          run.Log,
 	}
-	_ = h.repo.CreateTaskRunLog(ctx, run.ID, "info", fmt.Sprintf("running %d target(s)", len(targets)))
-
-	if err := h.job.RunTargets(ctx, targets, time.Now().UTC(), opts); err != nil {
-		_ = h.repo.CreateTaskRunLog(ctx, run.ID, "error", err.Error())
-		_ = h.repo.CompleteTaskRun(ctx, run.ID, "failed", err.Error())
-		h.log.Error("flixpatrol task failed",
-			slog.Int64("schedule_id", payload.ScheduleID),
-			slog.String("task_id", taskID),
-			slog.Int64("run_id", run.ID),
-			slog.String("schedule_name", payload.ScheduleName),
-			slog.Int("retry", retryCount),
-			slog.Int("max_retry", maxRetry),
-			slog.Any("err", err))
-		return err
+	for _, d := range payload.Dates {
+		date, err := time.Parse(repository.DateLayout, d)
+		if err != nil {
+			run.Finish(repository.TaskRunResult{Status: repository.RunStatusFailed, ErrorMessage: fmt.Sprintf("invalid date %q", d)}, nil)
+			return fmt.Errorf("invalid date %q: %w", d, asynq.SkipRetry)
+		}
+		opts.Dates = append(opts.Dates, date)
 	}
-	_ = h.repo.CreateTaskRunLog(ctx, run.ID, "info", "task succeeded")
-	_ = h.repo.CompleteTaskRun(ctx, run.ID, "succeeded", "")
+	run.Log("info", fmt.Sprintf("running %d target(s)%s", len(targets), describeRun(payload)))
 
-	h.log.Info("flixpatrol task completed", slog.Int64("schedule_id", payload.ScheduleID), slog.String("schedule_name", payload.ScheduleName), slog.String("task_id", taskID), slog.Int64("run_id", run.ID))
+	report, runErr := h.job.Run(ctx, targets, opts)
+	succeeded := report.Count(service.TargetSucceeded)
+	failed := report.Count(service.TargetFailed)
+	skipped := report.Count(service.TargetSkipped) + report.Count(service.TargetNotFresh)
+	res := repository.TaskRunResult{
+		Status:           statusFor(succeeded+skipped, failed),
+		TargetsTotal:     int64(len(report.Results)),
+		TargetsSucceeded: int64(succeeded),
+		TargetsFailed:    int64(failed),
+		TargetsSkipped:   int64(skipped),
+	}
+	if runErr != nil {
+		res.Status, res.ErrorMessage = repository.RunStatusFailed, runErr.Error()
+	} else if failed > 0 {
+		res.ErrorMessage = fmt.Sprintf("%d of %d chart pages failed", failed, len(report.Results))
+	}
+
+	// Match new titles now rather than waiting for the nightly backlog.
+	if len(report.NewTitleIDs) > 0 {
+		h.enqueueEnrich(ctx, run, payload, report.NewTitleIDs)
+	}
+
+	retrying := res.Status != repository.RunStatusSucceeded && !run.LastAttempt()
+	if notFresh := report.NotFresh(); len(notFresh) > 0 && !retrying && runErr == nil {
+		h.enqueueRecheck(ctx, run, payload, notFresh, recheckUntil, now)
+	}
+	run.Finish(res, report)
+
+	if runErr != nil {
+		return runErr
+	}
+	if failed > 0 {
+		// asynq retries the task; stored charts are skipped, so only the
+		// failed pages are fetched again.
+		return errors.New(res.ErrorMessage)
+	}
 	return nil
+}
+
+// recheckDeadline is when to stop re-checking a chart FlixPatrol has not
+// updated: the payload's deadline on follow-ups, else now + RecheckHours
+// (zero = re-checking off).
+func recheckDeadline(p tasks.FlixPatrolTop10Payload, now time.Time) (time.Time, error) {
+	if p.RecheckUntil != "" {
+		t, err := time.Parse(time.RFC3339, p.RecheckUntil)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("invalid recheck_until %q", p.RecheckUntil)
+		}
+		return t, nil
+	}
+	if p.RecheckHours <= 0 || len(p.Dates) > 0 {
+		return time.Time{}, nil
+	}
+	return now.Add(time.Duration(p.RecheckHours) * time.Hour), nil
+}
+
+func describeRun(p tasks.FlixPatrolTop10Payload) string {
+	switch {
+	case len(p.Dates) > 0:
+		return fmt.Sprintf(" for %d date(s) %s…%s", len(p.Dates), p.Dates[0], p.Dates[len(p.Dates)-1])
+	case p.RecheckUntil != "":
+		return " (re-check for an unpublished chart, until " + p.RecheckUntil + ")"
+	case p.BackfillDays > 0:
+		return fmt.Sprintf(", filling gaps from the last %d days", p.BackfillDays)
+	}
+	return ""
+}
+
+func (h *FlixPatrolHandler) enqueueEnrich(ctx context.Context, run *Run, p tasks.FlixPatrolTop10Payload, ids []int64) {
+	if h.asynq == nil {
+		return
+	}
+	task, err := tasks.NewJobTask(tasks.TypeTitlesEnrich, tasks.JobPayload{
+		TitleIDs: ids, RequestDelaySeconds: p.RequestDelaySeconds, Reason: fmt.Sprintf("new titles from run %d", run.ID),
+	})
+	if err == nil {
+		_, err = h.asynq.EnqueueContext(ctx, task, tasks.Options(tasks.TypeTitlesEnrich, 1, h.queue)...)
+	}
+	if err != nil {
+		run.Log("warn", fmt.Sprintf("could not queue matching of %d new titles (the nightly matching job will pick them up): %v", len(ids), err))
+		return
+	}
+	run.Log("info", fmt.Sprintf("queued matching of %d new title(s)", len(ids)))
+}
+
+func (h *FlixPatrolHandler) enqueueRecheck(ctx context.Context, run *Run, p tasks.FlixPatrolTop10Payload, targets []service.FlixPatrolScrapeTarget, until, now time.Time) {
+	if h.asynq == nil || until.IsZero() || !now.Before(until) {
+		return
+	}
+	next := tasks.FlixPatrolTop10Payload{
+		ScheduleID: p.ScheduleID, ScheduleName: p.ScheduleName, RequestDelaySeconds: p.RequestDelaySeconds,
+		UserAgent: p.UserAgent, RespectRobots: p.RespectRobots, RecheckUntil: until.UTC().Format(time.RFC3339),
+	}
+	for _, t := range targets {
+		next.Targets = append(next.Targets, tasks.FlixPatrolTop10TargetPayload{CountrySlug: t.CountrySlug, ProviderSlug: string(t.Provider)})
+	}
+	at := now.Add(recheckInterval)
+	if at.After(until) {
+		at = until
+	}
+	task, err := tasks.NewFlixPatrolTop10Task(next)
+	if err == nil {
+		opts := append(tasks.Options(tasks.TypeFlixPatrolScheduleRun, 1, h.queue), asynq.ProcessAt(at))
+		_, err = h.asynq.EnqueueContext(ctx, task, opts...)
+	}
+	if err != nil && !errors.Is(err, asynq.ErrDuplicateTask) {
+		run.Log("warn", fmt.Sprintf("could not queue a re-check: %v", err))
+		return
+	}
+	run.Log("info", fmt.Sprintf("%d target(s) not published yet; checking again at %s UTC", len(targets), at.Format("15:04")))
 }
 
 func (h *FlixPatrolHandler) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(tasks.TypeFlixPatrolScheduleRun, h.ProcessTask)
 }
-

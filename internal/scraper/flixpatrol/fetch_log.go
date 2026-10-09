@@ -33,3 +33,6 @@ func (f LoggingFetcher) Fetch(ctx context.Context, pageURL string, userAgent str
 	f.Log.Debug("flixpatrol fetch ok", append(attrs, slog.String("page_title", strings.TrimSpace(doc.Find("title").First().Text())))...)
 	return doc, nil
 }
+
+// Health forwards to the wrapped fetcher's health check, if any.
+func (f LoggingFetcher) Health(ctx context.Context) error { return CheckHealth(ctx, f.Next) }

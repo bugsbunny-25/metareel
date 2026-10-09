@@ -3,48 +3,38 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bugsbunny-25/metareel/internal/repository/sqlc"
 )
 
 type FlixPatrolRepository struct {
-	q *sqlc.Queries
+	q  *sqlc.Queries
+	db *sql.DB
 }
 
 func NewFlixPatrolRepository(db *sql.DB) *FlixPatrolRepository {
-	return &FlixPatrolRepository{q: sqlc.New(db)}
+	return &FlixPatrolRepository{q: sqlc.New(db), db: db}
 }
 
-type UpsertTitleInput struct {
-	Slug   string
-	Name   string
-	Kind   string // "movie" | "tv_show"
-	TmdbID string
-	ImdbID string
-	RtURL  string
-}
-
-func (r *FlixPatrolRepository) UpsertTitle(ctx context.Context, in UpsertTitleInput) (sqlc.Title, error) {
-	if in.Slug == "" {
+// EnsureTitle records a FlixPatrol slug seen on a chart, creating the title
+// (with the chart's kind) if new. An existing title keeps its kind and IDs.
+func (r *FlixPatrolRepository) EnsureTitle(ctx context.Context, slug, name, kind string) (sqlc.Title, error) {
+	if slug == "" {
 		return sqlc.Title{}, fmt.Errorf("slug is required")
 	}
-	if in.Name == "" {
+	if name == "" {
 		return sqlc.Title{}, fmt.Errorf("name is required")
 	}
-	if in.Kind != "movie" && in.Kind != "tv_show" {
-		return sqlc.Title{}, fmt.Errorf("invalid kind: %s", in.Kind)
+	if kind != "movie" && kind != "tv_show" {
+		return sqlc.Title{}, fmt.Errorf("invalid kind: %s", kind)
 	}
-
-	return r.q.UpsertTitle(ctx, sqlc.UpsertTitleParams{
-		Slug:   in.Slug,
-		Name:   in.Name,
-		Kind:   in.Kind,
-		TmdbID: sql.NullString{String: in.TmdbID, Valid: in.TmdbID != ""},
-		ImdbID: sql.NullString{String: in.ImdbID, Valid: in.ImdbID != ""},
-		RtUrl:  sql.NullString{String: in.RtURL, Valid: in.RtURL != ""},
-	})
+	return r.q.EnsureTitle(ctx, sqlc.EnsureTitleParams{Slug: slug, Name: name, Kind: kind})
 }
 
 func (r *FlixPatrolRepository) GetTitleBySlug(ctx context.Context, slug string) (*sqlc.Title, error) {
@@ -66,7 +56,9 @@ type TitleListFilter struct {
 	Kind    string // "movie" | "tv_show"
 	Search  string // name or slug substring
 	Missing string // "tmdb" | "imdb" | "rt": only titles without that ID
-	Sort    string // see ListTitles in db/queries/flixpatrol.sql
+	// MatchStatus: pending | matched | unmatched | manual
+	MatchStatus string
+	Sort        string // see ListTitles in db/queries/flixpatrol.sql
 }
 
 type TitleListItem struct {
@@ -77,26 +69,20 @@ type TitleListItem struct {
 
 func (r *FlixPatrolRepository) ListTitles(ctx context.Context, f TitleListFilter, limit, offset int64) ([]TitleListItem, error) {
 	rows, err := r.q.ListTitles(ctx, sqlc.ListTitlesParams{
-		Sort:    f.Sort,
-		Kind:    f.Kind,
-		Name:    f.Search,
-		Missing: f.Missing,
-		Limit:   limit,
-		Offset:  offset,
+		Sort:        f.Sort,
+		Kind:        f.Kind,
+		Name:        f.Search,
+		Missing:     f.Missing,
+		MatchStatus: f.MatchStatus,
+		Limit:       limit,
+		Offset:      offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list titles: %w", err)
 	}
 	out := make([]TitleListItem, 0, len(rows))
 	for _, row := range rows {
-		item := TitleListItem{
-			Title: sqlc.Title{
-				ID: row.ID, Slug: row.Slug, Name: row.Name, Kind: row.Kind,
-				TmdbID: row.TmdbID, ImdbID: row.ImdbID, RtUrl: row.RtUrl,
-				CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-			},
-			RankingsCount: row.RankingsCount,
-		}
+		item := TitleListItem{Title: row.Title, RankingsCount: row.RankingsCount}
 		item.LastRankedOn = parseStoredDate(row.LastRankedOn)
 		out = append(out, item)
 	}
@@ -104,7 +90,7 @@ func (r *FlixPatrolRepository) ListTitles(ctx context.Context, f TitleListFilter
 }
 
 func (r *FlixPatrolRepository) CountTitles(ctx context.Context, f TitleListFilter) (int64, error) {
-	return r.q.CountTitles(ctx, sqlc.CountTitlesParams{Kind: f.Kind, Name: f.Search, Missing: f.Missing})
+	return r.q.CountTitles(ctx, sqlc.CountTitlesParams{Kind: f.Kind, Name: f.Search, Missing: f.Missing, MatchStatus: f.MatchStatus})
 }
 
 type TitleStats struct {
@@ -173,30 +159,146 @@ func (r *FlixPatrolRepository) UpdateTitleIDs(ctx context.Context, in UpdateTitl
 	})
 }
 
-type UpsertRankingInput struct {
-	TitleID           int64
+// ChartEntry is one row of a chart to store.
+type ChartEntry struct {
+	TitleID      int64
+	Slug         string
+	Rank         int64 // 1..10
+	SeasonNumber *int64
+}
+
+// ChartWrite is one chart (date × country × provider × category).
+type ChartWrite struct {
 	RankedOn          time.Time
 	Country           string // ISO 3166-1 alpha-2
 	StreamingProvider string
 	Category          string // "movies" | "tv_shows"
-	Rank              int64  // 1..10
-	SeasonNumber      *int64
+	Source            string // e.g. "flixpatrol"
+	RunID             int64  // 0 if not part of a task run
+	Entries           []ChartEntry
 }
 
-func (r *FlixPatrolRepository) UpsertRanking(ctx context.Context, in UpsertRankingInput) (sqlc.Ranking, error) {
-	var season sql.NullInt64
-	if in.SeasonNumber != nil {
-		season = sql.NullInt64{Int64: *in.SeasonNumber, Valid: true}
+// ChartSignature is a chart's content as stored in chart_snapshots.signature:
+// "1:slug|2:slug|...", in rank order.
+func ChartSignature(entries []ChartEntry) string {
+	sorted := append([]ChartEntry(nil), entries...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Rank < sorted[j].Rank })
+	parts := make([]string, 0, len(sorted))
+	for _, e := range sorted {
+		parts = append(parts, strconv.FormatInt(e.Rank, 10)+":"+e.Slug)
 	}
-
-	return r.q.UpsertRanking(ctx, sqlc.UpsertRankingParams{
-		TitleID:           in.TitleID,
-		RankedOn:          in.RankedOn,
-		Country:           in.Country,
-		StreamingProvider: in.StreamingProvider,
-		Category:          in.Category,
-		Rank:              in.Rank,
-		SeasonNumber:      season,
-	})
+	return strings.Join(parts, "|")
 }
 
+// SaveChart replaces one chart's rankings and records its snapshot, in one
+// transaction, so a chart is never half written and ranks that disappeared
+// from a re-scraped chart don't linger.
+func (r *FlixPatrolRepository) SaveChart(ctx context.Context, in ChartWrite) error {
+	if len(in.Entries) == 0 {
+		return fmt.Errorf("chart has no entries")
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := r.q.WithTx(tx)
+
+	date := FormatDate(in.RankedOn)
+	if err := q.DeleteChartRankings(ctx, sqlc.DeleteChartRankingsParams{
+		RankedOn: date, Country: in.Country, StreamingProvider: in.StreamingProvider, Category: in.Category,
+	}); err != nil {
+		return fmt.Errorf("delete chart rankings: %w", err)
+	}
+	for _, e := range in.Entries {
+		var season sql.NullInt64
+		if e.SeasonNumber != nil {
+			season = sql.NullInt64{Int64: *e.SeasonNumber, Valid: true}
+		}
+		if err := q.InsertRanking(ctx, sqlc.InsertRankingParams{
+			TitleID: e.TitleID, RankedOn: date, Country: in.Country, StreamingProvider: in.StreamingProvider,
+			Category: in.Category, Rank: e.Rank, SeasonNumber: season,
+		}); err != nil {
+			return fmt.Errorf("insert ranking %s rank %d: %w", e.Slug, e.Rank, err)
+		}
+	}
+	source := in.Source
+	if source == "" {
+		source = "flixpatrol"
+	}
+	if err := q.UpsertChartSnapshot(ctx, sqlc.UpsertChartSnapshotParams{
+		RankedOn: date, Country: in.Country, StreamingProvider: in.StreamingProvider, Category: in.Category,
+		EntryCount: int64(len(in.Entries)), Signature: ChartSignature(in.Entries), Source: source,
+		RunID: sql.NullInt64{Int64: in.RunID, Valid: in.RunID > 0},
+	}); err != nil {
+		return fmt.Errorf("upsert chart snapshot: %w", err)
+	}
+	return tx.Commit()
+}
+
+// ChartSnapshot is the stored state of one chart.
+type ChartSnapshot struct {
+	RankedOn          time.Time
+	Country           string
+	StreamingProvider string
+	Category          string
+	EntryCount        int64
+	Signature         string
+	ScrapedAt         time.Time
+	ChangedAt         time.Time
+}
+
+func toChartSnapshot(s sqlc.ChartSnapshot) ChartSnapshot {
+	d, _ := time.Parse(DateLayout, s.RankedOn)
+	return ChartSnapshot{
+		RankedOn: d, Country: s.Country, StreamingProvider: s.StreamingProvider, Category: s.Category,
+		EntryCount: s.EntryCount, Signature: s.Signature, ScrapedAt: s.ScrapedAt, ChangedAt: s.ChangedAt,
+	}
+}
+
+// ChartSnapshotsForDate returns the stored charts (by category) of one
+// country × provider on a date.
+func (r *FlixPatrolRepository) ChartSnapshotsForDate(ctx context.Context, date time.Time, country, provider string) (map[string]ChartSnapshot, error) {
+	rows, err := r.q.ListChartSnapshotsForDate(ctx, sqlc.ListChartSnapshotsForDateParams{
+		RankedOn: FormatDate(date), Country: country, StreamingProvider: provider,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list chart snapshots: %w", err)
+	}
+	out := make(map[string]ChartSnapshot, len(rows))
+	for _, row := range rows {
+		out[row.Category] = toChartSnapshot(row)
+	}
+	return out, nil
+}
+
+// PreviousChartSnapshot returns the latest stored chart before date, or nil.
+func (r *FlixPatrolRepository) PreviousChartSnapshot(ctx context.Context, date time.Time, country, provider, category string) (*ChartSnapshot, error) {
+	row, err := r.q.GetPreviousChartSnapshot(ctx, sqlc.GetPreviousChartSnapshotParams{
+		Country: country, StreamingProvider: provider, Category: category, RankedOn: FormatDate(date),
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("previous chart snapshot: %w", err)
+	}
+	snap := toChartSnapshot(row)
+	return &snap, nil
+}
+
+// StoredChartDates returns the dates in [from, to] on which both categories
+// of a country × provider chart are stored.
+func (r *FlixPatrolRepository) StoredChartDates(ctx context.Context, country, provider string, from, to time.Time) (map[string]bool, error) {
+	rows, err := r.q.ListChartSnapshotDates(ctx, sqlc.ListChartSnapshotDatesParams{
+		Country: country, StreamingProvider: provider, FromDate: FormatDate(from), ToDate: FormatDate(to),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list chart snapshot dates: %w", err)
+	}
+	out := make(map[string]bool, len(rows))
+	for _, d := range rows {
+		out[d] = true
+	}
+	return out, nil
+}

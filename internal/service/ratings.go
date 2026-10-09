@@ -24,6 +24,9 @@ const (
 	ProviderJustWatch      = "justwatch"
 	ProviderMDBList        = "mdblist"
 	ProviderRottenTomatoes = "rottentomatoes"
+	// ProviderIMDbDataset is IMDb's daily ratings dataset; it is read from
+	// imdb_ratings when building a response, not stored per title.
+	ProviderIMDbDataset = "imdb_dataset"
 )
 
 // Canonical source names shared across providers.
@@ -70,6 +73,8 @@ type RatingsService struct {
 	preferred string // provider whose IMDb / RT values win when both have one
 	now       func() time.Time
 	refreshes singleflight.Group
+
+	imdbDataset *repository.ImportsRepository // optional
 }
 
 type RatingsServiceConfig struct {
@@ -103,6 +108,29 @@ func NewRatingsService(log *slog.Logger, repo *repository.RatingsRepository, tit
 		s.preferred = ProviderJustWatch
 	}
 	return s
+}
+
+// WithIMDbDataset makes IMDb's daily ratings dataset (imported by the
+// imdb.ratings.import job) the first choice for IMDb ratings.
+func (s *RatingsService) WithIMDbDataset(repo *repository.ImportsRepository) *RatingsService {
+	s.imdbDataset = repo
+	return s
+}
+
+// datasetRating returns the IMDb dataset's rating for imdbID, if imported.
+func (s *RatingsService) datasetRating(ctx context.Context, imdbID *string) *repository.IMDbRating {
+	if s.imdbDataset == nil || imdbID == nil || *imdbID == "" {
+		return nil
+	}
+	m, err := s.imdbDataset.IMDbRatings(ctx, []string{*imdbID})
+	if err != nil {
+		s.log.Warn("imdb dataset lookup failed", slog.String("imdb_id", *imdbID), slog.Any("err", err))
+		return nil
+	}
+	if r, ok := m[*imdbID]; ok {
+		return &r
+	}
+	return nil
 }
 
 // PreferredProvider is the provider that wins for headline values.
@@ -158,7 +186,7 @@ func (s *RatingsService) GetRatings(ctx context.Context, ref TmdbRef, force bool
 		return nil, err
 	}
 	if ident != nil && !force && s.now().Sub(ident.RefreshedAt) < s.ttl {
-		return s.buildResponse(ref, ident, sources, true, false), nil
+		return s.withDataset(ctx, s.buildResponse(ref, ident, sources, true, false)), nil
 	}
 
 	// Collapse concurrent refreshes of the same title, and don't let one
@@ -171,12 +199,27 @@ func (s *RatingsService) GetRatings(ctx context.Context, ref TmdbRef, force bool
 	if err != nil {
 		if ident != nil && !errors.Is(err, ErrTitleNotFound) {
 			s.log.Warn("ratings refresh failed, serving stale ratings", slog.String("title", ref.String()), slog.Any("err", err))
-			return s.buildResponse(ref, ident, sources, true, true), nil
+			return s.withDataset(ctx, s.buildResponse(ref, ident, sources, true, true)), nil
 		}
 		return nil, err
 	}
 	res := v.(refreshResult)
-	return s.buildResponse(ref, res.ident, res.sources, false, false), nil
+	return s.withDataset(ctx, s.buildResponse(ref, res.ident, res.sources, false, false)), nil
+}
+
+// withDataset adds IMDb's own dataset rating as a source and, when present,
+// makes it the headline IMDb rating (it is IMDb's official daily figure).
+func (s *RatingsService) withDataset(ctx context.Context, out *RatingsResponse) *RatingsResponse {
+	r := s.datasetRating(ctx, out.ImdbID)
+	if r == nil {
+		return out
+	}
+	votes := r.Votes
+	out.Sources = append(out.Sources, RatingSourceResult{
+		Provider: ProviderIMDbDataset, Source: sourceIMDb, Value: r.Rating, Votes: &votes, URL: imdbURL(out.ImdbID), FetchedAt: r.ImportedAt,
+	})
+	out.IMDb = &IMDbRating{Rating: r.Rating, Votes: &votes, URL: imdbURL(out.ImdbID), Source: ProviderIMDbDataset}
+	return out
 }
 
 type refreshResult struct {
@@ -411,7 +454,7 @@ func justWatchSources(f *client.MovieOrShowFragment, imdbID *string, at time.Tim
 		add(sourceIMDb, *sc.ImdbScore, votes, imdbURL(imdbID))
 	}
 	if sc.TomatoMeter != nil {
-		add(sourceTomatoes, float64(*sc.TomatoMeter), nil, nil)
+		add(sourceTomatoes, *sc.TomatoMeter, nil, nil)
 		if sc.CertifiedFresh != nil {
 			add(sourceTomatoesCertified, boolValue(*sc.CertifiedFresh), nil, nil)
 		}

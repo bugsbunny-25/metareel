@@ -428,8 +428,8 @@ func releaseItemFromEdge(e client.NewTitleEdge, country string) ReleaseItem {
 	}
 
 	item.IMDbRating = scoring.ImdbScore
-	item.IMDbVotes = scoring.ImdbVotes
-	item.Tomatometer = scoring.TomatoMeter
+	item.IMDbVotes = intPtr(scoring.ImdbVotes)
+	item.Tomatometer = intPtr(scoring.TomatoMeter)
 	item.CertifiedFresh = scoring.CertifiedFresh
 	return item
 }
@@ -494,4 +494,13 @@ func prefixURL(base string, path *string) *string {
 	}
 	u := base + *path
 	return &u
+}
+
+// intPtr rounds an optional JustWatch number to an int.
+func intPtr(v *float64) *int {
+	if v == nil {
+		return nil
+	}
+	n := int(*v + 0.5)
+	return &n
 }

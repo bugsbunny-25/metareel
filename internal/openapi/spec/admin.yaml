@@ -169,6 +169,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A run of this schedule is already queued, running or retrying
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Not found
           content:
@@ -265,7 +271,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [started, succeeded, failed]
+            enum: [started, succeeded, partial, failed]
         - name: schedule_id
           in: query
           required: false
@@ -373,6 +379,204 @@ paths:
                   enabled, utc_runtimes, next_run_at, last_run, last_success_at}];
                   titles {total, missing_tmdb, missing_imdb, missing_rt};
                   rankings {total, latest_date}
+
+  /api/v1/admin/task-types:
+    get:
+      operationId: listTaskTypes
+      summary: Job types a schedule can run, with descriptions
+      responses:
+        "200":
+          description: Task types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type: { type: string }
+                    label: { type: string }
+                    description: { type: string }
+                    has_targets: { type: boolean }
+
+  /api/v1/admin/jobs/{type}/run:
+    post:
+      operationId: runJob
+      summary: Run a job now, outside its schedule
+      description: >
+        Any task type except flixpatrol.top10.scrape (use a schedule's run-now
+        or /backfill). title_ids limits titles.enrich to those titles and
+        ignores their retry backoff; force re-imports unchanged files.
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema: { type: string, example: titles.enrich }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title_ids: { type: array, items: { type: integer, format: int64 }, maxItems: 500 }
+                force: { type: boolean }
+      responses:
+        "202":
+          description: Enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunTaskNowResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The same job is already queued or running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/backfill:
+    post:
+      operationId: backfill
+      summary: Scrape FlixPatrol charts for past dates
+      description: >
+        One ad-hoc run over every date in [from, to] (at most 60 days) for a
+        schedule's targets or the given targets. Charts already stored are
+        skipped unless force.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                schedule_id: { type: integer, format: int64 }
+                targets:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/FlixPatrolTargetPayload"
+                from: { type: string, format: date }
+                to: { type: string, format: date }
+                force: { type: boolean }
+              required: [from]
+      responses:
+        "202":
+          description: Enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunTaskNowResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Schedule not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/titles/{id}/rematch:
+    post:
+      operationId: rematchTitle
+      summary: Match a title again now
+      description: >
+        Clears the retry backoff (and a manual lock) and queues titles.enrich
+        for the title. clear=true also forgets its current IDs (wrong match).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                clear: { type: boolean }
+      responses:
+        "202":
+          description: Queued; returns the title and the job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  title: { $ref: "public.yaml#/components/schemas/TitleResponse" }
+                  job: { $ref: "#/components/schemas/RunTaskNowResponse" }
+        "404":
+          description: Title not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/data-quality:
+    get:
+      operationId: getDataQuality
+      summary: How complete and fresh the data is
+      description: >
+        Match status counts (FlixPatrol and Netflix titles), TMDB metadata and
+        IMDb dataset coverage, last imports, weekly share of chart entries
+        with a TMDB / RT match, unmatched titles by country, stale charts and
+        missing dates in the last 30 days per scheduled chart.
+      responses:
+        "200":
+          description: Report
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/admin/titles/{id}:
+    patch:
+      operationId: patchTitle
+      summary: Correct a title's kind and external IDs
+      description: >
+        Admin only. A title corrected here is marked as a manual match, so
+        scheduled scrapes and remap jobs never overwrite it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchTitleIDsInput"
+      responses:
+        "200":
+          description: Updated title
+          content:
+            application/json:
+              schema:
+                $ref: "public.yaml#/components/schemas/TitleResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/admin/titles/{id}/candidates:
     get:
@@ -553,6 +757,24 @@ components:
         default: 0
 
   schemas:
+    PatchTitleIDsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [movie, tv_show]
+          description: What the title is, i.e. the TMDB namespace of tmdb_id
+        tmdb_id:
+          type: string
+          nullable: true
+        imdb_id:
+          type: string
+          nullable: true
+        rt_url:
+          type: string
+          nullable: true
+
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -594,6 +816,19 @@ components:
           type: boolean
         user_agent:
           type: string
+        backfill_days:
+          type: integer
+          minimum: 0
+          maximum: 60
+          description: FlixPatrol schedules only - also scrape charts missing from the previous N days
+        recheck_hours:
+          type: integer
+          minimum: 0
+          maximum: 23
+          description: >
+            FlixPatrol schedules only - when a chart looks unpublished (same as
+            the previous stored date) re-check hourly for this many hours
+            before storing it anyway
         utc_runtimes:
           type: array
           items:
@@ -638,6 +873,8 @@ components:
       properties:
         task_type:
           type: string
+          enum: [flixpatrol.top10.scrape, titles.enrich, titles.metadata, ratings.prewarm, netflix.top10.import, imdb.ratings.import, maintenance]
+          description: See GET /api/v1/admin/task-types
         name:
           type: string
         enabled:
@@ -657,12 +894,26 @@ components:
         user_agent:
           type: string
           nullable: true
+        backfill_days:
+          type: integer
+          minimum: 0
+          maximum: 60
+          description: Default 3. FlixPatrol schedules only - also scrape charts missing from the previous N days
+        recheck_hours:
+          type: integer
+          minimum: 0
+          maximum: 23
+          description: >
+            FlixPatrol schedules only - when a chart looks unpublished (same as
+            the previous stored date) re-check hourly for this many hours
+            before storing it anyway
         utc_runtimes:
           type: array
           items:
             type: string
         task_details:
           nullable: true
+          description: 'FlixPatrol schedules: {"targets": [{"country_code": "US", "provider_slug": "netflix"}]}'
       required: [task_type, name, utc_runtimes]
 
     UpdateTaskScheduleInput:
@@ -687,10 +938,28 @@ components:
         user_agent:
           type: string
           nullable: true
+        backfill_days:
+          type: integer
+          minimum: 0
+          maximum: 60
+          description: FlixPatrol schedules only - also scrape charts missing from the previous N days
+        recheck_hours:
+          type: integer
+          minimum: 0
+          maximum: 23
+          description: >
+            FlixPatrol schedules only - when a chart looks unpublished (same as
+            the previous stored date) re-check hourly for this many hours
+            before storing it anyway
         utc_runtimes:
           type: array
           items:
             type: string
+        flixpatrol_targets:
+          type: array
+          description: Replaces the targets of a FlixPatrol schedule
+          items:
+            $ref: "#/components/schemas/FlixPatrolTargetPayload"
       required: [name, enabled, utc_runtimes]
 
     AddFlixPatrolTargetsInput:
@@ -723,7 +992,7 @@ components:
           type: string
         status:
           type: string
-      required: [schedule_id, task_type, queue, status]
+      required: [task_type, queue, status]
 
     TaskRunResponse:
       type: object
@@ -735,12 +1004,16 @@ components:
         schedule_id:
           type: integer
           format: int64
+          nullable: true
+          description: null for ad-hoc runs (backfills, manual jobs, matching after a scrape)
         task_type:
           type: string
         asynq_task_id:
           type: string
         status:
           type: string
+          enum: [started, succeeded, partial, failed]
+          description: partial = some targets failed (the task is retried for those)
         retry_count:
           type: integer
           format: int64
@@ -757,7 +1030,21 @@ components:
         error_message:
           type: string
           nullable: true
-      required: [id, schedule_id, task_type, status, retry_count, max_retry, started_at]
+        targets_total:
+          type: integer
+          description: FlixPatrol runs - chart pages (target x date) handled
+        targets_succeeded:
+          type: integer
+        targets_failed:
+          type: integer
+        targets_skipped:
+          type: integer
+          description: Already stored, or not published yet (re-checked later)
+        summary:
+          type: object
+          additionalProperties: true
+          description: Job-specific result, e.g. per-target results of a scrape or counts of an import
+      required: [id, schedule_id, task_type, status, retry_count, max_retry, started_at, targets_total, targets_succeeded, targets_failed, targets_skipped]
 
     TaskRunLogResponse:
       type: object

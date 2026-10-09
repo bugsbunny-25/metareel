@@ -30,7 +30,7 @@ type Top10Item struct {
 // latest scraped date.
 func (r *FlixPatrolRepository) ListTop10ByProvider(ctx context.Context, rankedOn *time.Time, countryCode string, provider string, category string) ([]Top10Item, error) {
 	rows, err := r.q.ListTop10ByProvider(ctx, sqlc.ListTop10ByProviderParams{
-		RankedOn:          nullTime(rankedOn),
+		RankedOn:          nullDate(rankedOn),
 		Country:           countryCode,
 		StreamingProvider: provider,
 		Category:          category,
@@ -64,7 +64,7 @@ func (r *FlixPatrolRepository) ListTop10ByProvider(ctx context.Context, rankedOn
 // rankedOn means each provider's own latest scraped date.
 func (r *FlixPatrolRepository) ListTop10AllProviders(ctx context.Context, rankedOn *time.Time, countryCode string, category string) ([]Top10Item, error) {
 	rows, err := r.q.ListTop10AllProviders(ctx, sqlc.ListTop10AllProvidersParams{
-		RankedOn: nullTime(rankedOn),
+		RankedOn: nullDate(rankedOn),
 		Country:  countryCode,
 		Category: category,
 	})
@@ -134,10 +134,10 @@ func (r *FlixPatrolRepository) ListRankingsByTitleIDs(ctx context.Context, title
 		params.Country = f.Country
 	}
 	if f.From != nil {
-		params.FromDate = f.From.UTC()
+		params.FromDate = nullDate(f.From)
 	}
 	if f.To != nil {
-		params.ToDate = f.To.UTC()
+		params.ToDate = nullDate(f.To)
 	}
 	rows, err := r.q.ListRankingsByTitleIDs(ctx, params)
 	if err != nil {
@@ -157,11 +157,18 @@ func (r *FlixPatrolRepository) ListRankingsByTitleIDs(ctx context.Context, title
 	return out, nil
 }
 
-func nullTime(t *time.Time) sql.NullTime {
+// DateLayout is how chart dates (rankings.ranked_on and other *_on / date
+// columns) are stored: plain ISO dates, so SQLite's date functions work.
+const DateLayout = "2006-01-02"
+
+// FormatDate renders t's UTC calendar day in DateLayout.
+func FormatDate(t time.Time) string { return t.UTC().Format(DateLayout) }
+
+func nullDate(t *time.Time) sql.NullString {
 	if t == nil {
-		return sql.NullTime{}
+		return sql.NullString{}
 	}
-	return sql.NullTime{Time: t.UTC(), Valid: true}
+	return sql.NullString{String: FormatDate(*t), Valid: true}
 }
 
 // rankPtr converts the queries' previous_rank (0 = not ranked) to a pointer.

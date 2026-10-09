@@ -69,12 +69,21 @@ func effectiveTop10DateUTC(t time.Time) time.Time {
 	return todayStart
 }
 
-func Top10URL(provider Provider, countrySlug string, date time.Time) string {
-	d := effectiveTop10DateUTC(date)
+// EffectiveTop10Date is the chart date FlixPatrol shows at time t (UTC
+// midnight): the previous day before 12:00 UTC, else the current day.
+func EffectiveTop10Date(t time.Time) time.Time { return effectiveTop10DateUTC(t) }
+
+// Top10URL is the chart page FlixPatrol shows at time now.
+func Top10URL(provider Provider, countrySlug string, now time.Time) string {
+	return Top10URLForDate(provider, countrySlug, effectiveTop10DateUTC(now))
+}
+
+// Top10URLForDate is the chart page of a specific chart date.
+func Top10URLForDate(provider Provider, countrySlug string, date time.Time) string {
 	return fmt.Sprintf("https://flixpatrol.com/top10/%s/%s/%s/",
 		provider,
 		countrySlug,
-		d.Format("2006-01-02"),
+		date.UTC().Format("2006-01-02"),
 	)
 }
 

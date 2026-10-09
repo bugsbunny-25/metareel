@@ -17,7 +17,7 @@ RUN npm run build
 # Alpine-based Go image keeps the builder small. modernc/sqlite is pure Go so
 # we do NOT need cgo; this lets us emit a fully-static binary that runs on
 # `scratch`.
-FROM golang:1.27.1-alpine AS builder
+FROM golang:1.27.2-alpine AS builder
 
 WORKDIR /src
 

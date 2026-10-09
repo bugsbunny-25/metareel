@@ -19,13 +19,8 @@ var ErrTitleNotFound = errors.New("title not found")
 const MaxTitleRankingsBatch = 50
 
 // TmdbRef identifies a title by TMDB ID. TMDB movie and TV IDs are separate
-// namespaces, so the kind is part of the key.
-type TmdbRef struct {
-	Kind string // "movie" | "tv" (TMDB naming)
-	ID   string
-}
-
-func (r TmdbRef) String() string { return r.Kind + ":" + r.ID }
+// namespaces, so the kind ("movie" | "tv", TMDB naming) is part of the key.
+type TmdbRef = repository.TmdbRef
 
 // ParseTmdbRef validates a TMDB kind ("movie" or "tv") and numeric ID.
 func ParseTmdbRef(kind, id string) (TmdbRef, error) {

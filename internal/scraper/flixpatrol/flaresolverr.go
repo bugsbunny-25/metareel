@@ -45,3 +45,9 @@ func (f FlareSolverrFetcher) Fetch(ctx context.Context, pageURL string, _ string
 	}
 	return doc, nil
 }
+
+// Health checks that FlareSolverr is reachable.
+func (f FlareSolverrFetcher) Health(ctx context.Context) error {
+	_, err := f.Client.Health(ctx)
+	return err
+}

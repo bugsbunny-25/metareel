@@ -112,7 +112,7 @@ func TestTitlesListFiltersAndSort(t *testing.T) {
 	ctx := context.Background()
 	_, repo := newTestTop10Service(t)
 	seed(t, repo,
-		[]repository.UpsertTitleInput{
+		[]seedTitle{
 			{Slug: "alpha", Name: "Alpha", Kind: "movie", TmdbID: "1", ImdbID: "tt1", RtURL: "m/alpha"},
 			{Slug: "bravo", Name: "bravo", Kind: "movie", TmdbID: "2"},
 			{Slug: "charlie-2026", Name: "Charlie", Kind: "tv_show"},
@@ -176,6 +176,7 @@ func TestTaskRunsFilterAndStats(t *testing.T) {
 	tasks := repository.NewTaskScheduleRepository(db)
 	flix := repository.NewFlixPatrolRepository(db)
 	for _, stmt := range []string{
+		`DELETE FROM task_schedules`, // drop the default job schedules seeded by migrations
 		`INSERT INTO task_schedules (id, task_type, name, enabled) VALUES (1, 'flixpatrol.top10.scrape', 'netflix-daily', 1), (2, 'flixpatrol.top10.scrape', 'off', 0)`,
 		`INSERT INTO task_schedule_run_times (schedule_id, run_time_utc) VALUES (1, '16:00'), (1, '23:00'), (2, '12:00')`,
 		`INSERT INTO task_runs (schedule_id, task_type, status, started_at, finished_at) VALUES

@@ -2,7 +2,7 @@
 
 ## Overview
 
-metareel is a Go backend service that scrapes daily Top 10 streaming rankings from [FlixPatrol](https://flixpatrol.com), enriches each title with TMDB and IMDb IDs (via the TMDB API and the JustWatch GraphQL API), persists the data in a SQLite database, and exposes a JSON REST API for querying rankings by country and streaming provider.
+metareel is a Go backend service that scrapes daily Top 10 streaming rankings from [FlixPatrol](https://flixpatrol.com), matches each title to TMDB / IMDb / Rotten Tomatoes (JustWatch GraphQL, TMDB, Wikidata SPARQL, RT's search index), adds TMDB metadata and watch providers, Netflix's official weekly Top 10 and IMDb's ratings dataset, persists everything in SQLite, and exposes a JSON REST API for charts, title performance, ratings, availability and analytics.
 
 The HTTP contract is defined by embedded OpenAPI specs (`/openapi/public.yaml` and `/openapi/admin.yaml`) and served through Swagger UI (`/docs` and `/docs/admin`).
 
@@ -133,83 +133,95 @@ sequenceDiagram
 
 ---
 
-## Scrape Job Flow (the core data pipeline)
+## Jobs
 
-This is the primary data ingestion path. It can be triggered in two ways:
-- **Automatically** by the Asynq PeriodicTaskManager on configured cron schedules
-- **Manually** via `POST /api/v1/admin/task-schedules/:id/run-now`
+Every background job is an asynq task type run from a DB schedule
+(`task_schedules.task_type`) or on demand (`POST /api/v1/admin/jobs/:type/run`,
+`/backfill`, a schedule's run-now). `tasks.ForSchedule` builds the task and its
+options for both paths; every task is enqueued with `asynq.Unique`, so the same
+run can't be queued twice (409 from the API). `handlers.Runner` records each
+attempt in `task_runs` (status `started | succeeded | partial | failed`,
+target counts, JSON `summary`) and `task_run_logs`, and posts an alert when the
+last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
+
+| Task type | Service | Notes |
+|---|---|---|
+| `flixpatrol.top10.scrape` | `FlixPatrolJob` | Charts only; enqueues `titles.enrich` for new titles and hourly re-checks for unpublished charts |
+| `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Matching with backoff, RT via Wikidata then search |
+| `titles.metadata` | `TitleMetadataService` | TMDB details + watch providers, Wikidata IDs |
+| `ratings.prewarm` | `RatingsService.Prewarm` | Charting titles' expired ratings |
+| `netflix.top10.import` | `NetflixImporter` | Netflix TSVs, Netflix title matching |
+| `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz` |
+| `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, `PRAGMA optimize` |
+
+FlixPatrol fetches from every job go through one `flixpatrol.SerialFetcher`:
+one page at a time, `SCRAPER_MIN_INTERVAL` apart.
+
+## Scrape Job Flow
 
 ```mermaid
 sequenceDiagram
-    participant Trigger as Trigger\n(Scheduler or Admin API)
-    participant Redis
-    participant Worker as Asynq Worker
-    participant FPHandler as FlixPatrolHandler
-    participant TaskRunRepo as TaskRunRepo\n(SQLite)
-    participant FlixJob as FlixPatrolJob
-    participant Colly as Colly Scraper
-    participant FlixPatrol as flixpatrol.com
-    participant JustWatch as JustWatch\n(GraphQL)
-    participant TMDB as TMDB API
-    participant FlixRepo as FlixPatrolRepo\n(SQLite)
+    participant Trigger as Scheduler / run-now / backfill
+    participant Worker as FlixPatrolHandler
+    participant Job as FlixPatrolJob
+    participant FP as FlixPatrol (via FlareSolverr)
+    participant DB as SQLite
+    participant Q as asynq
 
-    Trigger->>Redis: Enqueue task\n(FlixPatrolTop10Payload JSON)
-    Redis->>Worker: Dequeue task
-    Worker->>FPHandler: ProcessTask(ctx, task)
-
-    FPHandler->>TaskRunRepo: CreateTaskRun (status=started)
-    FPHandler->>TaskRunRepo: CreateTaskRunLog "task started"
-
-    loop for each target (country × provider)
-        FPHandler->>FlixJob: RunTargets(ctx, targets, date, opts)
-
-        FlixJob->>Colly: Build URL:\nflixpatrol.com/top10/{provider}/{country}/{date}/
-        Colly->>FlixPatrol: HTTP GET directly, or via FlareSolverr\nwhen FLARESOLVERR_URL is set
-        FlixPatrol-->>Colly: HTML page
-        Colly->>Colly: goquery parse:\nextract TOP 10 Movies + TV Shows tables
-        Colly-->>FlixJob: []Entry{Rank, Name, Slug, Kind}
-
-        loop for each Entry
-            FlixJob->>FlixRepo: GetTitleBySlug(slug)
-
-            alt title has TMDB ID + IMDb ID + RT URL
-                FlixJob->>FlixRepo: UpsertRanking (skip ID lookup)
-            else needs ID lookup
-                alt TMDB ID missing
-                    FlixJob->>FlixPatrol: GET /title/{slug}/ (full title + premiere year;\nfalls back to Top 10 name + slug year suffix)
-                    FlixJob->>JustWatch: GetTitlesByPath(/{country}/{type}/{slug})
-                    alt no title + year match
-                        FlixJob->>JustWatch: GetTitlesByTopSearchPopular\n(name, country, objectType, package)
-                    end
-                    alt still no title + year match && TMDB_API_KEY set
-                        FlixJob->>TMDB: SearchMovie/SearchTV(name)
-                    end
-                    Note over FlixJob: a candidate is accepted only if its title matches<br/>and its year is within ±1 of the FlixPatrol year
-                end
-
-                alt TMDB ID found && TMDB_API_KEY set
-                    FlixJob->>TMDB: MovieExternalIDs/TVExternalIDs(tmdbID)
-                    TMDB-->>FlixJob: imdbID, wikidataID
-                    FlixJob->>Wikidata: Rotten Tomatoes ID (P1258)
-                end
-
-                alt RT slug still missing && TMDB ID found
-                    FlixJob->>RT: Seerr-style search of RT's index: title × year score<br/>(TMDB title + year, else the JustWatch/TMDB match, else FlixPatrol name + slug year;<br/>skipped when the year is unknown)
-                end
-
-                FlixJob->>FlixRepo: UpsertTitle(slug, name, kind, tmdbID, imdbID, rtURL)
-                FlixJob->>FlixRepo: UpsertRanking(titleID, date, country, provider, rank)
-            end
+    Trigger->>Worker: flixpatrol.top10.scrape {targets, backfill_days, recheck_hours | dates}
+    Worker->>DB: task_runs (started)
+    Job->>FP: fetcher health check (all targets fail fast if down)
+    loop each target × date (gaps from the last backfill_days, then today; oldest first)
+        Job->>DB: chart_snapshots for date? → skip if both categories stored
+        Job->>FP: GET /top10/{provider}/{country}/{date}/
+        alt same content as the previous stored date and re-check window open
+            Note over Job: not_fresh: not stored
+        else
+            Job->>DB: EnsureTitle per entry (new titles: match_status pending)
+            Job->>DB: SaveChart (one transaction: delete chart, insert ranks + season numbers, upsert chart_snapshots)
         end
-
-        Note over FlixJob: Wait request_delay_seconds between targets
+        Note over Job: 3 consecutive fetch failures stop the remaining pages
     end
-
-    FPHandler->>TaskRunRepo: CompleteTaskRun (status=succeeded/failed)
-    FPHandler->>TaskRunRepo: CreateTaskRunLog "task succeeded/error"
+    Worker->>Q: titles.enrich {title_ids: new titles}
+    Worker->>Q: re-check not_fresh targets in 1h (until recheck deadline)
+    Worker->>DB: task_runs (succeeded | partial | failed, counts, per-target summary)
+    Note over Worker: failed pages → error → asynq retry; stored charts are skipped
 ```
 
----
+## Title Matching Flow (`titles.enrich`)
+
+```mermaid
+sequenceDiagram
+    participant E as TitleEnricher
+    participant DB as SQLite
+    participant FP as FlixPatrol title page
+    participant JW as JustWatch
+    participant TMDB
+    participant WD as Wikidata SPARQL
+    participant RT as RT search index
+
+    E->>DB: titles due (pending / unmatched past next_match_at) or given title_ids
+    loop each title
+        opt FlixPatrol page never read
+            E->>FP: /title/{slug}/ → name, kind, premiere date, country (stored as fp_*)
+        end
+        E->>JW: urlV2 path, then popularTitles search (chart's country + service)
+        alt no title + year match
+            E->>TMDB: search movie / tv
+        end
+        E->>DB: SaveTitleMatch (matched, or unmatched with retry +1/+3/+7/+30 days)
+        opt matched
+            E->>TMDB: details + external IDs + watch providers (tmdb_titles, tmdb_watch_providers)
+        end
+    end
+    E->>WD: one batch: RT / Metacritic / Letterboxd / IMDb IDs by TMDB ID
+    E->>RT: search titles still without an RT slug
+    E->>DB: SaveTitleRTAttempt (slug, or retry with the same backoff)
+```
+
+`manual` titles (fixed in the admin UI) are never changed by automation.
+`POST /api/v1/admin/titles/:id/rematch` clears the backoff (and with
+`clear: true`, the IDs) and queues the title.
 
 ## Read API Flow
 
@@ -316,7 +328,24 @@ sequenceDiagram
 
 ## Database Schema
 
-Six tables in a single SQLite file (`data/metareel.db`, WAL mode).
+A single SQLite file (`data/metareel.db`, WAL mode). Chart dates
+(`rankings.ranked_on`, `chart_snapshots.ranked_on`, Netflix `week`) are plain
+ISO `YYYY-MM-DD` text so SQLite's date functions work; bind them as strings
+(`repository.FormatDate`), never `time.Time`.
+
+Added since the diagram below:
+
+| Table | Purpose |
+|---|---|
+| `chart_snapshots` | One row per stored chart (date × country × provider × category): entry count, content `signature`, `scraped_at`, `changed_at` |
+| `titles` (new columns) | `match_status` (pending / matched / unmatched / manual), `match_source`, `matched_name/year`, `match_attempts`, `next_match_at`, `rt_attempts`, `next_rt_at`, `justwatch_id`, `wikidata_id`, `fp_*` (FlixPatrol title page) |
+| `tmdb_titles` | TMDB metadata per TMDB title + Wikidata IDs (RT, Metacritic, Letterboxd) |
+| `tmdb_watch_providers` | Watch providers per title × country × monetization |
+| `netflix_titles`, `netflix_top10_global`, `netflix_top10_countries`, `netflix_most_popular` | Netflix's official Top 10 and their TMDB matches |
+| `imdb_ratings` | IMDb dataset ratings (known IMDb IDs by default) |
+| `data_imports` | Last imported ETag / Last-Modified per file |
+| `task_schedules` (new columns) | `backfill_days`, `recheck_hours`; `task_type` validated in Go |
+| `task_runs` (new columns) | nullable `schedule_id`, `targets_*` counts, `summary` JSON; status adds `partial` |
 
 ```mermaid
 erDiagram
@@ -496,6 +525,15 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `RATINGS_TTL` | `12h` | How long stored ratings are served before a request refreshes them |
 | `RATINGS_PREFERRED_PROVIDER` | `justwatch` | `justwatch` or `mdblist`: wins when both have an IMDb / RT value |
 | `MDBLIST_API_KEY` | _(empty)_ | Enables MDBList as a ratings provider |
+| `SCRAPER_MIN_INTERVAL` | `2s` | Minimum gap between FlixPatrol page fetches across all jobs |
+| `NETFLIX_TOP10_COUNTRIES` | _(empty)_ | Netflix per-country Top 10 to keep: ISO codes, empty = the FlixPatrol schedules' countries, `all` = every country |
+| `IMDB_DATASET_SCOPE` | `known` | `known` = only IMDb IDs metareel has, `all` = the whole dataset (~1.6M rows) |
+| `DOWNLOAD_TIMEOUT` | `10m` | One Netflix / IMDb file download |
+| `ALERT_WEBHOOK_URL` | _(empty)_ | Webhook for failed runs and stale charts (contains a secret for some services; never logged) |
+| `ALERT_WEBHOOK_FORMAT` | `json` | `json`, `slack`, `discord` or `ntfy` |
+| `ALERT_STALE_CHART_HOURS` | `24` | Alert when a scheduled chart's next date has been due this long |
+| `ALERT_COOLDOWN` | `12h` | Minimum time between repeats of one alert |
+| `RUN_RETENTION_DAYS` | `90` | The maintenance job deletes older task runs and logs |
 
 ---
 
@@ -507,13 +545,13 @@ metareel/
 │   └── server/
 │       └── main.go               # Entrypoint — loads config, calls server.Run
 ├── internal/
-│   ├── cache/
-│   │   └── redis.go              # JSON get/set wrapper around go-redis
 │   ├── client/
 │   │   ├── resty.go              # Resty factory (timeout, retry, headers)
 │   │   ├── tmdb.go               # TMDB REST client (search + external IDs)
+│   │   ├── tmdb_details.go       # TMDB details + external IDs + watch providers (one call)
 │   │   ├── justwatch.go          # JustWatch GraphQL client (title ID lookup)
-│   │   └── wikidata.go           # Wikidata lookup client
+│   │   ├── wikidata_sparql.go    # Wikidata SPARQL batch lookup (RT, Metacritic, Letterboxd, IMDb)
+│   │   └── download.go           # Netflix / IMDb file downloads, skipped when unchanged
 │   ├── config/
 │   │   └── config.go             # Config struct + Load() via caarlos0/env
 │   ├── constants/
@@ -544,14 +582,27 @@ metareel/
 │   ├── server/
 │   │   └── server.go             # Dependency wiring + graceful shutdown
 │   ├── service/
-│   │   ├── flixpatrol_job.go      # Core scrape + ID enrichment + DB persistence logic
+│   │   ├── flixpatrol_job.go      # Chart scrape (gaps, freshness, partial runs)
+│   │   ├── title_matcher.go       # FlixPatrol title → TMDB / IMDb / RT matching
+│   │   ├── title_enrich.go        # titles.enrich job (matching backlog + RT)
+│   │   ├── title_metadata.go      # titles.metadata job (TMDB + Wikidata)
+│   │   ├── netflix_import.go      # Netflix official Top 10 import + matching
+│   │   ├── imdb_import.go         # IMDb ratings dataset import
+│   │   ├── charts.go              # catalog, history, movers, leaderboards, changes, export
+│   │   ├── title_overview.go      # title overview, stats, availability, lookup
+│   │   ├── analytics.go           # decay, similarity, release lag, ratings vs popularity, genres, Netflix calibration
+│   │   ├── data_quality.go        # admin data-quality report
+│   │   ├── maintenance.go, alerts.go, health.go
 │   │   ├── task_schedule_admin.go # Admin CRUD + manual task enqueue
 │   │   ├── title_admin.go         # Title metadata patch/update service
 │   │   └── top10_read.go          # Read-only Top 10 query service
 │   └── tasks/
 │       ├── definition.go          # Task type constants + payload structs + constructors
+│       ├── schedule.go            # schedule → task + enqueue options (Unique)
 │       ├── handlers/
-│       │   ├── flixpatrol.go      # Asynq handler: deserialise → run job → record run
+│       │   ├── runner.go          # task_runs / logs / alerts for every job
+│       │   ├── jobs.go            # non-FlixPatrol job handlers
+│       │   ├── flixpatrol.go      # Asynq handler: run scrape → queue matching / re-checks
 │       │   └── mux.go             # Asynq ServeMux builder
 │       └── runtime/
 │           └── bootstrap.go       # Wires all task dependencies into a Bootstrap struct
@@ -585,8 +636,19 @@ No CGO dependency means the final Docker image is built on `scratch` and is full
 **Asynq over a simpler cron package**
 Asynq gives persistent, Redis-backed job state, retries with backoff, task deduplication, and the `PeriodicTaskManager` which can reload schedules from the DB every minute — meaning schedule changes take effect without a restart.
 
-**JustWatch-first, TMDB-fallback ID enrichment**
-JustWatch returns both TMDB and IMDb IDs in a single call. TMDB is only queried if JustWatch fails, reducing external API rate-limit exposure. Both are skipped entirely if a title already has both IDs in the DB.
+**Scrapes store charts; matching is a separate job**
+A scrape fetches only chart pages, so it is quick and a slow or failing
+upstream (JustWatch, TMDB, RT) can't stall or fail it. New titles are matched
+by `titles.enrich` straight after; unmatched titles back off (1, 3, 7, 30
+days) instead of costing lookups on every scrape.
+
+**JustWatch-first, TMDB-fallback ID matching**
+JustWatch returns both TMDB and IMDb IDs in a single call. TMDB is only queried if JustWatch fails, reducing external API rate-limit exposure.
+
+**Partial runs and idempotent retries**
+A failed chart page doesn't stop a run; the run is `partial` and asynq
+retries it. Charts already stored for the date are skipped, so a retry only
+fetches what failed.
 
 **WAL checkpoint on shutdown**
 `PRAGMA wal_checkpoint(FULL)` merges the write-ahead log into the main database file before closing. This ensures that any tool or backup script that opens only `metareel.db` (not the `-wal`/`-shm` side files) sees fully committed data.

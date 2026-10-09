@@ -2,6 +2,7 @@ package flixpatrol
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/bugsbunny-25/metareel/internal/constants"
@@ -226,3 +227,30 @@ func GetCountrySlugFromISO(code string) (string, error) {
 	}
 	return "", &ErrUnknownSlug{Slug: code}
 }
+
+// Country is a country FlixPatrol has charts for.
+type Country struct {
+	Code string `json:"code"` // ISO 3166-1 alpha-2
+	Slug string `json:"slug"` // FlixPatrol URL slug
+	Name string `json:"name"`
+}
+
+// Countries lists every country FlixPatrol charts can be scraped for, by name.
+func Countries() []Country {
+	out := make([]Country, 0, len(slugToCode))
+	for slug, code := range slugToCode {
+		name := strings.ReplaceAll(slug, "-", " ")
+		words := strings.Fields(name)
+		for i, w := range words {
+			if w != "and" && w != "of" && w != "the" {
+				words[i] = strings.ToUpper(w[:1]) + w[1:]
+			}
+		}
+		out = append(out, Country{Code: string(code), Slug: slug, Name: strings.Join(words, " ")})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// KnownProviders are the FlixPatrol providers metareel maps to JustWatch.
+var KnownProviders = []Provider{ProviderNetflix, ProviderHBOMax, ProviderDisneyPlus, ProviderAmazonPrime, ProviderParamountPlus, ProviderPeacock, ProviderAppleTV}

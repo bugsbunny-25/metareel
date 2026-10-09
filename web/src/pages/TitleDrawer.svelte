@@ -1,8 +1,9 @@
 <script>
-  import { getTitle, patchTitle, getTitleCandidates, getTitleRankings, getRatings } from '../lib/api.js'
+  import { getTitle, patchTitle, getTitleCandidates, getTitleRankings, getRatings, rematchTitle, getTitleOverview } from '../lib/api.js'
   import { links, parseImdbId, parseTmdbInput, parseRtSlug, dateOnly, relativeTime, dateTime, number } from '../lib/format.js'
   import { providerLabel, countryName } from '../lib/constants.js'
   import { toast } from '../lib/toast.svelte.js'
+  import { confirm } from '../lib/confirm.svelte.js'
   import Drawer from '../components/Drawer.svelte'
   import Icon from '../components/Icon.svelte'
   import KindBadge from '../components/KindBadge.svelte'
@@ -26,6 +27,38 @@
   let candidates = $state(null)
   let searching = $state(false)
 
+  // Matching
+  let rematching = $state(false)
+  async function rematch(clear) {
+    if (clear && !(await confirm({ title: 'Clear and match again?', message: `Forget the TMDB, IMDb and Rotten Tomatoes IDs of "${title.name}" and match it from scratch.`, confirmLabel: 'Clear and match', danger: true }))) return
+    rematching = true
+    try {
+      const res = await rematchTitle(title.id, clear)
+      title = { ...title, ...res.title }
+      resetForm()
+      onsaved?.(res.title)
+      toast.success(res.job ? 'Matching queued — the result appears in a few seconds (see Job runs)' : 'Matching is already queued')
+      setTimeout(() => getTitle(title.id).then((t) => { if (t.id === id) { title = t; resetForm(); onsaved?.(t) } }).catch(() => {}), 8000)
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      rematching = false
+    }
+  }
+
+  // Overview tab
+  let overview = $state(null)
+  let overviewError = $state('')
+  let availCountry = $state('US')
+  async function loadOverview() {
+    overviewError = ''
+    try {
+      overview = await getTitleOverview(title.kind === 'tv_show' ? 'tv' : 'movie', title.tmdb_id, { include: 'metadata,stats,availability,netflix' })
+    } catch (e) {
+      overviewError = e.message
+    }
+  }
+
   // Rankings & ratings tabs (loaded on first open)
   let rankings = $state(null)
   let chartKey = $state('')
@@ -38,6 +71,7 @@
     title = null
     rankings = null
     ratings = null
+    overview = null
     candidates = null
     loadError = ''
     getTitle(titleId)
@@ -105,6 +139,7 @@
     tab = name
     if (name === 'rankings' && !rankings) loadRankings()
     if (name === 'ratings' && !ratings && title?.tmdb_id) loadRatings(false)
+    if (name === 'overview' && !overview && title?.tmdb_id) loadOverview()
   }
 
   async function loadRankings() {
@@ -162,9 +197,34 @@
       <button class="tab" class:active={tab === 'mapping'} onclick={() => openTab('mapping')}>Mapping</button>
       <button class="tab" class:active={tab === 'rankings'} onclick={() => openTab('rankings')}>Chart history</button>
       <button class="tab" class:active={tab === 'ratings'} onclick={() => openTab('ratings')}>Ratings</button>
+      <button class="tab" class:active={tab === 'overview'} onclick={() => openTab('overview')}>Overview</button>
     </div>
 
     {#if tab === 'mapping'}
+      <div class="section-title">Matching</div>
+      <dl class="kv">
+        <dt>Status</dt>
+        <dd>
+          <span class="badge {title.match_status === 'matched' ? 'badge-success' : title.match_status === 'manual' ? 'badge-accent' : title.match_status === 'unmatched' ? 'badge-warning' : ''}">{title.match_status}</span>
+          <span class="muted small">
+            {#if title.match_status === 'manual'}fixed by hand — automatic matching leaves it alone
+            {:else if title.match_status === 'unmatched'}{title.match_attempts} attempt(s){#if title.next_match_at}; next <span title={dateTime(title.next_match_at)}>{relativeTime(title.next_match_at)}</span>{/if}
+            {:else if title.match_status === 'pending'}waiting for the matching job
+            {:else if title.match_source}via {title.match_source}{/if}
+          </span>
+        </dd>
+        {#if title.matched_name}<dt>Matched to</dt><dd>{title.matched_name} {title.matched_year ? `(${title.matched_year})` : ''}</dd>{/if}
+        {#if title.flixpatrol}
+          <dt>FlixPatrol page</dt>
+          <dd class="small">{title.flixpatrol.name ?? '—'}{title.flixpatrol.kind ? ` · ${title.flixpatrol.kind}` : ''}{title.flixpatrol.premiere_date ? ` · premiered ${dateOnly(title.flixpatrol.premiere_date)}` : ''}{title.flixpatrol.country ? ` · ${title.flixpatrol.country}` : ''}</dd>
+        {/if}
+      </dl>
+      <div class="row" style="margin:10px 0 4px">
+        <button class="btn btn-sm" onclick={() => rematch(false)} disabled={rematching}><Icon name="refresh" size={12} />Match again</button>
+        <button class="btn btn-sm" onclick={() => rematch(true)} disabled={rematching || !title.tmdb_id}><Icon name="x" size={12} />Clear and rematch</button>
+        <span class="field-hint">Saving IDs below marks the title as fixed by hand.</span>
+      </div>
+
       <div class="section-title">External IDs</div>
       <div class="field-row">
         <label class="field">
@@ -269,6 +329,75 @@
         </div>
         <div class="section-title">Rank over time · {chartKey}</div>
         <div class="card card-body"><RankChart points={chartPoints} /></div>
+      {/if}
+    {:else if tab === 'overview'}
+      {#if !title.tmdb_id}
+        <div class="empty"><div class="empty-title">Not mapped to TMDB</div>Map this title first.</div>
+      {:else if overviewError}
+        <div class="alert alert-error"><Icon name="alert" />{overviewError}</div>
+      {:else if !overview}
+        <div class="skeleton" style="height:160px"></div>
+      {:else}
+        {@const m = overview.metadata}
+        {#if m}
+          <div class="row" style="align-items:flex-start;gap:14px">
+            {#if m.poster_path}<img src="https://image.tmdb.org/t/p/w154{m.poster_path}" alt="Poster of {m.title}" width="92" style="border-radius:6px;flex:none" />{/if}
+            <div class="grow">
+              <div class="cell-title">{m.title}{m.original_title && m.original_title !== m.title ? ` (${m.original_title})` : ''}</div>
+              <div class="small muted">
+                {m.release_date ? dateOnly(m.release_date) : 'No release date'}{m.runtime ? ` · ${m.runtime} min` : ''}{m.number_of_seasons ? ` · ${m.number_of_seasons} season(s)` : ''}{m.status ? ` · ${m.status}` : ''}{m.original_language ? ` · ${m.original_language}` : ''}
+              </div>
+              <div class="row" style="flex-wrap:wrap;gap:4px;margin:6px 0">{#each m.genres as g (g)}<span class="chip">{g}</span>{/each}</div>
+              {#if m.overview}<p class="small" style="margin:0">{m.overview}</p>{/if}
+              <div class="small muted" style="margin-top:6px">
+                {[m.networks?.length ? `Networks: ${m.networks.join(', ')}` : '', m.production_companies?.length ? `Studios: ${m.production_companies.slice(0, 3).join(', ')}` : '', m.origin_countries?.length ? `Origin: ${m.origin_countries.join(', ')}` : ''].filter(Boolean).join(' · ')}
+              </div>
+              <div class="small row" style="flex-wrap:wrap;margin-top:6px">
+                {#if m.wikidata_id}<a href="https://www.wikidata.org/wiki/{m.wikidata_id}" target="_blank" rel="noopener">Wikidata <Icon name="external" size={11} /></a>{/if}
+                {#if m.metacritic_id}<a href="https://www.metacritic.com/{m.metacritic_id}" target="_blank" rel="noopener">Metacritic <Icon name="external" size={11} /></a>{/if}
+                {#if m.letterboxd_id}<a href="https://letterboxd.com/film/{m.letterboxd_id}/" target="_blank" rel="noopener">Letterboxd <Icon name="external" size={11} /></a>{/if}
+                {#if m.details_fetched_at}<span class="muted">TMDB data {relativeTime(m.details_fetched_at)}</span>{/if}
+              </div>
+            </div>
+          </div>
+        {:else}
+          <div class="alert alert-warning small"><Icon name="alert" size={14} />No TMDB metadata yet — it is fetched by the "TMDB metadata + watch providers" job (needs TMDB_API_KEY).</div>
+        {/if}
+
+        {#if overview.stats}
+          {@const st = overview.stats}
+          <div class="section-title" style="margin-top:18px">Chart performance <span class="muted small">(all FlixPatrol titles with this TMDB ID)</span></div>
+          <div class="grid" style="grid-template-columns:repeat(4,1fr)">
+            <div class="card stat"><div class="stat-label">Points</div><div class="stat-value">{number(st.total_points)}</div><div class="stat-foot">#1 = 10 … #10 = 1</div></div>
+            <div class="card stat"><div class="stat-label">Days on charts</div><div class="stat-value">{st.days_on_charts}</div><div class="stat-foot">longest run {st.longest_streak_days}d</div></div>
+            <div class="card stat"><div class="stat-label">Peak</div><div class="stat-value">#{st.peak_rank ?? '—'}</div><div class="stat-foot">{st.days_at_number_1} day(s) at #1</div></div>
+            <div class="card stat"><div class="stat-label">Countries</div><div class="stat-value">{st.countries.length}</div><div class="stat-foot">{st.providers.map(providerLabel).join(', ')}</div></div>
+          </div>
+          {#if st.debut}<p class="small muted">Debuted {dateOnly(st.debut.date)} at #{st.debut.rank} on {providerLabel(st.debut.provider)} {countryName(st.debut.country)}{#if st.spread.length > 1}; reached {st.spread.slice(1).map((x) => `${x.country} +${x.days_after_debut}d`).join(', ')}{/if}.</p>{/if}
+        {/if}
+
+        {#if overview.netflix}
+          {@const nf = overview.netflix}
+          <div class="section-title">Netflix official Top 10</div>
+          <p class="small">{nf.weeks_in_global_top10} week(s) in the global Top 10{nf.best_global_rank ? `, best #${nf.best_global_rank}` : ''} · {number(nf.total_views)} views · {number(nf.total_hours_viewed)} hours{nf.countries.length ? ` · charted in ${nf.countries.join(', ')}` : ''}</p>
+        {/if}
+
+        <div class="section-title row">Where to watch
+          <select class="select" style="height:26px" bind:value={availCountry} aria-label="Country">
+            {#each Object.keys(overview.availability?.countries ?? {}).sort() as c (c)}<option value={c}>{countryName(c)}</option>{/each}
+          </select>
+        </div>
+        {#if overview.availability?.countries?.[availCountry]}
+          {@const offers = overview.availability.countries[availCountry]}
+          <dl class="kv">
+            {#each [['flatrate', 'Stream'], ['free', 'Free'], ['ads', 'With ads'], ['rent', 'Rent'], ['buy', 'Buy']] as [k, label] (k)}
+              {#if offers[k].length}<dt>{label}</dt><dd class="small">{offers[k].map((p) => p.provider_name).join(', ')}</dd>{/if}
+            {/each}
+          </dl>
+          <p class="field-hint">{overview.availability.attribution}{#if offers.link} · <a href={offers.link} target="_blank" rel="noopener">TMDB watch page</a>{/if}</p>
+        {:else}
+          <p class="muted small">No watch providers known{overview.availability ? ` in ${countryName(availCountry)}` : ' yet'}.</p>
+        {/if}
       {/if}
     {:else}
       {#if !title.tmdb_id}

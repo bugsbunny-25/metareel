@@ -1,5 +1,5 @@
 <script>
-  import { listSchedules, getSchedule, updateSchedule, runScheduleNow, getStats } from '../lib/api.js'
+  import { listSchedules, getSchedule, updateSchedule, runScheduleNow, getStats, listTaskTypes } from '../lib/api.js'
   import { href } from '../lib/router.svelte.js'
   import { relativeTime, dateTime, dateTimeUTC, utcTimeToLocal } from '../lib/format.js'
   import { providerLabel } from '../lib/constants.js'
@@ -7,20 +7,27 @@
   import Icon from '../components/Icon.svelte'
   import RunStatus from '../components/RunStatus.svelte'
   import ScheduleModal from '../components/ScheduleModal.svelte'
+  import BackfillModal from '../components/BackfillModal.svelte'
 
   let schedules = $state([])
   let health = $state({})
   let loading = $state(false)
   let error = $state('')
   let editing = $state(null) // schedule object, or {} for a new one
+  let backfilling = $state(null)
   let busy = $state({})
+  let taskTypes = $state([])
+  const typeLabel = (t) => taskTypes.find((x) => x.type === t)?.label ?? t
 
   async function load() {
     loading = true
     try {
       const list = await listSchedules()
-      const [details, stats] = await Promise.all([Promise.all(list.map((s) => getSchedule(s.id))), getStats().catch(() => null)])
+      const [details, stats, types] = await Promise.all([
+        Promise.all(list.map((s) => getSchedule(s.id))), getStats().catch(() => null), listTaskTypes().catch(() => []),
+      ])
       schedules = details
+      taskTypes = types
       health = Object.fromEntries((stats?.schedule_health ?? []).map((h) => [h.schedule_id, h]))
       error = ''
     } catch (e) {
@@ -35,7 +42,8 @@
   function payload(s, patch = {}) {
     return {
       name: s.name, enabled: s.enabled, utc_runtimes: s.utc_runtimes, max_retries: s.max_retries,
-      request_delay_seconds: s.request_delay_seconds, respect_robots: s.respect_robots, user_agent: s.user_agent, ...patch,
+      request_delay_seconds: s.request_delay_seconds, respect_robots: s.respect_robots, user_agent: s.user_agent,
+      backfill_days: s.backfill_days, recheck_hours: s.recheck_hours, ...patch,
     }
   }
 
@@ -70,7 +78,7 @@
   <div class="page-header">
     <div>
       <h1 class="page-title">Schedules</h1>
-      <p class="page-desc">When each FlixPatrol scrape runs and which countries and providers it covers. Times are UTC.</p>
+      <p class="page-desc">When each job runs: FlixPatrol scrapes (and the countries and providers they cover), title matching, metadata, imports and maintenance. Times are UTC.</p>
     </div>
     <div class="page-actions">
       <button class="btn" onclick={load} disabled={loading}><Icon name="refresh" />Refresh</button>
@@ -95,6 +103,7 @@
               </td>
               <td>
                 <div class="cell-title">{s.name}</div>
+                <div class="muted small">{typeLabel(s.task_type)}{#if s.task_type === 'flixpatrol.top10.scrape'} · fills {s.backfill_days} day(s) of gaps · re-checks for {s.recheck_hours}h{/if}</div>
                 <div class="row" style="flex-wrap:wrap;gap:4px;margin-top:4px">
                   {#each s.flixpatrol_targets ?? [] as t (t.country_code + t.provider_slug)}
                     <span class="chip">{t.country_code} · {providerLabel(t.provider_slug)}</span>
@@ -118,7 +127,10 @@
               </td>
               <td class="right nowrap">
                 <button class="btn btn-sm" onclick={() => runNow(s)} disabled={!s.enabled || busy[s.id]} title={s.enabled ? 'Run now' : 'Enable to run'}><Icon name="play" size={12} />Run</button>
-                <a class="btn btn-sm" href={href('/runs', { schedule: s.id })}><Icon name="list" size={12} />Runs</a>
+                {#if s.task_type === 'flixpatrol.top10.scrape'}
+                  <button class="btn btn-sm" onclick={() => (backfilling = s)} title="Backfill: scrape past dates" aria-label="Backfill {s.name}"><Icon name="calendar" size={12} /></button>
+                {/if}
+                <a class="btn btn-sm" href={href('/runs', { schedule: s.id })} title="Runs" aria-label="Runs of {s.name}"><Icon name="list" size={12} /></a>
                 <button class="btn btn-sm" onclick={() => (editing = s)}><Icon name="edit" size={12} />Edit</button>
               </td>
             </tr>
@@ -132,5 +144,8 @@
 </div>
 
 {#if editing}
-  <ScheduleModal schedule={editing.id ? editing : null} onclose={() => (editing = null)} onsaved={() => { editing = null; load() }} />
+  <ScheduleModal schedule={editing.id ? editing : null} {taskTypes} onclose={() => (editing = null)} onsaved={() => { editing = null; load() }} />
+{/if}
+{#if backfilling}
+  <BackfillModal schedule={backfilling} onclose={() => (backfilling = null)} />
 {/if}
