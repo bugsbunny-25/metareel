@@ -42,15 +42,29 @@ it, and again after — several fields and enums below were only discoverable th
 
 - `GET https://api.mdblist.com/tmdb/{movie|show}/{id}?apikey=` → `ratings: [{source, value, votes, url}]`; sources include `imdb`, `tomatoes`, `popcorn`/`tomatoesaudience`, `metacritic`, `letterboxd`, `trakt`, … plus top-level `score`, `score_average`. Shape inferred from Kometa's client; verify once a key is available. 429 has `Retry-After`.
 
-## Wikidata
+## Wikidata (SPARQL, `client/wikidata_sparql.go`)
 
-- `GET /w/rest.php/wikibase/v1/entities/items/{Q}/statements?property=P1258` → RT id (`m/...` or `tv/...`).
+- POST `https://query.wikidata.org/sparql` (form `query=`, `Accept: application/sparql-results+json`, a descriptive User-Agent per Wikimedia policy). Batch 100 TMDB IDs per query: `VALUES ?tmdb {...} ?item wdt:P4947 ?tmdb` (movies; TV = `P4983`), optional `P345` IMDb, `P1258` RT (`m/...`, `tv/...`), `P1712` Metacritic, `P6127` Letterboxd. Only numeric IDs go into the query.
 
-## How mapping works (scrape time, `flixpatrol_job.go`)
+## TMDB details (`client/tmdb_details.go`)
 
-1. FlixPatrol title page → name, premiere year, kind (fallback: Top 10 name + slug year).
+- `/{movie|tv}/{id}?append_to_response=external_ids,watch/providers[,release_dates]` — one call for metadata, IMDb/Wikidata IDs, watch providers for every country (`results.{CC}.{flatrate,free,ads,rent,buy}`, plus a per-country `link`) and release dates (type 4 = digital). Watch provider data is JustWatch's and must be attributed.
+
+## Netflix Top 10 (`service/netflix_import.go`)
+
+- TSVs at `https://www.netflix.com/tudum/top10/data/{all-weeks-global,all-weeks-countries,most-popular}.tsv`. HEAD returns 403 and `If-Modified-Since` / `Range` are ignored, so `client.Downloader` GETs and closes the body when `Last-Modified` is unchanged. countries is ~32 MB / 500k rows (filtered by `NETFLIX_TOP10_COUNTRIES`). `week` is the Sunday ending a Monday–Sunday week; `N/A` means empty. No IDs or years: titles are matched via a same-name FlixPatrol title that charted on Netflix, else JustWatch's US Netflix catalogue, else a single exact-name hit in all of JustWatch US.
+
+## IMDb datasets
+
+- `https://datasets.imdbws.com/title.ratings.tsv.gz` (~9 MB, daily, ETag). Personal / non-commercial use only. Imported for known IMDb IDs (`IMDB_DATASET_SCOPE`); `imdb_dataset` is the first-choice IMDb rating in ratings responses.
+
+## How mapping works (`titles.enrich`: `title_enrich.go` + `title_matcher.go`)
+
+Scrapes only record titles (`match_status = pending`) and queue `titles.enrich` for them.
+
+1. FlixPatrol title page (read once, stored as `titles.fp_*`) → name, premiere date, kind (fallback: Top 10 name, its `: Season N`-less form, slug year).
 2. For the page's kind, then the chart's kind if different: JustWatch path lookup → JustWatch search → TMDB search. Accept only title match (normalized) **and** year within ±1 (`pickCandidate`).
 3. TMDB external IDs → IMDb + Wikidata → RT slug; if still missing, RT search (`FindRTSlug`).
-4. Titles with TMDB+IMDb+RT are not re-matched; fix wrong ones in the admin UI (title drawer → Find matches).
+4. Unmatched titles retry after 1, 3, 7, then every 30 days (`next_match_at`); RT lookups back off the same way (`next_rt_at`), Wikidata batch first. `manual` titles (saved in the admin UI) are never touched; "Match again" / `POST /admin/titles/:id/rematch` resets the backoff.
 
 Ratings (`/titles/tmdb/{kind}/{id}/ratings`) store every provider's values in `title_rating_sources`; RT's own numbers win for RT, then the preferred provider.

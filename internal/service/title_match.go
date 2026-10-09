@@ -31,6 +31,7 @@ type titleCandidate struct {
 	Year          int
 	TmdbID        string
 	ImdbID        string
+	JustWatchID   string // e.g. tm1504418 (JustWatch candidates only)
 	Source        string // where the candidate came from, for logs
 }
 

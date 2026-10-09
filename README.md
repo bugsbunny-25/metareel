@@ -12,7 +12,7 @@ scrapes web pages, backed by SQLite for persistence and Redis for caching.
 | Concern        | Library                                  |
 | -------------- | ---------------------------------------- |
 | HTTP server    | `labstack/echo/v5`                       |
-| Cache          | `redis/go-redis/v9`                      |
+| Job queue      | `hibiken/asynq` (Redis)                  |
 | HTTP client    | `go-resty/resty/v2`                      |
 | Web scraping   | `gocolly/colly/v2`                       |
 | Database       | `modernc.org/sqlite` (pure-Go, no CGO)   |
@@ -31,7 +31,6 @@ runs on `scratch` (~15–20 MB image, ~20–50 MB RSS at idle).
 ├── cmd/
 │   └── server/              # main.go – composition root
 ├── internal/
-│   ├── cache/               # Redis wrapper (JSON + TTL helpers)
 │   ├── client/              # Resty HTTP client factory
 │   ├── config/              # env-driven config
 │   ├── handler/             # Echo HTTP handlers
@@ -175,20 +174,70 @@ make reports-open
 
 | Method | Path                                        | Description                                 |
 | ------ | ------------------------------------------- | ------------------------------------------- |
-| GET    | `/healthz`, `/readyz`                       | Liveness / readiness                        |
+| GET    | `/healthz`                                  | Liveness |
+| GET    | `/readyz`                                   | Readiness: DB + Redis (503 if down), FlareSolverr reported as `degraded` |
 | GET    | `/docs`, `/docs/admin`                      | Swagger UI (public + admin)                 |
 | GET    | `/openapi/public.yaml`, `/openapi/admin.yaml` | OpenAPI specs (YAML)                      |
-| GET    | `/api/v1/top10/...`                         | Read API: Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`) |
-| GET    | `/api/v1/titles`                            | List titles (paged)                         |
-| PATCH  | `/api/v1/titles/:id`                        | Patch title kind / external IDs             |
+| GET    | `/api/v1/top10/{movies\|tv-shows}/:country[/:provider]` | Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`) |
+| GET    | `/api/v1/top10/:country`                    | Every provider's movie + TV chart of a country in one call |
+| GET    | `/api/v1/top10/{movies\|tv-shows}/:country/:provider/history` | One chart over a range (`from`, `to`; ≤ 92 days) |
+| GET    | `/api/v1/top10/global/:provider`            | A provider's titles across all countries by points (`date`, `category`, `kind`) |
+| GET    | `/api/v1/charts`, `/api/v1/charts/:country/:provider/dates` | Stored charts with date ranges and freshness; stored dates |
+| GET    | `/api/v1/changes?since=`                    | Charts stored / re-scraped since a time (poll this) |
+| GET    | `/api/v1/movers`                            | Climbers, fallers, debuts, re-entries, exits (`country`, `provider`, `date`) |
+| GET    | `/api/v1/leaderboards`                      | Titles by chart points (`period=day\|week\|month\|custom`, filters) |
+| GET    | `/api/v1/export/rankings`                   | Chart entries as CSV / NDJSON (≤ 366 days) |
+| GET    | `/api/v1/countries`, `/api/v1/providers`    | Supported countries; providers with stored charts |
+| GET    | `/api/v1/titles`, `/api/v1/titles/:id`      | Scraped titles (paged; `match_status` filter) |
+| GET    | `/api/v1/titles/lookup?imdb=\|tmdb=\|slug=` | Find a title by any ID |
+| GET    | `/api/v1/titles/tmdb/:kind/:id`             | Everything about a title: TMDB metadata, chart stats, current positions, ratings, where to watch, Netflix numbers (`include=`) |
+| GET    | `/api/v1/titles/tmdb/:kind/:id/stats`       | Chart performance: points, peak, days at #1, debut, streak, spread across countries |
+| GET    | `/api/v1/titles/tmdb/:kind/:id/availability` | Watch providers per country (TMDB, data by JustWatch) |
+| GET    | `/api/v1/titles/tmdb/:kind/:id/netflix`     | Weeks in Netflix's official Top 10 |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/rankings`    | Ranking history by TMDB ID (`kind` = movie or tv; `country`, `from`, `to` optional) |
 | GET    | `/api/v1/titles/tmdb/rankings?ids=movie:425,tv:1` | Batch ranking history (max 50 ids)    |
-| GET    | `/api/v1/titles/tmdb/:kind/:id/ratings`     | IMDb + Rotten Tomatoes ratings by TMDB ID, cached for `RATINGS_TTL` (`?refresh=true` to force) |
+| GET    | `/api/v1/titles/tmdb/:kind/:id/ratings`     | IMDb + Rotten Tomatoes ratings by TMDB ID, cached for `RATINGS_TTL` (`?refresh=true` to force); IMDb's own dataset wins for IMDb |
+| GET    | `/api/v1/titles/tmdb/ratings?ids=`          | Batch ratings (max 50; refreshes up to 10 uncached) |
+| GET    | `/api/v1/netflix/top10[/:country]`, `/api/v1/netflix/most-popular` | Netflix's official weekly Top 10 and most-popular lists |
+| GET    | `/api/v1/analytics/{decay,country-similarity,release-lag,ratings-vs-popularity,genres,netflix-calibration}` | Analytics over a range (`from`, `to`, `country`, `provider`, `category`, `kind`) |
 | GET    | `/api/v1/titles/new/:country/:service`      | Titles added to a service per day, live from JustWatch (`from`, `to` default last 7 days; `type`) |
 | GET    | `/api/v1/titles/upcoming/:country/:service` | Titles announced for a service, live from JustWatch (`from`, `to`, `type`) |
 | GET    | `/api/v1/services/:country`                 | JustWatch service codes in a country (for `:service`) |
-| GET/POST/PATCH/DELETE | `/api/v1/admin/...`           | Admin API: schedules, runs, stats, API keys, settings, and admin copies of the read routes above |
+| GET/POST/PATCH/DELETE | `/api/v1/admin/...`           | Admin API: schedules, runs, stats, API keys, settings, title corrections (`PATCH /api/v1/admin/titles/:id`, `POST .../rematch`), `POST /jobs/:type/run`, `POST /backfill`, `GET /data-quality`, `GET /task-types`, and admin copies of the read routes above |
 | GET    | `/` (and any unmatched path)                | Serves `web/dist/` SPA if present           |
+
+GET responses under `/api/v1` carry an `ETag`; send it back as
+`If-None-Match` to get `304 Not Modified` when nothing changed.
+
+## Jobs
+
+Every job is a schedule (admin UI → Schedules; run times in UTC) and can be run
+on demand from Data health or `POST /api/v1/admin/jobs/:type/run`.
+
+| Job | Default | What it does |
+|---|---|---|
+| `flixpatrol.top10.scrape` | your schedules | Scrapes each target's current chart, fills gaps from the last `backfill_days`, re-checks hourly for `recheck_hours` when FlixPatrol has not published the day's chart yet. A failed chart page does not stop the run (status `partial`); retries only redo failed pages. New titles are queued for matching right away. |
+| `titles.enrich` | 03:00 | Matches titles to TMDB / IMDb (FlixPatrol title page → JustWatch → TMDB), retrying unmatched ones after 1, 3, 7, then every 30 days; finds RT slugs via Wikidata SPARQL, then RT search. Titles fixed in the admin UI (`manual`) are never touched. |
+| `titles.metadata` | 04:00 | TMDB details + watch providers (charting titles every 3 days, others monthly) and Wikidata IDs (RT, Metacritic, Letterboxd). Needs `TMDB_API_KEY`. |
+| `ratings.prewarm` | 15:30 | Refreshes expired ratings of titles charting in the last 3 days. |
+| `netflix.top10.import` | 21:00 | Netflix's official weekly Top 10 (global, per country, most popular); skipped when unchanged. |
+| `imdb.ratings.import` | 06:00 | IMDb's daily ratings dataset for the IMDb IDs metareel knows. |
+| `maintenance` | 02:00 | Run retention (`RUN_RETENTION_DAYS`), stale-chart alerts, SQLite optimize. |
+
+Only one FlixPatrol page is fetched at a time across all jobs
+(`SCRAPER_MIN_INTERVAL` apart). A schedule cannot be queued twice (409).
+Set `ALERT_WEBHOOK_URL` to get failed runs and stale charts as JSON, Slack,
+Discord or ntfy messages.
+
+### Data sources and terms
+
+- **FlixPatrol** (charts, title pages) through your FlareSolverr.
+- **Netflix Top 10** (`netflix.com/tudum/top10` TSV downloads).
+- **IMDb non-commercial datasets** (`title.ratings.tsv.gz`) — personal and
+  non-commercial use only; see https://developer.imdb.com/non-commercial-datasets/.
+- **TMDB** (search, details, watch providers — watch provider data is by
+  JustWatch and must be attributed), **Wikidata** (SPARQL, CC0),
+  **JustWatch** GraphQL, **Rotten Tomatoes** search index, **MDBList** (optional).
 
 ## Public API keys
 

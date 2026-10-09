@@ -108,10 +108,9 @@ func run(log *slog.Logger, flareURL string, direct bool, provider flixpatrol.Pro
 		return err
 	}
 	httpClient := client.New(cfg.HTTP)
-	job := service.NewFlixPatrolJob(log, fetcher, nil,
+	matcher := service.NewTitleMatcher(log, fetcher,
 		client.NewTMDB(httpClient, cfg.TMDB.APIKey),
 		client.NewJustWatchClient(httpClient.GetClient()),
-		client.NewWikidata(httpClient),
 		client.NewRottenTomatoes(cfg.HTTP.Timeout))
 
 	fmt.Println("\nmapping:")
@@ -120,7 +119,14 @@ func run(log *slog.Logger, flareURL string, direct bool, provider flixpatrol.Pro
 			if i >= titles {
 				break
 			}
-			m, err := job.MatchTitle(ctx, e, provider, string(countryCode), opts)
+			details, err := matcher.FetchDetails(ctx, e.Slug, service.FetchOptions{RequestDelay: opts.RequestDelay, UserAgent: opts.UserAgent, RespectRobots: opts.RespectRobots})
+			if err != nil {
+				fmt.Printf("  %-40s    (title page unavailable: %v)\n", e.Slug, err)
+			}
+			m, err := matcher.Match(ctx, service.MatchInput{
+				Slug: e.Slug, ChartName: e.Name, ChartKind: e.TitleKind, Details: details,
+				Provider: provider, Country: string(countryCode),
+			})
 			if err != nil {
 				return err
 			}
@@ -128,7 +134,7 @@ func run(log *slog.Logger, flareURL string, direct bool, provider flixpatrol.Pro
 				fmt.Printf("  %-40s -> not mapped (kind %s)\n", e.Slug, m.Kind)
 				continue
 			}
-			rtSlug := job.FindRTSlug(ctx, e, m.Kind, m.TmdbID, m)
+			rtSlug, _ := matcher.FindRTSlug(ctx, service.RTQuery{Slug: e.Slug, Name: m.Title, Year: m.Year, Kind: m.Kind, TmdbID: m.TmdbID, From: m.Source})
 			fmt.Printf("  %-40s -> %s %q (%d) tmdb=%s imdb=%s rt=%s via %s\n", e.Slug, m.Kind, m.Title, m.Year, m.TmdbID, m.ImdbID, rtSlug, m.Source)
 		}
 	}

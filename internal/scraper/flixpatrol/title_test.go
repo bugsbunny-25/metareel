@@ -12,11 +12,11 @@ func TestParseTitleDetails_FromSamples(t *testing.T) {
 	}{
 		{
 			path: "testdata/title_bugonia.html",
-			want: TitleDetails{Name: "Bugonia", TitleKind: TitleKindMovie, Year: 2025, Country: "United States"},
+			want: TitleDetails{Name: "Bugonia", TitleKind: TitleKindMovie, Year: 2025, Premiere: "2025-10-24", Country: "United States"},
 		},
 		{
 			path: "testdata/title_beef.html",
-			want: TitleDetails{Name: "BEEF", TitleKind: TitleKindTVShow, Year: 2023, Country: "United States"},
+			want: TitleDetails{Name: "BEEF", TitleKind: TitleKindTVShow, Year: 2023, Premiere: "2023-04-06", Country: "United States"},
 		},
 	}
 
@@ -46,6 +46,27 @@ func TestYearFromSlug(t *testing.T) {
 	for slug, want := range tests {
 		if got := YearFromSlug(slug); got != want {
 			t.Errorf("YearFromSlug(%q) = %d, want %d", slug, got, want)
+		}
+	}
+}
+
+func TestSeasonFromName(t *testing.T) {
+	tests := []struct {
+		in     string
+		name   string
+		season int
+	}{
+		{"Wednesday: Season 2", "Wednesday", 2},
+		{"Squid Game - Season 3", "Squid Game", 3},
+		{"Stranger Things Season 5", "Stranger Things", 5},
+		{"The Four Seasons", "The Four Seasons", 0},
+		{"Season 2", "Season 2", 0},
+		{"Bugonia", "Bugonia", 0},
+	}
+	for _, tt := range tests {
+		name, season := SeasonFromName(tt.in)
+		if name != tt.name || season != tt.season {
+			t.Errorf("SeasonFromName(%q) = %q, %d; want %q, %d", tt.in, name, season, tt.name, tt.season)
 		}
 	}
 }

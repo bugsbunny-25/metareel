@@ -38,17 +38,37 @@ type TitleResponse struct {
 	ImdbID    *string   `json:"imdb_id"`
 	RtURL     *string   `json:"rt_url"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Matching state: pending | matched | unmatched | manual.
+	MatchStatus   string     `json:"match_status"`
+	MatchSource   *string    `json:"match_source,omitempty"`
+	MatchedName   *string    `json:"matched_name,omitempty"`
+	MatchedYear   *int64     `json:"matched_year,omitempty"`
+	MatchAttempts int64      `json:"match_attempts"`
+	NextMatchAt   *time.Time `json:"next_match_at,omitempty"`
+	JustWatchID   *string    `json:"justwatch_id,omitempty"`
+	WikidataID    *string    `json:"wikidata_id,omitempty"`
+	// From the FlixPatrol title page, once read.
+	FlixPatrol *FlixPatrolTitleDetails `json:"flixpatrol,omitempty"`
 	// Set on list responses only.
 	LastRankedOn  *string `json:"last_ranked_on,omitempty"`
 	RankingsCount *int64  `json:"rankings_count,omitempty"`
 }
 
+// FlixPatrolTitleDetails is what the FlixPatrol title page said.
+type FlixPatrolTitleDetails struct {
+	Name         *string `json:"name"`
+	Kind         *string `json:"kind"`
+	PremiereDate *string `json:"premiere_date"`
+	Country      *string `json:"country"`
+}
+
 // TitlesQuery filters and sorts ListTitlesPage.
 type TitlesQuery struct {
-	Kind    string // "" | movie | tv_show
-	Search  string // name or slug substring
-	Missing string // "" | tmdb | imdb | rt
-	Sort    string // see titleSorts
+	Kind        string // "" | movie | tv_show
+	Search      string // name or slug substring
+	Missing     string // "" | tmdb | imdb | rt
+	MatchStatus string // "" | pending | matched | unmatched | manual
+	Sort        string // see titleSorts
 }
 
 var titleSorts = map[string]bool{
@@ -83,10 +103,15 @@ func (s *TitleAdminService) ListTitlesPage(ctx context.Context, q TitlesQuery, l
 	default:
 		return nil, &ValidationError{Message: "invalid missing, expected tmdb, imdb or rt"}
 	}
+	switch q.MatchStatus {
+	case "", repository.MatchStatusPending, repository.MatchStatusMatched, repository.MatchStatusUnmatched, repository.MatchStatusManual:
+	default:
+		return nil, &ValidationError{Message: "invalid match_status, expected pending, matched, unmatched or manual"}
+	}
 	if !titleSorts[q.Sort] {
 		return nil, &ValidationError{Message: "invalid sort"}
 	}
-	f := repository.TitleListFilter{Kind: q.Kind, Search: strings.TrimSpace(q.Search), Missing: q.Missing, Sort: q.Sort}
+	f := repository.TitleListFilter{Kind: q.Kind, Search: strings.TrimSpace(q.Search), Missing: q.Missing, MatchStatus: q.MatchStatus, Sort: q.Sort}
 	rows, err := s.repo.ListTitles(ctx, f, limit, offset)
 	if err != nil {
 		return nil, err
@@ -173,5 +198,49 @@ func titleToResponse(t sqlc.Title) *TitleResponse {
 	if t.RtUrl.Valid {
 		resp.RtURL = &t.RtUrl.String
 	}
+	resp.MatchStatus = t.MatchStatus
+	resp.MatchSource = nullStr(t.MatchSource)
+	resp.MatchedName = nullStr(t.MatchedName)
+	if t.MatchedYear.Valid {
+		resp.MatchedYear = &t.MatchedYear.Int64
+	}
+	resp.MatchAttempts = t.MatchAttempts
+	if t.NextMatchAt.Valid {
+		v := t.NextMatchAt.Time.UTC()
+		resp.NextMatchAt = &v
+	}
+	resp.JustWatchID = nullStr(t.JustwatchID)
+	resp.WikidataID = nullStr(t.WikidataID)
+	if t.FpFetchedAt.Valid {
+		resp.FlixPatrol = &FlixPatrolTitleDetails{
+			Name: nullStr(t.FpName), Kind: nullStr(t.FpKind), PremiereDate: nullStr(t.FpPremiereDate), Country: nullStr(t.FpCountry),
+		}
+	}
 	return resp
+}
+
+func nullStr(v sql.NullString) *string {
+	if !v.Valid {
+		return nil
+	}
+	return &v.String
+}
+
+// Rematch puts a title back in the matching queue. clear also forgets its
+// current IDs (for a wrong match); otherwise it keeps them and only clears a
+// manual lock and the retry backoff. Returns sql.ErrNoRows if not found.
+func (s *TitleAdminService) Rematch(ctx context.Context, titleID int64, clear bool) (*TitleResponse, error) {
+	var (
+		t   sqlc.Title
+		err error
+	)
+	if clear {
+		t, err = s.repo.ClearTitleMatch(ctx, titleID)
+	} else {
+		t, err = s.repo.ResetTitleMatch(ctx, titleID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return titleToResponse(t), nil
 }

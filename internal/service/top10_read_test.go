@@ -51,27 +51,48 @@ type seedRanking struct {
 	rank     int64
 }
 
-func seed(t *testing.T, repo *repository.FlixPatrolRepository, titles []repository.UpsertTitleInput, rankings []seedRanking) {
+// seedTitle is a title for tests; set IDs make it a matched title.
+type seedTitle struct {
+	Slug, Name, Kind      string
+	TmdbID, ImdbID, RtURL string
+}
+
+func seed(t *testing.T, repo *repository.FlixPatrolRepository, titles []seedTitle, rankings []seedRanking) {
 	t.Helper()
 	ctx := context.Background()
 	ids := map[string]int64{}
 	for _, in := range titles {
-		row, err := repo.UpsertTitle(ctx, in)
+		row, err := repo.EnsureTitle(ctx, in.Slug, in.Name, in.Kind)
 		if err != nil {
-			t.Fatalf("upsert title %s: %v", in.Slug, err)
+			t.Fatalf("ensure title %s: %v", in.Slug, err)
 		}
 		ids[in.Slug] = row.ID
+		if in.TmdbID != "" {
+			if _, err := repo.SaveTitleMatch(ctx, row.ID, repository.TitleMatchResult{Kind: in.Kind, TmdbID: in.TmdbID, ImdbID: in.ImdbID, Source: "test"}); err != nil {
+				t.Fatalf("save match %s: %v", in.Slug, err)
+			}
+		}
+		if in.RtURL != "" {
+			if err := repo.SaveTitleExternalIDs(ctx, row.ID, "", "", in.RtURL); err != nil {
+				t.Fatalf("save rt %s: %v", in.Slug, err)
+			}
+		}
 	}
+	type chartKey struct{ date, country, provider, category string }
+	charts := map[chartKey][]repository.ChartEntry{}
+	var order []chartKey
 	for _, r := range rankings {
-		if _, err := repo.UpsertRanking(ctx, repository.UpsertRankingInput{
-			TitleID:           ids[r.slug],
-			RankedOn:          day(r.date),
-			Country:           r.country,
-			StreamingProvider: r.provider,
-			Category:          r.category,
-			Rank:              r.rank,
+		k := chartKey{r.date, r.country, r.provider, r.category}
+		if _, ok := charts[k]; !ok {
+			order = append(order, k)
+		}
+		charts[k] = append(charts[k], repository.ChartEntry{TitleID: ids[r.slug], Slug: r.slug, Rank: r.rank})
+	}
+	for _, k := range order {
+		if err := repo.SaveChart(ctx, repository.ChartWrite{
+			RankedOn: day(k.date), Country: k.country, StreamingProvider: k.provider, Category: k.category, Entries: charts[k],
 		}); err != nil {
-			t.Fatalf("upsert ranking %+v: %v", r, err)
+			t.Fatalf("save chart %+v: %v", k, err)
 		}
 	}
 }
@@ -79,7 +100,7 @@ func seed(t *testing.T, repo *repository.FlixPatrolRepository, titles []reposito
 func TestTop10_PreviousRankAndDaysInTop10(t *testing.T) {
 	svc, repo := newTestTop10Service(t)
 	seed(t, repo,
-		[]repository.UpsertTitleInput{
+		[]seedTitle{
 			{Slug: "a", Name: "A", Kind: "movie"},
 			{Slug: "b", Name: "B", Kind: "movie"},
 			{Slug: "c", Name: "C", Kind: "movie"},
@@ -136,7 +157,7 @@ func TestTop10_PreviousRankAndDaysInTop10(t *testing.T) {
 func TestTop10_AllProvidersLatestIsPerProvider(t *testing.T) {
 	svc, repo := newTestTop10Service(t)
 	seed(t, repo,
-		[]repository.UpsertTitleInput{{Slug: "a", Name: "A", Kind: "tv_show"}},
+		[]seedTitle{{Slug: "a", Name: "A", Kind: "tv_show"}},
 		[]seedRanking{
 			{"a", "2026-10-02", "US", "netflix", "tv_shows", 1},
 			{"a", "2026-10-03", "US", "netflix", "tv_shows", 1},
@@ -171,7 +192,7 @@ func TestTop10_NotFound(t *testing.T) {
 func TestTitleRankings(t *testing.T) {
 	svc, repo := newTestTop10Service(t)
 	seed(t, repo,
-		[]repository.UpsertTitleInput{
+		[]seedTitle{
 			// Two FlixPatrol slugs mapped to the same TMDB movie.
 			{Slug: "ice-age", Name: "Ice Age", Kind: "movie", TmdbID: "425", ImdbID: "tt0268380"},
 			{Slug: "ice-age-2002", Name: "Ice Age", Kind: "movie", TmdbID: "425"},
@@ -293,4 +314,14 @@ func deref(p *int64) any {
 		return nil
 	}
 	return *p
+}
+
+func seedOne(t *testing.T, repo *repository.FlixPatrolRepository, in seedTitle) (int64, error) {
+	t.Helper()
+	seed(t, repo, []seedTitle{in}, nil)
+	row, err := repo.GetTitleBySlug(context.Background(), in.Slug)
+	if err != nil || row == nil {
+		return 0, err
+	}
+	return row.ID, nil
 }

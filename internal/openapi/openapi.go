@@ -14,7 +14,6 @@ import (
 var assets embed.FS
 
 func SpecPublicYAML() ([]byte, error) {
-	fmt.Println("spec/public.yaml requested")
 	return assets.ReadFile("spec/public.yaml")
 }
 
@@ -23,7 +22,6 @@ func SpecAdminYAML() ([]byte, error) {
 }
 
 func SwaggerUIHTMLPublic() ([]byte, error) {
-	fmt.Println("swaggerui/public.html requested")
 	return assets.ReadFile("swaggerui/public.html")
 }
 

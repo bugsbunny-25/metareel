@@ -11,10 +11,8 @@ import (
 	"github.com/bugsbunny-25/metareel/internal/repository/sqlc"
 )
 
-const taskTypeFlixPatrolTop10 = "flixpatrol.top10.scrape"
-
 type TaskScheduleRepository struct {
-	q *sqlc.Queries
+	q  *sqlc.Queries
 	db *sql.DB
 }
 
@@ -22,17 +20,16 @@ func NewTaskScheduleRepository(db *sql.DB) *TaskScheduleRepository {
 	return &TaskScheduleRepository{q: sqlc.New(db), db: db}
 }
 
-func (r *TaskScheduleRepository) ListFlixPatrolTop10TaskScheduleConfigs(ctx context.Context) ([]FlixPatrolTaskSchedule, error) {
+// ListEnabledTaskSchedules returns every enabled schedule with its run
+// times and (for FlixPatrol schedules) targets.
+func (r *TaskScheduleRepository) ListEnabledTaskSchedules(ctx context.Context) ([]TaskSchedule, error) {
 	rows, err := r.q.ListEnabledTaskSchedules(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list enabled task schedules: %w", err)
 	}
 
-	out := make([]FlixPatrolTaskSchedule, 0, len(rows))
+	out := make([]TaskSchedule, 0, len(rows))
 	for _, row := range rows {
-		if row.TaskType != taskTypeFlixPatrolTop10 {
-			continue
-		}
 		schedule, err := r.buildTaskSchedule(ctx, row.ID)
 		if err != nil {
 			return nil, err
@@ -42,12 +39,28 @@ func (r *TaskScheduleRepository) ListFlixPatrolTop10TaskScheduleConfigs(ctx cont
 	return out, nil
 }
 
+// ListAllFlixPatrolTargets returns the distinct targets of every FlixPatrol
+// schedule.
+func (r *TaskScheduleRepository) ListAllFlixPatrolTargets(ctx context.Context) ([]FlixPatrolTarget, error) {
+	rows, err := r.q.ListAllFlixPatrolTargets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list flixpatrol targets: %w", err)
+	}
+	out := make([]FlixPatrolTarget, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, FlixPatrolTarget{CountrySlug: row.CountrySlug, ProviderSlug: row.ProviderSlug})
+	}
+	return out, nil
+}
+
 type FlixPatrolTarget struct {
 	CountrySlug  string
 	ProviderSlug string
 }
 
-type FlixPatrolTaskSchedule struct {
+// TaskSchedule is a schedule with its run times; Targets, BackfillDays and
+// RecheckHours only apply to FlixPatrol scrape schedules.
+type TaskSchedule struct {
 	ID                  int64
 	TaskType            string
 	Name                string
@@ -56,6 +69,8 @@ type FlixPatrolTaskSchedule struct {
 	RequestDelaySeconds int64
 	RespectRobots       bool
 	UserAgent           string
+	BackfillDays        int64
+	RecheckHours        int64
 	RunTimesUTC         []string
 	Targets             []FlixPatrolTarget
 }
@@ -112,18 +127,7 @@ func (r *TaskScheduleRepository) ListTaskSchedules(ctx context.Context, enabled 
 	return out, nil
 }
 
-func (r *TaskScheduleRepository) GetFlixPatrolTaskScheduleByID(ctx context.Context, id int64) (*FlixPatrolTaskSchedule, error) {
-	schedule, err := r.GetTaskScheduleByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if schedule.TaskType != taskTypeFlixPatrolTop10 {
-		return nil, fmt.Errorf("task schedule %d has unsupported type: %s", id, schedule.TaskType)
-	}
-	return schedule, nil
-}
-
-func (r *TaskScheduleRepository) GetTaskScheduleByID(ctx context.Context, id int64) (*FlixPatrolTaskSchedule, error) {
+func (r *TaskScheduleRepository) GetTaskScheduleByID(ctx context.Context, id int64) (*TaskSchedule, error) {
 	return r.buildTaskSchedule(ctx, id)
 }
 
@@ -135,6 +139,8 @@ type CreateTaskScheduleInput struct {
 	RequestDelaySeconds int64
 	RespectRobots       bool
 	UserAgent           string
+	BackfillDays        int64
+	RecheckHours        int64
 	UTCRunTimes         []string
 }
 
@@ -154,6 +160,8 @@ func (r *TaskScheduleRepository) CreateTaskSchedule(ctx context.Context, in Crea
 		RequestDelaySeconds: in.RequestDelaySeconds,
 		RespectRobots:       in.RespectRobots,
 		UserAgent:           in.UserAgent,
+		BackfillDays:        in.BackfillDays,
+		RecheckHours:        in.RecheckHours,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("create task schedule: %w", err)
@@ -181,10 +189,12 @@ type UpdateTaskScheduleInput struct {
 	RequestDelaySeconds int64
 	RespectRobots       bool
 	UserAgent           string
+	BackfillDays        int64
+	RecheckHours        int64
 	UTCRunTimes         []string
 }
 
-func (r *TaskScheduleRepository) UpdateTaskSchedule(ctx context.Context, id int64, in UpdateTaskScheduleInput) (*FlixPatrolTaskSchedule, error) {
+func (r *TaskScheduleRepository) UpdateTaskSchedule(ctx context.Context, id int64, in UpdateTaskScheduleInput) (*TaskSchedule, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
@@ -200,6 +210,8 @@ func (r *TaskScheduleRepository) UpdateTaskSchedule(ctx context.Context, id int6
 		RequestDelaySeconds: in.RequestDelaySeconds,
 		RespectRobots:       in.RespectRobots,
 		UserAgent:           in.UserAgent,
+		BackfillDays:        in.BackfillDays,
+		RecheckHours:        in.RecheckHours,
 	}); err != nil {
 		return nil, fmt.Errorf("update task schedule: %w", err)
 	}
@@ -220,6 +232,29 @@ func (r *TaskScheduleRepository) UpdateTaskSchedule(ctx context.Context, id int6
 		return nil, fmt.Errorf("commit tx: %w", err)
 	}
 	return r.buildTaskSchedule(ctx, id)
+}
+
+// ReplaceFlixPatrolTargets sets the schedule's targets to exactly targets.
+func (r *TaskScheduleRepository) ReplaceFlixPatrolTargets(ctx context.Context, scheduleID int64, targets []FlixPatrolTarget) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := sqlc.New(tx)
+	if err := q.DeleteTaskScheduleTargets(ctx, scheduleID); err != nil {
+		return fmt.Errorf("delete targets: %w", err)
+	}
+	for _, t := range targets {
+		if err := q.CreateTaskScheduleTarget(ctx, sqlc.CreateTaskScheduleTargetParams{
+			ScheduleID:   scheduleID,
+			CountrySlug:  t.CountrySlug,
+			ProviderSlug: t.ProviderSlug,
+		}); err != nil {
+			return fmt.Errorf("create target (%s,%s): %w", t.CountrySlug, t.ProviderSlug, err)
+		}
+	}
+	return tx.Commit()
 }
 
 func (r *TaskScheduleRepository) AddFlixPatrolTargets(ctx context.Context, scheduleID int64, targets []FlixPatrolTarget) error {
@@ -258,7 +293,7 @@ func NormalizeUTCRuntime(v string) (string, error) {
 	return time.Date(2000, 1, 1, hour, minute, 0, 0, time.UTC).Format("15:04"), nil
 }
 
-func (r *TaskScheduleRepository) buildTaskSchedule(ctx context.Context, id int64) (*FlixPatrolTaskSchedule, error) {
+func (r *TaskScheduleRepository) buildTaskSchedule(ctx context.Context, id int64) (*TaskSchedule, error) {
 	row, err := r.q.GetTaskScheduleByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get task schedule %d: %w", id, err)
@@ -285,7 +320,7 @@ func (r *TaskScheduleRepository) buildTaskSchedule(ctx context.Context, id int64
 		runTimes = append(runTimes, rt.RunTimeUtc)
 	}
 
-	return &FlixPatrolTaskSchedule{
+	return &TaskSchedule{
 		ID:                  row.ID,
 		TaskType:            row.TaskType,
 		Name:                row.Name,
@@ -294,8 +329,9 @@ func (r *TaskScheduleRepository) buildTaskSchedule(ctx context.Context, id int64
 		RequestDelaySeconds: row.RequestDelaySeconds,
 		RespectRobots:       row.RespectRobots,
 		UserAgent:           row.UserAgent,
+		BackfillDays:        row.BackfillDays,
+		RecheckHours:        row.RecheckHours,
 		RunTimesUTC:         runTimes,
 		Targets:             targets,
 	}, nil
 }
-

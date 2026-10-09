@@ -36,10 +36,15 @@ LIMIT sqlc.arg(limit) OFFSET sqlc.arg(offset);
 3. **Scalar subqueries are typed non-null** even when they return NULL → scan error. `COALESCE((SELECT ...), 0)` with a sentinel and convert back in the repository (see `rankPtr`).
 4. **Aggregates over dates come back as `string`/`interface{}`**. `CAST(COALESCE(MAX(x), '') AS TEXT)` and parse in Go (`parseStoredDate`).
 5. CHAR(n) columns (e.g. `country`) generate `interface{}`; convert with `toString`.
+6. **Params inside `BETWEEN` are silently dropped** from the generated params struct. Use `x >= CAST(sqlc.arg(a) AS TEXT) AND x <= CAST(sqlc.arg(b) AS TEXT)`.
+7. **No non-ASCII characters in query files** (e.g. `×` in a comment): sqlc rewrites params by byte offset and every later query in the file fails with "edited query syntax is invalid".
+8. Params used only in `HAVING`, or a `sqlc.slice` over an expression (`a || ':' || b IN (sqlc.slice(x))`), are not picked up; restructure (subquery + `WHERE`, slice over a plain column).
+9. Changing a CHECK or NOT NULL needs a table rebuild: use `-- +goose NO TRANSACTION` with `PRAGMA foreign_keys = OFF` around it, or dropping the parent cascade-deletes children (see 000005). Prefer validating enums in Go so new values need no rebuild; a column CHECK also blocks `DROP COLUMN` in Down.
 
 ### Dates in SQLite
 
-- `time.Time` params are stored as text like `2026-04-28 00:00:00 +0000 UTC` (always pass UTC midnight for dates). Range filters work by string comparison as long as both sides use that format — always bind `time.Time`, never hand-format strings.
+- Chart dates (`rankings.ranked_on`, `chart_snapshots.ranked_on`, Netflix `week`, `*_date` columns) are ISO `YYYY-MM-DD` text (migration 000006). Bind them as strings via `CAST(sqlc.arg(x) AS TEXT)` and `repository.FormatDate(t)`; never bind a `time.Time` to them (the driver would write `2026-04-28 00:00:00 +0000 UTC`). Reading a `DATE` column through the driver yields `time.Time`; `CAST(col AS TEXT)` gives the raw string.
+- Other `time.Time` params are stored as Go's text form; avoid comparing them with `CURRENT_TIMESTAMP` values — for "due" times store `datetime('now', '+3 days')` from a modifier param instead (see `SaveTitleMatch`).
 - `DEFAULT CURRENT_TIMESTAMP` columns are `YYYY-MM-DD HH:MM:SS` (UTC). For "last N hours" windows use `datetime('now', CAST(sqlc.arg(since) AS TEXT))` with `'-24 hours'`, not a Go timestamp.
 
 ## Repository wrappers

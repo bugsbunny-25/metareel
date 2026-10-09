@@ -50,6 +50,18 @@
   const shown = $derived(
     logs.filter((l) => (!level || LEVELS[l.level] >= LEVELS[level]) && (!filter || l.message.toLowerCase().includes(filter.toLowerCase())))
   )
+  const targetRows = $derived(run?.summary?.targets ?? [])
+  // Other jobs: show scalar results, and "files" / "stale_charts" as text.
+  const summaryRows = $derived(
+    run?.summary && !run.summary.targets
+      ? Object.entries(run.summary).map(([k, v]) => [
+          k,
+          Array.isArray(v)
+            ? v.map((x) => (typeof x === 'object' ? Object.values(x).filter((y) => y !== '' && y != null).join(' · ') : x)).join('; ') || 'none'
+            : typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v),
+        ])
+      : []
+  )
   const counts = $derived(logs.reduce((acc, l) => ({ ...acc, [l.level]: (acc[l.level] ?? 0) + 1 }), {}))
 
   function time(ts) {
@@ -84,7 +96,7 @@
       <div class="drawer-title">Run #{id}</div>
       {#if run}<RunStatus status={run.status} />{/if}
     </div>
-    {#if run}<div class="small muted" style="margin-top:4px">{scheduleName(run.schedule_id)} · {run.task_type}</div>{/if}
+    {#if run}<div class="small muted" style="margin-top:4px">{scheduleName(run.schedule_id, run.task_type)} · {run.task_type}</div>{/if}
   {/snippet}
 
   {#if error}
@@ -93,7 +105,8 @@
     <div class="skeleton" style="height:120px"></div>
   {:else}
     <dl class="kv">
-      <dt>Schedule</dt><dd><a href={href('/runs', { schedule: run.schedule_id })}>{scheduleName(run.schedule_id)}</a></dd>
+      <dt>Schedule</dt><dd>{#if run.schedule_id != null}<a href={href('/runs', { schedule: run.schedule_id })}>{scheduleName(run.schedule_id, run.task_type)}</a>{:else}<span class="muted">None (ad hoc)</span>{/if}</dd>
+      {#if run.targets_total}<dt>Chart pages</dt><dd>{run.targets_succeeded} saved · {run.targets_skipped} skipped · {run.targets_failed} failed (of {run.targets_total})</dd>{/if}
       <dt>Attempt</dt><dd>{run.retry_count + 1} of {run.max_retry + 1}</dd>
       <dt>Started</dt><dd>{dateTime(run.started_at)} <span class="muted small">{dateTimeUTC(run.started_at)}</span></dd>
       <dt>Finished</dt><dd>{run.finished_at ? dateTime(run.finished_at) : '—'}</dd>
@@ -106,6 +119,33 @@
         <button class="btn btn-ghost btn-sm" onclick={() => (showRawError = !showRawError)}>{showRawError ? 'Summary' : 'Full error'}</button>
       </div>
       <div class="error-box">{showRawError ? run.error_message : shortError(run.error_message, 600)}</div>
+    {/if}
+
+    {#if targetRows.length}
+      <div class="section-title" style="margin-top:20px">Charts</div>
+      <div class="table-wrap card">
+        <table class="table">
+          <thead><tr><th>Chart</th><th>Date</th><th>Status</th><th class="right">Movies</th><th class="right">TV</th><th class="right">New titles</th><th>Error</th></tr></thead>
+          <tbody>
+            {#each targetRows as t, i (i)}
+              <tr>
+                <td class="nowrap">{t.country} · {t.provider}</td>
+                <td class="nowrap mono small">{t.date}</td>
+                <td><span class="badge {t.status === 'succeeded' ? 'badge-success' : t.status === 'failed' ? 'badge-danger' : t.status === 'not_fresh' ? 'badge-warning' : ''}">{t.status.replace('_', ' ')}</span></td>
+                <td class="right">{t.movies ?? ''}</td>
+                <td class="right">{t.tv_shows ?? ''}</td>
+                <td class="right">{t.new_titles ?? ''}</td>
+                <td class="small" style="color:var(--danger)">{shortError(t.error, 120)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {:else if summaryRows.length}
+      <div class="section-title" style="margin-top:20px">Result</div>
+      <dl class="kv">
+        {#each summaryRows as [k, v] (k)}<dt>{k.replaceAll('_', ' ')}</dt><dd class="small">{v}</dd>{/each}
+      </dl>
     {/if}
 
     <div class="section-title row" style="margin-top:20px">
@@ -141,7 +181,7 @@
   {/if}
 
   {#snippet footer()}
-    {#if run}
+    {#if run?.schedule_id != null}
       <button class="btn" onclick={rerun}><Icon name="play" size={14} />Run schedule again</button>
     {/if}
     <button class="btn" onclick={onclose}>Close</button>

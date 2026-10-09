@@ -11,7 +11,7 @@ import (
 )
 
 type CreateTaskRunInput struct {
-	ScheduleID  int64
+	ScheduleID  int64 // 0 for ad-hoc runs (no schedule)
 	TaskType    string
 	AsynqTaskID string
 	RetryCount  int64
@@ -19,16 +19,41 @@ type CreateTaskRunInput struct {
 }
 
 type TaskRunRecord struct {
-	ID           int64
-	ScheduleID   int64
-	TaskType     string
-	AsynqTaskID  string
-	Status       string
-	RetryCount   int64
-	MaxRetry     int64
-	StartedAt    time.Time
-	FinishedAt   *time.Time
-	ErrorMessage *string
+	ID               int64
+	ScheduleID       int64 // 0 for ad-hoc runs
+	TaskType         string
+	AsynqTaskID      string
+	Status           string
+	RetryCount       int64
+	MaxRetry         int64
+	StartedAt        time.Time
+	FinishedAt       *time.Time
+	ErrorMessage     *string
+	TargetsTotal     int64
+	TargetsSucceeded int64
+	TargetsFailed    int64
+	TargetsSkipped   int64
+	Summary          *string // JSON
+}
+
+// Task run statuses. A partial run finished some of its targets and failed
+// others.
+const (
+	RunStatusStarted   = "started"
+	RunStatusSucceeded = "succeeded"
+	RunStatusPartial   = "partial"
+	RunStatusFailed    = "failed"
+)
+
+// TaskRunResult is how a run finished.
+type TaskRunResult struct {
+	Status           string
+	ErrorMessage     string
+	TargetsTotal     int64
+	TargetsSucceeded int64
+	TargetsFailed    int64
+	TargetsSkipped   int64
+	Summary          string // JSON, optional
 }
 
 type TaskRunLogRecord struct {
@@ -41,7 +66,7 @@ type TaskRunLogRecord struct {
 
 func (r *TaskScheduleRepository) CreateTaskRun(ctx context.Context, in CreateTaskRunInput) (*TaskRunRecord, error) {
 	row, err := r.q.CreateTaskRun(ctx, sqlc.CreateTaskRunParams{
-		ScheduleID:  in.ScheduleID,
+		ScheduleID:  sql.NullInt64{Int64: in.ScheduleID, Valid: in.ScheduleID > 0},
 		TaskType:    in.TaskType,
 		AsynqTaskID: sql.NullString{String: in.AsynqTaskID, Valid: in.AsynqTaskID != ""},
 		Status:      "started",
@@ -54,14 +79,21 @@ func (r *TaskScheduleRepository) CreateTaskRun(ctx context.Context, in CreateTas
 	return toTaskRunRecord(row), nil
 }
 
-func (r *TaskScheduleRepository) CompleteTaskRun(ctx context.Context, runID int64, status string, errMsg string) error {
-	if status != "succeeded" && status != "failed" {
-		return fmt.Errorf("invalid task run status: %s", status)
+func (r *TaskScheduleRepository) CompleteTaskRun(ctx context.Context, runID int64, res TaskRunResult) error {
+	switch res.Status {
+	case RunStatusSucceeded, RunStatusPartial, RunStatusFailed:
+	default:
+		return fmt.Errorf("invalid task run status: %s", res.Status)
 	}
 	return r.q.CompleteTaskRun(ctx, sqlc.CompleteTaskRunParams{
-		Status:       status,
-		ErrorMessage: sql.NullString{String: errMsg, Valid: errMsg != ""},
-		ID:           runID,
+		Status:           res.Status,
+		ErrorMessage:     sql.NullString{String: res.ErrorMessage, Valid: res.ErrorMessage != ""},
+		TargetsTotal:     res.TargetsTotal,
+		TargetsSucceeded: res.TargetsSucceeded,
+		TargetsFailed:    res.TargetsFailed,
+		TargetsSkipped:   res.TargetsSkipped,
+		Summary:          sql.NullString{String: res.Summary, Valid: res.Summary != ""},
+		ID:               runID,
 	})
 }
 
@@ -75,7 +107,7 @@ func (r *TaskScheduleRepository) CreateTaskRunLog(ctx context.Context, runID int
 
 func (r *TaskScheduleRepository) ListTaskRunsByScheduleID(ctx context.Context, scheduleID int64, limit int64, offset int64) ([]TaskRunRecord, error) {
 	rows, err := r.q.ListTaskRunsByScheduleID(ctx, sqlc.ListTaskRunsByScheduleIDParams{
-		ScheduleID: scheduleID,
+		ScheduleID: sql.NullInt64{Int64: scheduleID, Valid: true},
 		Limit:      limit,
 		Offset:     offset,
 	})
@@ -209,21 +241,30 @@ func toTaskRunRecord(row sqlc.TaskRun) *TaskRunRecord {
 		msg := row.ErrorMessage.String
 		errMsg = &msg
 	}
+	var summary *string
+	if row.Summary.Valid {
+		v := row.Summary.String
+		summary = &v
+	}
 
 	return &TaskRunRecord{
-		ID:           row.ID,
-		ScheduleID:   row.ScheduleID,
-		TaskType:     row.TaskType,
-		AsynqTaskID:  asynqTaskID,
-		Status:       row.Status,
-		RetryCount:   row.RetryCount,
-		MaxRetry:     row.MaxRetry,
-		StartedAt:    row.StartedAt,
-		FinishedAt:   finishedAt,
-		ErrorMessage: errMsg,
+		ID:               row.ID,
+		ScheduleID:       row.ScheduleID.Int64,
+		TaskType:         row.TaskType,
+		AsynqTaskID:      asynqTaskID,
+		Status:           row.Status,
+		RetryCount:       row.RetryCount,
+		MaxRetry:         row.MaxRetry,
+		StartedAt:        row.StartedAt,
+		FinishedAt:       finishedAt,
+		ErrorMessage:     errMsg,
+		TargetsTotal:     row.TargetsTotal,
+		TargetsSucceeded: row.TargetsSucceeded,
+		TargetsFailed:    row.TargetsFailed,
+		TargetsSkipped:   row.TargetsSkipped,
+		Summary:          summary,
 	}
 }
-
 
 // FailStaleTaskRuns marks runs still "started" after olderThan (a SQLite
 // datetime modifier such as "-2 hours") as failed, returning how many.
@@ -233,4 +274,29 @@ func (r *TaskScheduleRepository) FailStaleTaskRuns(ctx context.Context, olderTha
 		return 0, fmt.Errorf("fail stale task runs: %w", err)
 	}
 	return n, nil
+}
+
+// HasRunningTaskRun reports whether the schedule has a run started within
+// since (a SQLite datetime modifier such as "-2 hours") that has not finished.
+func (r *TaskScheduleRepository) HasRunningTaskRun(ctx context.Context, scheduleID int64, since string) (bool, error) {
+	n, err := r.q.CountRunningTaskRuns(ctx, sqlc.CountRunningTaskRunsParams{
+		ScheduleID: sql.NullInt64{Int64: scheduleID, Valid: scheduleID > 0},
+		Since:      since,
+	})
+	if err != nil {
+		return false, fmt.Errorf("count running task runs: %w", err)
+	}
+	return n > 0, nil
+}
+
+// PruneTaskRuns deletes finished runs (and their logs) started before
+// olderThan, a SQLite datetime modifier such as "-90 days".
+func (r *TaskScheduleRepository) PruneTaskRuns(ctx context.Context, olderThan string) (runs int64, logs int64, err error) {
+	if logs, err = r.q.DeleteTaskRunLogsBefore(ctx, olderThan); err != nil {
+		return 0, 0, fmt.Errorf("delete task run logs: %w", err)
+	}
+	if runs, err = r.q.DeleteTaskRunsBefore(ctx, olderThan); err != nil {
+		return 0, logs, fmt.Errorf("delete task runs: %w", err)
+	}
+	return runs, logs, nil
 }

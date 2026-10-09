@@ -15,6 +15,7 @@ import (
 	"github.com/bugsbunny-25/metareel/internal/scraper"
 	"github.com/bugsbunny-25/metareel/internal/scraper/flixpatrol"
 	"github.com/bugsbunny-25/metareel/internal/service"
+	"github.com/bugsbunny-25/metareel/internal/tasks"
 	taskhandlers "github.com/bugsbunny-25/metareel/internal/tasks/handlers"
 )
 
@@ -23,22 +24,34 @@ import (
 type Bootstrap struct {
 	Mux            *asynq.ServeMux
 	ConfigProvider asynq.PeriodicTaskConfigProvider
+	// Shared with the HTTP side.
+	Fetcher     flixpatrol.Fetcher
+	Metadata    *service.TitleMetadataService
+	Maintenance *service.MaintenanceService
+	Alerts      *service.AlertService
 }
 
-func Build(log *slog.Logger, cfg *config.Config, db *sql.DB) *Bootstrap {
+// Deps are built by the server and shared with the task handlers.
+type Deps struct {
+	Asynq   *asynq.Client // enqueues follow-up tasks
+	Ratings *service.RatingsService
+}
+
+func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstrap {
 	// Task schedule config source (DB-backed, shared by scheduler + handlers).
 	taskScheduleRepo := repository.NewTaskScheduleRepository(db)
-
-	// FlixPatrol task dependencies.
 	flixRepo := repository.NewFlixPatrolRepository(db)
+	importsRepo := repository.NewImportsRepository(db)
+	opsRepo := repository.NewOpsRepository(db)
 	httpClient := client.New(cfg.HTTP)
-	var fetcher flixpatrol.Fetcher = flixpatrol.LoggingFetcher{
+
+	var next flixpatrol.Fetcher = flixpatrol.LoggingFetcher{
 		Next: flixpatrol.CollyFetcher{Base: scraper.NewCollector(cfg.Scraper)},
 		Via:  "colly",
 		Log:  log,
 	}
 	if fs := client.NewFlareSolverr(cfg.FlareSolverr); fs != nil {
-		fetcher = flixpatrol.LoggingFetcher{
+		next = flixpatrol.LoggingFetcher{
 			Next: flixpatrol.FlareSolverrFetcher{Client: fs, Log: log},
 			Via:  "flaresolverr",
 			Log:  log,
@@ -47,15 +60,42 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB) *Bootstrap {
 	} else {
 		log.Info("flixpatrol pages will be fetched directly (FLARESOLVERR_URL not set)")
 	}
+	// One FlixPatrol fetch at a time across every job.
+	fetcher := &flixpatrol.SerialFetcher{Next: next, MinInterval: cfg.Scraper.MinInterval}
+
 	tmdbClient := client.NewTMDB(httpClient, cfg.TMDB.APIKey)
 	justWatchClient := client.NewJustWatchClient(httpClient.GetClient())
-	wikidataClient := client.NewWikidata(httpClient)
-	flixJob := service.NewFlixPatrolJob(log, fetcher, flixRepo, tmdbClient, justWatchClient, wikidataClient, client.NewRottenTomatoes(cfg.HTTP.Timeout))
-	flixHandler := taskhandlers.NewFlixPatrolHandler(log, taskScheduleRepo, flixJob)
+	rtClient := client.NewRottenTomatoes(cfg.HTTP.Timeout)
+	matcher := service.NewTitleMatcher(log, fetcher, tmdbClient, justWatchClient, rtClient)
+	metadata := service.NewTitleMetadataService(log, repository.NewMetadataRepository(db), tmdbClient, client.NewWikidataSPARQL(cfg.HTTP.Timeout))
+	downloader := client.NewDownloader(cfg.Imports.DownloadTimeout, "")
+	alerts := service.NewAlertService(log, opsRepo, cfg.Alerts.WebhookURL, cfg.Alerts.Format, cfg.Alerts.Cooldown)
+	maintenance := service.NewMaintenanceService(log, opsRepo, taskScheduleRepo, alerts, cfg.Maintenance.RunRetentionDays, cfg.Alerts.StaleChartHours)
 
+	runner := taskhandlers.NewRunner(log, taskScheduleRepo, alerts)
+	flixHandler := taskhandlers.NewFlixPatrolHandler(log, runner,
+		service.NewFlixPatrolJob(log, fetcher, flixRepo), deps.Asynq, cfg.Asynq.Queue)
+
+	jobs := taskhandlers.NewJobHandler(runner).
+		Handle(tasks.TypeTitlesEnrich, taskhandlers.EnrichJob(service.NewTitleEnricher(log, flixRepo, matcher, metadata), cfg.Scraper.UserAgent)).
+		Handle(tasks.TypeTitlesMetadata, taskhandlers.MetadataJob(metadata)).
+		Handle(tasks.TypeNetflixTop10Import, taskhandlers.NetflixImportJob(service.NewNetflixImporter(log, downloader, importsRepo, flixRepo, taskScheduleRepo, matcher, metadata, cfg.Imports.NetflixCountries))).
+		Handle(tasks.TypeIMDbRatingsImport, taskhandlers.IMDbImportJob(service.NewIMDbImporter(log, downloader, importsRepo, cfg.Imports.IMDbScope == "all"))).
+		Handle(tasks.TypeMaintenance, taskhandlers.MaintenanceJob(maintenance))
+	if deps.Ratings != nil {
+		jobs.Handle(tasks.TypeRatingsPrewarm, taskhandlers.RatingsPrewarmJob(deps.Ratings, flixRepo))
+	}
+
+	if alerts.Enabled() {
+		log.Info("alerts enabled", slog.String("format", cfg.Alerts.Format))
+	}
 	return &Bootstrap{
-		Mux:            taskhandlers.NewServeMux(flixHandler),
-		ConfigProvider: scheduler.NewDBPeriodicTaskConfigProvider(taskScheduleRepo, cfg.Asynq.Queue),
+		Mux:            taskhandlers.NewServeMux(flixHandler, jobs),
+		ConfigProvider: scheduler.NewDBPeriodicTaskConfigProvider(taskScheduleRepo, cfg.Asynq.Queue, log),
+		Fetcher:        fetcher,
+		Metadata:       metadata,
+		Maintenance:    maintenance,
+		Alerts:         alerts,
 	}
 }
 

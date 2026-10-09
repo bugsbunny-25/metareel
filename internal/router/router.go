@@ -27,21 +27,27 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 
 	registerOpenAPI(e)
 
-	e.GET("/healthz", h.Health)
-	e.GET("/readyz", h.Health)
+	e.GET("/healthz", h.Live)
+	e.GET("/readyz", h.Ready)
 
 	// Public API: needs an API key (unless disabled in the admin settings)
 	// and is rate limited per key.
-	public := e.Group("/api/v1", h.RequireAPIKey)
+	public := e.Group("/api/v1", h.RequireAPIKey, handler.ETag)
 	registerReadRoutes(public, h)
 
 	// Admin API and UI. The UI reads the same data through these admin
 	// copies of the public routes, so it needs no API key. The admin API is
 	// not authenticated: keep it off the public internet (e.g. expose only
 	// /api/v1 except /api/v1/admin through your reverse proxy).
-	admin := e.Group("/api/v1/admin")
+	admin := e.Group("/api/v1/admin", handler.ETag)
 	registerReadRoutes(admin, h)
 	admin.GET("/stats", h.GetAdminStats)
+	admin.PATCH("/titles/:id", h.PatchTitle)
+	admin.POST("/titles/:id/rematch", h.RematchTitle)
+	admin.GET("/task-types", h.GetTaskTypes)
+	admin.POST("/jobs/:type/run", h.RunJob)
+	admin.POST("/backfill", h.Backfill)
+	admin.GET("/data-quality", h.GetDataQuality)
 	admin.GET("/titles/:id/candidates", h.GetTitleCandidates)
 	admin.GET("/task-schedules", h.GetTaskSchedules)
 	admin.PATCH("/task-schedules/:id", h.PatchTaskSchedule)
@@ -72,11 +78,16 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/test", h.Test)
 	g.GET("/titles", h.ListTitles)
 	g.GET("/titles/:id", h.GetTitle)
-	g.PATCH("/titles/:id", h.PatchTitle)
 	g.GET("/titles/:id/rankings", h.GetTitleRankingsByID)
+	g.GET("/titles/lookup", h.LookupTitle)
 	g.GET("/titles/tmdb/rankings", h.GetTitleRankingsBatch)
+	g.GET("/titles/tmdb/ratings", h.GetTitleRatingsBatch)
+	g.GET("/titles/tmdb/:kind/:id", h.GetTitleOverview)
 	g.GET("/titles/tmdb/:kind/:id/rankings", h.GetTitleRankings)
 	g.GET("/titles/tmdb/:kind/:id/ratings", h.GetTitleRatings)
+	g.GET("/titles/tmdb/:kind/:id/stats", h.GetTitleStats)
+	g.GET("/titles/tmdb/:kind/:id/availability", h.GetTitleAvailability)
+	g.GET("/titles/tmdb/:kind/:id/netflix", h.GetTitleNetflix)
 	g.GET("/titles/new/:country/:service", h.GetNewTitles)
 	g.GET("/titles/upcoming/:country/:service", h.GetUpcomingTitles)
 	g.GET("/services/:country", h.GetServices)
@@ -84,6 +95,30 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/top10/movies/:country/:provider", h.GetTop10MoviesByProvider)
 	g.GET("/top10/tv-shows/:country", h.GetTop10TVShowsAllProviders)
 	g.GET("/top10/tv-shows/:country/:provider", h.GetTop10TVShowsByProvider)
+	g.GET("/top10/:country", h.GetCountryTop10)
+	g.GET("/top10/global/:provider", h.GetGlobalTop10)
+	g.GET("/top10/movies/:country/:provider/history", h.GetChartHistory("movies"))
+	g.GET("/top10/tv-shows/:country/:provider/history", h.GetChartHistory("tv_shows"))
+
+	g.GET("/charts", h.GetCharts)
+	g.GET("/charts/:country/:provider/dates", h.GetChartDates)
+	g.GET("/changes", h.GetChanges)
+	g.GET("/movers", h.GetMovers)
+	g.GET("/leaderboards", h.GetLeaderboard)
+	g.GET("/export/rankings", h.ExportRankings)
+	g.GET("/countries", h.GetCountries)
+	g.GET("/providers", h.GetProviders)
+
+	g.GET("/netflix/top10", h.GetNetflixTop10)
+	g.GET("/netflix/top10/:country", h.GetNetflixTop10)
+	g.GET("/netflix/most-popular", h.GetNetflixMostPopular)
+
+	g.GET("/analytics/decay", h.GetDecay())
+	g.GET("/analytics/country-similarity", h.GetCountrySimilarity())
+	g.GET("/analytics/release-lag", h.GetReleaseLag())
+	g.GET("/analytics/ratings-vs-popularity", h.GetRatingsVsPopularity())
+	g.GET("/analytics/genres", h.GetGenres())
+	g.GET("/analytics/netflix-calibration", h.GetNetflixCalibration())
 }
 
 func registerOpenAPI(e *echo.Echo) {

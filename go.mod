@@ -12,9 +12,9 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v5 v5.4.0
 	github.com/pressly/goose/v3 v3.28.0
-	github.com/redis/go-redis/v9 v9.23.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/time v0.16.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1
 )
 
@@ -36,6 +36,7 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/nlnwa/whatwg-url v0.6.2 // indirect
+	github.com/redis/go-redis/v9 v9.23.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d // indirect

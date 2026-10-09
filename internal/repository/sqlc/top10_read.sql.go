@@ -16,17 +16,17 @@ const listRankingsByTitleIDs = `-- name: ListRankingsByTitleIDs :many
 SELECT title_id, ranked_on, country, streaming_provider, category, rank
 FROM rankings
 WHERE (?1 IS NULL OR country = ?1)
-  AND (?2 IS NULL OR ranked_on >= ?2)
-  AND (?3 IS NULL OR ranked_on <= ?3)
+  AND (CAST(?2 AS TEXT) IS NULL OR ranked_on >= CAST(?2 AS TEXT))
+  AND (CAST(?3 AS TEXT) IS NULL OR ranked_on <= CAST(?3 AS TEXT))
   AND title_id IN (/*SLICE:title_ids*/?)
 ORDER BY ranked_on, country, streaming_provider, category, rank
 `
 
 type ListRankingsByTitleIDsParams struct {
-	Country  interface{} `json:"country"`
-	FromDate interface{} `json:"from_date"`
-	ToDate   interface{} `json:"to_date"`
-	TitleIds []int64     `json:"title_ids"`
+	Country  interface{}    `json:"country"`
+	FromDate sql.NullString `json:"from_date"`
+	ToDate   sql.NullString `json:"to_date"`
+	TitleIds []int64        `json:"title_ids"`
 }
 
 type ListRankingsByTitleIDsRow struct {
@@ -85,7 +85,7 @@ func (q *Queries) ListRankingsByTitleIDs(ctx context.Context, arg ListRankingsBy
 
 const listTitlesByTmdbIDs = `-- name: ListTitlesByTmdbIDs :many
 
-SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at
+SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at
 FROM titles
 WHERE tmdb_id IN (/*SLICE:tmdb_ids*/?)
 ORDER BY tmdb_id, id
@@ -122,6 +122,22 @@ func (q *Queries) ListTitlesByTmdbIDs(ctx context.Context, tmdbIds []sql.NullStr
 			&i.RtUrl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MatchStatus,
+			&i.MatchSource,
+			&i.MatchedName,
+			&i.MatchedYear,
+			&i.MatchAttempts,
+			&i.MatchAttemptedAt,
+			&i.NextMatchAt,
+			&i.RtAttempts,
+			&i.NextRtAt,
+			&i.JustwatchID,
+			&i.WikidataID,
+			&i.FpName,
+			&i.FpKind,
+			&i.FpPremiereDate,
+			&i.FpCountry,
+			&i.FpFetchedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -180,7 +196,7 @@ FROM rankings r
 JOIN titles t ON t.id = r.title_id
 WHERE r.country = ?1
   AND r.category = ?2
-  AND r.ranked_on = COALESCE(?3, (
+  AND r.ranked_on = COALESCE(CAST(?3 AS TEXT), (
       SELECT MAX(l.ranked_on)
       FROM rankings l
       WHERE l.country = r.country
@@ -191,9 +207,9 @@ ORDER BY r.streaming_provider ASC, r.rank ASC
 `
 
 type ListTop10AllProvidersParams struct {
-	Country  interface{}  `json:"country"`
-	Category string       `json:"category"`
-	RankedOn sql.NullTime `json:"ranked_on"`
+	Country  interface{}    `json:"country"`
+	Category string         `json:"category"`
+	RankedOn sql.NullString `json:"ranked_on"`
 }
 
 type ListTop10AllProvidersRow struct {
@@ -298,7 +314,7 @@ JOIN titles t ON t.id = r.title_id
 WHERE r.country = ?1
   AND r.streaming_provider = ?2
   AND r.category = ?3
-  AND r.ranked_on = COALESCE(?4, (
+  AND r.ranked_on = COALESCE(CAST(?4 AS TEXT), (
       SELECT MAX(l.ranked_on)
       FROM rankings l
       WHERE l.country = r.country
@@ -309,10 +325,10 @@ ORDER BY r.rank ASC
 `
 
 type ListTop10ByProviderParams struct {
-	Country           interface{}  `json:"country"`
-	StreamingProvider string       `json:"streaming_provider"`
-	Category          string       `json:"category"`
-	RankedOn          sql.NullTime `json:"ranked_on"`
+	Country           interface{}    `json:"country"`
+	StreamingProvider string         `json:"streaming_provider"`
+	Category          string         `json:"category"`
+	RankedOn          sql.NullString `json:"ranked_on"`
 }
 
 type ListTop10ByProviderRow struct {

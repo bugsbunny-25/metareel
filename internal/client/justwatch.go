@@ -56,13 +56,16 @@ type ExternalIds struct {
 	WikidataId *string
 }
 
+// Scoring numbers are floats: JustWatch sends large counts in exponent form
+// (e.g. imdbVotes 1.305019e+06), which fails to decode into an int and used
+// to fail the whole query.
 type Scoring struct {
 	ImdbScore      *float64
-	ImdbVotes      *int
+	ImdbVotes      *float64
 	TmdbScore      *float64
 	TmdbPopularity *float64
 	JwRating       *float64
-	TomatoMeter    *int
+	TomatoMeter    *float64
 	CertifiedFresh *bool
 }
 

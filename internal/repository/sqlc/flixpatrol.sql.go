@@ -8,8 +8,52 @@ package sqlc
 import (
 	"context"
 	"database/sql"
-	"time"
+	"strings"
 )
+
+const clearTitleMatch = `-- name: ClearTitleMatch :one
+UPDATE titles
+SET tmdb_id = NULL, imdb_id = NULL, rt_url = NULL, justwatch_id = NULL, wikidata_id = NULL,
+    match_status = 'pending', match_source = NULL, matched_name = NULL, matched_year = NULL,
+    match_attempts = 0, next_match_at = NULL, rt_attempts = 0, next_rt_at = NULL,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at
+`
+
+// Forgets a title's IDs and queues it for a fresh match.
+func (q *Queries) ClearTitleMatch(ctx context.Context, id int64) (Title, error) {
+	row := q.db.QueryRowContext(ctx, clearTitleMatch, id)
+	var i Title
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Kind,
+		&i.TmdbID,
+		&i.ImdbID,
+		&i.RtUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.MatchStatus,
+		&i.MatchSource,
+		&i.MatchedName,
+		&i.MatchedYear,
+		&i.MatchAttempts,
+		&i.MatchAttemptedAt,
+		&i.NextMatchAt,
+		&i.RtAttempts,
+		&i.NextRtAt,
+		&i.JustwatchID,
+		&i.WikidataID,
+		&i.FpName,
+		&i.FpKind,
+		&i.FpPremiereDate,
+		&i.FpCountry,
+		&i.FpFetchedAt,
+	)
+	return i, err
+}
 
 const countTitles = `-- name: CountTitles :one
 SELECT COUNT(*)
@@ -20,25 +64,204 @@ WHERE (CAST(?1 AS TEXT) = '' OR kind = ?1)
     OR (?3 = 'tmdb' AND COALESCE(tmdb_id, '') = '')
     OR (?3 = 'imdb' AND COALESCE(imdb_id, '') = '')
     OR (?3 = 'rt' AND COALESCE(rt_url, '') = ''))
+  AND (CAST(?4 AS TEXT) = '' OR match_status = ?4)
 `
 
 type CountTitlesParams struct {
-	Kind    string `json:"kind"`
-	Name    string `json:"name"`
-	Missing string `json:"missing"`
+	Kind        string `json:"kind"`
+	Name        string `json:"name"`
+	Missing     string `json:"missing"`
+	MatchStatus string `json:"match_status"`
 }
 
 func (q *Queries) CountTitles(ctx context.Context, arg CountTitlesParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countTitles, arg.Kind, arg.Name, arg.Missing)
+	row := q.db.QueryRowContext(ctx, countTitles,
+		arg.Kind,
+		arg.Name,
+		arg.Missing,
+		arg.MatchStatus,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
+const countTitlesByMatchStatus = `-- name: CountTitlesByMatchStatus :many
+SELECT match_status, COUNT(*) AS titles FROM titles GROUP BY match_status
+`
+
+type CountTitlesByMatchStatusRow struct {
+	MatchStatus string `json:"match_status"`
+	Titles      int64  `json:"titles"`
+}
+
+func (q *Queries) CountTitlesByMatchStatus(ctx context.Context) ([]CountTitlesByMatchStatusRow, error) {
+	rows, err := q.db.QueryContext(ctx, countTitlesByMatchStatus)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountTitlesByMatchStatusRow{}
+	for rows.Next() {
+		var i CountTitlesByMatchStatusRow
+		if err := rows.Scan(&i.MatchStatus, &i.Titles); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteChartRankings = `-- name: DeleteChartRankings :exec
+DELETE FROM rankings
+WHERE ranked_on = CAST(?1 AS TEXT)
+  AND country = ?2
+  AND streaming_provider = ?3
+  AND category = ?4
+`
+
+type DeleteChartRankingsParams struct {
+	RankedOn          string      `json:"ranked_on"`
+	Country           interface{} `json:"country"`
+	StreamingProvider string      `json:"streaming_provider"`
+	Category          string      `json:"category"`
+}
+
+func (q *Queries) DeleteChartRankings(ctx context.Context, arg DeleteChartRankingsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteChartRankings,
+		arg.RankedOn,
+		arg.Country,
+		arg.StreamingProvider,
+		arg.Category,
+	)
+	return err
+}
+
+const ensureTitle = `-- name: EnsureTitle :one
+
+INSERT INTO titles (slug, name, kind)
+VALUES (?, ?, ?)
+ON CONFLICT(slug) DO UPDATE SET
+    name       = excluded.name,
+    updated_at = CASE WHEN titles.name = excluded.name THEN titles.updated_at ELSE CURRENT_TIMESTAMP END
+RETURNING id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at
+`
+
+type EnsureTitleParams struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
+// Titles (movies + tv shows) + daily rankings (Top 10).
+// Scrapes only record that a slug exists; matching (kind, IDs) is the
+// enrichment job's, so an existing title keeps its kind and IDs.
+func (q *Queries) EnsureTitle(ctx context.Context, arg EnsureTitleParams) (Title, error) {
+	row := q.db.QueryRowContext(ctx, ensureTitle, arg.Slug, arg.Name, arg.Kind)
+	var i Title
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Kind,
+		&i.TmdbID,
+		&i.ImdbID,
+		&i.RtUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.MatchStatus,
+		&i.MatchSource,
+		&i.MatchedName,
+		&i.MatchedYear,
+		&i.MatchAttempts,
+		&i.MatchAttemptedAt,
+		&i.NextMatchAt,
+		&i.RtAttempts,
+		&i.NextRtAt,
+		&i.JustwatchID,
+		&i.WikidataID,
+		&i.FpName,
+		&i.FpKind,
+		&i.FpPremiereDate,
+		&i.FpCountry,
+		&i.FpFetchedAt,
+	)
+	return i, err
+}
+
+const getLatestChartForTitle = `-- name: GetLatestChartForTitle :one
+SELECT CAST(country AS TEXT) AS country, streaming_provider, category
+FROM rankings
+WHERE title_id = ?
+ORDER BY ranked_on DESC
+LIMIT 1
+`
+
+type GetLatestChartForTitleRow struct {
+	Country           string `json:"country"`
+	StreamingProvider string `json:"streaming_provider"`
+	Category          string `json:"category"`
+}
+
+// The most recent chart a title appeared on (matching searches that
+// country and service first).
+func (q *Queries) GetLatestChartForTitle(ctx context.Context, titleID int64) (GetLatestChartForTitleRow, error) {
+	row := q.db.QueryRowContext(ctx, getLatestChartForTitle, titleID)
+	var i GetLatestChartForTitleRow
+	err := row.Scan(&i.Country, &i.StreamingProvider, &i.Category)
+	return i, err
+}
+
+const getPreviousChartSnapshot = `-- name: GetPreviousChartSnapshot :one
+SELECT id, ranked_on, country, streaming_provider, category, entry_count, signature, source, run_id, first_scraped_at, scraped_at, changed_at FROM chart_snapshots
+WHERE country = ?1
+  AND streaming_provider = ?2
+  AND category = ?3
+  AND ranked_on < ?4
+ORDER BY ranked_on DESC
+LIMIT 1
+`
+
+type GetPreviousChartSnapshotParams struct {
+	Country           string `json:"country"`
+	StreamingProvider string `json:"streaming_provider"`
+	Category          string `json:"category"`
+	RankedOn          string `json:"ranked_on"`
+}
+
+func (q *Queries) GetPreviousChartSnapshot(ctx context.Context, arg GetPreviousChartSnapshotParams) (ChartSnapshot, error) {
+	row := q.db.QueryRowContext(ctx, getPreviousChartSnapshot,
+		arg.Country,
+		arg.StreamingProvider,
+		arg.Category,
+		arg.RankedOn,
+	)
+	var i ChartSnapshot
+	err := row.Scan(
+		&i.ID,
+		&i.RankedOn,
+		&i.Country,
+		&i.StreamingProvider,
+		&i.Category,
+		&i.EntryCount,
+		&i.Signature,
+		&i.Source,
+		&i.RunID,
+		&i.FirstScrapedAt,
+		&i.ScrapedAt,
+		&i.ChangedAt,
+	)
+	return i, err
+}
+
 const getTitleByID = `-- name: GetTitleByID :one
-SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at
-FROM titles
-WHERE id = ?
+SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at FROM titles WHERE id = ?
 `
 
 func (q *Queries) GetTitleByID(ctx context.Context, id int64) (Title, error) {
@@ -54,14 +277,28 @@ func (q *Queries) GetTitleByID(ctx context.Context, id int64) (Title, error) {
 		&i.RtUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MatchStatus,
+		&i.MatchSource,
+		&i.MatchedName,
+		&i.MatchedYear,
+		&i.MatchAttempts,
+		&i.MatchAttemptedAt,
+		&i.NextMatchAt,
+		&i.RtAttempts,
+		&i.NextRtAt,
+		&i.JustwatchID,
+		&i.WikidataID,
+		&i.FpName,
+		&i.FpKind,
+		&i.FpPremiereDate,
+		&i.FpCountry,
+		&i.FpFetchedAt,
 	)
 	return i, err
 }
 
 const getTitleBySlug = `-- name: GetTitleBySlug :one
-SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at
-FROM titles
-WHERE slug = ?
+SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at FROM titles WHERE slug = ?
 `
 
 func (q *Queries) GetTitleBySlug(ctx context.Context, slug string) (Title, error) {
@@ -77,13 +314,155 @@ func (q *Queries) GetTitleBySlug(ctx context.Context, slug string) (Title, error
 		&i.RtUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MatchStatus,
+		&i.MatchSource,
+		&i.MatchedName,
+		&i.MatchedYear,
+		&i.MatchAttempts,
+		&i.MatchAttemptedAt,
+		&i.NextMatchAt,
+		&i.RtAttempts,
+		&i.NextRtAt,
+		&i.JustwatchID,
+		&i.WikidataID,
+		&i.FpName,
+		&i.FpKind,
+		&i.FpPremiereDate,
+		&i.FpCountry,
+		&i.FpFetchedAt,
 	)
 	return i, err
 }
 
+const insertRanking = `-- name: InsertRanking :exec
+INSERT INTO rankings (title_id, ranked_on, country, streaming_provider, category, rank, season_number)
+VALUES (?1, CAST(?2 AS TEXT), ?3, ?4,
+        ?5, ?6, ?7)
+`
+
+type InsertRankingParams struct {
+	TitleID           int64         `json:"title_id"`
+	RankedOn          string        `json:"ranked_on"`
+	Country           interface{}   `json:"country"`
+	StreamingProvider string        `json:"streaming_provider"`
+	Category          string        `json:"category"`
+	Rank              int64         `json:"rank"`
+	SeasonNumber      sql.NullInt64 `json:"season_number"`
+}
+
+func (q *Queries) InsertRanking(ctx context.Context, arg InsertRankingParams) error {
+	_, err := q.db.ExecContext(ctx, insertRanking,
+		arg.TitleID,
+		arg.RankedOn,
+		arg.Country,
+		arg.StreamingProvider,
+		arg.Category,
+		arg.Rank,
+		arg.SeasonNumber,
+	)
+	return err
+}
+
+const listChartSnapshotDates = `-- name: ListChartSnapshotDates :many
+SELECT ranked_on
+FROM chart_snapshots
+WHERE country = ?1
+  AND streaming_provider = ?2
+  AND ranked_on >= CAST(?3 AS TEXT)
+  AND ranked_on <= CAST(?4 AS TEXT)
+GROUP BY ranked_on
+HAVING COUNT(DISTINCT category) >= 2
+ORDER BY ranked_on
+`
+
+type ListChartSnapshotDatesParams struct {
+	Country           string `json:"country"`
+	StreamingProvider string `json:"streaming_provider"`
+	FromDate          string `json:"from_date"`
+	ToDate            string `json:"to_date"`
+}
+
+// Dates with both categories stored for a chart in [from, to].
+func (q *Queries) ListChartSnapshotDates(ctx context.Context, arg ListChartSnapshotDatesParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listChartSnapshotDates,
+		arg.Country,
+		arg.StreamingProvider,
+		arg.FromDate,
+		arg.ToDate,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var ranked_on string
+		if err := rows.Scan(&ranked_on); err != nil {
+			return nil, err
+		}
+		items = append(items, ranked_on)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listChartSnapshotsForDate = `-- name: ListChartSnapshotsForDate :many
+SELECT id, ranked_on, country, streaming_provider, category, entry_count, signature, source, run_id, first_scraped_at, scraped_at, changed_at FROM chart_snapshots
+WHERE ranked_on = ?1
+  AND country = ?2
+  AND streaming_provider = ?3
+`
+
+type ListChartSnapshotsForDateParams struct {
+	RankedOn          string `json:"ranked_on"`
+	Country           string `json:"country"`
+	StreamingProvider string `json:"streaming_provider"`
+}
+
+func (q *Queries) ListChartSnapshotsForDate(ctx context.Context, arg ListChartSnapshotsForDateParams) ([]ChartSnapshot, error) {
+	rows, err := q.db.QueryContext(ctx, listChartSnapshotsForDate, arg.RankedOn, arg.Country, arg.StreamingProvider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChartSnapshot{}
+	for rows.Next() {
+		var i ChartSnapshot
+		if err := rows.Scan(
+			&i.ID,
+			&i.RankedOn,
+			&i.Country,
+			&i.StreamingProvider,
+			&i.Category,
+			&i.EntryCount,
+			&i.Signature,
+			&i.Source,
+			&i.RunID,
+			&i.FirstScrapedAt,
+			&i.ScrapedAt,
+			&i.ChangedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTitles = `-- name: ListTitles :many
 SELECT
-    t.id, t.slug, t.name, t.kind, t.tmdb_id, t.imdb_id, t.rt_url, t.created_at, t.updated_at,
+    t.id, t.slug, t.name, t.kind, t.tmdb_id, t.imdb_id, t.rt_url, t.created_at, t.updated_at, t.match_status, t.match_source, t.matched_name, t.matched_year, t.match_attempts, t.match_attempted_at, t.next_match_at, t.rt_attempts, t.next_rt_at, t.justwatch_id, t.wikidata_id, t.fp_name, t.fp_kind, t.fp_premiere_date, t.fp_country, t.fp_fetched_at,
     CAST(COALESCE((SELECT MAX(r.ranked_on) FROM rankings r WHERE r.title_id = t.id), '') AS TEXT) AS last_ranked_on,
     (SELECT COUNT(*) FROM rankings r WHERE r.title_id = t.id) AS rankings_count
 FROM titles t, (SELECT CAST(?1 AS TEXT) AS sort_key) o
@@ -93,6 +472,7 @@ WHERE (CAST(?2 AS TEXT) = '' OR t.kind = ?2)
     OR (?4 = 'tmdb' AND COALESCE(t.tmdb_id, '') = '')
     OR (?4 = 'imdb' AND COALESCE(t.imdb_id, '') = '')
     OR (?4 = 'rt' AND COALESCE(t.rt_url, '') = ''))
+  AND (CAST(?5 AS TEXT) = '' OR t.match_status = ?5)
 ORDER BY
     CASE WHEN o.sort_key = 'name_asc' THEN t.name END COLLATE NOCASE ASC,
     CASE WHEN o.sort_key = 'name_desc' THEN t.name END COLLATE NOCASE DESC,
@@ -104,30 +484,23 @@ ORDER BY
     CASE WHEN o.sort_key = 'rankings_asc' THEN rankings_count END ASC,
     CASE WHEN o.sort_key = 'id_asc' THEN t.id END ASC,
     t.id DESC
-LIMIT ?6 OFFSET ?5
+LIMIT ?7 OFFSET ?6
 `
 
 type ListTitlesParams struct {
-	Sort    string `json:"sort"`
-	Kind    string `json:"kind"`
-	Name    string `json:"name"`
-	Missing string `json:"missing"`
-	Offset  int64  `json:"offset"`
-	Limit   int64  `json:"limit"`
+	Sort        string `json:"sort"`
+	Kind        string `json:"kind"`
+	Name        string `json:"name"`
+	Missing     string `json:"missing"`
+	MatchStatus string `json:"match_status"`
+	Offset      int64  `json:"offset"`
+	Limit       int64  `json:"limit"`
 }
 
 type ListTitlesRow struct {
-	ID            int64          `json:"id"`
-	Slug          string         `json:"slug"`
-	Name          string         `json:"name"`
-	Kind          string         `json:"kind"`
-	TmdbID        sql.NullString `json:"tmdb_id"`
-	ImdbID        sql.NullString `json:"imdb_id"`
-	RtUrl         sql.NullString `json:"rt_url"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	LastRankedOn  string         `json:"last_ranked_on"`
-	RankingsCount int64          `json:"rankings_count"`
+	Title         Title  `json:"title"`
+	LastRankedOn  string `json:"last_ranked_on"`
+	RankingsCount int64  `json:"rankings_count"`
 }
 
 // sort: name_asc | name_desc | updated_desc | updated_asc | last_ranked_desc |
@@ -141,6 +514,7 @@ func (q *Queries) ListTitles(ctx context.Context, arg ListTitlesParams) ([]ListT
 		arg.Kind,
 		arg.Name,
 		arg.Missing,
+		arg.MatchStatus,
 		arg.Offset,
 		arg.Limit,
 	)
@@ -152,6 +526,71 @@ func (q *Queries) ListTitles(ctx context.Context, arg ListTitlesParams) ([]ListT
 	for rows.Next() {
 		var i ListTitlesRow
 		if err := rows.Scan(
+			&i.Title.ID,
+			&i.Title.Slug,
+			&i.Title.Name,
+			&i.Title.Kind,
+			&i.Title.TmdbID,
+			&i.Title.ImdbID,
+			&i.Title.RtUrl,
+			&i.Title.CreatedAt,
+			&i.Title.UpdatedAt,
+			&i.Title.MatchStatus,
+			&i.Title.MatchSource,
+			&i.Title.MatchedName,
+			&i.Title.MatchedYear,
+			&i.Title.MatchAttempts,
+			&i.Title.MatchAttemptedAt,
+			&i.Title.NextMatchAt,
+			&i.Title.RtAttempts,
+			&i.Title.NextRtAt,
+			&i.Title.JustwatchID,
+			&i.Title.WikidataID,
+			&i.Title.FpName,
+			&i.Title.FpKind,
+			&i.Title.FpPremiereDate,
+			&i.Title.FpCountry,
+			&i.Title.FpFetchedAt,
+			&i.LastRankedOn,
+			&i.RankingsCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTitlesByIDs = `-- name: ListTitlesByIDs :many
+SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at FROM titles WHERE id IN (/*SLICE:ids*/?) ORDER BY id
+`
+
+func (q *Queries) ListTitlesByIDs(ctx context.Context, ids []int64) ([]Title, error) {
+	query := listTitlesByIDs
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Title{}
+	for rows.Next() {
+		var i Title
+		if err := rows.Scan(
 			&i.ID,
 			&i.Slug,
 			&i.Name,
@@ -161,9 +600,194 @@ func (q *Queries) ListTitles(ctx context.Context, arg ListTitlesParams) ([]ListT
 			&i.RtUrl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.LastRankedOn,
-			&i.RankingsCount,
+			&i.MatchStatus,
+			&i.MatchSource,
+			&i.MatchedName,
+			&i.MatchedYear,
+			&i.MatchAttempts,
+			&i.MatchAttemptedAt,
+			&i.NextMatchAt,
+			&i.RtAttempts,
+			&i.NextRtAt,
+			&i.JustwatchID,
+			&i.WikidataID,
+			&i.FpName,
+			&i.FpKind,
+			&i.FpPremiereDate,
+			&i.FpCountry,
+			&i.FpFetchedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTitlesDueForMatch = `-- name: ListTitlesDueForMatch :many
+SELECT t.id, t.slug, t.name, t.kind, t.tmdb_id, t.imdb_id, t.rt_url, t.created_at, t.updated_at, t.match_status, t.match_source, t.matched_name, t.matched_year, t.match_attempts, t.match_attempted_at, t.next_match_at, t.rt_attempts, t.next_rt_at, t.justwatch_id, t.wikidata_id, t.fp_name, t.fp_kind, t.fp_premiere_date, t.fp_country, t.fp_fetched_at
+FROM titles t
+WHERE t.match_status IN ('pending', 'unmatched')
+  AND (t.next_match_at IS NULL OR t.next_match_at <= CURRENT_TIMESTAMP)
+ORDER BY CASE WHEN t.match_status = 'pending' THEN 0 ELSE 1 END,
+         (SELECT MAX(r.ranked_on) FROM rankings r WHERE r.title_id = t.id) DESC,
+         t.id DESC
+LIMIT ?1
+`
+
+// Unmatched titles whose backoff has expired, never-tried first, then the
+// most recently charting.
+func (q *Queries) ListTitlesDueForMatch(ctx context.Context, limit int64) ([]Title, error) {
+	rows, err := q.db.QueryContext(ctx, listTitlesDueForMatch, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Title{}
+	for rows.Next() {
+		var i Title
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Kind,
+			&i.TmdbID,
+			&i.ImdbID,
+			&i.RtUrl,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.MatchStatus,
+			&i.MatchSource,
+			&i.MatchedName,
+			&i.MatchedYear,
+			&i.MatchAttempts,
+			&i.MatchAttemptedAt,
+			&i.NextMatchAt,
+			&i.RtAttempts,
+			&i.NextRtAt,
+			&i.JustwatchID,
+			&i.WikidataID,
+			&i.FpName,
+			&i.FpKind,
+			&i.FpPremiereDate,
+			&i.FpCountry,
+			&i.FpFetchedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTitlesDueForRT = `-- name: ListTitlesDueForRT :many
+SELECT t.id, t.slug, t.name, t.kind, t.tmdb_id, t.imdb_id, t.rt_url, t.created_at, t.updated_at, t.match_status, t.match_source, t.matched_name, t.matched_year, t.match_attempts, t.match_attempted_at, t.next_match_at, t.rt_attempts, t.next_rt_at, t.justwatch_id, t.wikidata_id, t.fp_name, t.fp_kind, t.fp_premiere_date, t.fp_country, t.fp_fetched_at
+FROM titles t
+WHERE t.match_status = 'matched'
+  AND COALESCE(t.tmdb_id, '') <> ''
+  AND COALESCE(t.rt_url, '') = ''
+  AND (t.next_rt_at IS NULL OR t.next_rt_at <= CURRENT_TIMESTAMP)
+ORDER BY (SELECT MAX(r.ranked_on) FROM rankings r WHERE r.title_id = t.id) DESC, t.id DESC
+LIMIT ?1
+`
+
+// Matched titles still without a Rotten Tomatoes slug whose backoff has expired.
+func (q *Queries) ListTitlesDueForRT(ctx context.Context, limit int64) ([]Title, error) {
+	rows, err := q.db.QueryContext(ctx, listTitlesDueForRT, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Title{}
+	for rows.Next() {
+		var i Title
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Kind,
+			&i.TmdbID,
+			&i.ImdbID,
+			&i.RtUrl,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.MatchStatus,
+			&i.MatchSource,
+			&i.MatchedName,
+			&i.MatchedYear,
+			&i.MatchAttempts,
+			&i.MatchAttemptedAt,
+			&i.NextMatchAt,
+			&i.RtAttempts,
+			&i.NextRtAt,
+			&i.JustwatchID,
+			&i.WikidataID,
+			&i.FpName,
+			&i.FpKind,
+			&i.FpPremiereDate,
+			&i.FpCountry,
+			&i.FpFetchedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTmdbRefsChartingSince = `-- name: ListTmdbRefsChartingSince :many
+SELECT CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AS tmdb_kind,
+       CAST(t.tmdb_id AS TEXT) AS tmdb_id,
+       CAST(MAX(r.ranked_on) AS TEXT) AS last_ranked_on
+FROM rankings r
+JOIN titles t ON t.id = r.title_id
+WHERE r.ranked_on >= CAST(?1 AS TEXT)
+  AND COALESCE(t.tmdb_id, '') <> ''
+GROUP BY t.kind, t.tmdb_id
+ORDER BY MAX(r.ranked_on) DESC, MIN(r.rank) ASC
+LIMIT ?2
+`
+
+type ListTmdbRefsChartingSinceParams struct {
+	Since string `json:"since"`
+	Limit int64  `json:"limit"`
+}
+
+type ListTmdbRefsChartingSinceRow struct {
+	TmdbKind     string `json:"tmdb_kind"`
+	TmdbID       string `json:"tmdb_id"`
+	LastRankedOn string `json:"last_ranked_on"`
+}
+
+// Matched titles on any chart since a date (YYYY-MM-DD), most recent first.
+func (q *Queries) ListTmdbRefsChartingSince(ctx context.Context, arg ListTmdbRefsChartingSinceParams) ([]ListTmdbRefsChartingSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTmdbRefsChartingSince, arg.Since, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTmdbRefsChartingSinceRow{}
+	for rows.Next() {
+		var i ListTmdbRefsChartingSinceRow
+		if err := rows.Scan(&i.TmdbKind, &i.TmdbID, &i.LastRankedOn); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -192,6 +816,208 @@ func (q *Queries) RankingStats(ctx context.Context) (RankingStatsRow, error) {
 	var i RankingStatsRow
 	err := row.Scan(&i.Rankings, &i.LatestRankedOn)
 	return i, err
+}
+
+const resetTitleMatch = `-- name: ResetTitleMatch :one
+UPDATE titles
+SET match_status  = CASE WHEN COALESCE(tmdb_id, '') = '' THEN 'pending' ELSE 'matched' END,
+    match_source  = CASE WHEN match_status = 'manual' THEN NULL ELSE match_source END,
+    next_match_at = NULL,
+    next_rt_at    = NULL,
+    updated_at    = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at
+`
+
+// Puts a title back in the matching queue (due now), clearing a manual lock.
+func (q *Queries) ResetTitleMatch(ctx context.Context, id int64) (Title, error) {
+	row := q.db.QueryRowContext(ctx, resetTitleMatch, id)
+	var i Title
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Kind,
+		&i.TmdbID,
+		&i.ImdbID,
+		&i.RtUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.MatchStatus,
+		&i.MatchSource,
+		&i.MatchedName,
+		&i.MatchedYear,
+		&i.MatchAttempts,
+		&i.MatchAttemptedAt,
+		&i.NextMatchAt,
+		&i.RtAttempts,
+		&i.NextRtAt,
+		&i.JustwatchID,
+		&i.WikidataID,
+		&i.FpName,
+		&i.FpKind,
+		&i.FpPremiereDate,
+		&i.FpCountry,
+		&i.FpFetchedAt,
+	)
+	return i, err
+}
+
+const saveFlixPatrolDetails = `-- name: SaveFlixPatrolDetails :exec
+UPDATE titles
+SET fp_name          = ?1,
+    fp_kind          = ?2,
+    fp_premiere_date = ?3,
+    fp_country       = ?4,
+    fp_fetched_at    = CURRENT_TIMESTAMP
+WHERE id = ?5
+`
+
+type SaveFlixPatrolDetailsParams struct {
+	FpName         sql.NullString `json:"fp_name"`
+	FpKind         sql.NullString `json:"fp_kind"`
+	FpPremiereDate sql.NullString `json:"fp_premiere_date"`
+	FpCountry      sql.NullString `json:"fp_country"`
+	ID             int64          `json:"id"`
+}
+
+func (q *Queries) SaveFlixPatrolDetails(ctx context.Context, arg SaveFlixPatrolDetailsParams) error {
+	_, err := q.db.ExecContext(ctx, saveFlixPatrolDetails,
+		arg.FpName,
+		arg.FpKind,
+		arg.FpPremiereDate,
+		arg.FpCountry,
+		arg.ID,
+	)
+	return err
+}
+
+const saveTitleExternalIDs = `-- name: SaveTitleExternalIDs :exec
+UPDATE titles
+SET imdb_id     = COALESCE(imdb_id, ?1),
+    wikidata_id = COALESCE(wikidata_id, ?2),
+    rt_url      = COALESCE(rt_url, ?3),
+    updated_at  = CURRENT_TIMESTAMP
+WHERE id = ?4 AND match_status <> 'manual'
+`
+
+type SaveTitleExternalIDsParams struct {
+	ImdbID     sql.NullString `json:"imdb_id"`
+	WikidataID sql.NullString `json:"wikidata_id"`
+	RtUrl      sql.NullString `json:"rt_url"`
+	ID         int64          `json:"id"`
+}
+
+// Fills IDs found later (TMDB external IDs, Wikidata); never overwrites.
+func (q *Queries) SaveTitleExternalIDs(ctx context.Context, arg SaveTitleExternalIDsParams) error {
+	_, err := q.db.ExecContext(ctx, saveTitleExternalIDs,
+		arg.ImdbID,
+		arg.WikidataID,
+		arg.RtUrl,
+		arg.ID,
+	)
+	return err
+}
+
+const saveTitleMatch = `-- name: SaveTitleMatch :one
+UPDATE titles
+SET kind               = ?1,
+    tmdb_id            = COALESCE(?2, tmdb_id),
+    imdb_id            = COALESCE(?3, imdb_id),
+    justwatch_id       = COALESCE(?4, justwatch_id),
+    match_status       = ?5,
+    match_source       = ?6,
+    matched_name       = ?7,
+    matched_year       = ?8,
+    match_attempts     = match_attempts + 1,
+    match_attempted_at = CURRENT_TIMESTAMP,
+    next_match_at      = CASE WHEN CAST(?9 AS TEXT) = '' THEN NULL
+                              ELSE datetime('now', CAST(?9 AS TEXT)) END,
+    updated_at         = CURRENT_TIMESTAMP
+WHERE id = ?10 AND match_status <> 'manual'
+RETURNING id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at
+`
+
+type SaveTitleMatchParams struct {
+	Kind        string         `json:"kind"`
+	TmdbID      sql.NullString `json:"tmdb_id"`
+	ImdbID      sql.NullString `json:"imdb_id"`
+	JustwatchID sql.NullString `json:"justwatch_id"`
+	MatchStatus string         `json:"match_status"`
+	MatchSource sql.NullString `json:"match_source"`
+	MatchedName sql.NullString `json:"matched_name"`
+	MatchedYear sql.NullInt64  `json:"matched_year"`
+	RetryAfter  string         `json:"retry_after"`
+	ID          int64          `json:"id"`
+}
+
+// Records one matching attempt. retry_after is a SQLite datetime modifier
+// ('+3 days'); an empty tmdb_id leaves the title unmatched. Never touches
+// manual titles.
+func (q *Queries) SaveTitleMatch(ctx context.Context, arg SaveTitleMatchParams) (Title, error) {
+	row := q.db.QueryRowContext(ctx, saveTitleMatch,
+		arg.Kind,
+		arg.TmdbID,
+		arg.ImdbID,
+		arg.JustwatchID,
+		arg.MatchStatus,
+		arg.MatchSource,
+		arg.MatchedName,
+		arg.MatchedYear,
+		arg.RetryAfter,
+		arg.ID,
+	)
+	var i Title
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Kind,
+		&i.TmdbID,
+		&i.ImdbID,
+		&i.RtUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.MatchStatus,
+		&i.MatchSource,
+		&i.MatchedName,
+		&i.MatchedYear,
+		&i.MatchAttempts,
+		&i.MatchAttemptedAt,
+		&i.NextMatchAt,
+		&i.RtAttempts,
+		&i.NextRtAt,
+		&i.JustwatchID,
+		&i.WikidataID,
+		&i.FpName,
+		&i.FpKind,
+		&i.FpPremiereDate,
+		&i.FpCountry,
+		&i.FpFetchedAt,
+	)
+	return i, err
+}
+
+const saveTitleRTAttempt = `-- name: SaveTitleRTAttempt :exec
+UPDATE titles
+SET rt_url      = COALESCE(rt_url, NULLIF(CAST(?1 AS TEXT), '')),
+    rt_attempts = rt_attempts + 1,
+    next_rt_at  = datetime('now', CAST(?2 AS TEXT)),
+    updated_at  = CURRENT_TIMESTAMP
+WHERE id = ?3 AND match_status <> 'manual'
+`
+
+type SaveTitleRTAttemptParams struct {
+	RtUrl      string `json:"rt_url"`
+	RetryAfter string `json:"retry_after"`
+	ID         int64  `json:"id"`
+}
+
+// Records one Rotten Tomatoes lookup; rt_url empty = not found, retry after
+// retry_after (a SQLite datetime modifier).
+func (q *Queries) SaveTitleRTAttempt(ctx context.Context, arg SaveTitleRTAttemptParams) error {
+	_, err := q.db.ExecContext(ctx, saveTitleRTAttempt, arg.RtUrl, arg.RetryAfter, arg.ID)
+	return err
 }
 
 const titleMappingStats = `-- name: TitleMappingStats :one
@@ -225,13 +1051,16 @@ func (q *Queries) TitleMappingStats(ctx context.Context) (TitleMappingStatsRow, 
 const updateTitleIDs = `-- name: UpdateTitleIDs :one
 UPDATE titles
 SET
-    kind       = ?,
-    tmdb_id    = ?,
-    imdb_id    = ?,
-    rt_url     = ?,
-    updated_at = CURRENT_TIMESTAMP
+    kind               = ?,
+    tmdb_id            = ?,
+    imdb_id            = ?,
+    rt_url             = ?,
+    match_status       = 'manual',
+    match_source       = 'manual',
+    next_match_at      = NULL,
+    updated_at         = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at
+RETURNING id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at
 `
 
 type UpdateTitleIDsParams struct {
@@ -242,6 +1071,7 @@ type UpdateTitleIDsParams struct {
 	ID     int64          `json:"id"`
 }
 
+// Admin correction: marks the title as a manual match so automation leaves it alone.
 func (q *Queries) UpdateTitleIDs(ctx context.Context, arg UpdateTitleIDsParams) (Title, error) {
 	row := q.db.QueryRowContext(ctx, updateTitleIDs,
 		arg.Kind,
@@ -261,99 +1091,60 @@ func (q *Queries) UpdateTitleIDs(ctx context.Context, arg UpdateTitleIDsParams) 
 		&i.RtUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MatchStatus,
+		&i.MatchSource,
+		&i.MatchedName,
+		&i.MatchedYear,
+		&i.MatchAttempts,
+		&i.MatchAttemptedAt,
+		&i.NextMatchAt,
+		&i.RtAttempts,
+		&i.NextRtAt,
+		&i.JustwatchID,
+		&i.WikidataID,
+		&i.FpName,
+		&i.FpKind,
+		&i.FpPremiereDate,
+		&i.FpCountry,
+		&i.FpFetchedAt,
 	)
 	return i, err
 }
 
-const upsertRanking = `-- name: UpsertRanking :one
-INSERT INTO rankings (title_id, ranked_on, country, streaming_provider, category, rank, season_number)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(ranked_on, country, streaming_provider, category, rank) DO UPDATE SET
-    title_id      = excluded.title_id,
-    season_number = excluded.season_number,
-    scraped_at    = CURRENT_TIMESTAMP
-RETURNING id, title_id, ranked_on, country, streaming_provider, category, rank, season_number, scraped_at
+const upsertChartSnapshot = `-- name: UpsertChartSnapshot :exec
+INSERT INTO chart_snapshots (ranked_on, country, streaming_provider, category, entry_count, signature, source, run_id)
+VALUES (?1, ?2, ?3, ?4,
+        ?5, ?6, ?7, ?8)
+ON CONFLICT(ranked_on, country, streaming_provider, category) DO UPDATE SET
+    entry_count = excluded.entry_count,
+    changed_at  = CASE WHEN chart_snapshots.signature = excluded.signature THEN chart_snapshots.changed_at ELSE CURRENT_TIMESTAMP END,
+    signature   = excluded.signature,
+    source      = excluded.source,
+    run_id      = excluded.run_id,
+    scraped_at  = CURRENT_TIMESTAMP
 `
 
-type UpsertRankingParams struct {
-	TitleID           int64         `json:"title_id"`
-	RankedOn          time.Time     `json:"ranked_on"`
-	Country           interface{}   `json:"country"`
+type UpsertChartSnapshotParams struct {
+	RankedOn          string        `json:"ranked_on"`
+	Country           string        `json:"country"`
 	StreamingProvider string        `json:"streaming_provider"`
 	Category          string        `json:"category"`
-	Rank              int64         `json:"rank"`
-	SeasonNumber      sql.NullInt64 `json:"season_number"`
+	EntryCount        int64         `json:"entry_count"`
+	Signature         string        `json:"signature"`
+	Source            string        `json:"source"`
+	RunID             sql.NullInt64 `json:"run_id"`
 }
 
-func (q *Queries) UpsertRanking(ctx context.Context, arg UpsertRankingParams) (Ranking, error) {
-	row := q.db.QueryRowContext(ctx, upsertRanking,
-		arg.TitleID,
+func (q *Queries) UpsertChartSnapshot(ctx context.Context, arg UpsertChartSnapshotParams) error {
+	_, err := q.db.ExecContext(ctx, upsertChartSnapshot,
 		arg.RankedOn,
 		arg.Country,
 		arg.StreamingProvider,
 		arg.Category,
-		arg.Rank,
-		arg.SeasonNumber,
+		arg.EntryCount,
+		arg.Signature,
+		arg.Source,
+		arg.RunID,
 	)
-	var i Ranking
-	err := row.Scan(
-		&i.ID,
-		&i.TitleID,
-		&i.RankedOn,
-		&i.Country,
-		&i.StreamingProvider,
-		&i.Category,
-		&i.Rank,
-		&i.SeasonNumber,
-		&i.ScrapedAt,
-	)
-	return i, err
-}
-
-const upsertTitle = `-- name: UpsertTitle :one
-
-INSERT INTO titles (slug, name, kind, tmdb_id, imdb_id, rt_url)
-VALUES (?, ?, ?, ?, ?, ?)
-ON CONFLICT(slug) DO UPDATE SET
-    name       = excluded.name,
-    kind       = excluded.kind,
-    tmdb_id    = COALESCE(excluded.tmdb_id, titles.tmdb_id),
-    imdb_id    = COALESCE(excluded.imdb_id, titles.imdb_id),
-    rt_url     = COALESCE(excluded.rt_url, titles.rt_url),
-    updated_at = CURRENT_TIMESTAMP
-RETURNING id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at
-`
-
-type UpsertTitleParams struct {
-	Slug   string         `json:"slug"`
-	Name   string         `json:"name"`
-	Kind   string         `json:"kind"`
-	TmdbID sql.NullString `json:"tmdb_id"`
-	ImdbID sql.NullString `json:"imdb_id"`
-	RtUrl  sql.NullString `json:"rt_url"`
-}
-
-// Titles (movies + tv shows) + daily rankings (Top 10).
-func (q *Queries) UpsertTitle(ctx context.Context, arg UpsertTitleParams) (Title, error) {
-	row := q.db.QueryRowContext(ctx, upsertTitle,
-		arg.Slug,
-		arg.Name,
-		arg.Kind,
-		arg.TmdbID,
-		arg.ImdbID,
-		arg.RtUrl,
-	)
-	var i Title
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Name,
-		&i.Kind,
-		&i.TmdbID,
-		&i.ImdbID,
-		&i.RtUrl,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+	return err
 }

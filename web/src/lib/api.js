@@ -82,3 +82,18 @@ export const createApiKey = (name) => req('/api-keys', { method: 'POST', body: {
 export const renameApiKey = (id, name) => req(`/api-keys/${id}`, { method: 'PATCH', body: { name } })
 export const rotateApiKey = (id) => req(`/api-keys/${id}/rotate`, { method: 'POST' })
 export const deleteApiKey = (id) => req(`/api-keys/${id}`, { method: 'DELETE' })
+
+// ── Jobs ────────────────────────────────────────────────────────────
+export const listTaskTypes = () => req('/task-types')
+export const runJob = (type, body = {}) => req(`/jobs/${type}/run`, { method: 'POST', body })
+export const backfill = (body) => req('/backfill', { method: 'POST', body })
+export const rematchTitle = (id, clear = false) => req(`/titles/${id}/rematch`, { method: 'POST', body: { clear } })
+export const getDataQuality = () => req('/data-quality')
+
+// ── Insights ────────────────────────────────────────────────────────
+export const getLeaderboard = (q) => req('/leaderboards', { query: q })
+export const getMovers = (q) => req('/movers', { query: q })
+export const getCharts = (q) => req('/charts', { query: q })
+export const getNetflixTop10 = (country, q) => req(country ? `/netflix/top10/${country}` : '/netflix/top10', { query: q })
+export const getTitleOverview = (kind, tmdbId, q) => req(`/titles/tmdb/${kind}/${tmdbId}`, { query: q })
+export const getAnalytics = (name, q) => req(`/analytics/${name}`, { query: q })

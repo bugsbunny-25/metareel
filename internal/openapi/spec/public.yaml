@@ -31,13 +31,23 @@ paths:
       operationId: readyz
       security: []
       summary: Readiness probe
+      description: >
+        Checks the database and Redis (required: 503 when either is down) and
+        FlixPatrol's fetch backend, e.g. FlareSolverr (reported only: status
+        "degraded" when down).
       responses:
         "200":
-          description: OK
+          description: Ready (status ok or degraded)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StatusResponse"
+                $ref: "#/components/schemas/ReadinessReport"
+        "503":
+          description: A required dependency is down
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessReport"
 
   /api/v1/test:
     get:
@@ -75,6 +85,13 @@ paths:
             type: string
             enum: [tmdb, imdb, rt]
             description: Only titles without this ID
+        - name: match_status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, matched, unmatched, manual]
+            description: Only titles in this matching state (the admin review queue uses unmatched)
         - name: sort
           in: query
           required: false
@@ -138,48 +155,6 @@ paths:
                 $ref: "#/components/schemas/TitleResponse"
         "404":
           description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-    patch:
-      operationId: patchTitle
-      summary: Patch title external IDs
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int64
-            minimum: 1
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PatchTitleIDsInput"
-      responses:
-        "200":
-          description: Updated title
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TitleResponse"
-        "400":
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Internal server error
           content:
             application/json:
               schema:
@@ -662,6 +637,665 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/top10/{country}:
+    get:
+      operationId: getCountryTop10
+      summary: Every provider's movie and TV Top 10 of a country in one response
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - $ref: "#/components/parameters/DateParam"
+      responses:
+        "200":
+          description: Charts (each provider's latest chart unless date is given)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Top10Combined"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/top10/global/{provider}:
+    get:
+      operationId: getGlobalTop10
+      summary: A provider's titles ranked across every country by chart points
+      description: >
+        Points are FlixPatrol-style (rank 1 = 10 points … rank 10 = 1) summed
+        over every stored country chart of the day. Titles mapped to the same
+        TMDB title are one entry.
+      parameters:
+        - $ref: "#/components/parameters/ProviderParam"
+        - $ref: "#/components/parameters/DateParam"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+      responses:
+        "200":
+          description: Leaderboard of one day
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaderboardResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/top10/movies/{country}/{provider}/history:
+    get:
+      operationId: getMovieChartHistory
+      summary: One movie chart over a date range
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - $ref: "#/components/parameters/ProviderParam"
+        - $ref: "#/components/parameters/FromParam"
+        - $ref: "#/components/parameters/ToParam"
+      description: Defaults to the last 7 days; at most 92 days. Only stored dates are listed.
+      responses:
+        "200":
+          description: Chart per stored date
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChartHistoryResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/top10/tv-shows/{country}/{provider}/history:
+    get:
+      operationId: getTVChartHistory
+      summary: One TV chart over a date range
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - $ref: "#/components/parameters/ProviderParam"
+        - $ref: "#/components/parameters/FromParam"
+        - $ref: "#/components/parameters/ToParam"
+      description: Defaults to the last 7 days; at most 92 days. Only stored dates are listed.
+      responses:
+        "200":
+          description: Chart per stored date
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChartHistoryResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/charts:
+    get:
+      operationId: listCharts
+      summary: Every stored chart with its date range and freshness
+      parameters:
+        - name: country
+          in: query
+          schema: { type: string, description: ISO country code }
+        - name: provider
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Chart catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChartCatalogResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/charts/{country}/{provider}/dates:
+    get:
+      operationId: listChartDates
+      summary: Dates stored for a chart, newest first
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - $ref: "#/components/parameters/ProviderParam"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 366 }
+      responses:
+        "200":
+          description: Stored dates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  country: { type: string }
+                  provider: { type: string }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: { type: string, format: date }
+                        category: { type: string, enum: [movies, tv_shows] }
+                        entries: { type: integer }
+                        scraped_at: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/changes:
+    get:
+      operationId: listChartChanges
+      summary: Charts stored or re-scraped after a time (poll this instead of every chart)
+      description: >
+        Pass the response's `next` as `since` on the next call. Default since:
+        24 hours ago.
+      parameters:
+        - name: since
+          in: query
+          schema: { type: string, format: date-time, example: "2026-10-09T12:00:00Z" }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+      responses:
+        "200":
+          description: Changed charts, oldest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChartChangesResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/movers:
+    get:
+      operationId: getMovers
+      summary: Climbers, fallers, debuts, re-entries and exits of a chart
+      description: >
+        Compares the chart on `date` (default: the latest stored date) with
+        the stored date before it. Debuts are titles not on the chart in the
+        previous 90 days.
+      parameters:
+        - name: country
+          in: query
+          required: true
+          schema: { type: string }
+        - name: provider
+          in: query
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/DateParam"
+      responses:
+        "200":
+          description: Movers per category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoversResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/leaderboards:
+    get:
+      operationId: getLeaderboard
+      summary: Titles ranked by chart points over a period
+      description: >
+        Points per chart per day: rank 1 = 10 … rank 10 = 1. Omit country /
+        provider to sum over all. period=week (default) is the 7 days ending
+        on `date` (default: the current chart date); custom uses from/to (at
+        most 366 days).
+      parameters:
+        - name: period
+          in: query
+          schema: { type: string, enum: [day, week, month, custom], default: week }
+        - $ref: "#/components/parameters/DateParam"
+        - $ref: "#/components/parameters/FromParam"
+        - $ref: "#/components/parameters/ToParam"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - name: provider
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+      responses:
+        "200":
+          description: Leaderboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaderboardResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/export/rankings:
+    get:
+      operationId: exportRankings
+      summary: Chart entries over a range as CSV or NDJSON
+      description: Defaults to the last 30 days; at most 366 days.
+      parameters:
+        - $ref: "#/components/parameters/FromParam"
+        - $ref: "#/components/parameters/ToParam"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - name: provider
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/CategoryQuery"
+        - name: format
+          in: query
+          schema: { type: string, enum: [csv, ndjson], default: csv }
+      responses:
+        "200":
+          description: >
+            Columns / fields: date, country, provider, category, rank,
+            season_number, title_id, slug, name, kind, tmdb_id, imdb_id
+          content:
+            text/csv: {}
+            application/x-ndjson: {}
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/countries:
+    get:
+      operationId: listCountries
+      summary: Countries FlixPatrol charts can be scraped for
+      responses:
+        "200":
+          description: Countries by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code: { type: string, example: US }
+                    slug: { type: string, example: united-states }
+                    name: { type: string }
+
+  /api/v1/providers:
+    get:
+      operationId: listProviders
+      summary: Chart providers and the countries they have stored charts in
+      responses:
+        "200":
+          description: Providers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    slug: { type: string, example: netflix }
+                    countries: { type: array, items: { type: string } }
+
+  /api/v1/titles/lookup:
+    get:
+      operationId: lookupTitle
+      summary: Find a title by IMDb ID, TMDB ID or FlixPatrol slug
+      parameters:
+        - name: imdb
+          in: query
+          schema: { type: string, example: tt12300742 }
+        - name: tmdb
+          in: query
+          schema: { type: string, example: "movie:701387" }
+        - name: slug
+          in: query
+          schema: { type: string, example: bugonia }
+      description: Give exactly one of imdb, tmdb or slug.
+      responses:
+        "200":
+          description: TMDB titles and FlixPatrol titles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: { type: string, enum: [movie, tv] }
+                        tmdb_id: { type: string }
+                  flixpatrol_titles:
+                    type: array
+                    items: { $ref: "#/components/schemas/RankedTitle" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/titles/tmdb/ratings:
+    get:
+      operationId: getTitleRatingsBatch
+      summary: Ratings of several titles, looked up by TMDB ID
+      description: >
+        Stored ratings within RATINGS_TTL are returned as is; up to 10 expired
+        or unrated titles per request are refreshed from the providers. Titles
+        still without ratings are listed in missing (the ratings pre-warm job
+        keeps charting titles fresh).
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema: { type: string, example: "movie:425,tv:154385", description: At most 50 kind:tmdb_id pairs }
+      responses:
+        "200":
+          description: Ratings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/RatingsResponse" }
+                  missing: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/titles/tmdb/{kind}/{id}:
+    get:
+      operationId: getTitleOverview
+      summary: Everything about a title in one call
+      description: >
+        TMDB metadata, chart stats, current chart positions, ratings, where to
+        watch and Netflix's official numbers. `include` picks sections
+        (default: all). Ratings may be refreshed from the providers if expired.
+        Sections that fail are named in `errors`; the rest are still returned.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+        - name: include
+          in: query
+          schema: { type: string, example: "metadata,stats,current,ratings,availability,netflix" }
+        - name: country
+          in: query
+          schema: { type: string, description: Limit availability and current positions to a country }
+      responses:
+        "200":
+          description: Title overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleOverview"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/titles/tmdb/{kind}/{id}/stats:
+    get:
+      operationId: getTitleStats
+      summary: Chart performance of a title
+      description: >
+        Points, days on charts, peak rank, days at #1, debut, longest streak
+        and how it spread across countries.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/FromParam"
+        - $ref: "#/components/parameters/ToParam"
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleStats"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/titles/tmdb/{kind}/{id}/availability:
+    get:
+      operationId: getTitleAvailability
+      summary: Where a title can be watched, per country (TMDB, data by JustWatch)
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+        - name: country
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Offers per country
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvailabilityResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404":
+          description: TMDB metadata not fetched yet (needs TMDB_API_KEY and the metadata job)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/tmdb/{kind}/{id}/netflix:
+    get:
+      operationId: getTitleNetflix
+      summary: A title's weeks in Netflix's official Top 10
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+      responses:
+        "200":
+          description: Global and per-country weeks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kind: { type: string }
+                  tmdb_id: { type: string }
+                  weeks_in_global_top10: { type: integer }
+                  best_global_rank: { type: integer, nullable: true }
+                  total_views: { type: integer }
+                  total_hours_viewed: { type: integer }
+                  countries: { type: array, items: { type: string } }
+                  global: { type: array, items: { $ref: "#/components/schemas/NetflixWeekRow" } }
+                  country_weeks: { type: array, items: { $ref: "#/components/schemas/NetflixWeekRow" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/netflix/top10:
+    get:
+      operationId: getNetflixGlobalTop10
+      summary: Netflix's official global weekly Top 10
+      description: >
+        Imported from https://www.netflix.com/tudum/top10. Weeks run Monday to
+        Sunday; `week` may be any date in the week (default: the latest).
+      parameters:
+        - name: week
+          in: query
+          schema: { type: string, format: date }
+        - name: category
+          in: query
+          schema: { type: string, enum: ["Films (English)", "Films (Non-English)", "TV (English)", "TV (Non-English)"] }
+      responses:
+        "200":
+          description: Week
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetflixWeekResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/netflix/top10/{country}:
+    get:
+      operationId: getNetflixCountryTop10
+      summary: Netflix's official weekly Top 10 of a country
+      description: Only countries imported (NETFLIX_TOP10_COUNTRIES) are available.
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - name: week
+          in: query
+          schema: { type: string, format: date }
+        - name: category
+          in: query
+          schema: { type: string, enum: [Films, TV] }
+      responses:
+        "200":
+          description: Week
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetflixWeekResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/netflix/most-popular:
+    get:
+      operationId: getNetflixMostPopular
+      summary: Netflix's all-time most popular lists (views in the first 91 days)
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Lists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        category: { type: string }
+                        rank: { type: integer }
+                        show_title: { type: string }
+                        season_title: { type: string, nullable: true }
+                        hours_viewed_first_91_days: { type: integer, nullable: true }
+                        runtime_hours: { type: number, nullable: true }
+                        views_first_91_days: { type: integer, nullable: true }
+                        kind: { type: string }
+                        tmdb_id: { type: string, nullable: true }
+                        imdb_id: { type: string, nullable: true }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/analytics/decay:
+    get:
+      operationId: getDecay
+      summary: How titles fade after debuting on a chart
+      description: >
+        Follows every chart debut in the range (default: last 60 days) for 30
+        days: retention (share still charting) and average rank per day since
+        debut. Days whose chart was not stored are not counted.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+      responses:
+        "200":
+          description: Decay curve
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/country-similarity:
+    get:
+      operationId: getCountrySimilarity
+      summary: Which countries watch alike (overlap of charting titles)
+      description: Jaccard overlap of each pair of countries' charting titles in the range (default 30 days).
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+      responses:
+        "200":
+          description: Country pairs, most similar first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/release-lag:
+    get:
+      operationId: getReleaseLag
+      summary: Days from release to first chart appearance
+      description: >
+        Uses the title's digital release date in the chart's country from TMDB
+        when known, else TMDB's release / first air date. Needs TMDB metadata
+        (titles.metadata job). Range default: last 90 days.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+      responses:
+        "200":
+          description: Per-title lags with median / quartiles overall and per provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/ratings-vs-popularity:
+    get:
+      operationId: getRatingsVsPopularity
+      summary: Chart points against IMDb and Rotten Tomatoes ratings
+      description: >
+        Pearson correlation of points with IMDb rating (IMDb dataset first,
+        then stored provider ratings) and RT critics score, plus acclaimed but
+        under-watched (IMDb ≥ 7.5, points below median) and popular but poorly
+        rated (top-quartile points, IMDb < 6) lists. Only stored ratings are
+        used. Range default: last 30 days.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+      responses:
+        "200":
+          description: Titles with points and ratings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/genres:
+    get:
+      operationId: getGenres
+      summary: Chart points by TMDB genre
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+      responses:
+        "200":
+          description: Genres by points
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/netflix-calibration:
+    get:
+      operationId: getNetflixCalibration
+      summary: Netflix's official weekly views against FlixPatrol Netflix chart points
+      description: >
+        For each Netflix global Top 10 entry, the FlixPatrol Netflix chart
+        points the same title earned that week (in `country`, or summed over
+        countries), with Pearson r and the median views per point. Range
+        default: last 84 days.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/KindQuery"
+      responses:
+        "200":
+          description: Calibration rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
 components:
   securitySchemes:
     ApiKeyHeader:
@@ -672,7 +1306,74 @@ components:
       type: http
       scheme: bearer
       description: 'The same API key, as "Authorization: Bearer <key>"'
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   parameters:
+    TmdbIDParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        description: TMDB ID (numeric)
+    CategoryQuery:
+      name: category
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [movies, tv_shows]
+        description: Omit for both
+    KindQuery:
+      name: kind
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [movie, tv_show]
+        description: What the title is (can differ from the chart's category)
+    ProviderQuery:
+      name: provider
+      in: query
+      required: false
+      schema:
+        type: string
+        description: Provider slug; omit for all
+    LimitQuery:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+    AnalyticsFrom:
+      name: from
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+        description: Range start (YYYY-MM-DD); ranges are at most 366 days
+    AnalyticsTo:
+      name: to
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+        description: Range end (YYYY-MM-DD); default the current chart date
     CountryParam:
       name: country
       in: path
@@ -731,6 +1432,318 @@ components:
         description: Last chart date to include (YYYY-MM-DD)
 
   schemas:
+    ChartTitle:
+      type: object
+      properties:
+        title_id: { type: integer, format: int64 }
+        slug: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [movie, tv_show] }
+        tmdb_id: { type: string, nullable: true }
+        imdb_id: { type: string, nullable: true }
+
+    Top10Combined:
+      type: object
+      properties:
+        country: { type: string }
+        movies: { type: array, items: { $ref: "#/components/schemas/Top10Result" } }
+        tv_shows: { type: array, items: { $ref: "#/components/schemas/Top10Result" } }
+        dates:
+          type: object
+          additionalProperties: { type: string, format: date }
+          description: Chart date served per provider
+
+    ChartCatalogResponse:
+      type: object
+      properties:
+        current_chart_date: { type: string, format: date, description: The chart date FlixPatrol shows now }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              country: { type: string }
+              provider: { type: string }
+              category: { type: string, enum: [movies, tv_shows] }
+              first_date: { type: string, format: date }
+              latest_date: { type: string, format: date }
+              dates: { type: integer }
+              last_scraped_at: { type: string, format: date-time, nullable: true }
+              stale: { type: boolean, description: Latest stored date is older than the previous chart date }
+
+    ChartHistoryResponse:
+      type: object
+      properties:
+        country: { type: string }
+        provider: { type: string }
+        category: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        days:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              items:
+                type: array
+                items:
+                  allOf:
+                    - $ref: "#/components/schemas/ChartTitle"
+                    - type: object
+                      properties:
+                        rank: { type: integer }
+                        season_number: { type: integer, nullable: true }
+
+    ChartChangesResponse:
+      type: object
+      properties:
+        since: { type: string, format: date-time }
+        next: { type: string, format: date-time, description: Pass as since to continue }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              date: { type: string, format: date }
+              country: { type: string }
+              provider: { type: string }
+              category: { type: string }
+              entries: { type: integer }
+              scraped_at: { type: string, format: date-time }
+              changed_at: { type: string, format: date-time, description: Last time the chart's content changed }
+
+    Mover:
+      allOf:
+        - $ref: "#/components/schemas/ChartTitle"
+        - type: object
+          properties:
+            category: { type: string }
+            rank: { type: integer, nullable: true, description: null for exits }
+            previous_rank: { type: integer, nullable: true, description: null for debuts and re-entries }
+            change: { type: integer, description: Positions climbed (negative = fell) }
+
+    MoversResponse:
+      type: object
+      properties:
+        country: { type: string }
+        provider: { type: string }
+        charts:
+          type: array
+          items:
+            type: object
+            properties:
+              category: { type: string }
+              date: { type: string, format: date }
+              previous_date: { type: string, format: date, nullable: true }
+              climbers: { type: array, items: { $ref: "#/components/schemas/Mover" } }
+              fallers: { type: array, items: { $ref: "#/components/schemas/Mover" } }
+              debuts: { type: array, items: { $ref: "#/components/schemas/Mover" } }
+              re_entries: { type: array, items: { $ref: "#/components/schemas/Mover" } }
+              exits: { type: array, items: { $ref: "#/components/schemas/Mover" } }
+
+    LeaderboardResponse:
+      type: object
+      properties:
+        period: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        country: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        kind: { type: string, nullable: true }
+        items:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/ChartTitle"
+              - type: object
+                properties:
+                  position: { type: integer }
+                  points: { type: integer }
+                  days_on_charts: { type: integer }
+                  appearances: { type: integer, description: Chart × date entries }
+                  best_rank: { type: integer }
+                  countries: { type: array, items: { type: string } }
+                  providers: { type: array, items: { type: string } }
+                  slugs: { type: array, items: { type: string }, description: FlixPatrol titles merged into this TMDB title }
+
+    ChartMoment:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        country: { type: string }
+        provider: { type: string }
+        category: { type: string }
+        rank: { type: integer }
+
+    TitleStats:
+      type: object
+      properties:
+        kind: { type: string }
+        tmdb_id: { type: string }
+        titles: { type: array, items: { $ref: "#/components/schemas/RankedTitle" } }
+        total_points: { type: integer }
+        days_on_charts: { type: integer }
+        appearances: { type: integer }
+        peak_rank: { type: integer, nullable: true }
+        days_at_number_1: { type: integer }
+        debut: { $ref: "#/components/schemas/ChartMoment" }
+        last_seen: { $ref: "#/components/schemas/ChartMoment" }
+        longest_streak_days: { type: integer }
+        countries: { type: array, items: { type: string } }
+        providers: { type: array, items: { type: string } }
+        spread:
+          type: array
+          items:
+            type: object
+            properties:
+              country: { type: string }
+              first_date: { type: string, format: date }
+              days_after_debut: { type: integer }
+        charts: { type: array, items: { $ref: "#/components/schemas/ChartSummary" } }
+
+    WatchProvider:
+      type: object
+      properties:
+        country: { type: string }
+        monetization: { type: string, enum: [flatrate, free, ads, rent, buy] }
+        provider_id: { type: integer }
+        provider_name: { type: string }
+        logo_path: { type: string, nullable: true, description: "TMDB image path (https://image.tmdb.org/t/p/w92{logo_path})" }
+        display_priority: { type: integer, nullable: true }
+        fetched_at: { type: string, format: date-time }
+
+    AvailabilityResponse:
+      type: object
+      properties:
+        kind: { type: string }
+        tmdb_id: { type: string }
+        country: { type: string, nullable: true }
+        fetched_at: { type: string, format: date-time }
+        attribution: { type: string }
+        countries:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              link: { type: string, nullable: true }
+              flatrate: { type: array, items: { $ref: "#/components/schemas/WatchProvider" } }
+              free: { type: array, items: { $ref: "#/components/schemas/WatchProvider" } }
+              ads: { type: array, items: { $ref: "#/components/schemas/WatchProvider" } }
+              rent: { type: array, items: { $ref: "#/components/schemas/WatchProvider" } }
+              buy: { type: array, items: { $ref: "#/components/schemas/WatchProvider" } }
+
+    TmdbMetadata:
+      type: object
+      properties:
+        tmdb_kind: { type: string }
+        tmdb_id: { type: string }
+        title: { type: string, nullable: true }
+        original_title: { type: string, nullable: true }
+        original_language: { type: string, nullable: true }
+        overview: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        release_date: { type: string, nullable: true }
+        last_air_date: { type: string, nullable: true }
+        runtime: { type: integer, nullable: true }
+        number_of_seasons: { type: integer, nullable: true }
+        number_of_episodes: { type: integer, nullable: true }
+        genres: { type: array, items: { type: string } }
+        origin_countries: { type: array, items: { type: string } }
+        production_companies: { type: array, items: { type: string } }
+        networks: { type: array, items: { type: string } }
+        poster_path: { type: string, nullable: true }
+        backdrop_path: { type: string, nullable: true }
+        popularity: { type: number, nullable: true }
+        vote_average: { type: number, nullable: true }
+        vote_count: { type: integer, nullable: true }
+        digital_release_dates: { type: object, additionalProperties: { type: string } }
+        imdb_id: { type: string, nullable: true }
+        wikidata_id: { type: string, nullable: true }
+        rotten_tomatoes_id: { type: string, nullable: true }
+        metacritic_id: { type: string, nullable: true }
+        letterboxd_id: { type: string, nullable: true }
+        details_fetched_at: { type: string, format: date-time, nullable: true }
+
+    TitleOverview:
+      type: object
+      properties:
+        kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        flixpatrol_titles: { type: array, items: { $ref: "#/components/schemas/RankedTitle" } }
+        metadata: { $ref: "#/components/schemas/TmdbMetadata" }
+        stats: { $ref: "#/components/schemas/TitleStats" }
+        current_positions: { type: array, items: { $ref: "#/components/schemas/ChartMoment" } }
+        ratings: { $ref: "#/components/schemas/RatingsResponse" }
+        availability: { $ref: "#/components/schemas/AvailabilityResponse" }
+        netflix:
+          type: object
+          properties:
+            weeks_in_global_top10: { type: integer }
+            best_global_rank: { type: integer, nullable: true }
+            total_views: { type: integer }
+            total_hours_viewed: { type: integer }
+            countries: { type: array, items: { type: string } }
+        errors:
+          type: object
+          additionalProperties: { type: string }
+          description: Sections that could not be loaded
+
+    NetflixWeekRow:
+      type: object
+      properties:
+        week: { type: string, format: date, description: Sunday the Monday–Sunday week ends on }
+        country: { type: string }
+        category: { type: string }
+        rank: { type: integer }
+        show_title: { type: string }
+        season_title: { type: string, nullable: true }
+        hours_viewed: { type: integer, nullable: true }
+        runtime_hours: { type: number, nullable: true }
+        views: { type: integer, nullable: true }
+        cumulative_weeks: { type: integer, nullable: true }
+        kind: { type: string }
+        tmdb_id: { type: string, nullable: true }
+        imdb_id: { type: string, nullable: true }
+
+    NetflixWeekResponse:
+      type: object
+      properties:
+        week: { type: string, format: date }
+        country: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        items: { type: array, items: { $ref: "#/components/schemas/NetflixWeekRow" } }
+
+    AnalyticsResult:
+      type: object
+      description: >
+        Every analytics response echoes the resolved filter (from, to, country,
+        provider, category, kind) plus endpoint-specific fields; see the
+        endpoint description.
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        country: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        kind: { type: string, nullable: true }
+      additionalProperties: true
+
+    ReadinessReport:
+      type: object
+      properties:
+        status: { type: string, enum: [ok, degraded, error] }
+        checks:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status: { type: string, enum: [ok, error] }
+              error: { type: string }
+              required: { type: boolean }
+
     StatusResponse:
       type: object
       additionalProperties: false
@@ -746,24 +1759,6 @@ components:
         error:
           type: string
       required: [error]
-
-    PatchTitleIDsInput:
-      type: object
-      additionalProperties: false
-      properties:
-        kind:
-          type: string
-          enum: [movie, tv_show]
-          description: What the title is, i.e. the TMDB namespace of tmdb_id
-        tmdb_id:
-          type: string
-          nullable: true
-        imdb_id:
-          type: string
-          nullable: true
-        rt_url:
-          type: string
-          nullable: true
 
     TitleResponse:
       type: object
@@ -797,7 +1792,38 @@ components:
         rankings_count:
           type: integer
           description: List responses only
-      required: [id, slug, name, kind, updated_at]
+        match_status:
+          type: string
+          enum: [pending, matched, unmatched, manual]
+          description: >
+            pending = not tried yet; unmatched = no confident TMDB match (retried
+            after 1, 3, 7, then every 30 days); manual = corrected in the admin
+            console (never changed automatically)
+        match_source:
+          type: string
+          description: justwatch_path, justwatch_search, tmdb_search, manual or legacy
+        matched_name:
+          type: string
+        matched_year:
+          type: integer
+        match_attempts:
+          type: integer
+        next_match_at:
+          type: string
+          format: date-time
+        justwatch_id:
+          type: string
+        wikidata_id:
+          type: string
+        flixpatrol:
+          type: object
+          description: What the FlixPatrol title page said (once read)
+          properties:
+            name: { type: string, nullable: true }
+            kind: { type: string, nullable: true }
+            premiere_date: { type: string, nullable: true }
+            country: { type: string, nullable: true }
+      required: [id, slug, name, kind, updated_at, match_status, match_attempts]
 
     TitlesPageResponse:
       type: object
@@ -1048,8 +2074,10 @@ components:
           nullable: true
         source:
           type: string
-          enum: [justwatch, mdblist]
-          description: Provider the value came from
+          enum: [imdb_dataset, justwatch, mdblist]
+          description: >
+            Provider the value came from. imdb_dataset (IMDb's own daily
+            dataset, imported by the imdb.ratings.import job) wins when present.
       required: [rating, votes, url, source]
 
     RottenTomatoesRating:
@@ -1095,7 +2123,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [justwatch, mdblist, rottentomatoes]
+          enum: [justwatch, mdblist, rottentomatoes, imdb_dataset]
         source:
           type: string
           description: >

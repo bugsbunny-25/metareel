@@ -23,11 +23,30 @@ type Handler struct {
 	Candidates *service.TitleCandidatesService
 	Stats      *service.AdminStatsService
 	APIKeys    *service.APIKeyService
+	Health     *service.HealthService
+
+	Charts      *service.ChartsService
+	Overview    *service.TitleOverviewService
+	Analytics   *service.AnalyticsService
+	DataQuality *service.DataQualityService
 }
 
-// Health is a lightweight liveness endpoint.
-func (h *Handler) Health(c *echo.Context) error {
+// Live is a lightweight liveness endpoint.
+func (h *Handler) Live(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"status": "ok"})
+}
+
+// Ready reports whether the database and Redis are reachable (503 if not),
+// and whether FlixPatrol's fetch backend is (informational).
+func (h *Handler) Ready(c *echo.Context) error {
+	if h.Health == nil {
+		return h.Live(c)
+	}
+	rep, ok := h.Health.Check(c.Request().Context())
+	if !ok {
+		return c.JSON(http.StatusServiceUnavailable, rep)
+	}
+	return c.JSON(http.StatusOK, rep)
 }
 
 func (h *Handler) Test(c *echo.Context) error {
@@ -40,10 +59,11 @@ func (h *Handler) ListTitles(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
 	}
 	out, err := h.Titles.ListTitlesPage(c.Request().Context(), service.TitlesQuery{
-		Kind:    c.QueryParam("kind"),
-		Search:  c.QueryParam("q"),
-		Missing: c.QueryParam("missing"),
-		Sort:    c.QueryParam("sort"),
+		Kind:        c.QueryParam("kind"),
+		Search:      c.QueryParam("q"),
+		Missing:     c.QueryParam("missing"),
+		MatchStatus: c.QueryParam("match_status"),
+		Sort:        c.QueryParam("sort"),
 	}, limit, offset)
 	if err != nil {
 		return writeTitleError(c, err)
@@ -509,9 +529,12 @@ func writeRunTaskNowResponse(c *echo.Context, out *service.RunTaskNowResponse, e
 		return c.JSON(http.StatusAccepted, out)
 	}
 	var validationErr *service.ValidationError
+	var conflictErr *service.ConflictError
 	switch {
 	case errors.As(err, &validationErr):
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": validationErr.Error()})
+	case errors.As(err, &conflictErr):
+		return c.JSON(http.StatusConflict, map[string]any{"error": conflictErr.Error()})
 	case errors.Is(err, sql.ErrNoRows):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": "task schedule not found"})
 	default:

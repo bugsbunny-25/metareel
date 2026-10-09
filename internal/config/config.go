@@ -24,6 +24,9 @@ type Config struct {
 	TMDB         TMDB
 	Ratings      Ratings
 	MDBList      MDBList
+	Imports      Imports
+	Alerts       Alerts
+	Maintenance  Maintenance
 }
 
 type App struct {
@@ -74,6 +77,9 @@ type Scraper struct {
 	UserAgent      string        `env:"SCRAPER_USER_AGENT" envDefault:"metareel-bot/0.1"`
 	Parallelism    int           `env:"SCRAPER_PARALLELISM" envDefault:"4"`
 	RequestTimeout time.Duration `env:"SCRAPER_REQUEST_TIMEOUT" envDefault:"20s"`
+	// MinInterval spaces FlixPatrol page fetches across all jobs (scrapes,
+	// backfills, title pages); only one fetch runs at a time.
+	MinInterval time.Duration `env:"SCRAPER_MIN_INTERVAL" envDefault:"2s"`
 }
 
 // FlareSolverr routes FlixPatrol page fetches through a FlareSolverr instance
@@ -112,6 +118,37 @@ type Ratings struct {
 type MDBList struct {
 	// APIKey enables MDBList ratings (https://mdblist.com/preferences/).
 	APIKey string `env:"MDBLIST_API_KEY" envDefault:""`
+}
+
+// Imports configures the Netflix Top 10 and IMDb dataset imports.
+type Imports struct {
+	// NetflixCountries limits Netflix's per-country Top 10 to these ISO codes
+	// (comma separated). Empty = the countries of the FlixPatrol schedules;
+	// "all" = every country (~500k rows).
+	NetflixCountries []string `env:"NETFLIX_TOP10_COUNTRIES" envSeparator:"," envDefault:""`
+	// IMDbScope is "known" (only IMDb IDs metareel has) or "all" (~1.6M rows).
+	IMDbScope string `env:"IMDB_DATASET_SCOPE" envDefault:"known"`
+	// DownloadTimeout bounds one dataset download.
+	DownloadTimeout time.Duration `env:"DOWNLOAD_TIMEOUT" envDefault:"10m"`
+}
+
+// Alerts sends problems (failed runs, stale charts, FlareSolverr down) to a
+// webhook. Disabled when URL is empty.
+type Alerts struct {
+	WebhookURL string `env:"ALERT_WEBHOOK_URL" envDefault:""`
+	// Format of the webhook body: json | slack | discord | ntfy.
+	Format string `env:"ALERT_WEBHOOK_FORMAT" envDefault:"json"`
+	// StaleChartHours: alert when a scheduled chart's next date has been due
+	// (FlixPatrol publishes date D at 12:00 UTC on D) for this many hours.
+	StaleChartHours int `env:"ALERT_STALE_CHART_HOURS" envDefault:"24"`
+	// Cooldown between repeats of the same alert.
+	Cooldown time.Duration `env:"ALERT_COOLDOWN" envDefault:"12h"`
+}
+
+// Maintenance configures the maintenance job.
+type Maintenance struct {
+	// RunRetentionDays deletes task runs (and their logs) older than this.
+	RunRetentionDays int `env:"RUN_RETENTION_DAYS" envDefault:"90"`
 }
 
 // Load reads configuration from environment variables. If a `.env` file is

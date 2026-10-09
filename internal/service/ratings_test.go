@@ -84,7 +84,7 @@ func bugoniaFragment() client.MovieOrShowFragment {
 	f.Content.OriginalReleaseYear = &year
 	f.Content.ExternalIds.TmdbId = str("701387")
 	f.Content.ExternalIds.ImdbId = str("tt12300742")
-	votes, meter, certified := 228706, 87, true
+	votes, meter, certified := 228706.0, 87.0, true
 	f.Content.Scoring.ImdbScore = f64(7.4)
 	f.Content.Scoring.ImdbVotes = &votes
 	f.Content.Scoring.TomatoMeter = &meter
@@ -148,7 +148,7 @@ var bugonia = TmdbRef{Kind: "movie", ID: "701387"}
 func TestRatings_RefreshThenCache(t *testing.T) {
 	f := newRatingsFixture(t)
 	ctx := context.Background()
-	if _, err := f.repo.UpsertTitle(ctx, repository.UpsertTitleInput{Slug: "bugonia", Name: "Bugonia", Kind: "movie", TmdbID: "701387"}); err != nil {
+	if _, err := seedOne(t, f.repo, seedTitle{Slug: "bugonia", Name: "Bugonia", Kind: "movie", TmdbID: "701387"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -253,7 +253,7 @@ func TestRatings_SearchFindsSlugWithoutMDBList(t *testing.T) {
 	f.rt.bySlug = nil
 	f.rt.search = &client.RTRating{Slug: "m/bugonia", Title: "Bugonia", Year: 2025, CriticsScore: i64(88), AudienceScore: i64(72), CertifiedFresh: boolp(true)}
 	ctx := context.Background()
-	if _, err := f.repo.UpsertTitle(ctx, repository.UpsertTitleInput{Slug: "bugonia", Name: "Bugonia", Kind: "movie", TmdbID: "701387"}); err != nil {
+	if _, err := seedOne(t, f.repo, seedTitle{Slug: "bugonia", Name: "Bugonia", Kind: "movie", TmdbID: "701387"}); err != nil {
 		t.Fatal(err)
 	}
 

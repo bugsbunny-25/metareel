@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -19,12 +20,17 @@ type TitleDetails struct {
 	Name      string    // full title from the page <h1>
 	TitleKind TitleKind // empty if the page does not say
 	Year      int       // premiere year, 0 if unknown
+	Premiere  string    // premiere date as YYYY-MM-DD, "" if the page shows no full date
 	Country   string    // production country as displayed, e.g. "United States"
 }
 
 var (
 	yearRe     = regexp.MustCompile(`\b(1[89]\d{2}|2\d{3})\b`)
 	slugYearRe = regexp.MustCompile(`-(1[89]\d{2}|2\d{3})$`)
+	premiereRe = regexp.MustCompile(`\d{1,2}/\d{1,2}/\d{4}`)
+	// seasonRe matches chart names like "Wednesday: Season 2" or
+	// "Squid Game - Season 3".
+	seasonRe = regexp.MustCompile(`(?i)^(.*\S)\s*[:\-–—]?\s+season\s+(\d{1,2})$`)
 )
 
 func TitleURL(slug string) string {
@@ -80,8 +86,14 @@ func parseTitleDetails(doc *goquery.Document) (*TitleDetails, error) {
 		case i == 0 && strings.EqualFold(text, "TV Show"):
 			out.TitleKind = TitleKindTVShow
 		case item.AttrOr("title", "") == "Premiere":
-			if m := yearRe.FindString(strings.ReplaceAll(text, " ", "")); m != "" {
+			compact := strings.ReplaceAll(text, " ", "")
+			if m := yearRe.FindString(compact); m != "" {
 				out.Year, _ = strconv.Atoi(m)
+			}
+			if m := premiereRe.FindString(compact); m != "" {
+				if d, err := time.Parse("01/02/2006", m); err == nil {
+					out.Premiere = d.Format("2006-01-02")
+				}
 			}
 		case item.Find(".fflag").Length() > 0 && out.Country == "":
 			out.Country = text
@@ -100,4 +112,19 @@ func YearFromSlug(slug string) int {
 	}
 	y, _ := strconv.Atoi(m[1])
 	return y
+}
+
+// SeasonFromName splits a chart name like "Wednesday: Season 2" into the
+// show name and season number. Names without a season come back unchanged
+// with season 0.
+func SeasonFromName(name string) (string, int) {
+	m := seasonRe.FindStringSubmatch(strings.TrimSpace(name))
+	if m == nil {
+		return name, 0
+	}
+	n, err := strconv.Atoi(m[2])
+	if err != nil || n <= 0 {
+		return name, 0
+	}
+	return strings.TrimRight(m[1], " :-–—"), n
 }

@@ -49,7 +49,7 @@ JOIN titles t ON t.id = r.title_id
 WHERE r.country = sqlc.arg(country)
   AND r.streaming_provider = sqlc.arg(streaming_provider)
   AND r.category = sqlc.arg(category)
-  AND r.ranked_on = COALESCE(sqlc.narg(ranked_on), (
+  AND r.ranked_on = COALESCE(CAST(sqlc.narg(ranked_on) AS TEXT), (
       SELECT MAX(l.ranked_on)
       FROM rankings l
       WHERE l.country = r.country
@@ -104,7 +104,7 @@ FROM rankings r
 JOIN titles t ON t.id = r.title_id
 WHERE r.country = sqlc.arg(country)
   AND r.category = sqlc.arg(category)
-  AND r.ranked_on = COALESCE(sqlc.narg(ranked_on), (
+  AND r.ranked_on = COALESCE(CAST(sqlc.narg(ranked_on) AS TEXT), (
       SELECT MAX(l.ranked_on)
       FROM rankings l
       WHERE l.country = r.country
@@ -117,7 +117,7 @@ ORDER BY r.streaming_provider ASC, r.rank ASC;
 -- TMDB title, so these return every matching title row.
 
 -- name: ListTitlesByTmdbIDs :many
-SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at
+SELECT *
 FROM titles
 WHERE tmdb_id IN (sqlc.slice(tmdb_ids))
 ORDER BY tmdb_id, id;
@@ -128,7 +128,7 @@ FROM rankings
 -- The slice must stay last: sqlc numbers the named params ?1..?3 and SQLite
 -- numbers the expanded "?" list after them.
 WHERE (sqlc.narg(country) IS NULL OR country = sqlc.narg(country))
-  AND (sqlc.narg(from_date) IS NULL OR ranked_on >= sqlc.narg(from_date))
-  AND (sqlc.narg(to_date) IS NULL OR ranked_on <= sqlc.narg(to_date))
+  AND (CAST(sqlc.narg(from_date) AS TEXT) IS NULL OR ranked_on >= CAST(sqlc.narg(from_date) AS TEXT))
+  AND (CAST(sqlc.narg(to_date) AS TEXT) IS NULL OR ranked_on <= CAST(sqlc.narg(to_date) AS TEXT))
   AND title_id IN (sqlc.slice(title_ids))
 ORDER BY ranked_on, country, streaming_provider, category, rank;

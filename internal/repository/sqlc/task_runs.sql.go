@@ -12,19 +12,61 @@ import (
 
 const completeTaskRun = `-- name: CompleteTaskRun :exec
 UPDATE task_runs
-SET status = ?, finished_at = CURRENT_TIMESTAMP, error_message = ?
-WHERE id = ?
+SET status            = ?1,
+    finished_at       = CURRENT_TIMESTAMP,
+    error_message     = ?2,
+    targets_total     = ?3,
+    targets_succeeded = ?4,
+    targets_failed    = ?5,
+    targets_skipped   = ?6,
+    summary           = ?7
+WHERE id = ?8
 `
 
 type CompleteTaskRunParams struct {
-	Status       string         `json:"status"`
-	ErrorMessage sql.NullString `json:"error_message"`
-	ID           int64          `json:"id"`
+	Status           string         `json:"status"`
+	ErrorMessage     sql.NullString `json:"error_message"`
+	TargetsTotal     int64          `json:"targets_total"`
+	TargetsSucceeded int64          `json:"targets_succeeded"`
+	TargetsFailed    int64          `json:"targets_failed"`
+	TargetsSkipped   int64          `json:"targets_skipped"`
+	Summary          sql.NullString `json:"summary"`
+	ID               int64          `json:"id"`
 }
 
 func (q *Queries) CompleteTaskRun(ctx context.Context, arg CompleteTaskRunParams) error {
-	_, err := q.db.ExecContext(ctx, completeTaskRun, arg.Status, arg.ErrorMessage, arg.ID)
+	_, err := q.db.ExecContext(ctx, completeTaskRun,
+		arg.Status,
+		arg.ErrorMessage,
+		arg.TargetsTotal,
+		arg.TargetsSucceeded,
+		arg.TargetsFailed,
+		arg.TargetsSkipped,
+		arg.Summary,
+		arg.ID,
+	)
 	return err
+}
+
+const countRunningTaskRuns = `-- name: CountRunningTaskRuns :one
+SELECT COUNT(*)
+FROM task_runs
+WHERE schedule_id = ?1
+  AND status = 'started'
+  AND started_at >= datetime('now', CAST(?2 AS TEXT))
+`
+
+type CountRunningTaskRunsParams struct {
+	ScheduleID sql.NullInt64 `json:"schedule_id"`
+	Since      string        `json:"since"`
+}
+
+// Runs of a schedule started recently and not finished (overlap guard).
+func (q *Queries) CountRunningTaskRuns(ctx context.Context, arg CountRunningTaskRunsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countRunningTaskRuns, arg.ScheduleID, arg.Since)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const countTaskRuns = `-- name: CountTaskRuns :one
@@ -87,11 +129,11 @@ func (q *Queries) CountTaskRunsByStatusSince(ctx context.Context, since string) 
 const createTaskRun = `-- name: CreateTaskRun :one
 INSERT INTO task_runs (schedule_id, task_type, asynq_task_id, status, retry_count, max_retry)
 VALUES (?, ?, ?, ?, ?, ?)
-RETURNING id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message
+RETURNING id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message, targets_total, targets_succeeded, targets_failed, targets_skipped, summary
 `
 
 type CreateTaskRunParams struct {
-	ScheduleID  int64          `json:"schedule_id"`
+	ScheduleID  sql.NullInt64  `json:"schedule_id"`
 	TaskType    string         `json:"task_type"`
 	AsynqTaskID sql.NullString `json:"asynq_task_id"`
 	Status      string         `json:"status"`
@@ -120,6 +162,11 @@ func (q *Queries) CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (T
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.ErrorMessage,
+		&i.TargetsTotal,
+		&i.TargetsSucceeded,
+		&i.TargetsFailed,
+		&i.TargetsSkipped,
+		&i.Summary,
 	)
 	return i, err
 }
@@ -138,6 +185,36 @@ type CreateTaskRunLogParams struct {
 func (q *Queries) CreateTaskRunLog(ctx context.Context, arg CreateTaskRunLogParams) error {
 	_, err := q.db.ExecContext(ctx, createTaskRunLog, arg.RunID, arg.Level, arg.Message)
 	return err
+}
+
+const deleteTaskRunLogsBefore = `-- name: DeleteTaskRunLogsBefore :execrows
+DELETE FROM task_run_logs
+WHERE run_id IN (
+    SELECT id FROM task_runs WHERE started_at < datetime('now', CAST(?1 AS TEXT))
+)
+`
+
+// Retention: drop logs of runs that started before the cutoff.
+func (q *Queries) DeleteTaskRunLogsBefore(ctx context.Context, olderThan string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteTaskRunLogsBefore, olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteTaskRunsBefore = `-- name: DeleteTaskRunsBefore :execrows
+DELETE FROM task_runs
+WHERE started_at < datetime('now', CAST(?1 AS TEXT))
+  AND status <> 'started'
+`
+
+func (q *Queries) DeleteTaskRunsBefore(ctx context.Context, olderThan string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteTaskRunsBefore, olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const failStaleTaskRuns = `-- name: FailStaleTaskRuns :execrows
@@ -160,7 +237,7 @@ func (q *Queries) FailStaleTaskRuns(ctx context.Context, olderThan string) (int6
 }
 
 const getTaskRunByID = `-- name: GetTaskRunByID :one
-SELECT id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message
+SELECT id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message, targets_total, targets_succeeded, targets_failed, targets_skipped, summary
 FROM task_runs
 WHERE id = ?
 `
@@ -179,14 +256,19 @@ func (q *Queries) GetTaskRunByID(ctx context.Context, id int64) (TaskRun, error)
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.ErrorMessage,
+		&i.TargetsTotal,
+		&i.TargetsSucceeded,
+		&i.TargetsFailed,
+		&i.TargetsSkipped,
+		&i.Summary,
 	)
 	return i, err
 }
 
 const listLastSuccessPerSchedule = `-- name: ListLastSuccessPerSchedule :many
-SELECT schedule_id, CAST(MAX(finished_at) AS TEXT) AS finished_at
+SELECT CAST(schedule_id AS INTEGER) AS schedule_id, CAST(MAX(finished_at) AS TEXT) AS finished_at
 FROM task_runs
-WHERE status = 'succeeded'
+WHERE status = 'succeeded' AND schedule_id IS NOT NULL
 GROUP BY schedule_id
 `
 
@@ -219,9 +301,10 @@ func (q *Queries) ListLastSuccessPerSchedule(ctx context.Context) ([]ListLastSuc
 }
 
 const listLatestTaskRunPerSchedule = `-- name: ListLatestTaskRunPerSchedule :many
-SELECT id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message
+SELECT id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message, targets_total, targets_succeeded, targets_failed, targets_skipped, summary
 FROM task_runs r
-WHERE r.id = (SELECT MAX(x.id) FROM task_runs x WHERE x.schedule_id = r.schedule_id)
+WHERE r.schedule_id IS NOT NULL
+  AND r.id = (SELECT MAX(x.id) FROM task_runs x WHERE x.schedule_id = r.schedule_id)
 `
 
 func (q *Queries) ListLatestTaskRunPerSchedule(ctx context.Context) ([]TaskRun, error) {
@@ -244,6 +327,11 @@ func (q *Queries) ListLatestTaskRunPerSchedule(ctx context.Context) ([]TaskRun, 
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.ErrorMessage,
+			&i.TargetsTotal,
+			&i.TargetsSucceeded,
+			&i.TargetsFailed,
+			&i.TargetsSkipped,
+			&i.Summary,
 		); err != nil {
 			return nil, err
 		}
@@ -295,7 +383,7 @@ func (q *Queries) ListTaskRunLogsByRunID(ctx context.Context, runID int64) ([]Ta
 }
 
 const listTaskRuns = `-- name: ListTaskRuns :many
-SELECT id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message
+SELECT id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message, targets_total, targets_succeeded, targets_failed, targets_skipped, summary
 FROM task_runs
 WHERE (CAST(?1 AS TEXT) = '' OR task_type = ?1)
   AND (CAST(?2 AS TEXT) = '' OR status = ?2)
@@ -339,6 +427,11 @@ func (q *Queries) ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]T
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.ErrorMessage,
+			&i.TargetsTotal,
+			&i.TargetsSucceeded,
+			&i.TargetsFailed,
+			&i.TargetsSkipped,
+			&i.Summary,
 		); err != nil {
 			return nil, err
 		}
@@ -354,7 +447,7 @@ func (q *Queries) ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]T
 }
 
 const listTaskRunsByScheduleID = `-- name: ListTaskRunsByScheduleID :many
-SELECT id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message
+SELECT id, schedule_id, task_type, asynq_task_id, status, retry_count, max_retry, started_at, finished_at, error_message, targets_total, targets_succeeded, targets_failed, targets_skipped, summary
 FROM task_runs
 WHERE schedule_id = ?
 ORDER BY started_at DESC
@@ -362,9 +455,9 @@ LIMIT ? OFFSET ?
 `
 
 type ListTaskRunsByScheduleIDParams struct {
-	ScheduleID int64 `json:"schedule_id"`
-	Limit      int64 `json:"limit"`
-	Offset     int64 `json:"offset"`
+	ScheduleID sql.NullInt64 `json:"schedule_id"`
+	Limit      int64         `json:"limit"`
+	Offset     int64         `json:"offset"`
 }
 
 func (q *Queries) ListTaskRunsByScheduleID(ctx context.Context, arg ListTaskRunsByScheduleIDParams) ([]TaskRun, error) {
@@ -387,6 +480,11 @@ func (q *Queries) ListTaskRunsByScheduleID(ctx context.Context, arg ListTaskRuns
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.ErrorMessage,
+			&i.TargetsTotal,
+			&i.TargetsSucceeded,
+			&i.TargetsFailed,
+			&i.TargetsSkipped,
+			&i.Summary,
 		); err != nil {
 			return nil, err
 		}

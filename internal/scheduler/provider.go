@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -16,72 +17,43 @@ import (
 type DBPeriodicTaskConfigProvider struct {
 	repo      *repository.TaskScheduleRepository
 	queueName string
+	log       *slog.Logger
 }
 
-func NewDBPeriodicTaskConfigProvider(repo *repository.TaskScheduleRepository, queueName string) *DBPeriodicTaskConfigProvider {
+func NewDBPeriodicTaskConfigProvider(repo *repository.TaskScheduleRepository, queueName string, log *slog.Logger) *DBPeriodicTaskConfigProvider {
 	return &DBPeriodicTaskConfigProvider{
 		repo:      repo,
 		queueName: queueName,
+		log:       log,
 	}
 }
 
+// GetConfigs turns every enabled schedule into one cron entry per run time.
+// A schedule that can't be built (e.g. a FlixPatrol schedule without targets)
+// is skipped with a warning rather than failing every other schedule.
 func (p *DBPeriodicTaskConfigProvider) GetConfigs() ([]*asynq.PeriodicTaskConfig, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	out := make([]*asynq.PeriodicTaskConfig, 0)
-
-	flixpatrolSchedules, err := p.repo.ListFlixPatrolTop10TaskScheduleConfigs(ctx)
+	schedules, err := p.repo.ListEnabledTaskSchedules(ctx)
 	if err != nil {
 		return nil, err
 	}
-	flixpatrolConfigs, err := p.buildFlixPatrolTop10Configs(flixpatrolSchedules)
-	if err != nil {
-		return nil, err
-	}
-	out = append(out, flixpatrolConfigs...)
 
-	return out, nil
-}
-
-func (p *DBPeriodicTaskConfigProvider) buildFlixPatrolTop10Configs(schedules []repository.FlixPatrolTaskSchedule) ([]*asynq.PeriodicTaskConfig, error) {
 	out := make([]*asynq.PeriodicTaskConfig, 0, len(schedules))
 	for _, schedule := range schedules {
-		targets := make([]tasks.FlixPatrolTop10TargetPayload, 0, len(schedule.Targets))
-		for _, t := range schedule.Targets {
-			targets = append(targets, tasks.FlixPatrolTop10TargetPayload{
-				CountrySlug:  t.CountrySlug,
-				ProviderSlug: t.ProviderSlug,
-			})
-		}
-
-		payload := tasks.FlixPatrolTop10Payload{
-			ScheduleID:          schedule.ID,
-			ScheduleName:        schedule.Name,
-			RequestDelaySeconds: schedule.RequestDelaySeconds,
-			UserAgent:           schedule.UserAgent,
-			RespectRobots:       schedule.RespectRobots,
-			Targets:             targets,
-		}
-
 		for _, runTime := range schedule.RunTimesUTC {
 			spec, err := utcTimeToCronSpec(runTime)
 			if err != nil {
 				return nil, fmt.Errorf("invalid run time %q for schedule %d: %w", runTime, schedule.ID, err)
 			}
-			task, err := tasks.NewFlixPatrolTop10Task(payload)
+			task, opts, err := tasks.ForSchedule(schedule, p.queueName)
 			if err != nil {
-				return nil, err
+				if p.log != nil {
+					p.log.Warn("schedule skipped", slog.Int64("schedule_id", schedule.ID), slog.String("name", schedule.Name), slog.Any("err", err))
+				}
+				break
 			}
-
-			opts := []asynq.Option{
-				asynq.MaxRetry(int(schedule.MaxRetries) * len(payload.Targets)),
-				asynq.Timeout(tasks.FlixPatrolTop10Timeout),
-			}
-			if p.queueName != "" {
-				opts = append(opts, asynq.Queue(p.queueName))
-			}
-
 			out = append(out, &asynq.PeriodicTaskConfig{
 				Cronspec: spec,
 				Task:     task,
