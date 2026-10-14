@@ -54,6 +54,10 @@ type Top10Result struct {
 	TMDBID            *string `json:"tmdb_id,omitempty"`
 	IMDbID            *string `json:"imdb_id,omitempty"`
 	RottenTomatoesURL *string `json:"rotten_tomatoes_url,omitempty"`
+	// TV only, when known: the season charting and where that came from
+	// (chart | netflix | tmdb_air_date).
+	SeasonNumber *int64  `json:"season_number,omitempty"`
+	SeasonSource *string `json:"season_source,omitempty"`
 }
 
 func (s *Top10ReadService) GetMoviesByProvider(ctx context.Context, q Top10Query) (*Top10Response, error) {
@@ -150,6 +154,8 @@ func buildResponse(date time.Time, countryCode string, category string, provider
 			TMDBID:            item.TMDBID,
 			IMDbID:            item.IMDbID,
 			RottenTomatoesURL: item.RottenTomatoesURL,
+			SeasonNumber:      item.SeasonNumber,
+			SeasonSource:      item.SeasonSource,
 		})
 	}
 	return out

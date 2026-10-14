@@ -24,6 +24,8 @@ type Top10Item struct {
 	RottenTomatoesURL *string
 	PreviousRank      *int64 // nil if not on the chart's previous scraped date
 	DaysInTop10       int64
+	SeasonNumber      *int64
+	SeasonSource      *string // chart | netflix | tmdb_air_date
 }
 
 // ListTop10ByProvider returns one chart. A nil rankedOn means the chart's
@@ -55,6 +57,8 @@ func (r *FlixPatrolRepository) ListTop10ByProvider(ctx context.Context, rankedOn
 			RottenTomatoesURL: nullStringPtr(row.RtUrl),
 			PreviousRank:      rankPtr(row.PreviousRank),
 			DaysInTop10:       row.DaysInTop10,
+			SeasonNumber:      nullInt64Ptr(row.SeasonNumber),
+			SeasonSource:      nullStringPtr(row.SeasonSource),
 		})
 	}
 	return out, nil
@@ -88,6 +92,8 @@ func (r *FlixPatrolRepository) ListTop10AllProviders(ctx context.Context, ranked
 			RottenTomatoesURL: nullStringPtr(row.RtUrl),
 			PreviousRank:      rankPtr(row.PreviousRank),
 			DaysInTop10:       row.DaysInTop10,
+			SeasonNumber:      nullInt64Ptr(row.SeasonNumber),
+			SeasonSource:      nullStringPtr(row.SeasonSource),
 		})
 	}
 	return out, nil
@@ -123,6 +129,8 @@ type RankingHistoryItem struct {
 	StreamingProvider string
 	Category          string
 	Rank              int64
+	SeasonNumber      *int64
+	SeasonSource      *string
 }
 
 func (r *FlixPatrolRepository) ListRankingsByTitleIDs(ctx context.Context, titleIDs []int64, f RankingHistoryFilter) ([]RankingHistoryItem, error) {
@@ -152,6 +160,8 @@ func (r *FlixPatrolRepository) ListRankingsByTitleIDs(ctx context.Context, title
 			StreamingProvider: row.StreamingProvider,
 			Category:          row.Category,
 			Rank:              row.Rank,
+			SeasonNumber:      nullInt64Ptr(row.SeasonNumber),
+			SeasonSource:      nullStringPtr(row.SeasonSource),
 		})
 	}
 	return out, nil

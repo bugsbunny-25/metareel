@@ -46,10 +46,15 @@ func TestTMDBFullDetailsMapping(t *testing.T) {
 	}
 
 	var tv tmdbFullResp
-	_ = json.Unmarshal([]byte(`{"name": "BEEF", "first_air_date": "2023-04-06", "episode_run_time": [35], "origin_country": ["US"], "networks": [{"name": "Netflix"}]}`), &tv)
+	_ = json.Unmarshal([]byte(`{"name": "BEEF", "first_air_date": "2023-04-06", "episode_run_time": [35], "origin_country": ["US"], "networks": [{"name": "Netflix"}],
+	  "seasons": [{"season_number": 0, "name": "Specials", "episode_count": 2},
+	              {"season_number": 1, "name": " Season 1 ", "air_date": "2023-04-06", "episode_count": 10}]}`), &tv)
 	dt := tv.toDetails("tv", "154385")
 	if dt.Title != "BEEF" || dt.ReleaseDate != "2023-04-06" || dt.Runtime != 35 || dt.Networks[0] != "Netflix" {
 		t.Fatalf("tv details = %+v", dt)
+	}
+	if len(dt.Seasons) != 2 || dt.Seasons[1] != (TMDBSeason{Number: 1, Name: "Season 1", AirDate: "2023-04-06", EpisodeCount: 10}) {
+		t.Fatalf("tv seasons = %+v", dt.Seasons)
 	}
 }
 

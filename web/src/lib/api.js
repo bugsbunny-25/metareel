@@ -47,6 +47,14 @@ export const getTitleCandidates = (id, q) => req(`/titles/${id}/candidates`, { q
 export const getRatings = (kind, tmdbId, refresh = false) =>
   req(`/titles/tmdb/${kind}/${tmdbId}/ratings`, { query: { refresh: refresh || '' } })
 
+// ── Netflix official Top 10 mapping ─────────────────────────────────
+export const listNetflixTitles = (q) => req('/netflix/titles', { query: q })
+export const getNetflixTitle = (id) => req(`/netflix/titles/${id}`)
+export const patchNetflixTitle = (id, body) => req(`/netflix/titles/${id}`, { method: 'PATCH', body })
+export const rematchNetflixTitle = (id, clear = false) => req(`/netflix/titles/${id}/rematch`, { method: 'POST', body: { clear } })
+export const getNetflixTitleCandidates = (id, q) => req(`/netflix/titles/${id}/candidates`, { query: q })
+export const patchNetflixSeason = (id, body) => req(`/netflix/seasons/${id}`, { method: 'PATCH', body })
+
 // ── Top 10 ──────────────────────────────────────────────────────────
 export function getTop10({ country, provider, category, date }) {
   const seg = category === 'tv_shows' ? 'tv-shows' : 'movies'

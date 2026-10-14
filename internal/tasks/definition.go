@@ -15,6 +15,7 @@ const (
 	TypeTitlesMetadata        = "titles.metadata"
 	TypeRatingsPrewarm        = "ratings.prewarm"
 	TypeNetflixTop10Import    = "netflix.top10.import"
+	TypeNetflixTitlesMatch    = "netflix.titles.match"
 	TypeIMDbRatingsImport     = "imdb.ratings.import"
 	TypeMaintenance           = "maintenance"
 )
@@ -26,6 +27,7 @@ var Types = []string{
 	TypeTitlesMetadata,
 	TypeRatingsPrewarm,
 	TypeNetflixTop10Import,
+	TypeNetflixTitlesMatch,
 	TypeIMDbRatingsImport,
 	TypeMaintenance,
 }
@@ -50,7 +52,7 @@ func Timeout(taskType string) time.Duration {
 	switch taskType {
 	case TypeFlixPatrolScheduleRun, TypeTitlesEnrich:
 		return FlixPatrolTop10Timeout
-	case TypeIMDbRatingsImport, TypeNetflixTop10Import, TypeTitlesMetadata:
+	case TypeIMDbRatingsImport, TypeNetflixTop10Import, TypeNetflixTitlesMatch, TypeTitlesMetadata:
 		return time.Hour
 	default:
 		return 30 * time.Minute
@@ -107,8 +109,9 @@ type JobPayload struct {
 	ScheduleName string `json:"schedule_name,omitempty"`
 	// RequestDelaySeconds paces FlixPatrol title-page fetches (titles.enrich).
 	RequestDelaySeconds int64 `json:"request_delay_seconds,omitempty"`
-	// TitleIDs limits titles.enrich / titles.metadata to these titles (and
-	// ignores their retry backoff); empty = the due backlog.
+	// TitleIDs limits titles.enrich to these FlixPatrol titles, or
+	// netflix.titles.match to these Netflix titles (ignoring their retry
+	// backoff); empty = the due backlog.
 	TitleIDs []int64 `json:"title_ids,omitempty"`
 	// Force refreshes even fresh data (imports: ignore "unchanged" checks).
 	Force bool `json:"force,omitempty"`

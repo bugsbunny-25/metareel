@@ -31,7 +31,9 @@ var taskTypeInfo = map[string]TaskTypeInfo{
 	tasks.TypeRatingsPrewarm: {Label: "Ratings pre-warm",
 		Description: "Refreshes expired ratings of titles that charted in the last 3 days, so API requests are served from the database."},
 	tasks.TypeNetflixTop10Import: {Label: "Netflix official Top 10",
-		Description: "Imports Netflix's weekly global and per-country Top 10 and most-popular lists (skipped when unchanged) and matches the titles to TMDB."},
+		Description: "Imports Netflix's weekly global and per-country Top 10 and most-popular lists (skipped when unchanged), matches new titles to TMDB and maps season titles to season numbers."},
+	tasks.TypeNetflixTitlesMatch: {Label: "Netflix title matching",
+		Description: "Works through the backlog of unmatched Netflix titles (retrying with backoff: 1, 3, 7, then 30 days), then maps Netflix season titles and FlixPatrol TV rankings to season numbers."},
 	tasks.TypeIMDbRatingsImport: {Label: "IMDb ratings dataset",
 		Description: "Imports IMDb's daily title.ratings dataset (personal, non-commercial use) for the IMDb IDs metareel knows; used as the headline IMDb rating."},
 	tasks.TypeMaintenance: {Label: "Maintenance",
@@ -51,7 +53,7 @@ func (s *TaskScheduleAdminService) TaskTypes() []TaskTypeInfo {
 
 // RunJobInput starts a job outside its schedule.
 type RunJobInput struct {
-	TitleIDs []int64 `json:"title_ids,omitempty"` // titles.enrich only
+	TitleIDs []int64 `json:"title_ids,omitempty"` // titles.enrich (FlixPatrol title IDs) or netflix.titles.match (Netflix title IDs)
 	Force    bool    `json:"force,omitempty"`     // imports: re-import unchanged files
 }
 
@@ -60,8 +62,8 @@ func (s *TaskScheduleAdminService) RunJob(ctx context.Context, taskType string, 
 	if !tasks.IsKnownType(taskType) || taskType == tasks.TypeFlixPatrolScheduleRun {
 		return nil, &ValidationError{Message: fmt.Sprintf("unsupported job type %q (FlixPatrol scrapes run from a schedule or the backfill endpoint)", taskType)}
 	}
-	if len(in.TitleIDs) > 0 && taskType != tasks.TypeTitlesEnrich {
-		return nil, &ValidationError{Message: "title_ids only apply to titles.enrich"}
+	if len(in.TitleIDs) > 0 && taskType != tasks.TypeTitlesEnrich && taskType != tasks.TypeNetflixTitlesMatch {
+		return nil, &ValidationError{Message: "title_ids only apply to titles.enrich and netflix.titles.match"}
 	}
 	if len(in.TitleIDs) > 500 {
 		return nil, &ValidationError{Message: "at most 500 title_ids"}

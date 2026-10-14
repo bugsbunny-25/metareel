@@ -1,7 +1,7 @@
 <script>
   import { getLeaderboard, getMovers, getNetflixTop10, getAnalytics } from '../lib/api.js'
   import { route, setQuery, href } from '../lib/router.svelte.js'
-  import { number, dateOnly } from '../lib/format.js'
+  import { number, dateOnly, seasonLabel, SEASON_SOURCES } from '../lib/format.js'
   import { COUNTRIES, PROVIDERS, providerLabel, countryName } from '../lib/constants.js'
   import Icon from '../components/Icon.svelte'
   import KindBadge from '../components/KindBadge.svelte'
@@ -181,10 +181,13 @@
               <tr>
                 <td class="small nowrap">{it.category}</td>
                 <td class="right mono">{it.rank}</td>
-                <td><div class="cell-title">{it.show_title}</div>{#if it.season_title}<div class="cell-sub">{it.season_title}</div>{/if}</td>
+                <td>
+                  <a class="cell-title" style="color:inherit" href={href('/netflix', { open: it.netflix_title_id })} title="Review mapping">{it.show_title}</a>
+                  {#if it.season_title}<div class="cell-sub">{#if it.season_number != null}<span class="badge" title={SEASON_SOURCES[it.season_source]?.hint}>{seasonLabel(it.season_number)}</span> {/if}{it.season_title}</div>{/if}
+                </td>
                 {#if !data.country}<td class="right">{number(it.views)}</td><td class="right">{number(it.hours_viewed)}</td>{/if}
                 <td class="right">{it.cumulative_weeks ?? ''}</td>
-                <td class="mono small">{it.tmdb_id ?? '—'}</td>
+                <td class="mono small">{#if it.tmdb_id}{it.tmdb_id}{:else}<a href={href('/netflix', { open: it.netflix_title_id })}>map…</a>{/if}</td>
               </tr>
             {/each}
           </tbody>

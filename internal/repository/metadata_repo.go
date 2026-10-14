@@ -44,6 +44,10 @@ func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFull
 	if len(d.DigitalReleaseDates) > 0 {
 		digital = jsonString(d.DigitalReleaseDates)
 	}
+	var seasons sql.NullString
+	if d.Seasons != nil {
+		seasons = jsonString(d.Seasons) // "[]" for a show without seasons: fetched, nothing to map
+	}
 	if err := q.UpsertTmdbTitleDetails(ctx, sqlc.UpsertTmdbTitleDetailsParams{
 		TmdbKind: d.Kind, TmdbID: d.ID,
 		Title: nullIfEmpty(d.Title), OriginalTitle: nullIfEmpty(d.OriginalTitle), OriginalLanguage: nullIfEmpty(d.OriginalLanguage),
@@ -55,7 +59,7 @@ func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFull
 		PosterPath: nullIfEmpty(d.PosterPath), BackdropPath: nullIfEmpty(d.BackdropPath),
 		Popularity: sql.NullFloat64{Float64: d.Popularity, Valid: true}, VoteAverage: sql.NullFloat64{Float64: d.VoteAverage, Valid: true},
 		VoteCount: sql.NullInt64{Int64: int64(d.VoteCount), Valid: true}, DigitalReleaseDates: digital,
-		ImdbID: nullIfEmpty(d.IMDbID), WikidataID: nullIfEmpty(d.WikidataID),
+		ImdbID: nullIfEmpty(d.IMDbID), WikidataID: nullIfEmpty(d.WikidataID), Seasons: seasons,
 	}); err != nil {
 		return fmt.Errorf("upsert tmdb title: %w", err)
 	}
@@ -106,6 +110,7 @@ type TmdbMetadata struct {
 	VoteAverage         *float64          `json:"vote_average"`
 	VoteCount           *int64            `json:"vote_count"`
 	DigitalReleaseDates map[string]string `json:"digital_release_dates,omitempty"`
+	Seasons             []TmdbSeason      `json:"seasons,omitempty"` // TV only
 	IMDbID              *string           `json:"imdb_id"`
 	WikidataID          *string           `json:"wikidata_id"`
 	RottenTomatoesID    *string           `json:"rotten_tomatoes_id"`
@@ -131,6 +136,7 @@ func toTmdbMetadata(t sqlc.TmdbTitle) *TmdbMetadata {
 	if t.DigitalReleaseDates.Valid {
 		_ = json.Unmarshal([]byte(t.DigitalReleaseDates.String), &m.DigitalReleaseDates)
 	}
+	m.Seasons = DecodeTmdbSeasons(t.Seasons)
 	if t.DetailsFetchedAt.Valid {
 		v := t.DetailsFetchedAt.Time.UTC()
 		m.DetailsFetchedAt = &v
@@ -265,6 +271,19 @@ func jsonString(v any) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: string(b), Valid: true}
+}
+
+// TmdbSeason is one season of a TV show as stored from TMDB.
+type TmdbSeason = client.TMDBSeason
+
+// DecodeTmdbSeasons decodes tmdb_titles.seasons (nil when not fetched).
+func DecodeTmdbSeasons(s sql.NullString) []TmdbSeason {
+	if !s.Valid {
+		return nil
+	}
+	out := []TmdbSeason{}
+	_ = json.Unmarshal([]byte(s.String), &out)
+	return out
 }
 
 func decodeList(s sql.NullString) []string {

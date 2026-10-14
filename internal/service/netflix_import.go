@@ -34,13 +34,14 @@ type NetflixImporter struct {
 	schedules *repository.TaskScheduleRepository
 	matcher   *TitleMatcher
 	metadata  *TitleMetadataService
+	seasons   *SeasonMapper
 	// Countries limits the per-country import: nil = the countries of the
 	// FlixPatrol schedules; ["all"] = every country.
 	Countries []string
 }
 
-func NewNetflixImporter(log *slog.Logger, dl *client.Downloader, repo *repository.ImportsRepository, flixRepo *repository.FlixPatrolRepository, schedules *repository.TaskScheduleRepository, matcher *TitleMatcher, metadata *TitleMetadataService, countries []string) *NetflixImporter {
-	return &NetflixImporter{log: log, dl: dl, repo: repo, flixRepo: flixRepo, schedules: schedules, matcher: matcher, metadata: metadata, Countries: countries}
+func NewNetflixImporter(log *slog.Logger, dl *client.Downloader, repo *repository.ImportsRepository, flixRepo *repository.FlixPatrolRepository, schedules *repository.TaskScheduleRepository, matcher *TitleMatcher, metadata *TitleMetadataService, seasons *SeasonMapper, countries []string) *NetflixImporter {
+	return &NetflixImporter{log: log, dl: dl, repo: repo, flixRepo: flixRepo, schedules: schedules, matcher: matcher, metadata: metadata, seasons: seasons, Countries: countries}
 }
 
 // ImportReport summarises a file import job.
@@ -48,6 +49,7 @@ type ImportReport struct {
 	Files     []ImportFileResult `json:"files"`
 	Matched   int                `json:"matched,omitempty"`
 	Unmatched int                `json:"unmatched,omitempty"`
+	Seasons   *SeasonMapReport   `json:"seasons,omitempty"`
 }
 
 // ImportFileResult is one file of an import.
@@ -112,8 +114,15 @@ func (n *NetflixImporter) Run(ctx context.Context, force bool, runLog func(level
 		logf("info", "Per-country rows kept for: %s", strings.Join(keys, ", "))
 	}
 
-	if err := n.matchTitles(ctx, rep, logf); err != nil {
+	if err := n.matchTitles(ctx, nil, netflixMatchBatch, rep, logf); err != nil {
 		return rep, err
+	}
+	if n.seasons != nil {
+		sr, err := n.seasons.Refresh(ctx, time.Time{}, runLog)
+		rep.Seasons = sr
+		if err != nil {
+			return rep, err
+		}
 	}
 	if rep.failed() > 0 {
 		return rep, fmt.Errorf("%d of %d files failed", rep.failed(), len(rep.Files))
@@ -373,20 +382,71 @@ func (n *NetflixImporter) importMostPopular(ctx context.Context, r io.Reader) (i
 	return len(rows), skipped, n.repo.ReplaceNetflixMostPopular(ctx, rows)
 }
 
-const netflixMatchBatch = 400
+// Netflix titles matched per run: by the import (after the files) and by
+// the netflix.titles.match job, which works through the backlog.
+const (
+	netflixMatchBatch    = 400
+	netflixMatchJobBatch = 1500
+)
 
-// matchTitles matches Netflix titles to TMDB: first through a FlixPatrol
-// title of the same name that charted on Netflix, else a JustWatch search of
-// Netflix's US catalogue (Netflix gives no year, so only exact names on
-// Netflix itself are accepted).
-func (n *NetflixImporter) matchTitles(ctx context.Context, rep *ImportReport, logf func(level, format string, args ...any)) error {
-	due, err := n.repo.NetflixTitlesDueForMatch(ctx, netflixMatchBatch)
+// MatchReport summarises a netflix.titles.match run.
+type MatchReport struct {
+	Requested int              `json:"requested,omitempty"` // title_ids given
+	Matched   int              `json:"matched"`
+	Unmatched int              `json:"unmatched"`
+	Seasons   *SeasonMapReport `json:"seasons,omitempty"`
+}
+
+// RunMatch matches the given Netflix titles (ignoring their backoff; manual
+// ones are skipped), or the due backlog when ids is empty, then remaps
+// seasons.
+func (n *NetflixImporter) RunMatch(ctx context.Context, ids []int64, runLog func(level, msg string)) (*MatchReport, error) {
+	logf := func(level, format string, args ...any) {
+		if runLog != nil {
+			runLog(level, fmt.Sprintf(format, args...))
+		}
+	}
+	rep := &ImportReport{}
+	if err := n.matchTitles(ctx, ids, netflixMatchJobBatch, rep, logf); err != nil {
+		return &MatchReport{Requested: len(ids), Matched: rep.Matched, Unmatched: rep.Unmatched}, err
+	}
+	out := &MatchReport{Requested: len(ids), Matched: rep.Matched, Unmatched: rep.Unmatched}
+	if n.seasons != nil {
+		sr, err := n.seasons.Refresh(ctx, time.Time{}, runLog)
+		out.Seasons = sr
+		if err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+// matchTitles matches Netflix titles to TMDB (ids, or up to limit due
+// titles): first through a FlixPatrol title of the same name that charted on
+// Netflix, else a JustWatch search of Netflix's US catalogue (Netflix gives
+// no year, so only exact names on Netflix itself are accepted).
+func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit int64, rep *ImportReport, logf func(level, format string, args ...any)) error {
+	var (
+		due []repository.NetflixTitleDue
+		err error
+	)
+	if len(ids) > 0 {
+		due, err = n.repo.NetflixTitlesForMatch(ctx, ids)
+	} else {
+		due, err = n.repo.NetflixTitlesDueForMatch(ctx, limit)
+	}
 	if err != nil {
 		return err
+	}
+	if len(due) > 0 {
+		logf("info", "Matching %d Netflix title(s)", len(due))
 	}
 	for i, nt := range due {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if nt.MatchStatus == repository.MatchStatusManual {
+			continue
 		}
 		m := repository.NetflixMatch{RetryAfter: retryAfter(nt.MatchAttempts + 1)}
 		fp, err := n.repo.FlixPatrolTitlesNamed(ctx, nt.ShowTitle, nt.Kind)

@@ -146,16 +146,33 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 
 | Task type | Service | Notes |
 |---|---|---|
-| `flixpatrol.top10.scrape` | `FlixPatrolJob` | Charts only; enqueues `titles.enrich` for new titles and hourly re-checks for unpublished charts |
-| `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Matching with backoff, RT via Wikidata then search |
-| `titles.metadata` | `TitleMetadataService` | TMDB details + watch providers, Wikidata IDs |
+| `flixpatrol.top10.scrape` | `FlixPatrolJob` | Charts only; tags the new TV rankings with seasons, enqueues `titles.enrich` for new titles and hourly re-checks for unpublished charts |
+| `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Matching with backoff, RT via Wikidata then search; then seasons |
+| `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists) + watch providers, Wikidata IDs; then seasons |
 | `ratings.prewarm` | `RatingsService.Prewarm` | Charting titles' expired ratings |
-| `netflix.top10.import` | `NetflixImporter` | Netflix TSVs, Netflix title matching |
+| `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles, seasons |
+| `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), then seasons |
 | `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz` |
 | `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, `PRAGMA optimize` |
 
 FlixPatrol fetches from every job go through one `flixpatrol.SerialFetcher`:
 one page at a time, `SCRAPER_MIN_INTERVAL` apart.
+
+"Then seasons" is `SeasonMapper.Refresh` (`service/seasons.go`): every Netflix
+season title not fixed by hand is (re)mapped to a TMDB season number by
+`ResolveNetflixSeason` (explicit "Season N" / "S N" / "Limited Series" →
+TMDB season name → "Part / Volume / Chapter N" → TMDB season aired just
+before it first charted, or before a date in the title → single-season show),
+then FlixPatrol TV rankings whose chart did not name a season get one
+(`rankings.season_source`): on Netflix charts the best-ranked mapped season of
+the show in Netflix's Top 10 that week (country list, else global), otherwise
+the latest TMDB season aired by that date. Admin fixes of a Netflix season or
+title remap just that title (`RefreshTitle`).
+
+Netflix titles are reviewed under `/api/v1/admin/netflix/titles` like
+FlixPatrol titles: manual IDs lock a title (`match_status = manual`), rematch
+queues `netflix.titles.match` for it, and fixing a FlixPatrol title by hand
+also updates the Netflix titles that were matched through it.
 
 ## Scrape Job Flow
 
@@ -342,6 +359,8 @@ Added since the diagram below:
 | `tmdb_titles` | TMDB metadata per TMDB title + Wikidata IDs (RT, Metacritic, Letterboxd) |
 | `tmdb_watch_providers` | Watch providers per title × country × monetization |
 | `netflix_titles`, `netflix_top10_global`, `netflix_top10_countries`, `netflix_most_popular` | Netflix's official Top 10 and their TMDB matches |
+| `netflix_seasons` | One row per Netflix season title: `season_number`, `season_source` (parsed / tmdb_name / number / tmdb_air_date / tmdb_single / manual) |
+| `tmdb_titles.seasons`, `rankings.season_source` | TMDB season list (JSON) of TV shows; where a ranking's season came from (chart / netflix / tmdb_air_date) |
 | `imdb_ratings` | IMDb dataset ratings (known IMDb IDs by default) |
 | `data_imports` | Last imported ETag / Last-Modified per file |
 | `task_schedules` (new columns) | `backfill_days`, `recheck_hours`; `task_type` validated in Go |
@@ -370,6 +389,7 @@ erDiagram
         TEXT category "movies | tv_shows | overall"
         INTEGER rank "1–10"
         INTEGER season_number
+        TEXT season_source "chart | netflix | tmdb_air_date"
         DATETIME scraped_at
     }
 
@@ -586,7 +606,9 @@ metareel/
 │   │   ├── title_matcher.go       # FlixPatrol title → TMDB / IMDb / RT matching
 │   │   ├── title_enrich.go        # titles.enrich job (matching backlog + RT)
 │   │   ├── title_metadata.go      # titles.metadata job (TMDB + Wikidata)
-│   │   ├── netflix_import.go      # Netflix official Top 10 import + matching
+│   │   ├── netflix_import.go      # Netflix official Top 10 import + matching (netflix.titles.match)
+│   │   ├── netflix_admin.go       # Netflix title / season mapping review (admin)
+│   │   ├── seasons.go             # season numbers: Netflix season titles, FlixPatrol TV rankings
 │   │   ├── imdb_import.go         # IMDb ratings dataset import
 │   │   ├── charts.go              # catalog, history, movers, leaderboards, changes, export
 │   │   ├── title_overview.go      # title overview, stats, availability, lookup

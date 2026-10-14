@@ -27,6 +27,7 @@ type Bootstrap struct {
 	// Shared with the HTTP side.
 	Fetcher     flixpatrol.Fetcher
 	Metadata    *service.TitleMetadataService
+	Seasons     *service.SeasonMapper
 	Maintenance *service.MaintenanceService
 	Alerts      *service.AlertService
 }
@@ -72,14 +73,18 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 	alerts := service.NewAlertService(log, opsRepo, cfg.Alerts.WebhookURL, cfg.Alerts.Format, cfg.Alerts.Cooldown)
 	maintenance := service.NewMaintenanceService(log, opsRepo, taskScheduleRepo, alerts, cfg.Maintenance.RunRetentionDays, cfg.Alerts.StaleChartHours)
 
+	seasons := service.NewSeasonMapper(log, importsRepo)
+	netflix := service.NewNetflixImporter(log, downloader, importsRepo, flixRepo, taskScheduleRepo, matcher, metadata, seasons, cfg.Imports.NetflixCountries)
+
 	runner := taskhandlers.NewRunner(log, taskScheduleRepo, alerts)
 	flixHandler := taskhandlers.NewFlixPatrolHandler(log, runner,
-		service.NewFlixPatrolJob(log, fetcher, flixRepo), deps.Asynq, cfg.Asynq.Queue)
+		service.NewFlixPatrolJob(log, fetcher, flixRepo), seasons, deps.Asynq, cfg.Asynq.Queue)
 
 	jobs := taskhandlers.NewJobHandler(runner).
-		Handle(tasks.TypeTitlesEnrich, taskhandlers.EnrichJob(service.NewTitleEnricher(log, flixRepo, matcher, metadata), cfg.Scraper.UserAgent)).
-		Handle(tasks.TypeTitlesMetadata, taskhandlers.MetadataJob(metadata)).
-		Handle(tasks.TypeNetflixTop10Import, taskhandlers.NetflixImportJob(service.NewNetflixImporter(log, downloader, importsRepo, flixRepo, taskScheduleRepo, matcher, metadata, cfg.Imports.NetflixCountries))).
+		Handle(tasks.TypeTitlesEnrich, taskhandlers.EnrichJob(service.NewTitleEnricher(log, flixRepo, matcher, metadata), seasons, cfg.Scraper.UserAgent)).
+		Handle(tasks.TypeTitlesMetadata, taskhandlers.MetadataJob(metadata, seasons)).
+		Handle(tasks.TypeNetflixTop10Import, taskhandlers.NetflixImportJob(netflix)).
+		Handle(tasks.TypeNetflixTitlesMatch, taskhandlers.NetflixMatchJob(netflix)).
 		Handle(tasks.TypeIMDbRatingsImport, taskhandlers.IMDbImportJob(service.NewIMDbImporter(log, downloader, importsRepo, cfg.Imports.IMDbScope == "all"))).
 		Handle(tasks.TypeMaintenance, taskhandlers.MaintenanceJob(maintenance))
 	if deps.Ratings != nil {
@@ -94,6 +99,7 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 		ConfigProvider: scheduler.NewDBPeriodicTaskConfigProvider(taskScheduleRepo, cfg.Asynq.Queue, log),
 		Fetcher:        fetcher,
 		Metadata:       metadata,
+		Seasons:        seasons,
 		Maintenance:    maintenance,
 		Alerts:         alerts,
 	}

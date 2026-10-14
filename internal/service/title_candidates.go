@@ -81,6 +81,16 @@ func (s *TitleCandidatesService) Search(ctx context.Context, titleID int64, q Ti
 	if query.Kind == "" {
 		query.Kind = t.Kind
 	}
+	return s.SearchQuery(ctx, query)
+}
+
+// SearchQuery searches JustWatch, TMDB and Rotten Tomatoes for a name (and
+// optional year) of a kind (movie | tv_show).
+func (s *TitleCandidatesService) SearchQuery(ctx context.Context, query CandidateQuery) (*TitleCandidatesResponse, error) {
+	query.Name = strings.TrimSpace(query.Name)
+	if query.Name == "" {
+		return nil, &ValidationError{Message: "name is required"}
+	}
 	if query.Kind != "movie" && query.Kind != "tv_show" {
 		return nil, &ValidationError{Message: "invalid kind, expected movie or tv_show"}
 	}

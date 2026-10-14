@@ -238,8 +238,23 @@ type TitleNetflixResponse struct {
 	TotalViews   int64                       `json:"total_views"`
 	TotalHours   int64                       `json:"total_hours_viewed"`
 	Countries    []string                    `json:"countries"`
+	Seasons      []NetflixSeasonSummary      `json:"seasons"` // TV: one per season title, by season number
 	Global       []repository.NetflixWeekRow `json:"global"`
 	CountryWeeks []repository.NetflixWeekRow `json:"country_weeks"`
+}
+
+// NetflixSeasonSummary is one season's run in Netflix's official Top 10.
+type NetflixSeasonSummary struct {
+	SeasonNumber *int64  `json:"season_number"` // null = not mapped yet
+	SeasonSource *string `json:"season_source"`
+	SeasonTitle  string  `json:"season_title"`
+	WeeksGlobal  int     `json:"weeks_in_global_top10"`
+	BestRank     *int64  `json:"best_global_rank"`
+	TotalViews   int64   `json:"total_views"`
+	TotalHours   int64   `json:"total_hours_viewed"`
+	FirstWeek    string  `json:"first_week"`
+	LastWeek     string  `json:"last_week"`
+	Countries    int     `json:"countries"`
 }
 
 func (s *TitleOverviewService) Netflix(ctx context.Context, ref TmdbRef) (*TitleNetflixResponse, error) {
@@ -269,7 +284,71 @@ func (s *TitleOverviewService) Netflix(ctx context.Context, ref TmdbRef) (*Title
 		cs[c.Country] = true
 	}
 	out.WeeksGlobal, out.Countries = len(weeks), sortedKeys(cs)
+	out.Seasons = netflixSeasonSummaries(global, countries)
 	return out, nil
+}
+
+// netflixSeasonSummaries groups a TV title's Netflix weeks by season title.
+func netflixSeasonSummaries(global, countries []repository.NetflixWeekRow) []NetflixSeasonSummary {
+	type acc struct {
+		NetflixSeasonSummary
+		weeks, countries map[string]bool
+	}
+	byTitle := map[string]*acc{}
+	var order []string
+	get := func(r repository.NetflixWeekRow) *acc {
+		if r.SeasonTitle == nil {
+			return nil
+		}
+		a := byTitle[*r.SeasonTitle]
+		if a == nil {
+			a = &acc{NetflixSeasonSummary: NetflixSeasonSummary{SeasonTitle: *r.SeasonTitle, SeasonNumber: r.SeasonNumber, SeasonSource: r.SeasonSource,
+				FirstWeek: r.Week, LastWeek: r.Week}, weeks: map[string]bool{}, countries: map[string]bool{}}
+			byTitle[*r.SeasonTitle] = a
+			order = append(order, *r.SeasonTitle)
+		}
+		a.FirstWeek, a.LastWeek = min(a.FirstWeek, r.Week), max(a.LastWeek, r.Week)
+		return a
+	}
+	for _, r := range global {
+		a := get(r)
+		if a == nil {
+			continue
+		}
+		a.weeks[r.Week] = true
+		if a.BestRank == nil || r.Rank < *a.BestRank {
+			v := r.Rank
+			a.BestRank = &v
+		}
+		if r.Views != nil {
+			a.TotalViews += *r.Views
+		}
+		if r.HoursViewed != nil {
+			a.TotalHours += *r.HoursViewed
+		}
+	}
+	for _, r := range countries {
+		if a := get(r); a != nil {
+			a.countries[r.Country] = true
+		}
+	}
+	out := make([]NetflixSeasonSummary, 0, len(order))
+	for _, t := range order {
+		a := byTitle[t]
+		a.WeeksGlobal, a.Countries = len(a.weeks), len(a.countries)
+		out = append(out, a.NetflixSeasonSummary)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i].SeasonNumber, out[j].SeasonNumber
+		switch {
+		case a != nil && b != nil && *a != *b:
+			return *a < *b
+		case (a == nil) != (b == nil):
+			return a != nil
+		}
+		return out[i].FirstWeek < out[j].FirstWeek
+	})
+	return out
 }
 
 // --- lookup ---------------------------------------------------------------------
@@ -438,6 +517,8 @@ type NetflixSummary struct {
 	TotalViews  int64    `json:"total_views"`
 	TotalHours  int64    `json:"total_hours_viewed"`
 	Countries   []string `json:"countries"`
+	// Seasons (TV) with their own Netflix runs; weeks via /netflix.
+	Seasons []NetflixSeasonSummary `json:"seasons,omitempty"`
 }
 
 // Overview returns a title's sections; a missing section (e.g. no ratings
@@ -487,7 +568,7 @@ func (s *TitleOverviewService) Overview(ctx context.Context, ref TmdbRef, q Over
 			out.Errors["netflix"] = "unavailable"
 		default:
 			known = true
-			out.Netflix = &NetflixSummary{WeeksGlobal: nf.WeeksGlobal, BestRank: nf.BestRank, TotalViews: nf.TotalViews, TotalHours: nf.TotalHours, Countries: nf.Countries}
+			out.Netflix = &NetflixSummary{WeeksGlobal: nf.WeeksGlobal, BestRank: nf.BestRank, TotalViews: nf.TotalViews, TotalHours: nf.TotalHours, Countries: nf.Countries, Seasons: nf.Seasons}
 		}
 	}
 	if !known {

@@ -212,12 +212,14 @@ func (r *FlixPatrolRepository) SaveChart(ctx context.Context, in ChartWrite) err
 	}
 	for _, e := range in.Entries {
 		var season sql.NullInt64
+		var seasonSource sql.NullString
 		if e.SeasonNumber != nil {
 			season = sql.NullInt64{Int64: *e.SeasonNumber, Valid: true}
+			seasonSource = sql.NullString{String: SeasonSourceChart, Valid: true}
 		}
 		if err := q.InsertRanking(ctx, sqlc.InsertRankingParams{
 			TitleID: e.TitleID, RankedOn: date, Country: in.Country, StreamingProvider: in.StreamingProvider,
-			Category: in.Category, Rank: e.Rank, SeasonNumber: season,
+			Category: in.Category, Rank: e.Rank, SeasonNumber: season, SeasonSource: seasonSource,
 		}); err != nil {
 			return fmt.Errorf("insert ranking %s rank %d: %w", e.Slug, e.Rank, err)
 		}

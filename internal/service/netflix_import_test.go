@@ -16,7 +16,7 @@ func TestNetflixImportParsesAndMatches(t *testing.T) {
 	flix := repository.NewFlixPatrolRepository(db)
 	imports := repository.NewImportsRepository(db)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	n := NewNetflixImporter(log, nil, imports, flix, repository.NewTaskScheduleRepository(db), nil, nil, []string{"US"})
+	n := NewNetflixImporter(log, nil, imports, flix, repository.NewTaskScheduleRepository(db), nil, nil, NewSeasonMapper(log, imports), []string{"US"})
 
 	// A FlixPatrol title that charted on Netflix gives the match.
 	seed(t, flix, []seedTitle{{Slug: "unabomber", Name: "UNABOMBER", Kind: "movie", TmdbID: "999"}},
@@ -42,7 +42,7 @@ func TestNetflixImportParsesAndMatches(t *testing.T) {
 	}
 
 	rep := &ImportReport{}
-	if err := n.matchTitles(ctx, rep, func(string, string, ...any) {}); err != nil {
+	if err := n.matchTitles(ctx, nil, netflixMatchBatch, rep, func(string, string, ...any) {}); err != nil {
 		t.Fatal(err)
 	}
 	if rep.Matched != 1 || rep.Unmatched != 1 {

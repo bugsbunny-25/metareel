@@ -871,7 +871,8 @@ paths:
         "200":
           description: >
             Columns / fields: date, country, provider, category, rank,
-            season_number, title_id, slug, name, kind, tmdb_id, imdb_id
+            season_number, title_id, slug, name, kind, tmdb_id, imdb_id,
+            season_source (chart | netflix | tmdb_air_date)
           content:
             text/csv: {}
             application/x-ndjson: {}
@@ -1074,6 +1075,7 @@ paths:
                   total_views: { type: integer }
                   total_hours_viewed: { type: integer }
                   countries: { type: array, items: { type: string } }
+                  seasons: { type: array, items: { $ref: "#/components/schemas/NetflixSeasonSummary" } }
                   global: { type: array, items: { $ref: "#/components/schemas/NetflixWeekRow" } }
                   country_weeks: { type: array, items: { $ref: "#/components/schemas/NetflixWeekRow" } }
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -1151,12 +1153,15 @@ paths:
                         rank: { type: integer }
                         show_title: { type: string }
                         season_title: { type: string, nullable: true }
+                        season_number: { type: integer, nullable: true }
+                        season_source: { $ref: "#/components/schemas/NetflixSeasonSource" }
                         hours_viewed_first_91_days: { type: integer, nullable: true }
                         runtime_hours: { type: number, nullable: true }
                         views_first_91_days: { type: integer, nullable: true }
                         kind: { type: string }
                         tmdb_id: { type: string, nullable: true }
                         imdb_id: { type: string, nullable: true }
+                        netflix_title_id: { type: integer, format: int64 }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/analytics/decay:
@@ -1494,6 +1499,7 @@ components:
                       properties:
                         rank: { type: integer }
                         season_number: { type: integer, nullable: true }
+                        season_source: { $ref: "#/components/schemas/RankingSeasonSource" }
 
     ChartChangesResponse:
       type: object
@@ -1666,6 +1672,16 @@ components:
         metacritic_id: { type: string, nullable: true }
         letterboxd_id: { type: string, nullable: true }
         details_fetched_at: { type: string, format: date-time, nullable: true }
+        seasons:
+          type: array
+          description: TV only, TMDB's seasons (season 0 = specials)
+          items:
+            type: object
+            properties:
+              season_number: { type: integer }
+              name: { type: string }
+              air_date: { type: string, format: date }
+              episode_count: { type: integer }
 
     TitleOverview:
       type: object
@@ -1686,6 +1702,7 @@ components:
             total_views: { type: integer }
             total_hours_viewed: { type: integer }
             countries: { type: array, items: { type: string } }
+            seasons: { type: array, items: { $ref: "#/components/schemas/NetflixSeasonSummary" } }
         errors:
           type: object
           additionalProperties: { type: string }
@@ -1700,6 +1717,8 @@ components:
         rank: { type: integer }
         show_title: { type: string }
         season_title: { type: string, nullable: true }
+        season_number: { type: integer, nullable: true, description: TMDB season number of season_title (TV) }
+        season_source: { $ref: "#/components/schemas/NetflixSeasonSource" }
         hours_viewed: { type: integer, nullable: true }
         runtime_hours: { type: number, nullable: true }
         views: { type: integer, nullable: true }
@@ -1707,6 +1726,42 @@ components:
         kind: { type: string }
         tmdb_id: { type: string, nullable: true }
         imdb_id: { type: string, nullable: true }
+        netflix_title_id: { type: integer, format: int64 }
+
+    NetflixSeasonSource:
+      type: string
+      nullable: true
+      description: >
+        How season_number was found. parsed - the season title says it
+        ("Season 2", "S3", "Limited Series"); tmdb_name - it names a TMDB
+        season; number - "Part 2", "Volume 4", "Stranger Things 5";
+        tmdb_air_date - the TMDB season that aired just before it charted;
+        tmdb_single - the show has one season; manual - set by an admin.
+      enum: [parsed, tmdb_name, number, tmdb_air_date, tmdb_single, manual]
+
+    RankingSeasonSource:
+      type: string
+      description: >
+        How a TV ranking's season_number was found. chart - the chart name
+        said so; netflix - the best-ranked season of the show in Netflix's
+        official Top 10 that week (the country's list, else global; Netflix
+        charts only); tmdb_air_date - the latest season TMDB lists as aired
+        by that date.
+      enum: [chart, netflix, tmdb_air_date]
+
+    NetflixSeasonSummary:
+      type: object
+      properties:
+        season_number: { type: integer, nullable: true }
+        season_source: { $ref: "#/components/schemas/NetflixSeasonSource" }
+        season_title: { type: string }
+        weeks_in_global_top10: { type: integer }
+        best_global_rank: { type: integer, nullable: true }
+        total_views: { type: integer }
+        total_hours_viewed: { type: integer }
+        first_week: { type: string, format: date }
+        last_week: { type: string, format: date }
+        countries: { type: integer, description: Countries whose Top 10 it entered (imported countries only) }
 
     NetflixWeekResponse:
       type: object
@@ -1891,6 +1946,11 @@ components:
         rotten_tomatoes_url:
           type: string
           nullable: true
+        season_number:
+          type: integer
+          description: TV only, when known
+        season_source:
+          $ref: "#/components/schemas/RankingSeasonSource"
       required: [date, rank, previous_rank, days_in_top10, provider, slug, name, kind]
 
     Top10Response:
@@ -2000,6 +2060,11 @@ components:
           format: int64
         slug:
           type: string
+        season_number:
+          type: integer
+          description: TV only, when known
+        season_source:
+          $ref: "#/components/schemas/RankingSeasonSource"
       required: [date, country, provider, category, rank, slug]
 
     TitleRankingsBatchResponse:

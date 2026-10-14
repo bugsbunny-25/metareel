@@ -64,21 +64,40 @@ func (h *JobHandler) process(ctx context.Context, t *asynq.Task) error {
 
 // Job functions, adapting each service to JobFunc.
 
-func EnrichJob(e *service.TitleEnricher, userAgent string) JobFunc {
+func EnrichJob(e *service.TitleEnricher, seasons *service.SeasonMapper, userAgent string) JobFunc {
 	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
-		return e.Run(ctx, service.EnrichOptions{
+		rep, err := e.Run(ctx, service.EnrichOptions{
 			TitleIDs:      p.TitleIDs,
 			RequestDelay:  time.Duration(p.RequestDelaySeconds) * time.Second,
 			UserAgent:     userAgent,
 			RespectRobots: true,
 			RunLog:        run.Log,
 		})
+		if err == nil {
+			// Newly matched titles' rankings can get a season now.
+			refreshSeasons(ctx, seasons, time.Time{}, run)
+		}
+		return rep, err
 	}
 }
 
-func MetadataJob(m *service.TitleMetadataService) JobFunc {
+func MetadataJob(m *service.TitleMetadataService, seasons *service.SeasonMapper) JobFunc {
 	return func(ctx context.Context, _ tasks.JobPayload, run *Run) (any, error) {
-		return m.Run(ctx, run.Log)
+		rep, err := m.Run(ctx, run.Log)
+		// Refreshed TMDB season lists can change season numbers.
+		refreshSeasons(ctx, seasons, time.Time{}, run)
+		return rep, err
+	}
+}
+
+// refreshSeasons remaps season numbers after a job; a failure is logged but
+// does not fail the job.
+func refreshSeasons(ctx context.Context, seasons *service.SeasonMapper, from time.Time, run *Run) {
+	if seasons == nil {
+		return
+	}
+	if _, err := seasons.Refresh(ctx, from, run.Log); err != nil {
+		run.Log("warn", fmt.Sprintf("season mapping failed: %v", err))
 	}
 }
 
@@ -91,6 +110,12 @@ func RatingsPrewarmJob(r *service.RatingsService, titles *repository.FlixPatrolR
 func NetflixImportJob(n *service.NetflixImporter) JobFunc {
 	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
 		return n.Run(ctx, p.Force, run.Log)
+	}
+}
+
+func NetflixMatchJob(n *service.NetflixImporter) JobFunc {
+	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
+		return n.RunMatch(ctx, p.TitleIDs, run.Log)
 	}
 }
 

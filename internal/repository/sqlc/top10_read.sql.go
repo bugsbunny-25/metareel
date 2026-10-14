@@ -13,7 +13,7 @@ import (
 )
 
 const listRankingsByTitleIDs = `-- name: ListRankingsByTitleIDs :many
-SELECT title_id, ranked_on, country, streaming_provider, category, rank
+SELECT title_id, ranked_on, country, streaming_provider, category, rank, season_number, season_source
 FROM rankings
 WHERE (?1 IS NULL OR country = ?1)
   AND (CAST(?2 AS TEXT) IS NULL OR ranked_on >= CAST(?2 AS TEXT))
@@ -30,12 +30,14 @@ type ListRankingsByTitleIDsParams struct {
 }
 
 type ListRankingsByTitleIDsRow struct {
-	TitleID           int64       `json:"title_id"`
-	RankedOn          time.Time   `json:"ranked_on"`
-	Country           interface{} `json:"country"`
-	StreamingProvider string      `json:"streaming_provider"`
-	Category          string      `json:"category"`
-	Rank              int64       `json:"rank"`
+	TitleID           int64          `json:"title_id"`
+	RankedOn          time.Time      `json:"ranked_on"`
+	Country           interface{}    `json:"country"`
+	StreamingProvider string         `json:"streaming_provider"`
+	Category          string         `json:"category"`
+	Rank              int64          `json:"rank"`
+	SeasonNumber      sql.NullInt64  `json:"season_number"`
+	SeasonSource      sql.NullString `json:"season_source"`
 }
 
 // The slice must stay last: sqlc numbers the named params ?1..?3 and SQLite
@@ -69,6 +71,8 @@ func (q *Queries) ListRankingsByTitleIDs(ctx context.Context, arg ListRankingsBy
 			&i.StreamingProvider,
 			&i.Category,
 			&i.Rank,
+			&i.SeasonNumber,
+			&i.SeasonSource,
 		); err != nil {
 			return nil, err
 		}
@@ -160,6 +164,8 @@ SELECT
     r.streaming_provider,
     r.category,
     r.rank,
+    r.season_number,
+    r.season_source,
     t.id AS title_id,
     t.slug,
     t.name,
@@ -218,6 +224,8 @@ type ListTop10AllProvidersRow struct {
 	StreamingProvider string         `json:"streaming_provider"`
 	Category          string         `json:"category"`
 	Rank              int64          `json:"rank"`
+	SeasonNumber      sql.NullInt64  `json:"season_number"`
+	SeasonSource      sql.NullString `json:"season_source"`
 	TitleID           int64          `json:"title_id"`
 	Slug              string         `json:"slug"`
 	Name              string         `json:"name"`
@@ -246,6 +254,8 @@ func (q *Queries) ListTop10AllProviders(ctx context.Context, arg ListTop10AllPro
 			&i.StreamingProvider,
 			&i.Category,
 			&i.Rank,
+			&i.SeasonNumber,
+			&i.SeasonSource,
 			&i.TitleID,
 			&i.Slug,
 			&i.Name,
@@ -277,6 +287,8 @@ SELECT
     r.streaming_provider,
     r.category,
     r.rank,
+    r.season_number,
+    r.season_source,
     t.id AS title_id,
     t.slug,
     t.name,
@@ -337,6 +349,8 @@ type ListTop10ByProviderRow struct {
 	StreamingProvider string         `json:"streaming_provider"`
 	Category          string         `json:"category"`
 	Rank              int64          `json:"rank"`
+	SeasonNumber      sql.NullInt64  `json:"season_number"`
+	SeasonSource      sql.NullString `json:"season_source"`
 	TitleID           int64          `json:"title_id"`
 	Slug              string         `json:"slug"`
 	Name              string         `json:"name"`
@@ -374,6 +388,8 @@ func (q *Queries) ListTop10ByProvider(ctx context.Context, arg ListTop10ByProvid
 			&i.StreamingProvider,
 			&i.Category,
 			&i.Rank,
+			&i.SeasonNumber,
+			&i.SeasonSource,
 			&i.TitleID,
 			&i.Slug,
 			&i.Name,

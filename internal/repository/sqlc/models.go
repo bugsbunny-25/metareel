@@ -66,6 +66,16 @@ type NetflixMostPopular struct {
 	Views91d       sql.NullInt64   `json:"views_91d"`
 }
 
+type NetflixSeason struct {
+	ID             int64          `json:"id"`
+	NetflixTitleID int64          `json:"netflix_title_id"`
+	SeasonTitle    string         `json:"season_title"`
+	SeasonNumber   sql.NullInt64  `json:"season_number"`
+	SeasonSource   sql.NullString `json:"season_source"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+}
+
 type NetflixTitle struct {
 	ID            int64          `json:"id"`
 	ShowTitle     string         `json:"show_title"`
@@ -106,15 +116,16 @@ type NetflixTop10Global struct {
 }
 
 type Ranking struct {
-	ID                int64         `json:"id"`
-	TitleID           int64         `json:"title_id"`
-	RankedOn          time.Time     `json:"ranked_on"`
-	Country           interface{}   `json:"country"`
-	StreamingProvider string        `json:"streaming_provider"`
-	Category          string        `json:"category"`
-	Rank              int64         `json:"rank"`
-	SeasonNumber      sql.NullInt64 `json:"season_number"`
-	ScrapedAt         time.Time     `json:"scraped_at"`
+	ID                int64          `json:"id"`
+	TitleID           int64          `json:"title_id"`
+	RankedOn          time.Time      `json:"ranked_on"`
+	Country           interface{}    `json:"country"`
+	StreamingProvider string         `json:"streaming_provider"`
+	Category          string         `json:"category"`
+	Rank              int64          `json:"rank"`
+	SeasonNumber      sql.NullInt64  `json:"season_number"`
+	ScrapedAt         time.Time      `json:"scraped_at"`
+	SeasonSource      sql.NullString `json:"season_source"`
 }
 
 type TaskRun struct {
@@ -257,6 +268,7 @@ type TmdbTitle struct {
 	WikidataFetchedAt   sql.NullTime    `json:"wikidata_fetched_at"`
 	CreatedAt           time.Time       `json:"created_at"`
 	UpdatedAt           time.Time       `json:"updated_at"`
+	Seasons             sql.NullString  `json:"seasons"`
 }
 
 type TmdbWatchProvider struct {
