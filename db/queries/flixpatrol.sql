@@ -192,9 +192,9 @@ WHERE ranked_on = CAST(sqlc.arg(ranked_on) AS TEXT)
   AND category = sqlc.arg(category);
 
 -- name: InsertRanking :exec
-INSERT INTO rankings (title_id, ranked_on, country, streaming_provider, category, rank, season_number)
+INSERT INTO rankings (title_id, ranked_on, country, streaming_provider, category, rank, season_number, season_source)
 VALUES (sqlc.arg(title_id), CAST(sqlc.arg(ranked_on) AS TEXT), sqlc.arg(country), sqlc.arg(streaming_provider),
-        sqlc.arg(category), sqlc.arg(rank), sqlc.narg(season_number));
+        sqlc.arg(category), sqlc.arg(rank), sqlc.narg(season_number), sqlc.narg(season_source));
 
 -- name: UpsertChartSnapshot :exec
 INSERT INTO chart_snapshots (ranked_on, country, streaming_provider, category, entry_count, signature, source, run_id)

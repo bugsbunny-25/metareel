@@ -5,7 +5,7 @@ INSERT INTO tmdb_titles (
     tmdb_kind, tmdb_id, title, original_title, original_language, overview, status,
     release_date, last_air_date, runtime, number_of_seasons, number_of_episodes,
     genres, origin_countries, production_companies, networks, poster_path, backdrop_path,
-    popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id,
+    popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, seasons,
     details_fetched_at
 ) VALUES (
     sqlc.arg(tmdb_kind), sqlc.arg(tmdb_id), sqlc.narg(title), sqlc.narg(original_title), sqlc.narg(original_language),
@@ -13,7 +13,7 @@ INSERT INTO tmdb_titles (
     sqlc.narg(number_of_seasons), sqlc.narg(number_of_episodes), sqlc.narg(genres), sqlc.narg(origin_countries),
     sqlc.narg(production_companies), sqlc.narg(networks), sqlc.narg(poster_path), sqlc.narg(backdrop_path),
     sqlc.narg(popularity), sqlc.narg(vote_average), sqlc.narg(vote_count), sqlc.narg(digital_release_dates),
-    sqlc.narg(imdb_id), sqlc.narg(wikidata_id), CURRENT_TIMESTAMP
+    sqlc.narg(imdb_id), sqlc.narg(wikidata_id), sqlc.narg(seasons), CURRENT_TIMESTAMP
 )
 ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
     title = excluded.title, original_title = excluded.original_title, original_language = excluded.original_language,
@@ -23,7 +23,7 @@ ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
     production_companies = excluded.production_companies, networks = excluded.networks,
     poster_path = excluded.poster_path, backdrop_path = excluded.backdrop_path, popularity = excluded.popularity,
     vote_average = excluded.vote_average, vote_count = excluded.vote_count,
-    digital_release_dates = excluded.digital_release_dates,
+    digital_release_dates = excluded.digital_release_dates, seasons = excluded.seasons,
     imdb_id = COALESCE(excluded.imdb_id, tmdb_titles.imdb_id),
     wikidata_id = COALESCE(excluded.wikidata_id, tmdb_titles.wikidata_id),
     details_fetched_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP;
@@ -67,6 +67,7 @@ ORDER BY country, CASE monetization WHEN 'flatrate' THEN 0 WHEN 'free' THEN 1 WH
 -- missing or older than the refresh window. Recently charting titles use the
 -- short window (watch providers change), the rest the long one.
 -- Windows are SQLite datetime modifiers, e.g. '-3 days' and '-30 days'.
+-- TV shows stored before seasons were kept are due once.
 SELECT k.tmdb_kind, k.tmdb_id
 FROM (
     SELECT u.tmdb_kind, u.tmdb_id, MAX(u.last_seen) AS last_seen
@@ -85,6 +86,7 @@ FROM (
 ) k
 LEFT JOIN tmdb_titles m ON m.tmdb_kind = k.tmdb_kind AND m.tmdb_id = k.tmdb_id
 WHERE m.details_fetched_at IS NULL
+   OR (k.tmdb_kind = 'tv' AND m.seasons IS NULL)
    OR (k.last_seen >= date('now', '-30 days') AND m.details_fetched_at < datetime('now', CAST(sqlc.arg(recent_window) AS TEXT)))
    OR m.details_fetched_at < datetime('now', CAST(sqlc.arg(stale_window) AS TEXT))
 ORDER BY m.details_fetched_at IS NOT NULL, k.last_seen DESC

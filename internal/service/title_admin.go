@@ -11,11 +11,20 @@ import (
 )
 
 type TitleAdminService struct {
-	repo *repository.FlixPatrolRepository
+	repo    *repository.FlixPatrolRepository
+	imports *repository.ImportsRepository // optional: Netflix titles matched through a title follow its fixes
+	seasons *SeasonMapper
 }
 
 func NewTitleAdminService(repo *repository.FlixPatrolRepository) *TitleAdminService {
 	return &TitleAdminService{repo: repo}
+}
+
+// WithNetflixSync makes manual fixes also update the Netflix titles that were
+// matched through the FlixPatrol title (and remap their seasons).
+func (s *TitleAdminService) WithNetflixSync(imports *repository.ImportsRepository, seasons *SeasonMapper) *TitleAdminService {
+	s.imports, s.seasons = imports, seasons
+	return s
 }
 
 // PatchTitleIDsInput carries the patchable fields. A nil pointer means
@@ -177,6 +186,20 @@ func (s *TitleAdminService) PatchTitleIDs(ctx context.Context, titleID int64, in
 	updated, err := s.repo.UpdateTitleIDs(ctx, merged)
 	if err != nil {
 		return nil, err
+	}
+	if s.imports != nil {
+		ids, err := s.imports.SyncNetflixFromFlixPatrolTitle(ctx, titleID, updated.Kind, updated.TmdbID.String, updated.ImdbID.String)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			if s.seasons == nil {
+				break
+			}
+			if err := s.seasons.RefreshTitle(ctx, id); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return titleToResponse(updated), nil
 }

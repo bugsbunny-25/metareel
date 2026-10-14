@@ -214,8 +214,9 @@ type ChartDay struct {
 }
 
 type ChartDayResult struct {
-	Rank         int64  `json:"rank"`
-	SeasonNumber *int64 `json:"season_number,omitempty"`
+	Rank         int64   `json:"rank"`
+	SeasonNumber *int64  `json:"season_number,omitempty"`
+	SeasonSource *string `json:"season_source,omitempty"` // chart | netflix | tmdb_air_date
 	ChartTitle
 }
 
@@ -258,7 +259,7 @@ func (s *ChartsService) History(ctx context.Context, q HistoryQuery) (*ChartHist
 			out.Days = append(out.Days, ChartDay{Date: r.Date})
 		}
 		day := &out.Days[len(out.Days)-1]
-		day.Items = append(day.Items, ChartDayResult{Rank: r.Rank, SeasonNumber: r.SeasonNumber, ChartTitle: chartTitle(r)})
+		day.Items = append(day.Items, ChartDayResult{Rank: r.Rank, SeasonNumber: r.SeasonNumber, SeasonSource: r.SeasonSource, ChartTitle: chartTitle(r)})
 	}
 	return out, nil
 }
@@ -693,7 +694,7 @@ func (s *ChartsService) Export(ctx context.Context, q ExportQuery, w io.Writer) 
 			if err := enc.Encode(map[string]any{
 				"date": r.Date, "country": r.Country, "provider": r.Provider, "category": r.Category, "rank": r.Rank,
 				"season_number": r.SeasonNumber, "title_id": r.TitleID, "slug": r.Slug, "name": r.Name, "kind": r.Kind,
-				"tmdb_id": r.TmdbID, "imdb_id": r.ImdbID,
+				"tmdb_id": r.TmdbID, "imdb_id": r.ImdbID, "season_source": r.SeasonSource,
 			}); err != nil {
 				return err
 			}
@@ -701,14 +702,14 @@ func (s *ChartsService) Export(ctx context.Context, q ExportQuery, w io.Writer) 
 		return nil
 	}
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"date", "country", "provider", "category", "rank", "season_number", "title_id", "slug", "name", "kind", "tmdb_id", "imdb_id"})
+	_ = cw.Write([]string{"date", "country", "provider", "category", "rank", "season_number", "title_id", "slug", "name", "kind", "tmdb_id", "imdb_id", "season_source"})
 	for _, r := range rows {
 		season := ""
 		if r.SeasonNumber != nil {
 			season = strconv.FormatInt(*r.SeasonNumber, 10)
 		}
 		if err := cw.Write([]string{r.Date, r.Country, r.Provider, r.Category, strconv.FormatInt(r.Rank, 10), season,
-			strconv.FormatInt(r.TitleID, 10), r.Slug, r.Name, r.Kind, str(r.TmdbID), str(r.ImdbID)}); err != nil {
+			strconv.FormatInt(r.TitleID, 10), r.Slug, r.Name, r.Kind, str(r.TmdbID), str(r.ImdbID), str(r.SeasonSource)}); err != nil {
 			return err
 		}
 	}

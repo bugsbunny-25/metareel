@@ -8,6 +8,7 @@ SELECT CAST(r.ranked_on AS TEXT) AS ranked_on,
        r.category,
        r.rank,
        r.season_number,
+       r.season_source,
        t.id AS title_id,
        t.slug,
        t.name,
@@ -62,17 +63,19 @@ SELECT * FROM titles WHERE imdb_id = ? ORDER BY id;
 SELECT tmdb_kind, tmdb_id FROM tmdb_titles WHERE imdb_id = ?;
 
 -- name: ListNetflixGlobalWeek :many
-SELECT g.*, n.tmdb_id, n.imdb_id, n.kind
+SELECT g.*, n.tmdb_id, n.imdb_id, n.kind, s.season_number, s.season_source
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
+LEFT JOIN netflix_seasons s ON s.netflix_title_id = g.netflix_title_id AND s.season_title = g.season_title
 WHERE g.week = sqlc.arg(week)
   AND (CAST(sqlc.arg(category) AS TEXT) = '' OR g.category = sqlc.arg(category))
 ORDER BY g.category, g.weekly_rank;
 
 -- name: ListNetflixCountryWeek :many
-SELECT c.*, n.tmdb_id, n.imdb_id, n.kind
+SELECT c.*, n.tmdb_id, n.imdb_id, n.kind, s.season_number, s.season_source
 FROM netflix_top10_countries c
 JOIN netflix_titles n ON n.id = c.netflix_title_id
+LEFT JOIN netflix_seasons s ON s.netflix_title_id = c.netflix_title_id AND s.season_title = c.season_title
 WHERE c.country = sqlc.arg(country) AND c.week = sqlc.arg(week)
   AND (CAST(sqlc.arg(category) AS TEXT) = '' OR c.category = sqlc.arg(category))
 ORDER BY c.category, c.weekly_rank;
@@ -84,23 +87,26 @@ SELECT CAST(COALESCE(MAX(week), '') AS TEXT) FROM netflix_top10_global;
 SELECT CAST(COALESCE(MAX(week), '') AS TEXT) FROM netflix_top10_countries WHERE country = ?;
 
 -- name: ListNetflixMostPopular :many
-SELECT p.*, n.tmdb_id, n.imdb_id, n.kind
+SELECT p.*, n.tmdb_id, n.imdb_id, n.kind, s.season_number, s.season_source
 FROM netflix_most_popular p
 JOIN netflix_titles n ON n.id = p.netflix_title_id
+LEFT JOIN netflix_seasons s ON s.netflix_title_id = p.netflix_title_id AND s.season_title = p.season_title
 WHERE (CAST(sqlc.arg(category) AS TEXT) = '' OR p.category = sqlc.arg(category))
 ORDER BY p.category, p.rank;
 
 -- name: ListNetflixGlobalByTmdb :many
-SELECT g.*
+SELECT g.*, s.season_number, s.season_source
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
+LEFT JOIN netflix_seasons s ON s.netflix_title_id = g.netflix_title_id AND s.season_title = g.season_title
 WHERE n.kind = sqlc.arg(kind) AND n.tmdb_id = sqlc.arg(tmdb_id)
 ORDER BY g.week, g.category;
 
 -- name: ListNetflixCountriesByTmdb :many
-SELECT c.*
+SELECT c.*, s.season_number, s.season_source
 FROM netflix_top10_countries c
 JOIN netflix_titles n ON n.id = c.netflix_title_id
+LEFT JOIN netflix_seasons s ON s.netflix_title_id = c.netflix_title_id AND s.season_title = c.season_title
 WHERE n.kind = sqlc.arg(kind) AND n.tmdb_id = sqlc.arg(tmdb_id)
 ORDER BY c.week, c.country;
 

@@ -116,6 +116,21 @@ export const links = {
   flixpatrol: (slug) => (slug ? `https://flixpatrol.com/title/${slug}/` : null),
 }
 
+/** How a season number was found, for badges and tooltips. */
+export const SEASON_SOURCES = {
+  parsed: { label: 'from title', hint: 'The season title says it ("Season 2", "S3", "Limited Series")' },
+  tmdb_name: { label: 'TMDB name', hint: 'The season title names a TMDB season' },
+  number: { label: 'numbered', hint: '"Part 2", "Volume 4" or a trailing number — check it' },
+  tmdb_air_date: { label: 'air date', hint: 'Inferred: the TMDB season that aired just before it charted' },
+  tmdb_single: { label: 'only season', hint: 'The TMDB show has a single season' },
+  manual: { label: 'fixed by hand', hint: 'Set in the admin UI; automatic mapping leaves it alone' },
+  chart: { label: 'chart', hint: 'The chart name said so' },
+  netflix: { label: 'Netflix', hint: "The show's best-ranked season in Netflix's official Top 10 that week" },
+}
+
+/** "S2" for a season number (S0 = specials). */
+export const seasonLabel = (n) => (n === null || n === undefined ? '' : `S${n}`)
+
 /** Download rows as a CSV file. columns: [{ key, label, value?(row) }]. */
 export function downloadCSV(filename, columns, rows) {
   const esc = (v) => {

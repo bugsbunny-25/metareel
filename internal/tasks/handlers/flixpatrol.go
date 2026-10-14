@@ -21,15 +21,16 @@ import (
 const recheckInterval = time.Hour
 
 type FlixPatrolHandler struct {
-	log    *slog.Logger
-	runner *Runner
-	job    *service.FlixPatrolJob
-	asynq  *asynq.Client // enqueues re-checks and enrichment; optional
-	queue  string
+	log     *slog.Logger
+	runner  *Runner
+	job     *service.FlixPatrolJob
+	seasons *service.SeasonMapper // tags TV rankings with seasons; optional
+	asynq   *asynq.Client         // enqueues re-checks and enrichment; optional
+	queue   string
 }
 
-func NewFlixPatrolHandler(log *slog.Logger, runner *Runner, job *service.FlixPatrolJob, asynqClient *asynq.Client, queue string) *FlixPatrolHandler {
-	return &FlixPatrolHandler{log: log, runner: runner, job: job, asynq: asynqClient, queue: queue}
+func NewFlixPatrolHandler(log *slog.Logger, runner *Runner, job *service.FlixPatrolJob, seasons *service.SeasonMapper, asynqClient *asynq.Client, queue string) *FlixPatrolHandler {
+	return &FlixPatrolHandler{log: log, runner: runner, job: job, seasons: seasons, asynq: asynqClient, queue: queue}
 }
 
 func (h *FlixPatrolHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
@@ -98,6 +99,16 @@ func (h *FlixPatrolHandler) ProcessTask(ctx context.Context, t *asynq.Task) erro
 		res.ErrorMessage = fmt.Sprintf("%d of %d chart pages failed", failed, len(report.Results))
 	}
 
+	// Season numbers of the TV rankings just stored (titles already matched).
+	if h.seasons != nil && succeeded > 0 {
+		rep := &service.SeasonMapReport{}
+		if err := h.seasons.TagRankings(ctx, seasonsFrom(opts, now), rep); err != nil {
+			h.log.Warn("tag ranking seasons failed", slog.Int64("run_id", run.ID), slog.Any("err", err))
+		} else if rep.RankingsChanged > 0 {
+			run.Log("info", fmt.Sprintf("Seasons set on %d TV ranking(s)", rep.RankingsChanged))
+		}
+	}
+
 	// Match new titles now rather than waiting for the nightly backlog.
 	if len(report.NewTitleIDs) > 0 {
 		h.enqueueEnrich(ctx, run, payload, report.NewTitleIDs)
@@ -118,6 +129,17 @@ func (h *FlixPatrolHandler) ProcessTask(ctx context.Context, t *asynq.Task) erro
 		return errors.New(res.ErrorMessage)
 	}
 	return nil
+}
+
+// seasonsFrom is the first chart date a run may have stored.
+func seasonsFrom(opts service.FlixPatrolRunOptions, now time.Time) time.Time {
+	from := now.AddDate(0, 0, -(opts.BackfillDays + 2))
+	for _, d := range opts.Dates {
+		if d.Before(from) {
+			from = d
+		}
+	}
+	return from
 }
 
 // recheckDeadline is when to stop re-checking a chart FlixPatrol has not

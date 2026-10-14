@@ -1,7 +1,7 @@
 <script>
   import { getTop10 } from '../lib/api.js'
   import { route, setQuery } from '../lib/router.svelte.js'
-  import { dateOnly, addDays, todayUTC, links, downloadCSV } from '../lib/format.js'
+  import { dateOnly, addDays, todayUTC, links, downloadCSV, seasonLabel, SEASON_SOURCES } from '../lib/format.js'
   import { COUNTRIES, PROVIDERS, providerLabel } from '../lib/constants.js'
   import Icon from '../components/Icon.svelte'
   import SortTh from '../components/SortTh.svelte'
@@ -60,7 +60,7 @@
   function exportCSV() {
     downloadCSV(`top10-${country}-${provider || 'all'}-${category}-${shownDate}.csv`, [
       { key: 'date', label: 'date' }, { key: 'provider', label: 'provider' }, { key: 'rank', label: 'rank' },
-      { key: 'previous_rank', label: 'previous_rank' }, { key: 'days_in_top10', label: 'days_in_top10' },
+      { key: 'previous_rank', label: 'previous_rank' }, { key: 'days_in_top10', label: 'days_in_top10' }, { key: 'season_number', label: 'season_number' },
       { key: 'name', label: 'name' }, { key: 'slug', label: 'slug' }, { key: 'kind', label: 'kind' },
       { key: 'tmdb_id', label: 'tmdb_id' }, { key: 'imdb_id', label: 'imdb_id' }, { key: 'rotten_tomatoes_url', label: 'rt_slug' },
     ], items)
@@ -138,7 +138,7 @@
                 {:else}<span class="muted">—</span>{/if}
               </td>
               <td>
-                <div class="cell-title">{it.name}</div>
+                <div class="cell-title">{it.name}{#if it.season_number != null} <span class="badge" title="Season {it.season_number} — {SEASON_SOURCES[it.season_source]?.hint ?? ''}">{seasonLabel(it.season_number)}</span>{/if}</div>
                 <div class="cell-sub mono">{it.slug}</div>
               </td>
               <td><KindBadge kind={it.kind} /></td>

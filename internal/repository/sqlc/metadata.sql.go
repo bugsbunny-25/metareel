@@ -46,7 +46,7 @@ func (q *Queries) DeleteTmdbWatchProviders(ctx context.Context, arg DeleteTmdbWa
 }
 
 const getTmdbTitle = `-- name: GetTmdbTitle :one
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
 `
 
 type GetTmdbTitleParams struct {
@@ -89,6 +89,7 @@ func (q *Queries) GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (Tmd
 		&i.WikidataFetchedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Seasons,
 	)
 	return i, err
 }
@@ -145,6 +146,7 @@ FROM (
 ) k
 LEFT JOIN tmdb_titles m ON m.tmdb_kind = k.tmdb_kind AND m.tmdb_id = k.tmdb_id
 WHERE m.details_fetched_at IS NULL
+   OR (k.tmdb_kind = 'tv' AND m.seasons IS NULL)
    OR (k.last_seen >= date('now', '-30 days') AND m.details_fetched_at < datetime('now', CAST(?1 AS TEXT)))
    OR m.details_fetched_at < datetime('now', CAST(?2 AS TEXT))
 ORDER BY m.details_fetched_at IS NOT NULL, k.last_seen DESC
@@ -166,6 +168,7 @@ type ListTmdbRefsDueForDetailsRow struct {
 // missing or older than the refresh window. Recently charting titles use the
 // short window (watch providers change), the rest the long one.
 // Windows are SQLite datetime modifiers, e.g. '-3 days' and '-30 days'.
+// TV shows stored before seasons were kept are due once.
 func (q *Queries) ListTmdbRefsDueForDetails(ctx context.Context, arg ListTmdbRefsDueForDetailsParams) ([]ListTmdbRefsDueForDetailsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTmdbRefsDueForDetails, arg.RecentWindow, arg.StaleWindow, arg.Limit)
 	if err != nil {
@@ -238,7 +241,7 @@ func (q *Queries) ListTmdbRefsDueForWikidata(ctx context.Context, arg ListTmdbRe
 }
 
 const listTmdbTitlesByIDs = `-- name: ListTmdbTitlesByIDs :many
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
 `
 
 // Callers filter by kind (TMDB movie and TV IDs overlap).
@@ -293,6 +296,7 @@ func (q *Queries) ListTmdbTitlesByIDs(ctx context.Context, ids []string) ([]Tmdb
 			&i.WikidataFetchedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Seasons,
 		); err != nil {
 			return nil, err
 		}
@@ -361,7 +365,7 @@ INSERT INTO tmdb_titles (
     tmdb_kind, tmdb_id, title, original_title, original_language, overview, status,
     release_date, last_air_date, runtime, number_of_seasons, number_of_episodes,
     genres, origin_countries, production_companies, networks, poster_path, backdrop_path,
-    popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id,
+    popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, seasons,
     details_fetched_at
 ) VALUES (
     ?1, ?2, ?3, ?4, ?5,
@@ -369,7 +373,7 @@ INSERT INTO tmdb_titles (
     ?11, ?12, ?13, ?14,
     ?15, ?16, ?17, ?18,
     ?19, ?20, ?21, ?22,
-    ?23, ?24, CURRENT_TIMESTAMP
+    ?23, ?24, ?25, CURRENT_TIMESTAMP
 )
 ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
     title = excluded.title, original_title = excluded.original_title, original_language = excluded.original_language,
@@ -379,7 +383,7 @@ ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
     production_companies = excluded.production_companies, networks = excluded.networks,
     poster_path = excluded.poster_path, backdrop_path = excluded.backdrop_path, popularity = excluded.popularity,
     vote_average = excluded.vote_average, vote_count = excluded.vote_count,
-    digital_release_dates = excluded.digital_release_dates,
+    digital_release_dates = excluded.digital_release_dates, seasons = excluded.seasons,
     imdb_id = COALESCE(excluded.imdb_id, tmdb_titles.imdb_id),
     wikidata_id = COALESCE(excluded.wikidata_id, tmdb_titles.wikidata_id),
     details_fetched_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -410,6 +414,7 @@ type UpsertTmdbTitleDetailsParams struct {
 	DigitalReleaseDates sql.NullString  `json:"digital_release_dates"`
 	ImdbID              sql.NullString  `json:"imdb_id"`
 	WikidataID          sql.NullString  `json:"wikidata_id"`
+	Seasons             sql.NullString  `json:"seasons"`
 }
 
 // TMDB metadata, watch providers and Wikidata IDs per TMDB title.
@@ -439,6 +444,7 @@ func (q *Queries) UpsertTmdbTitleDetails(ctx context.Context, arg UpsertTmdbTitl
 		arg.DigitalReleaseDates,
 		arg.ImdbID,
 		arg.WikidataID,
+		arg.Seasons,
 	)
 	return err
 }

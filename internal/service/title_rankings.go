@@ -103,6 +103,9 @@ type RankingSnapshot struct {
 	Category string `json:"category"`
 	Rank     int64  `json:"rank"`
 	Slug     string `json:"slug"`
+	// TV only, when known (season_source: chart | netflix | tmdb_air_date).
+	SeasonNumber *int64  `json:"season_number,omitempty"`
+	SeasonSource *string `json:"season_source,omitempty"`
 }
 
 type TitleRankingsBatchResponse struct {
@@ -188,6 +191,9 @@ func (s *Top10ReadService) GetTitleRankingsBatch(ctx context.Context, refs []Tmd
 			Category: r.Category,
 			Rank:     r.Rank,
 			Slug:     slugByTitleID[r.TitleID],
+
+			SeasonNumber: r.SeasonNumber,
+			SeasonSource: r.SeasonSource,
 		})
 	}
 
@@ -308,7 +314,7 @@ func (s *Top10ReadService) GetTitleRankingsByID(ctx context.Context, titleID int
 	for _, r := range rankings {
 		out.Rankings = append(out.Rankings, RankingSnapshot{
 			Date: r.RankedOn.UTC().Format("2006-01-02"), Country: r.Country, Provider: r.StreamingProvider,
-			Category: r.Category, Rank: r.Rank, Slug: t.Slug,
+			Category: r.Category, Rank: r.Rank, Slug: t.Slug, SeasonNumber: r.SeasonNumber, SeasonSource: r.SeasonSource,
 		})
 	}
 	out.Charts = summarizeCharts(out.Rankings)

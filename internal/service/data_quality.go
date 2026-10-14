@@ -29,6 +29,7 @@ type DataQualityReport struct {
 	GeneratedAt        time.Time                 `json:"generated_at"`
 	TitleMatchStatus   map[string]int64          `json:"title_match_status"`
 	NetflixMatchStatus map[string]int64          `json:"netflix_title_match_status"`
+	NetflixSeasons     map[string]int64          `json:"netflix_season_mapping"` // season titles by season_source ("unmapped" = no number)
 	Metadata           repository.MetadataCounts `json:"metadata"`
 	IMDbRatings        int64                     `json:"imdb_ratings"`
 	Imports            []repository.ImportState  `json:"imports"`
@@ -65,6 +66,9 @@ func (s *DataQualityService) Report(ctx context.Context) (*DataQualityReport, er
 		return nil, err
 	}
 	if rep.NetflixMatchStatus, err = s.imports.CountNetflixTitlesByMatchStatus(ctx); err != nil {
+		return nil, err
+	}
+	if rep.NetflixSeasons, err = s.imports.CountNetflixSeasonsBySource(ctx); err != nil {
 		return nil, err
 	}
 	if rep.Metadata, err = s.metadata.Counts(ctx); err != nil {

@@ -1,6 +1,6 @@
 <script>
   import { getTitle, patchTitle, getTitleCandidates, getTitleRankings, getRatings, rematchTitle, getTitleOverview } from '../lib/api.js'
-  import { links, parseImdbId, parseTmdbInput, parseRtSlug, dateOnly, relativeTime, dateTime, number } from '../lib/format.js'
+  import { links, parseImdbId, parseTmdbInput, parseRtSlug, dateOnly, relativeTime, dateTime, number, seasonLabel, SEASON_SOURCES } from '../lib/format.js'
   import { providerLabel, countryName } from '../lib/constants.js'
   import { toast } from '../lib/toast.svelte.js'
   import { confirm } from '../lib/confirm.svelte.js'
@@ -166,6 +166,8 @@
   }
 
   const key = (c) => `${c.country}/${c.provider}/${c.category}`
+  // Distinct seasons on a chart, in order of first appearance.
+  const chartSeasons = (c) => [...new Set(rankings.rankings.filter((r) => key(r) === key(c) && r.season_number != null).map((r) => r.season_number))]
   const chartPoints = $derived(
     rankings ? rankings.rankings.filter((r) => key(r) === chartKey).map((r) => ({ date: r.date, rank: r.rank })) : []
   )
@@ -312,7 +314,7 @@
       {:else}
         <div class="table-wrap card">
           <table class="table">
-            <thead><tr><th>Chart</th><th class="right">Days</th><th class="right">Best</th><th>First</th><th>Last</th><th class="right">Last rank</th></tr></thead>
+            <thead><tr><th>Chart</th><th class="right">Days</th><th class="right">Best</th><th>First</th><th>Last</th><th class="right">Last rank</th>{#if title.kind === 'tv_show'}<th title="Seasons charting on this chart (latest last)">Seasons</th>{/if}</tr></thead>
             <tbody>
               {#each rankings.charts as c (key(c))}
                 <tr class="clickable" class:selected={chartKey === key(c)} onclick={() => (chartKey = key(c))}>
@@ -322,6 +324,7 @@
                   <td class="nowrap">{dateOnly(c.first_date)}</td>
                   <td class="nowrap">{dateOnly(c.last_date)}</td>
                   <td class="right">#{c.last_rank}</td>
+                  {#if title.kind === 'tv_show'}<td class="small nowrap">{chartSeasons(c).map(seasonLabel).join(', ') || '—'}</td>{/if}
                 </tr>
               {/each}
             </tbody>
@@ -380,6 +383,24 @@
           {@const nf = overview.netflix}
           <div class="section-title">Netflix official Top 10</div>
           <p class="small">{nf.weeks_in_global_top10} week(s) in the global Top 10{nf.best_global_rank ? `, best #${nf.best_global_rank}` : ''} · {number(nf.total_views)} views · {number(nf.total_hours_viewed)} hours{nf.countries.length ? ` · charted in ${nf.countries.join(', ')}` : ''}</p>
+          {#if nf.seasons?.length}
+            <div class="card table-wrap">
+              <table class="table">
+                <thead><tr><th>Season</th><th class="right">Weeks</th><th class="right">Best</th><th class="right">Views</th><th>Charted</th></tr></thead>
+                <tbody>
+                  {#each nf.seasons as s (s.season_title)}
+                    <tr>
+                      <td>{#if s.season_number != null}<span class="badge" title={SEASON_SOURCES[s.season_source]?.hint}>{seasonLabel(s.season_number)}</span> {:else}<span class="badge badge-warning">?</span> {/if}<span class="small">{s.season_title}</span></td>
+                      <td class="right">{s.weeks_in_global_top10 || '—'}</td>
+                      <td class="right">{s.best_global_rank ? `#${s.best_global_rank}` : '—'}</td>
+                      <td class="right">{number(s.total_views)}</td>
+                      <td class="small nowrap">{dateOnly(s.first_week)}{s.last_week !== s.first_week ? ` – ${dateOnly(s.last_week)}` : ''}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
         {/if}
 
         <div class="section-title row">Where to watch

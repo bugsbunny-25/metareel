@@ -53,6 +53,7 @@ it, and again after — several fields and enums below were only discoverable th
 ## Netflix Top 10 (`service/netflix_import.go`)
 
 - TSVs at `https://www.netflix.com/tudum/top10/data/{all-weeks-global,all-weeks-countries,most-popular}.tsv`. HEAD returns 403 and `If-Modified-Since` / `Range` are ignored, so `client.Downloader` GETs and closes the body when `Last-Modified` is unchanged. countries is ~32 MB / 500k rows (filtered by `NETFLIX_TOP10_COUNTRIES`). `week` is the Sunday ending a Monday–Sunday week; `N/A` means empty. No IDs or years: titles are matched via a same-name FlixPatrol title that charted on Netflix, else JustWatch's US Netflix catalogue, else a single exact-name hit in all of JustWatch US.
+- `season_title` formats seen (global file, Oct 2026): `Show: Season N` (~90%), `Show: Limited Series`, `Show: Part N` / `Volume N` / `Chapter N` / `Collection N`, `Show N` (Stranger Things 5), `Show: S3: City` (Love Is Blind), dated episodes (`Raw: September 28, 2026`), named arcs (`Demon Slayer: …: Hashira Training Arc`), localized (`시즌 1`), or N/A. Mapped by `ResolveNetflixSeason` (`service/seasons.go`); TMDB season names/air dates (`tmdb_titles.seasons`) resolve most of the rest. `justwatch_unique_name` can pick the wrong same-name show (e.g. 2008 Irish "Raw" for WWE Raw) — fix those in the Netflix mapping page.
 
 ## IMDb datasets
 

@@ -21,6 +21,7 @@ type Handler struct {
 	Ratings    *service.RatingsService
 	Releases   *service.ReleasesService
 	Candidates *service.TitleCandidatesService
+	Netflix    *service.NetflixAdminService
 	Stats      *service.AdminStatsService
 	APIKeys    *service.APIKeyService
 	Health     *service.HealthService

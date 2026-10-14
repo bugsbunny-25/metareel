@@ -35,6 +35,16 @@ type TMDBFullDetails struct {
 	// DigitalReleaseDates maps country → first digital (type 4) release date.
 	DigitalReleaseDates map[string]string
 	WatchProviders      []TMDBWatchProvider
+	// Seasons of a TV show (season 0 = specials); nil for movies.
+	Seasons []TMDBSeason
+}
+
+// TMDBSeason is one season of a TV show.
+type TMDBSeason struct {
+	Number       int    `json:"season_number"`
+	Name         string `json:"name"`
+	AirDate      string `json:"air_date,omitempty"` // YYYY-MM-DD
+	EpisodeCount int    `json:"episode_count"`
 }
 
 // TMDBWatchProvider is one way to watch a title in one country.
@@ -79,14 +89,15 @@ type tmdbFullResp struct {
 	ProductionCountries []struct {
 		ISO string `json:"iso_3166_1"`
 	} `json:"production_countries"`
-	ProductionCompanies []tmdbNamed `json:"production_companies"`
-	Networks            []tmdbNamed `json:"networks"`
-	PosterPath          string      `json:"poster_path"`
-	BackdropPath        string      `json:"backdrop_path"`
-	Popularity          float64     `json:"popularity"`
-	VoteAverage         float64     `json:"vote_average"`
-	VoteCount           int         `json:"vote_count"`
-	IMDbID              string      `json:"imdb_id"` // movies carry it at the top level too
+	ProductionCompanies []tmdbNamed  `json:"production_companies"`
+	Networks            []tmdbNamed  `json:"networks"`
+	Seasons             []TMDBSeason `json:"seasons"`
+	PosterPath          string       `json:"poster_path"`
+	BackdropPath        string       `json:"backdrop_path"`
+	Popularity          float64      `json:"popularity"`
+	VoteAverage         float64      `json:"vote_average"`
+	VoteCount           int          `json:"vote_count"`
+	IMDbID              string       `json:"imdb_id"` // movies carry it at the top level too
 	ExternalIDs         struct {
 		IMDbID     string `json:"imdb_id"`
 		WikidataID string `json:"wikidata_id"`
@@ -159,6 +170,11 @@ func (r *tmdbFullResp) toDetails(kind, id string) *TMDBFullDetails {
 		d.Title, d.OriginalTitle, d.ReleaseDate = r.Name, r.OriginalName, r.FirstAirDate
 		if len(r.EpisodeRunTime) > 0 {
 			d.Runtime = r.EpisodeRunTime[0]
+		}
+		d.Seasons = make([]TMDBSeason, 0, len(r.Seasons))
+		for _, se := range r.Seasons {
+			se.Name = strings.TrimSpace(se.Name)
+			d.Seasons = append(d.Seasons, se)
 		}
 	}
 	if d.IMDbID == "" {

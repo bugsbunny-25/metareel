@@ -101,9 +101,10 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		close(schedulerErr)
 	}()
 
-	titlesAdmin := service.NewTitleAdminService(flixRepo)
+	titlesAdmin := service.NewTitleAdminService(flixRepo).WithNetflixSync(importsRepo, taskBootstrap.Seasons)
 	httpClient := client.New(cfg.HTTP)
 	justWatch := client.NewJustWatchClient(httpClient.GetClient())
+	candidates := service.NewTitleCandidatesService(log, flixRepo, justWatch, client.NewTMDB(httpClient, cfg.TMDB.APIKey), client.NewRottenTomatoes(cfg.HTTP.Timeout))
 	apiKeys := service.NewAPIKeyService(log, repository.NewAPIKeyRepository(db))
 	if err := apiKeys.Load(ctx); err != nil {
 		return fmt.Errorf("load api keys: %w", err)
@@ -123,7 +124,8 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Titles:     titlesAdmin,
 		Ratings:    ratings,
 		Releases:   service.NewReleasesService(log, justWatch),
-		Candidates: service.NewTitleCandidatesService(log, flixRepo, justWatch, client.NewTMDB(httpClient, cfg.TMDB.APIKey), client.NewRottenTomatoes(cfg.HTTP.Timeout)),
+		Candidates: candidates,
+		Netflix:    service.NewNetflixAdminService(log, importsRepo, metadataRepo, taskBootstrap.Metadata, taskBootstrap.Seasons, candidates),
 		Stats:      service.NewAdminStatsService(taskScheduleRepo, flixRepo),
 		APIKeys:    apiKeys,
 		Health:     service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),

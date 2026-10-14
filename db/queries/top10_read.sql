@@ -12,6 +12,8 @@ SELECT
     r.streaming_provider,
     r.category,
     r.rank,
+    r.season_number,
+    r.season_source,
     t.id AS title_id,
     t.slug,
     t.name,
@@ -68,6 +70,8 @@ SELECT
     r.streaming_provider,
     r.category,
     r.rank,
+    r.season_number,
+    r.season_source,
     t.id AS title_id,
     t.slug,
     t.name,
@@ -123,7 +127,7 @@ WHERE tmdb_id IN (sqlc.slice(tmdb_ids))
 ORDER BY tmdb_id, id;
 
 -- name: ListRankingsByTitleIDs :many
-SELECT title_id, ranked_on, country, streaming_provider, category, rank
+SELECT title_id, ranked_on, country, streaming_provider, category, rank, season_number, season_source
 FROM rankings
 -- The slice must stay last: sqlc numbers the named params ?1..?3 and SQLite
 -- numbers the expanded "?" list after them.

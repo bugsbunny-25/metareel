@@ -335,19 +335,20 @@ func (q *Queries) GetTitleBySlug(ctx context.Context, slug string) (Title, error
 }
 
 const insertRanking = `-- name: InsertRanking :exec
-INSERT INTO rankings (title_id, ranked_on, country, streaming_provider, category, rank, season_number)
+INSERT INTO rankings (title_id, ranked_on, country, streaming_provider, category, rank, season_number, season_source)
 VALUES (?1, CAST(?2 AS TEXT), ?3, ?4,
-        ?5, ?6, ?7)
+        ?5, ?6, ?7, ?8)
 `
 
 type InsertRankingParams struct {
-	TitleID           int64         `json:"title_id"`
-	RankedOn          string        `json:"ranked_on"`
-	Country           interface{}   `json:"country"`
-	StreamingProvider string        `json:"streaming_provider"`
-	Category          string        `json:"category"`
-	Rank              int64         `json:"rank"`
-	SeasonNumber      sql.NullInt64 `json:"season_number"`
+	TitleID           int64          `json:"title_id"`
+	RankedOn          string         `json:"ranked_on"`
+	Country           interface{}    `json:"country"`
+	StreamingProvider string         `json:"streaming_provider"`
+	Category          string         `json:"category"`
+	Rank              int64          `json:"rank"`
+	SeasonNumber      sql.NullInt64  `json:"season_number"`
+	SeasonSource      sql.NullString `json:"season_source"`
 }
 
 func (q *Queries) InsertRanking(ctx context.Context, arg InsertRankingParams) error {
@@ -359,6 +360,7 @@ func (q *Queries) InsertRanking(ctx context.Context, arg InsertRankingParams) er
 		arg.Category,
 		arg.Rank,
 		arg.SeasonNumber,
+		arg.SeasonSource,
 	)
 	return err
 }

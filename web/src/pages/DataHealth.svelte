@@ -25,7 +25,7 @@
   }
   $effect(() => { load() })
 
-  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'imdb.ratings.import', 'ratings.prewarm', 'maintenance']
+  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'netflix.titles.match', 'imdb.ratings.import', 'ratings.prewarm', 'maintenance']
   const label = (t) => taskTypes.find((x) => x.type === t)?.label ?? t
 
   async function start(type, force = false) {
@@ -65,17 +65,23 @@
   {:else}
     {@const tm = report.title_match_status}
     {@const nm = report.netflix_title_match_status}
+    {@const ns = report.netflix_season_mapping ?? {}}
     <div class="grid grid-stats">
       <a class="card stat" href={href('/titles', { match: 'unmatched', sort: '-rankings' })}>
         <div class="stat-label">FlixPatrol titles matched</div>
         <div class="stat-value">{pct((tm.matched ?? 0) + (tm.manual ?? 0), total(tm))}</div>
         <div class="stat-foot">{number(tm.unmatched ?? 0)} unmatched · {number(tm.pending ?? 0)} pending · {number(tm.manual ?? 0)} by hand</div>
       </a>
-      <div class="card stat">
+      <a class="card stat" href={href('/netflix', { match: 'unmatched' })}>
         <div class="stat-label">Netflix titles matched</div>
-        <div class="stat-value">{pct(nm.matched ?? 0, total(nm))}</div>
-        <div class="stat-foot">{number(nm.matched ?? 0)} of {number(total(nm))} · {number(nm.pending ?? 0)} pending</div>
-      </div>
+        <div class="stat-value">{pct((nm.matched ?? 0) + (nm.manual ?? 0), total(nm))}</div>
+        <div class="stat-foot">{number((nm.matched ?? 0) + (nm.manual ?? 0))} of {number(total(nm))} · {number(nm.unmatched ?? 0)} unmatched · {number(nm.pending ?? 0)} pending</div>
+      </a>
+      <a class="card stat" href={href('/netflix', { missing: 'season', kind: 'tv_show' })}>
+        <div class="stat-label">Netflix seasons numbered</div>
+        <div class="stat-value">{pct(total(ns) - (ns.unmapped ?? 0), total(ns))}</div>
+        <div class="stat-foot">{number(ns.unmapped ?? 0)} without a number · {number(ns.manual ?? 0)} by hand · {number((ns.tmdb_air_date ?? 0) + (ns.number ?? 0))} inferred</div>
+      </a>
       <div class="card stat">
         <div class="stat-label">TMDB metadata</div>
         <div class="stat-value">{number(report.metadata.with_details)}</div>
