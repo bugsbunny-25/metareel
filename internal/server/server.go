@@ -101,7 +101,7 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		close(schedulerErr)
 	}()
 
-	titlesAdmin := service.NewTitleAdminService(flixRepo).WithNetflixSync(importsRepo, taskBootstrap.Seasons)
+	titlesAdmin := service.NewTitleAdminService(flixRepo).WithMapping(taskBootstrap.Mapping)
 	httpClient := client.New(cfg.HTTP)
 	justWatch := client.NewJustWatchClient(httpClient.GetClient())
 	candidates := service.NewTitleCandidatesService(log, flixRepo, justWatch, client.NewTMDB(httpClient, cfg.TMDB.APIKey), client.NewRottenTomatoes(cfg.HTTP.Timeout))
@@ -125,13 +125,14 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Ratings:    ratings,
 		Releases:   service.NewReleasesService(log, justWatch),
 		Candidates: candidates,
-		Netflix:    service.NewNetflixAdminService(log, importsRepo, metadataRepo, taskBootstrap.Metadata, taskBootstrap.Seasons, candidates),
+		Netflix:    service.NewNetflixAdminService(log, importsRepo, metadataRepo, taskBootstrap.Metadata, taskBootstrap.Seasons, candidates).WithMapping(taskBootstrap.Mapping),
+		Mapping:    taskBootstrap.Mapping,
 		Stats:      service.NewAdminStatsService(taskScheduleRepo, flixRepo),
 		APIKeys:    apiKeys,
 		Health:     service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
 
 		Charts:    service.NewChartsService(analyticsRepo),
-		Overview:  service.NewTitleOverviewService(analyticsRepo, flixRepo, metadataRepo, ratings),
+		Overview:  service.NewTitleOverviewService(analyticsRepo, flixRepo, metadataRepo, ratings).WithMapping(taskBootstrap.Mapping),
 		Analytics: service.NewAnalyticsService(analyticsRepo, metadataRepo, importsRepo, repository.NewRatingsRepository(db)),
 		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,
 			taskScheduleRepo, taskBootstrap.Maintenance),

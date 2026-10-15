@@ -74,21 +74,25 @@ type NetflixSeason struct {
 	SeasonSource   sql.NullString `json:"season_source"`
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
+	NetflixID      sql.NullString `json:"netflix_id"`
 }
 
 type NetflixTitle struct {
-	ID            int64          `json:"id"`
-	ShowTitle     string         `json:"show_title"`
-	Kind          string         `json:"kind"`
-	TmdbID        sql.NullString `json:"tmdb_id"`
-	ImdbID        sql.NullString `json:"imdb_id"`
-	TitleID       sql.NullInt64  `json:"title_id"`
-	MatchStatus   string         `json:"match_status"`
-	MatchSource   sql.NullString `json:"match_source"`
-	MatchAttempts int64          `json:"match_attempts"`
-	NextMatchAt   sql.NullTime   `json:"next_match_at"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
+	ID                 int64          `json:"id"`
+	ShowTitle          string         `json:"show_title"`
+	Kind               string         `json:"kind"`
+	TmdbID             sql.NullString `json:"tmdb_id"`
+	ImdbID             sql.NullString `json:"imdb_id"`
+	TitleID            sql.NullInt64  `json:"title_id"`
+	MatchStatus        string         `json:"match_status"`
+	MatchSource        sql.NullString `json:"match_source"`
+	MatchAttempts      int64          `json:"match_attempts"`
+	NextMatchAt        sql.NullTime   `json:"next_match_at"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	TmdbKind           sql.NullString `json:"tmdb_kind"`
+	NetflixID          sql.NullString `json:"netflix_id"`
+	NetflixIDCheckedAt sql.NullTime   `json:"netflix_id_checked_at"`
 }
 
 type NetflixTop10Country struct {
@@ -210,6 +214,12 @@ type Title struct {
 	FpFetchedAt      sql.NullTime   `json:"fp_fetched_at"`
 }
 
+type TitleLink struct {
+	NetflixTitleID int64     `json:"netflix_title_id"`
+	TitleID        int64     `json:"title_id"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 type TitleRating struct {
 	ID          int64          `json:"id"`
 	TmdbKind    string         `json:"tmdb_kind"`
@@ -269,6 +279,8 @@ type TmdbTitle struct {
 	CreatedAt           time.Time       `json:"created_at"`
 	UpdatedAt           time.Time       `json:"updated_at"`
 	Seasons             sql.NullString  `json:"seasons"`
+	NetflixID           sql.NullString  `json:"netflix_id"`
+	JustwatchID         sql.NullString  `json:"justwatch_id"`
 }
 
 type TmdbWatchProvider struct {

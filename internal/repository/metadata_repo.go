@@ -83,7 +83,54 @@ func (r *MetadataRepository) SaveWikidata(ctx context.Context, ref TmdbRef, ids 
 	return r.q.UpsertTmdbTitleWikidata(ctx, sqlc.UpsertTmdbTitleWikidataParams{
 		TmdbKind: ref.Kind, TmdbID: ref.ID, ImdbID: nullIfEmpty(ids.IMDbID), WikidataID: nullIfEmpty(ids.WikidataID),
 		RtID: nullIfEmpty(ids.RottenTomato), MetacriticID: nullIfEmpty(ids.Metacritic), LetterboxdID: nullIfEmpty(ids.Letterboxd),
+		NetflixID: nullIfEmpty(ids.NetflixID),
 	})
+}
+
+// TmdbExternalIDs are IDs of a TMDB title found by matching.
+type TmdbExternalIDs struct {
+	IMDbID      string
+	JustWatchID string
+	NetflixID   string
+	WikidataID  string
+}
+
+// SaveExternalIDs fills a TMDB title's missing IDs (creating its row if
+// needed); it never overwrites one.
+func (r *MetadataRepository) SaveExternalIDs(ctx context.Context, ref TmdbRef, ids TmdbExternalIDs) error {
+	if ids == (TmdbExternalIDs{}) {
+		return nil
+	}
+	if err := r.q.SaveTmdbTitleExternalIDs(ctx, sqlc.SaveTmdbTitleExternalIDsParams{
+		TmdbKind: ref.Kind, TmdbID: ref.ID, ImdbID: nullIfEmpty(ids.IMDbID), JustwatchID: nullIfEmpty(ids.JustWatchID),
+		NetflixID: nullIfEmpty(ids.NetflixID), WikidataID: nullIfEmpty(ids.WikidataID),
+	}); err != nil {
+		return fmt.Errorf("save external ids of %s: %w", ref, err)
+	}
+	return nil
+}
+
+// ConsolidateExternalIDs fills TMDB titles' missing IMDb, Rotten Tomatoes,
+// JustWatch and Wikidata IDs from the FlixPatrol titles mapped to them.
+func (r *MetadataRepository) ConsolidateExternalIDs(ctx context.Context) (int64, error) {
+	n, err := r.q.ConsolidateTmdbTitleIDs(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("consolidate tmdb title ids: %w", err)
+	}
+	return n, nil
+}
+
+// RefsByNetflixID returns the TMDB titles with this Netflix title ID.
+func (r *MetadataRepository) RefsByNetflixID(ctx context.Context, netflixID string) ([]TmdbRef, error) {
+	rows, err := r.q.FindTmdbRefsByNetflixID(ctx, sql.NullString{String: netflixID, Valid: true})
+	if err != nil {
+		return nil, fmt.Errorf("find tmdb refs by netflix id: %w", err)
+	}
+	out := make([]TmdbRef, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, TmdbRef{Kind: row.TmdbKind, ID: row.TmdbID})
+	}
+	return out, nil
 }
 
 // TmdbMetadata is stored TMDB metadata, decoded.
@@ -116,6 +163,8 @@ type TmdbMetadata struct {
 	RottenTomatoesID    *string           `json:"rotten_tomatoes_id"`
 	MetacriticID        *string           `json:"metacritic_id"`
 	LetterboxdID        *string           `json:"letterboxd_id"`
+	NetflixID           *string           `json:"netflix_id"`   // Wikidata P1874 (netflix.com/title/<id>)
+	JustWatchID         *string           `json:"justwatch_id"` // e.g. tm123 / ts123
 	DetailsFetchedAt    *time.Time        `json:"details_fetched_at"`
 }
 
@@ -132,6 +181,7 @@ func toTmdbMetadata(t sqlc.TmdbTitle) *TmdbMetadata {
 		Popularity: nullFloatPtr(t.Popularity), VoteAverage: nullFloatPtr(t.VoteAverage), VoteCount: nullInt64Ptr(t.VoteCount),
 		IMDbID: nullStringPtr(t.ImdbID), WikidataID: nullStringPtr(t.WikidataID), RottenTomatoesID: nullStringPtr(t.RtID),
 		MetacriticID: nullStringPtr(t.MetacriticID), LetterboxdID: nullStringPtr(t.LetterboxdID),
+		NetflixID: nullStringPtr(t.NetflixID), JustWatchID: nullStringPtr(t.JustwatchID),
 	}
 	if t.DigitalReleaseDates.Valid {
 		_ = json.Unmarshal([]byte(t.DigitalReleaseDates.String), &m.DigitalReleaseDates)

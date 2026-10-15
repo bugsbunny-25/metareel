@@ -147,11 +147,11 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | Task type | Service | Notes |
 |---|---|---|
 | `flixpatrol.top10.scrape` | `FlixPatrolJob` | Charts only; tags the new TV rankings with seasons, enqueues `titles.enrich` for new titles and hourly re-checks for unpublished charts |
-| `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Matching with backoff, RT via Wikidata then search; then seasons |
+| `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Mapping sync (linked Netflix titles' mappings first), matching with backoff, RT via Wikidata then search, mapping sync; then seasons |
 | `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists) + watch providers, Wikidata IDs; then seasons |
 | `ratings.prewarm` | `RatingsService.Prewarm` | Charting titles' expired ratings |
-| `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles, seasons |
-| `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), then seasons |
+| `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
+| `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
 | `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz` |
 | `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, `PRAGMA optimize` |
 
@@ -170,9 +170,47 @@ the latest TMDB season aired by that date. Admin fixes of a Netflix season or
 title remap just that title (`RefreshTitle`).
 
 Netflix titles are reviewed under `/api/v1/admin/netflix/titles` like
-FlixPatrol titles: manual IDs lock a title (`match_status = manual`), rematch
-queues `netflix.titles.match` for it, and fixing a FlixPatrol title by hand
-also updates the Netflix titles that were matched through it.
+FlixPatrol titles: manual IDs lock a title (`match_status = manual`) and
+rematch queues `netflix.titles.match` for it.
+
+### TMDB mapping (`service/title_mapping*.go`, `service/netflix_ids.go`)
+
+TMDB titles (`tmdb_titles`) are the hub of one mapping: `titles.kind` +
+`tmdb_id` and `netflix_titles.tmdb_kind` + `tmdb_id` point at them
+(`netflix_titles.kind` stays Netflix's list, which can differ). Each TMDB
+title holds every external ID: IMDb, Wikidata, RT, Metacritic, Letterboxd,
+`netflix_id` (Wikidata P1874 / Tudum) and `justwatch_id`;
+`ConsolidateTmdbTitleIDs` fills gaps from the FlixPatrol titles' matches.
+
+`TitleMappingService.Sync` (run by the matching jobs, admin fixes and
+`POST /admin/mappings/sync`):
+
+1. **Links** (`title_links`): `ComputeTitleLinks` pairs a Netflix title with
+   a FlixPatrol title of the same normalized name (chart or page name, with or
+   without ": Season N") on Netflix's chart of the same list (Films ↔
+   `movies`, TV ↔ `tv_shows`) in the same or an adjacent Netflix week.
+2. **Sharing**: each title weighs only itself and the titles directly linked
+   to it that are linked to nothing else (so a fix never spreads through an
+   intermediary, and a Netflix title linked to a show and its same-name
+   revival fills neither); the anchor of that set is a title fixed by hand, else a Netflix
+   title mapped by its Netflix ID, else FlixPatrol's match, else Netflix's.
+   A non-manual title takes the anchor's TMDB kind + ID (`match_source`
+   `flixpatrol_title` / `netflix_title`); up to 3 passes per sync let it reach
+   unmatched titles further along. A set whose deciding tier disagrees is a
+   conflict and left alone. Netflix titles that changed get their seasons
+   remapped. Clearing a title's match ("Clear and rematch") also clears what
+   linked titles took from it.
+
+Netflix title matching order (`NetflixImporter.matchTitles`): mapping sync →
+Netflix IDs (`resolveNetflixIDs`: Tudum's Top 10 search by show title, an
+item whose name — a season title for TV — list and a charted week agree;
+season IDs → show ID through the public title page's redirect; Netflix ID →
+TMDB via `tmdb_titles.netflix_id`, else Wikidata P1874) → a same-name
+FlixPatrol title in the same list → Wikidata items with a Netflix ID by
+English label (`pickWikidataNetflix`) → JustWatch's US Netflix catalogue (the
+list's kind, then the other) → a unique exact name in JustWatch US → mapping
+sync. IMDb / Wikidata IDs given by hand resolve to TMDB through TMDB's
+`/find`, then Wikidata (`TitleMetadataService.ResolveExternalID`).
 
 ## Scrape Job Flow
 
@@ -356,10 +394,11 @@ Added since the diagram below:
 |---|---|
 | `chart_snapshots` | One row per stored chart (date × country × provider × category): entry count, content `signature`, `scraped_at`, `changed_at` |
 | `titles` (new columns) | `match_status` (pending / matched / unmatched / manual), `match_source`, `matched_name/year`, `match_attempts`, `next_match_at`, `rt_attempts`, `next_rt_at`, `justwatch_id`, `wikidata_id`, `fp_*` (FlixPatrol title page) |
-| `tmdb_titles` | TMDB metadata per TMDB title + Wikidata IDs (RT, Metacritic, Letterboxd) |
+| `tmdb_titles` | TMDB metadata per TMDB title + every external ID: Wikidata (RT, Metacritic, Letterboxd), `netflix_id`, `justwatch_id` |
+| `title_links` | Netflix title ↔ FlixPatrol title that are the same title; linked titles share one TMDB mapping |
 | `tmdb_watch_providers` | Watch providers per title × country × monetization |
-| `netflix_titles`, `netflix_top10_global`, `netflix_top10_countries`, `netflix_most_popular` | Netflix's official Top 10 and their TMDB matches |
-| `netflix_seasons` | One row per Netflix season title: `season_number`, `season_source` (parsed / tmdb_name / number / tmdb_air_date / tmdb_single / manual) |
+| `netflix_titles`, `netflix_top10_global`, `netflix_top10_countries`, `netflix_most_popular` | Netflix's official Top 10 and their TMDB matches (`kind` = Netflix's list, `tmdb_kind` = TMDB namespace, `netflix_id` + `netflix_id_checked_at` from Tudum's search) |
+| `netflix_seasons` | One row per Netflix season title: `season_number`, `season_source` (parsed / tmdb_name / number / tmdb_air_date / tmdb_single / manual), the season's own `netflix_id` |
 | `tmdb_titles.seasons`, `rankings.season_source` | TMDB season list (JSON) of TV shows; where a ranking's season came from (chart / netflix / tmdb_air_date) |
 | `imdb_ratings` | IMDb dataset ratings (known IMDb IDs by default) |
 | `data_imports` | Last imported ETag / Last-Modified per file |
@@ -549,6 +588,9 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `NETFLIX_TOP10_COUNTRIES` | _(empty)_ | Netflix per-country Top 10 to keep: ISO codes, empty = the FlixPatrol schedules' countries, `all` = every country |
 | `IMDB_DATASET_SCOPE` | `known` | `known` = only IMDb IDs metareel has, `all` = the whole dataset (~1.6M rows) |
 | `DOWNLOAD_TIMEOUT` | `10m` | One Netflix / IMDb file download |
+| `NETFLIX_TOP10_SEARCH` | `true` | Look Netflix titles' Netflix IDs up on Tudum's Top 10 search (an undocumented persisted GraphQL query, sent anonymously) |
+| `NETFLIX_TOP10_SEARCH_QUERY_ID` | `592260c9-…` | Persisted query ID of Tudum's `Top10SearchQuery`; update when Netflix changes its page (errors say `PERSISTED_QUERY_NOT_FOUND`) |
+| `NETFLIX_TOP10_SEARCH_QUERY_VERSION` | `102` | Its version |
 | `ALERT_WEBHOOK_URL` | _(empty)_ | Webhook for failed runs and stale charts (contains a secret for some services; never logged) |
 | `ALERT_WEBHOOK_FORMAT` | `json` | `json`, `slack`, `discord` or `ntfy` |
 | `ALERT_STALE_CHART_HOURS` | `24` | Alert when a scheduled chart's next date has been due this long |
@@ -570,7 +612,8 @@ metareel/
 │   │   ├── tmdb.go               # TMDB REST client (search + external IDs)
 │   │   ├── tmdb_details.go       # TMDB details + external IDs + watch providers (one call)
 │   │   ├── justwatch.go          # JustWatch GraphQL client (title ID lookup)
-│   │   ├── wikidata_sparql.go    # Wikidata SPARQL batch lookup (RT, Metacritic, Letterboxd, IMDb)
+│   │   ├── wikidata_sparql.go    # Wikidata SPARQL: IDs by TMDB ID, items by Netflix ID / label / QID
+│   │   ├── netflix_top10.go      # Tudum Top 10 search (Netflix IDs) + season → show ID
 │   │   └── download.go           # Netflix / IMDb file downloads, skipped when unchanged
 │   ├── config/
 │   │   └── config.go             # Config struct + Load() via caarlos0/env
@@ -608,6 +651,9 @@ metareel/
 │   │   ├── title_metadata.go      # titles.metadata job (TMDB + Wikidata)
 │   │   ├── netflix_import.go      # Netflix official Top 10 import + matching (netflix.titles.match)
 │   │   ├── netflix_admin.go       # Netflix title / season mapping review (admin)
+│   │   ├── netflix_ids.go         # Netflix IDs from Tudum's search, Netflix ID → TMDB
+│   │   ├── title_mapping.go       # TMDB-keyed mapping: links + sharing mappings (sync)
+│   │   ├── title_mapping_admin.go # mapping page: list, IDs per TMDB title, remap
 │   │   ├── seasons.go             # season numbers: Netflix season titles, FlixPatrol TV rankings
 │   │   ├── imdb_import.go         # IMDb ratings dataset import
 │   │   ├── charts.go              # catalog, history, movers, leaderboards, changes, export

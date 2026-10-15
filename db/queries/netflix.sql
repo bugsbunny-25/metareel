@@ -3,7 +3,8 @@
 -- name: ListNetflixTitles :many
 -- sort: last_week_desc (default) | last_week_asc | name_asc | name_desc |
 -- weeks_desc | weeks_asc | best_rank_asc | id_desc. missing: tmdb | season
--- (a season without a number).
+-- (a season without a number). flag: cross_kind (TMDB kind differs from
+-- Netflix's list) | linked (has linked FlixPatrol titles).
 SELECT
     sqlc.embed(n),
     CAST(COALESCE(NULLIF(max(
@@ -12,13 +13,15 @@ SELECT
     (SELECT COUNT(DISTINCT g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id) AS weeks_global,
     CAST(COALESCE((SELECT MIN(g.weekly_rank) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id), 0) AS INTEGER) AS best_global_rank,
     (SELECT COUNT(*) FROM netflix_seasons s WHERE s.netflix_title_id = n.id) AS seasons_total,
-    (SELECT COUNT(*) FROM netflix_seasons s WHERE s.netflix_title_id = n.id AND s.season_number IS NULL) AS seasons_unmapped,
+    (SELECT COUNT(*) FROM netflix_seasons s WHERE s.netflix_title_id = n.id AND s.season_number IS NULL
+        AND COALESCE(n.tmdb_kind, '') <> 'movie') AS seasons_unmapped,
+    (SELECT COUNT(*) FROM title_links l WHERE l.netflix_title_id = n.id) AS flixpatrol_links,
     tm.title AS tmdb_title,
     tm.release_date AS tmdb_release_date,
     CAST(COALESCE(t.slug, '') AS TEXT) AS flixpatrol_slug,
     CAST(COALESCE(t.name, '') AS TEXT) AS flixpatrol_name
 FROM netflix_titles n
-LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = CASE n.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND tm.tmdb_id = n.tmdb_id
+LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND tm.tmdb_id = n.tmdb_id
 LEFT JOIN titles t ON t.id = n.title_id,
      (SELECT CAST(sqlc.arg(sort) AS TEXT) AS sort_key) o
 WHERE (CAST(sqlc.arg(kind) AS TEXT) = '' OR n.kind = sqlc.arg(kind))
@@ -26,8 +29,12 @@ WHERE (CAST(sqlc.arg(kind) AS TEXT) = '' OR n.kind = sqlc.arg(kind))
   AND (CAST(sqlc.arg(match_status) AS TEXT) = '' OR n.match_status = sqlc.arg(match_status))
   AND (CAST(sqlc.arg(missing) AS TEXT) = ''
     OR (sqlc.arg(missing) = 'tmdb' AND COALESCE(n.tmdb_id, '') = '')
-    OR (sqlc.arg(missing) = 'season' AND EXISTS (
+    OR (sqlc.arg(missing) = 'season' AND COALESCE(n.tmdb_kind, '') <> 'movie' AND EXISTS (
         SELECT 1 FROM netflix_seasons s WHERE s.netflix_title_id = n.id AND s.season_number IS NULL)))
+  AND (CAST(sqlc.arg(flag) AS TEXT) = ''
+    OR (sqlc.arg(flag) = 'cross_kind' AND n.tmdb_kind IS NOT NULL
+        AND n.tmdb_kind <> CASE n.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END)
+    OR (sqlc.arg(flag) = 'linked' AND EXISTS (SELECT 1 FROM title_links l WHERE l.netflix_title_id = n.id)))
 ORDER BY
     CASE WHEN o.sort_key = 'name_asc' THEN n.show_title END COLLATE NOCASE ASC,
     CASE WHEN o.sort_key = 'name_desc' THEN n.show_title END COLLATE NOCASE DESC,
@@ -48,8 +55,12 @@ WHERE (CAST(sqlc.arg(kind) AS TEXT) = '' OR n.kind = sqlc.arg(kind))
   AND (CAST(sqlc.arg(match_status) AS TEXT) = '' OR n.match_status = sqlc.arg(match_status))
   AND (CAST(sqlc.arg(missing) AS TEXT) = ''
     OR (sqlc.arg(missing) = 'tmdb' AND COALESCE(n.tmdb_id, '') = '')
-    OR (sqlc.arg(missing) = 'season' AND EXISTS (
-        SELECT 1 FROM netflix_seasons s WHERE s.netflix_title_id = n.id AND s.season_number IS NULL)));
+    OR (sqlc.arg(missing) = 'season' AND COALESCE(n.tmdb_kind, '') <> 'movie' AND EXISTS (
+        SELECT 1 FROM netflix_seasons s WHERE s.netflix_title_id = n.id AND s.season_number IS NULL)))
+  AND (CAST(sqlc.arg(flag) AS TEXT) = ''
+    OR (sqlc.arg(flag) = 'cross_kind' AND n.tmdb_kind IS NOT NULL
+        AND n.tmdb_kind <> CASE n.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END)
+    OR (sqlc.arg(flag) = 'linked' AND EXISTS (SELECT 1 FROM title_links l WHERE l.netflix_title_id = n.id)));
 
 -- name: GetNetflixTitle :one
 SELECT
@@ -60,13 +71,15 @@ SELECT
     (SELECT COUNT(DISTINCT g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id) AS weeks_global,
     CAST(COALESCE((SELECT MIN(g.weekly_rank) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id), 0) AS INTEGER) AS best_global_rank,
     (SELECT COUNT(*) FROM netflix_seasons s WHERE s.netflix_title_id = n.id) AS seasons_total,
-    (SELECT COUNT(*) FROM netflix_seasons s WHERE s.netflix_title_id = n.id AND s.season_number IS NULL) AS seasons_unmapped,
+    (SELECT COUNT(*) FROM netflix_seasons s WHERE s.netflix_title_id = n.id AND s.season_number IS NULL
+        AND COALESCE(n.tmdb_kind, '') <> 'movie') AS seasons_unmapped,
+    (SELECT COUNT(*) FROM title_links l WHERE l.netflix_title_id = n.id) AS flixpatrol_links,
     tm.title AS tmdb_title,
     tm.release_date AS tmdb_release_date,
     CAST(COALESCE(t.slug, '') AS TEXT) AS flixpatrol_slug,
     CAST(COALESCE(t.name, '') AS TEXT) AS flixpatrol_name
 FROM netflix_titles n
-LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = CASE n.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND tm.tmdb_id = n.tmdb_id
+LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND tm.tmdb_id = n.tmdb_id
 LEFT JOIN titles t ON t.id = n.title_id
 WHERE n.id = sqlc.arg(id);
 
@@ -76,7 +89,8 @@ SELECT * FROM netflix_titles WHERE id = ?;
 -- name: UpdateNetflixTitleIDs :one
 -- Admin correction: marks the title as a manual match so automation leaves it alone.
 UPDATE netflix_titles
-SET tmdb_id       = sqlc.narg(tmdb_id),
+SET tmdb_kind     = sqlc.narg(tmdb_kind),
+    tmdb_id       = sqlc.narg(tmdb_id),
     imdb_id       = sqlc.narg(imdb_id),
     match_status  = 'manual',
     match_source  = 'manual',
@@ -98,7 +112,7 @@ RETURNING *;
 -- name: ClearNetflixTitleMatch :one
 -- Forgets a title's IDs and queues it for a fresh match.
 UPDATE netflix_titles
-SET tmdb_id = NULL, imdb_id = NULL, title_id = NULL, match_status = 'pending', match_source = NULL,
+SET tmdb_kind = NULL, tmdb_id = NULL, imdb_id = NULL, title_id = NULL, match_status = 'pending', match_source = NULL,
     match_attempts = 0, next_match_at = NULL, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING *;
@@ -113,23 +127,6 @@ SELECT sqlc.embed(n),
            '') AS TEXT) AS first_week
 FROM netflix_titles n
 WHERE n.id IN (sqlc.slice(ids));
-
--- name: SyncNetflixTitlesFromFlixPatrol :exec
--- After a FlixPatrol title's IDs were fixed by hand, Netflix titles matched
--- through it follow (unless fixed by hand themselves).
-UPDATE netflix_titles
-SET tmdb_id      = sqlc.narg(tmdb_id),
-    imdb_id      = sqlc.narg(imdb_id),
-    match_status = CASE WHEN sqlc.narg(tmdb_id) IS NULL THEN 'pending' ELSE 'matched' END,
-    next_match_at = NULL,
-    updated_at   = CURRENT_TIMESTAMP
-WHERE title_id = sqlc.arg(title_id)
-  AND kind = sqlc.arg(kind)
-  AND match_source = 'flixpatrol_title'
-  AND match_status <> 'manual';
-
--- name: ListNetflixTitleIDsLinkedTo :many
-SELECT id FROM netflix_titles WHERE title_id = ? AND match_source = 'flixpatrol_title';
 
 -- name: EnsureNetflixSeasons :exec
 -- One netflix_seasons row per season title a TV title charted with.
@@ -149,7 +146,7 @@ ON CONFLICT(netflix_title_id, season_title) DO NOTHING;
 -- 0), with what mapping needs: the show, the first week the season charted
 -- (YYYY-MM-DD or '') and the TMDB season list (JSON) of its match.
 SELECT s.id, s.netflix_title_id, s.season_title, s.season_number, s.season_source,
-       n.show_title, n.tmdb_id,
+       n.show_title, n.tmdb_id, n.tmdb_kind,
        CAST(COALESCE(NULLIF(min(
            COALESCE((SELECT MIN(g.week) FROM netflix_top10_global g
                      WHERE g.netflix_title_id = s.netflix_title_id AND g.season_title = s.season_title), '9999-12-31'),
@@ -159,7 +156,7 @@ SELECT s.id, s.netflix_title_id, s.season_title, s.season_number, s.season_sourc
        tm.seasons AS tmdb_seasons
 FROM netflix_seasons s
 JOIN netflix_titles n ON n.id = s.netflix_title_id
-LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = 'tv' AND tm.tmdb_id = n.tmdb_id
+LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND n.tmdb_kind = 'tv' AND tm.tmdb_id = n.tmdb_id
 WHERE COALESCE(s.season_source, '') <> 'manual'
   AND (CAST(sqlc.arg(netflix_title_id) AS INTEGER) = 0 OR s.netflix_title_id = sqlc.arg(netflix_title_id));
 
@@ -257,7 +254,7 @@ SELECT n.tmdb_id, g.week, g.weekly_rank, s.season_number
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
 JOIN netflix_seasons s ON s.netflix_title_id = g.netflix_title_id AND s.season_title = g.season_title
-WHERE n.kind = 'tv_show' AND COALESCE(n.tmdb_id, '') <> '' AND s.season_number IS NOT NULL
+WHERE n.tmdb_kind = 'tv' AND COALESCE(n.tmdb_id, '') <> '' AND s.season_number IS NOT NULL
   AND g.week >= CAST(sqlc.arg(from_week) AS TEXT);
 
 -- name: ListNetflixCountrySeasonRanks :many
@@ -265,7 +262,7 @@ SELECT n.tmdb_id, c.country, c.week, c.weekly_rank, s.season_number
 FROM netflix_top10_countries c
 JOIN netflix_titles n ON n.id = c.netflix_title_id
 JOIN netflix_seasons s ON s.netflix_title_id = c.netflix_title_id AND s.season_title = c.season_title
-WHERE n.kind = 'tv_show' AND COALESCE(n.tmdb_id, '') <> '' AND s.season_number IS NOT NULL
+WHERE n.tmdb_kind = 'tv' AND COALESCE(n.tmdb_id, '') <> '' AND s.season_number IS NOT NULL
   AND c.week >= CAST(sqlc.arg(from_week) AS TEXT);
 
 -- name: ListNetflixCountryWeeksImported :many
@@ -274,3 +271,52 @@ SELECT DISTINCT country, week FROM netflix_top10_countries WHERE week >= CAST(sq
 
 -- name: ListTmdbTVSeasons :many
 SELECT tmdb_id, seasons FROM tmdb_titles WHERE tmdb_kind = 'tv' AND seasons IS NOT NULL;
+
+-- Netflix IDs from Tudum's Top 10 search.
+
+-- name: ListNetflixTitlesForNetflixID :many
+-- Titles without a Netflix ID not looked up within the window (a SQLite
+-- modifier, e.g. '-30 days'), the given ones first, then newest charting.
+SELECT n.id, n.show_title, n.kind, n.match_status, n.match_source, n.tmdb_kind, n.tmdb_id,
+       CAST(COALESCE(n.netflix_id, '') AS TEXT) AS netflix_id
+FROM netflix_titles n
+WHERE COALESCE(n.netflix_id, '') = ''
+  AND (n.netflix_id_checked_at IS NULL OR n.netflix_id_checked_at < datetime('now', CAST(sqlc.arg(window) AS TEXT)))
+ORDER BY (SELECT MAX(g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id) IS NULL,
+         (SELECT MAX(g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id) DESC,
+         n.id DESC
+LIMIT sqlc.arg(limit);
+
+-- name: ListNetflixTitlesForNetflixIDByIDs :many
+-- These titles, with their Netflix ID if already known.
+SELECT n.id, n.show_title, n.kind, n.match_status, n.match_source, n.tmdb_kind, n.tmdb_id,
+       CAST(COALESCE(n.netflix_id, '') AS TEXT) AS netflix_id
+FROM netflix_titles n
+WHERE n.id IN (sqlc.slice(ids));
+
+-- name: ListNetflixTitleWeeks :many
+-- Every week a title charted (global or an imported country).
+SELECT g.week FROM netflix_top10_global g WHERE g.netflix_title_id = sqlc.arg(id)
+UNION
+SELECT c.week FROM netflix_top10_countries c WHERE c.netflix_title_id = sqlc.arg(id);
+
+-- name: ListNetflixSeasonTitles :many
+SELECT id, season_title FROM netflix_seasons WHERE netflix_title_id = ?;
+
+-- name: SetNetflixTitleNetflixID :exec
+UPDATE netflix_titles
+SET netflix_id = sqlc.narg(netflix_id), netflix_id_checked_at = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id);
+
+-- name: SetNetflixSeasonNetflixID :exec
+UPDATE netflix_seasons SET netflix_id = sqlc.arg(netflix_id), updated_at = CURRENT_TIMESTAMP WHERE id = sqlc.arg(id);
+
+-- name: SaveNetflixTitleNetflixMatch :execrows
+-- Maps a title by its Netflix ID; replaces automatic matches made by name
+-- (never manual ones).
+UPDATE netflix_titles
+SET tmdb_kind = sqlc.arg(tmdb_kind), tmdb_id = sqlc.arg(tmdb_id),
+    imdb_id = COALESCE(NULLIF(CAST(sqlc.arg(imdb_id) AS TEXT), ''), netflix_titles.imdb_id),
+    match_status = 'matched', match_source = 'netflix_id', next_match_at = NULL,
+    match_attempts = netflix_titles.match_attempts + 1, updated_at = CURRENT_TIMESTAMP
+WHERE netflix_titles.id = sqlc.arg(id) AND netflix_titles.match_status <> 'manual';

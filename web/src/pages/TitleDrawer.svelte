@@ -1,4 +1,5 @@
 <script>
+  import { href } from '../lib/router.svelte.js'
   import { getTitle, patchTitle, getTitleCandidates, getTitleRankings, getRatings, rematchTitle, getTitleOverview } from '../lib/api.js'
   import { links, parseImdbId, parseTmdbInput, parseRtSlug, dateOnly, relativeTime, dateTime, number, seasonLabel, SEASON_SOURCES } from '../lib/format.js'
   import { providerLabel, countryName } from '../lib/constants.js'
@@ -220,6 +221,19 @@
           <dt>FlixPatrol page</dt>
           <dd class="small">{title.flixpatrol.name ?? '—'}{title.flixpatrol.kind ? ` · ${title.flixpatrol.kind}` : ''}{title.flixpatrol.premiere_date ? ` · premiered ${dateOnly(title.flixpatrol.premiere_date)}` : ''}{title.flixpatrol.country ? ` · ${title.flixpatrol.country}` : ''}</dd>
         {/if}
+        {#if title.netflix_links?.length}
+          <dt>Netflix Top 10</dt>
+          <dd class="small">
+            {#each title.netflix_links as l (l.netflix_title_id)}
+              <div><a href={href('/netflix', { open: l.netflix_title_id })}>{l.show_title}</a> <span class="muted">({l.list === 'tv_show' ? 'TV' : 'Films'} list)</span>
+                <span class="badge">{l.match_status}</span>
+                {#if l.tmdb_id && (l.tmdb_id !== title.tmdb_id || l.tmdb_kind !== (title.kind === 'tv_show' ? 'tv' : 'movie'))}<span class="badge badge-warning" title="Mapped to TMDB {l.tmdb_kind} {l.tmdb_id}">differs</span>{/if}
+              </div>
+            {/each}
+            <div class="field-hint">Linked titles share one mapping: a title fixed by hand wins, then a Netflix ID match, then FlixPatrol's match, then Netflix's.</div>
+          </dd>
+        {/if}
+        {#if title.tmdb_id}<dt>All IDs</dt><dd class="small"><a href={href('/mapping', { open: `${title.kind === 'tv_show' ? 'tv' : 'movie'}:${title.tmdb_id}` })}>TMDB mapping</a></dd>{/if}
       </dl>
       <div class="row" style="margin:10px 0 4px">
         <button class="btn btn-sm" onclick={() => rematch(false)} disabled={rematching}><Icon name="refresh" size={12} />Match again</button>

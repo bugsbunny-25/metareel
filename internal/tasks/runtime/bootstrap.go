@@ -28,6 +28,7 @@ type Bootstrap struct {
 	Fetcher     flixpatrol.Fetcher
 	Metadata    *service.TitleMetadataService
 	Seasons     *service.SeasonMapper
+	Mapping     *service.TitleMappingService
 	Maintenance *service.MaintenanceService
 	Alerts      *service.AlertService
 }
@@ -68,20 +69,25 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 	justWatchClient := client.NewJustWatchClient(httpClient.GetClient())
 	rtClient := client.NewRottenTomatoes(cfg.HTTP.Timeout)
 	matcher := service.NewTitleMatcher(log, fetcher, tmdbClient, justWatchClient, rtClient)
-	metadata := service.NewTitleMetadataService(log, repository.NewMetadataRepository(db), tmdbClient, client.NewWikidataSPARQL(cfg.HTTP.Timeout))
+	metadataRepo := repository.NewMetadataRepository(db)
+	metadata := service.NewTitleMetadataService(log, metadataRepo, tmdbClient, client.NewWikidataSPARQL(cfg.HTTP.Timeout))
 	downloader := client.NewDownloader(cfg.Imports.DownloadTimeout, "")
 	alerts := service.NewAlertService(log, opsRepo, cfg.Alerts.WebhookURL, cfg.Alerts.Format, cfg.Alerts.Cooldown)
 	maintenance := service.NewMaintenanceService(log, opsRepo, taskScheduleRepo, alerts, cfg.Maintenance.RunRetentionDays, cfg.Alerts.StaleChartHours)
 
 	seasons := service.NewSeasonMapper(log, importsRepo)
-	netflix := service.NewNetflixImporter(log, downloader, importsRepo, flixRepo, taskScheduleRepo, matcher, metadata, seasons, cfg.Imports.NetflixCountries)
+	mapping := service.NewTitleMappingService(log, repository.NewMappingRepository(db), metadataRepo, metadata, seasons)
+	netflix := service.NewNetflixImporter(log, downloader, importsRepo, flixRepo, taskScheduleRepo, matcher, metadata, seasons, cfg.Imports.NetflixCountries).WithMapping(mapping)
+	if cfg.Imports.NetflixSearch {
+		netflix.WithNetflixSearch(client.NewNetflixTop10Search(cfg.HTTP.Timeout, cfg.Imports.NetflixSearchQueryID, cfg.Imports.NetflixSearchQueryVer))
+	}
 
 	runner := taskhandlers.NewRunner(log, taskScheduleRepo, alerts)
 	flixHandler := taskhandlers.NewFlixPatrolHandler(log, runner,
 		service.NewFlixPatrolJob(log, fetcher, flixRepo), seasons, deps.Asynq, cfg.Asynq.Queue)
 
 	jobs := taskhandlers.NewJobHandler(runner).
-		Handle(tasks.TypeTitlesEnrich, taskhandlers.EnrichJob(service.NewTitleEnricher(log, flixRepo, matcher, metadata), seasons, cfg.Scraper.UserAgent)).
+		Handle(tasks.TypeTitlesEnrich, taskhandlers.EnrichJob(service.NewTitleEnricher(log, flixRepo, matcher, metadata).WithMapping(mapping), seasons, cfg.Scraper.UserAgent)).
 		Handle(tasks.TypeTitlesMetadata, taskhandlers.MetadataJob(metadata, seasons)).
 		Handle(tasks.TypeNetflixTop10Import, taskhandlers.NetflixImportJob(netflix)).
 		Handle(tasks.TypeNetflixTitlesMatch, taskhandlers.NetflixMatchJob(netflix)).
@@ -100,6 +106,7 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 		Fetcher:        fetcher,
 		Metadata:       metadata,
 		Seasons:        seasons,
+		Mapping:        mapping,
 		Maintenance:    maintenance,
 		Alerts:         alerts,
 	}

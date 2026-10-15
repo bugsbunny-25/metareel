@@ -635,6 +635,10 @@ paths:
           in: query
           required: false
           schema: { type: string, enum: [tmdb, season], description: "tmdb: no TMDB ID; season: a season title without a season number" }
+        - name: flag
+          in: query
+          required: false
+          schema: { type: string, enum: [cross_kind, linked], description: "cross_kind: mapped to the other TMDB kind than Netflix's list; linked: has linked FlixPatrol titles" }
         - name: sort
           in: query
           required: false
@@ -689,10 +693,13 @@ paths:
       summary: Correct a Netflix title's TMDB / IMDb IDs
       description: >
         Marks the title as a manual match, so automatic matching never
-        overwrites it, fetches the TMDB details (season list) and remaps the
-        title's seasons. Omitted fields are unchanged; an empty string clears
-        an ID. The TMDB namespace follows the title's kind (Netflix's
-        category).
+        overwrites it, fetches the TMDB details (season list), remaps the
+        title's seasons and shares the mapping with linked FlixPatrol titles
+        that are not fixed by hand. Omitted fields are unchanged; an empty
+        string clears an ID. tmdb_kind is the TMDB namespace (default: the
+        current one, else Netflix's list); a special in Netflix's TV list can
+        be a TMDB movie. Without a TMDB ID, an IMDb or Wikidata ID is resolved
+        to one through TMDB's /find, then Wikidata.
       parameters:
         - name: id
           in: path
@@ -706,8 +713,10 @@ paths:
               type: object
               additionalProperties: false
               properties:
+                tmdb_kind: { type: string, enum: [movie, tv] }
                 tmdb_id: { type: string, description: Numeric TMDB ID }
                 imdb_id: { type: string, example: tt1234567 }
+                wikidata_id: { type: string, example: Q141461750, description: Resolved to a TMDB ID when tmdb_id is empty; stored on the TMDB title }
       responses:
         "200":
           description: Updated title
@@ -793,6 +802,157 @@ paths:
           description: Candidates per provider (justwatch, tmdb, rotten_tomatoes) and any provider errors
         "404":
           description: Not found
+
+  /api/v1/admin/mappings:
+    get:
+      operationId: listMappings
+      summary: The TMDB-keyed mapping across FlixPatrol and Netflix titles
+      description: >
+        Every TMDB title that FlixPatrol or Netflix official Top 10 titles map
+        to, newest activity first, with all its IDs (IMDb, Wikidata, Rotten
+        Tomatoes, Netflix, JustWatch, FlixPatrol slugs, Netflix Top 10 names),
+        the titles of each source and their links.
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string, enum: [movie, tv] }
+        - name: q
+          in: query
+          required: false
+          schema: { type: string, description: "TMDB title, FlixPatrol name / slug or Netflix name substring, or an exact TMDB / IMDb ID" }
+        - name: flag
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [conflict, cross_kind, both, netflix_only, flixpatrol_only, manual]
+            description: "conflict: a linked title is mapped elsewhere; cross_kind: a source lists it as the other kind"
+        - $ref: "#/components/parameters/LimitParam"
+        - $ref: "#/components/parameters/OffsetParam"
+      responses:
+        "200":
+          description: A page of TMDB titles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/TmdbMapping" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/mappings/sync:
+    post:
+      operationId: syncMappings
+      summary: Recompute links and share mappings now
+      description: >
+        Links Netflix titles to FlixPatrol titles (same normalized name, same
+        Netflix list, on Netflix's charts in the same or an adjacent week) and
+        shares mappings over them: each title weighs itself and its directly
+        linked titles that are linked to nothing else; a title fixed by hand wins, then a Netflix ID match,
+        then FlixPatrol's match, then Netflix's. Also fills TMDB titles' missing
+        IDs from FlixPatrol matches. The matching jobs do this too.
+      responses:
+        "200":
+          description: Sync report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  links: { type: integer }
+                  links_added: { type: integer }
+                  links_removed: { type: integer }
+                  netflix_titles_updated: { type: integer }
+                  flixpatrol_titles_updated: { type: integer }
+                  conflicts: { type: integer, description: Titles left alone because the titles directly linked to them disagree }
+                  tmdb_titles_ids_filled: { type: integer }
+
+  /api/v1/admin/mappings/{kind}/{id}:
+    get:
+      operationId: getMapping
+      summary: One TMDB title, its IDs and everything mapped to it
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema: { type: string, enum: [movie, tv] }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[0-9]+$" }
+      responses:
+        "200":
+          description: Mapping
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TmdbMapping"
+        "404":
+          description: Nothing is mapped to it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/mappings/{kind}/{id}/remap:
+    post:
+      operationId: remapMapping
+      summary: Move everything mapped to a TMDB title to another
+      description: >
+        Every FlixPatrol and Netflix title mapped to {kind}/{id} moves to the
+        target (marked as fixed by hand); linked titles follow. Give the
+        target as tmdb_kind + tmdb_id, or as imdb_id / wikidata_id, resolved
+        through TMDB's /find and then Wikidata (tmdb_kind breaks a tie between
+        a movie and a show).
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema: { type: string, enum: [movie, tv] }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[0-9]+$" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                tmdb_kind: { type: string, enum: [movie, tv] }
+                tmdb_id: { type: string }
+                imdb_id: { type: string, example: tt1234567 }
+                wikidata_id: { type: string, example: Q141461750 }
+      responses:
+        "200":
+          description: The target's mapping
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TmdbMapping"
+        "400":
+          description: Bad request (invalid or unresolvable ID, or the current title)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Nothing is mapped to {kind}/{id}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/admin/netflix/seasons/{id}:
     patch:
@@ -1011,11 +1171,13 @@ components:
       properties:
         id: { type: integer, format: int64 }
         show_title: { type: string }
-        kind: { type: string, enum: [movie, tv_show], description: "From Netflix's category; the TMDB namespace of tmdb_id" }
+        kind: { type: string, enum: [movie, tv_show], description: "Netflix's list (Films / TV)" }
+        tmdb_kind: { type: string, enum: [movie, tv], nullable: true, description: "TMDB namespace of tmdb_id; can differ from the list" }
+        netflix_id: { type: string, nullable: true, description: "Netflix's title ID, from Tudum's Top 10 search" }
         tmdb_id: { type: string, nullable: true }
         imdb_id: { type: string, nullable: true }
         match_status: { type: string, enum: [pending, matched, unmatched, manual] }
-        match_source: { type: string, nullable: true, description: "e.g. flixpatrol_title, justwatch_netflix, manual" }
+        match_source: { type: string, nullable: true, description: "e.g. flixpatrol_title, netflix_title, wikidata_netflix, justwatch_netflix, justwatch_netflix_other_kind, justwatch_unique_name, manual" }
         match_attempts: { type: integer }
         next_match_at: { type: string, format: date-time, nullable: true }
         updated_at: { type: string, format: date-time }
@@ -1033,13 +1195,77 @@ components:
         weeks_in_global_top10: { type: integer }
         best_global_rank: { type: integer, nullable: true }
         seasons: { type: integer, description: Season titles (TV) }
-        seasons_unmapped: { type: integer, description: Season titles without a season number }
+        seasons_unmapped: { type: integer, description: "Season titles without a season number (0 when mapped to a TMDB movie)" }
+        flixpatrol_links: { type: integer, description: Linked FlixPatrol titles }
+
+    TmdbMappingLink:
+      type: object
+      description: A title of the other source linked to a mapped title
+      properties:
+        source: { type: string, enum: [flixpatrol, netflix] }
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        tmdb_kind: { type: string, enum: [movie, tv], nullable: true }
+        tmdb_id: { type: string, nullable: true }
+        match_status: { type: string }
+        conflict: { type: boolean, description: Mapped to a different TMDB title }
+
+    TmdbMapping:
+      type: object
+      properties:
+        tmdb_kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        title: { type: string, nullable: true }
+        year: { type: integer, nullable: true }
+        poster_path: { type: string, nullable: true }
+        last_seen: { type: string, format: date, nullable: true }
+        ids: { $ref: "public.yaml#/components/schemas/TitleExternalIDs" }
+        conflicts: { type: integer }
+        cross_kind: { type: integer }
+        manual: { type: integer }
+        flixpatrol_titles:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer, format: int64 }
+              slug: { type: string }
+              name: { type: string }
+              page_kind: { type: string, enum: [movie, tv_show], nullable: true }
+              match_status: { type: string }
+              match_source: { type: string, nullable: true }
+              last_ranked_on: { type: string, format: date, nullable: true }
+              links: { type: array, items: { $ref: "#/components/schemas/TmdbMappingLink" } }
+        netflix_titles:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer, format: int64 }
+              show_title: { type: string }
+              list: { type: string, enum: [movie, tv_show] }
+              match_status: { type: string }
+              match_source: { type: string, nullable: true }
+              last_week: { type: string, format: date, nullable: true }
+              links: { type: array, items: { $ref: "#/components/schemas/TmdbMappingLink" } }
 
     NetflixTitleDetail:
       allOf:
         - $ref: "#/components/schemas/NetflixTitle"
         - type: object
           properties:
+            linked_titles:
+              type: array
+              description: FlixPatrol titles linked to it (same name, same Netflix list, same or adjacent week); they share one mapping
+              items:
+                type: object
+                properties:
+                  title_id: { type: integer, format: int64 }
+                  slug: { type: string }
+                  name: { type: string }
+                  kind: { type: string, enum: [movie, tv_show], description: TMDB namespace }
+                  tmdb_id: { type: string, nullable: true }
+                  match_status: { type: string }
             season_titles:
               type: array
               items:
@@ -1059,6 +1285,7 @@ components:
                   first_week: { type: string, format: date, nullable: true }
                   last_week: { type: string, format: date, nullable: true }
                   countries: { type: integer }
+                  netflix_id: { type: string, nullable: true, description: The season's own Netflix ID }
             tmdb_seasons:
               type: array
               description: TMDB's seasons of the matched show (season 0 = specials)

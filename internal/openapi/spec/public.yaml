@@ -916,7 +916,7 @@ paths:
   /api/v1/titles/lookup:
     get:
       operationId: lookupTitle
-      summary: Find a title by IMDb ID, TMDB ID or FlixPatrol slug
+      summary: Find a title by IMDb ID, TMDB ID, FlixPatrol slug or Netflix ID
       parameters:
         - name: imdb
           in: query
@@ -927,7 +927,10 @@ paths:
         - name: slug
           in: query
           schema: { type: string, example: bugonia }
-      description: Give exactly one of imdb, tmdb or slug.
+        - name: netflix
+          in: query
+          schema: { type: string, example: "81231974", description: "Netflix title ID (netflix.com/title/<id>), from Wikidata or Tudum's Top 10" }
+      description: Give exactly one of imdb, tmdb, slug or netflix.
       responses:
         "200":
           description: TMDB titles and FlixPatrol titles
@@ -1671,6 +1674,8 @@ components:
         rotten_tomatoes_id: { type: string, nullable: true }
         metacritic_id: { type: string, nullable: true }
         letterboxd_id: { type: string, nullable: true }
+        netflix_id: { type: string, nullable: true, description: "Netflix title ID (netflix.com/title/<id>)" }
+        justwatch_id: { type: string, nullable: true, description: "e.g. tm1504418 / ts475500" }
         details_fetched_at: { type: string, format: date-time, nullable: true }
         seasons:
           type: array
@@ -1703,10 +1708,28 @@ components:
             total_hours_viewed: { type: integer }
             countries: { type: array, items: { type: string } }
             seasons: { type: array, items: { $ref: "#/components/schemas/NetflixSeasonSummary" } }
+        ids: { $ref: "#/components/schemas/TitleExternalIDs" }
         errors:
           type: object
           additionalProperties: { type: string }
           description: Sections that could not be loaded
+
+    TitleExternalIDs:
+      type: object
+      description: >
+        Every known ID of a TMDB title: TMDB's and Wikidata's IDs, gaps filled
+        from FlixPatrol titles' matches, plus the FlixPatrol slugs and Netflix
+        Top 10 names mapped to it.
+      properties:
+        imdb_id: { type: string, nullable: true, example: tt13443470 }
+        wikidata_id: { type: string, nullable: true, example: Q105553568 }
+        rotten_tomatoes_id: { type: string, nullable: true, example: tv/wednesday }
+        netflix_id: { type: string, nullable: true, example: "81231974" }
+        justwatch_id: { type: string, nullable: true, example: ts307468 }
+        metacritic_id: { type: string, nullable: true }
+        letterboxd_id: { type: string, nullable: true }
+        flixpatrol_slugs: { type: array, items: { type: string } }
+        netflix_top10_titles: { type: array, items: { type: string }, description: "Names in Netflix's official Top 10" }
 
     NetflixWeekRow:
       type: object
@@ -1723,7 +1746,7 @@ components:
         runtime_hours: { type: number, nullable: true }
         views: { type: integer, nullable: true }
         cumulative_weeks: { type: integer, nullable: true }
-        kind: { type: string }
+        kind: { type: string, description: "movie | tv_show: the TMDB namespace of tmdb_id when mapped (a special in the TV list can be a movie), else Netflix's list" }
         tmdb_id: { type: string, nullable: true }
         imdb_id: { type: string, nullable: true }
         netflix_title_id: { type: integer, format: int64 }
@@ -1847,6 +1870,18 @@ components:
         rankings_count:
           type: integer
           description: List responses only
+        netflix_links:
+          type: array
+          description: Netflix official Top 10 titles linked to it (they share its TMDB mapping); single-title responses only
+          items:
+            type: object
+            properties:
+              netflix_title_id: { type: integer, format: int64 }
+              show_title: { type: string }
+              list: { type: string, enum: [movie, tv_show] }
+              tmdb_kind: { type: string, enum: [movie, tv], nullable: true }
+              tmdb_id: { type: string, nullable: true }
+              match_status: { type: string }
         match_status:
           type: string
           enum: [pending, matched, unmatched, manual]

@@ -50,7 +50,18 @@ func (m *SeasonMapper) MapNetflixSeasons(ctx context.Context, netflixTitleID int
 	}
 	var updates []repository.SeasonUpdate
 	for _, s := range seasons {
-		num, source := ResolveNetflixSeason(s.ShowTitle, s.SeasonTitle, s.FirstWeek, s.TmdbSeasons)
+		var (
+			num    *int64
+			source string
+		)
+		if s.TmdbKind == "movie" {
+			// Listed by Netflix as TV but a TMDB movie (a special): no seasons.
+			if s.SeasonNumber != nil || derefStr(s.SeasonSource) != "" {
+				updates = append(updates, repository.SeasonUpdate{ID: s.ID})
+			}
+			continue
+		}
+		num, source = ResolveNetflixSeason(s.ShowTitle, s.SeasonTitle, s.FirstWeek, s.TmdbSeasons)
 		if num == nil {
 			rep.SeasonsUnmapped++
 		}

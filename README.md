@@ -189,8 +189,8 @@ make reports-open
 | GET    | `/api/v1/export/rankings`                   | Chart entries as CSV / NDJSON (≤ 366 days) |
 | GET    | `/api/v1/countries`, `/api/v1/providers`    | Supported countries; providers with stored charts |
 | GET    | `/api/v1/titles`, `/api/v1/titles/:id`      | Scraped titles (paged; `match_status` filter) |
-| GET    | `/api/v1/titles/lookup?imdb=\|tmdb=\|slug=` | Find a title by any ID |
-| GET    | `/api/v1/titles/tmdb/:kind/:id`             | Everything about a title: TMDB metadata, chart stats, current positions, ratings, where to watch, Netflix numbers (`include=`) |
+| GET    | `/api/v1/titles/lookup?imdb=\|tmdb=\|slug=\|netflix=` | Find a title by any ID (`netflix` = the number in netflix.com/title/<id>) |
+| GET    | `/api/v1/titles/tmdb/:kind/:id`             | Everything about a title: TMDB metadata, chart stats, current positions, ratings, where to watch, Netflix numbers (`include=`), and `ids` — every known ID (IMDb, Wikidata, Rotten Tomatoes, Netflix, JustWatch, FlixPatrol slugs, Netflix Top 10 names) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/stats`       | Chart performance: points, peak, days at #1, debut, streak, spread across countries |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/availability` | Watch providers per country (TMDB, data by JustWatch) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/netflix`     | Weeks in Netflix's official Top 10, with a per-season summary (`seasons`) for TV |
@@ -204,7 +204,8 @@ make reports-open
 | GET    | `/api/v1/titles/upcoming/:country/:service` | Titles announced for a service, live from JustWatch (`from`, `to`, `type`) |
 | GET    | `/api/v1/services/:country`                 | JustWatch service codes in a country (for `:service`) |
 | GET/POST/PATCH/DELETE | `/api/v1/admin/...`           | Admin API: schedules, runs, stats, API keys, settings, title corrections (`PATCH /api/v1/admin/titles/:id`, `POST .../rematch`), `POST /jobs/:type/run`, `POST /backfill`, `GET /data-quality`, `GET /task-types`, and admin copies of the read routes above |
-| GET/PATCH/POST | `/api/v1/admin/netflix/titles[/:id[/rematch\|/candidates]]` | Netflix official Top 10 titles: list (`q`, `kind`, `match_status`, `missing=tmdb\|season`, `sort`), detail with season titles and weeks, fix TMDB / IMDb IDs by hand, rematch, candidate search |
+| GET/PATCH/POST | `/api/v1/admin/netflix/titles[/:id[/rematch\|/candidates]]` | Netflix official Top 10 titles: list (`q`, `kind`, `match_status`, `missing=tmdb\|season`, `flag=cross_kind\|linked`, `sort`), detail with season titles, weeks and linked FlixPatrol titles, fix by hand (`tmdb_kind` + `tmdb_id`, or an IMDb / Wikidata ID resolved to TMDB), rematch, candidate search |
+| GET/POST | `/api/v1/admin/mappings[/sync\|/:kind/:id[/remap]]` | The TMDB-keyed mapping: every TMDB title with all its IDs and the FlixPatrol / Netflix titles mapped to it (`q`, `kind`, `flag=conflict\|cross_kind\|both\|netflix_only\|flixpatrol_only\|manual`); `sync` recomputes links now; `remap` moves everything on a TMDB title to another (by TMDB, IMDb or Wikidata ID) |
 | PATCH  | `/api/v1/admin/netflix/seasons/:id`         | Set a Netflix season title's season number by hand (`{"season_number": 2}`) or hand it back (`{"auto": true}`) |
 | GET    | `/` (and any unmatched path)                | Serves `web/dist/` SPA if present           |
 
@@ -222,10 +223,44 @@ on demand from Data health or `POST /api/v1/admin/jobs/:type/run`.
 | `titles.enrich` | 03:00 | Matches titles to TMDB / IMDb (FlixPatrol title page → JustWatch → TMDB), retrying unmatched ones after 1, 3, 7, then every 30 days; finds RT slugs via Wikidata SPARQL, then RT search. Titles fixed in the admin UI (`manual`) are never touched. |
 | `titles.metadata` | 04:00 | TMDB details + watch providers (charting titles every 3 days, others monthly) and Wikidata IDs (RT, Metacritic, Letterboxd). Needs `TMDB_API_KEY`. |
 | `ratings.prewarm` | 15:30 | Refreshes expired ratings of titles charting in the last 3 days. |
-| `netflix.top10.import` | 21:00 | Netflix's official weekly Top 10 (global, per country, most popular); skipped when unchanged. Matches up to 400 new titles and maps season titles to season numbers. |
-| `netflix.titles.match` | 09:00 | Works through the backlog of unmatched Netflix titles (retrying after 1, 3, 7, then every 30 days; `manual` titles are never touched), then remaps seasons. Also queued by "Match again" in the admin UI. |
+| `netflix.top10.import` | 21:00 | Netflix's official weekly Top 10 (global, per country, most popular); skipped when unchanged. Matches up to 400 new titles (see [TMDB mapping](#tmdb-mapping)) and maps season titles to season numbers. |
+| `netflix.titles.match` | 09:00 | Works through the backlog of unmatched Netflix titles (retrying after 1, 3, 7, then every 30 days; `manual` titles are never touched), looks up Netflix IDs of up to 200 more titles (fixing earlier name matches), then remaps seasons. Also queued by "Match again" in the admin UI. |
 | `imdb.ratings.import` | 06:00 | IMDb's daily ratings dataset for the IMDb IDs metareel knows. |
 | `maintenance` | 02:00 | Run retention (`RUN_RETENTION_DAYS`), stale-chart alerts, SQLite optimize. |
+
+### TMDB mapping
+
+One mapping keyed by TMDB: TMDB titles are the hub, and FlixPatrol titles and
+Netflix official Top 10 titles both point at one (`kind` / `tmdb_kind` is the
+TMDB namespace, so a stand-up special in Netflix's TV list can be a TMDB
+movie). Each TMDB title keeps every ID — IMDb, Wikidata, Rotten Tomatoes,
+Metacritic, Letterboxd, Netflix (Wikidata P1874 or Tudum's Top 10 search),
+JustWatch — and the FlixPatrol slugs and Netflix Top 10 names mapped to it
+(admin UI → TMDB mapping; public `ids` on `/titles/tmdb/:kind/:id`).
+
+- **Links.** A Netflix title and a FlixPatrol title with the same normalized
+  name (with or without ": Season N") in the same Netflix list (Films / TV)
+  that were on Netflix's charts in the same or an adjacent week are linked.
+  Linked titles share one mapping; each title weighs itself and the titles
+  directly linked to it (only those linked to nothing else): a title fixed by hand wins, then a Netflix title
+  mapped by its Netflix ID, then FlixPatrol's match (made with the title
+  page's year), then Netflix's. Linked titles that disagree at the deciding
+  level (two hand fixes, or two same-name FlixPatrol titles such as a show and
+  its revival) are a conflict left for review (TMDB mapping → Conflicts). Links are refreshed by
+  `titles.enrich`, `netflix.top10.import` and `netflix.titles.match` (or
+  "Sync links now").
+- **Netflix titles** are matched by: a linked or same-name FlixPatrol title;
+  their **Netflix ID** — Tudum's Top 10 search (`netflix.com/tudum/top10`)
+  gives each charted title's ID (a season's for TV, whose public title page
+  redirects to the show), accepted when the name (a season title for TV),
+  list and a charted week agree, then mapped to TMDB through
+  `tmdb_titles.netflix_id` or Wikidata; Wikidata items with a Netflix ID whose
+  English label is the name (the other TMDB kind only if released in the year
+  it first charted or the one before); JustWatch's US Netflix catalogue as
+  either kind; a single exact name in all of JustWatch US.
+- **Fixing.** Fix a single title in its drawer (TMDB kind + ID, or an IMDb /
+  Wikidata ID resolved through TMDB's `/find`, then Wikidata), or move
+  everything on a wrong TMDB title at once from TMDB mapping → Move all.
 
 ### Seasons
 
@@ -252,7 +287,9 @@ Discord or ntfy messages.
 ### Data sources and terms
 
 - **FlixPatrol** (charts, title pages) through your FlareSolverr.
-- **Netflix Top 10** (`netflix.com/tudum/top10` TSV downloads).
+- **Netflix Top 10** (`netflix.com/tudum/top10` TSV downloads), and the Top
+  10 page's own search for Netflix IDs (an undocumented persisted GraphQL
+  query, sent anonymously; `NETFLIX_TOP10_SEARCH=false` turns it off).
 - **IMDb non-commercial datasets** (`title.ratings.tsv.gz`) — personal and
   non-commercial use only; see https://developer.imdb.com/non-commercial-datasets/.
 - **TMDB** (search, details, watch providers — watch provider data is by

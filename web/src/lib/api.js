@@ -55,6 +55,12 @@ export const rematchNetflixTitle = (id, clear = false) => req(`/netflix/titles/$
 export const getNetflixTitleCandidates = (id, q) => req(`/netflix/titles/${id}/candidates`, { query: q })
 export const patchNetflixSeason = (id, body) => req(`/netflix/seasons/${id}`, { method: 'PATCH', body })
 
+// ── TMDB mapping (every source on one TMDB title) ───────────────────
+export const listMappings = (q) => req('/mappings', { query: q })
+export const getMapping = (kind, tmdbId) => req(`/mappings/${kind}/${tmdbId}`)
+export const remapMapping = (kind, tmdbId, body) => req(`/mappings/${kind}/${tmdbId}/remap`, { method: 'POST', body })
+export const syncMappings = () => req('/mappings/sync', { method: 'POST' })
+
 // ── Top 10 ──────────────────────────────────────────────────────────
 export function getTop10({ country, provider, category, date }) {
   const seg = category === 'tv_shows' ? 'tv-shows' : 'movies'

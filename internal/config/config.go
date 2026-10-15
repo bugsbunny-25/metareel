@@ -130,6 +130,13 @@ type Imports struct {
 	IMDbScope string `env:"IMDB_DATASET_SCOPE" envDefault:"known"`
 	// DownloadTimeout bounds one dataset download.
 	DownloadTimeout time.Duration `env:"DOWNLOAD_TIMEOUT" envDefault:"10m"`
+	// NetflixSearch enables looking Netflix Top 10 titles up on Tudum's Top 10
+	// search (netflix.com/tudum/top10) for their Netflix IDs. It is the
+	// persisted GraphQL query the page itself uses; when Netflix changes it,
+	// update the ID / version (or turn the search off).
+	NetflixSearch         bool   `env:"NETFLIX_TOP10_SEARCH" envDefault:"true"`
+	NetflixSearchQueryID  string `env:"NETFLIX_TOP10_SEARCH_QUERY_ID" envDefault:"592260c9-ef04-4ae6-bec7-ae2d47498f9b"`
+	NetflixSearchQueryVer int    `env:"NETFLIX_TOP10_SEARCH_QUERY_VERSION" envDefault:"102"`
 }
 
 // Alerts sends problems (failed runs, stale charts, FlareSolverr down) to a

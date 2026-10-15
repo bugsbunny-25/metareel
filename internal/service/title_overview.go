@@ -20,11 +20,18 @@ type TitleOverviewService struct {
 	flix      *repository.FlixPatrolRepository
 	metadata  *repository.MetadataRepository
 	ratings   *RatingsService
+	mapping   *TitleMappingService // optional: the overview's ids section
 	now       func() time.Time
 }
 
 func NewTitleOverviewService(analytics *repository.AnalyticsRepository, flix *repository.FlixPatrolRepository, metadata *repository.MetadataRepository, ratings *RatingsService) *TitleOverviewService {
 	return &TitleOverviewService{analytics: analytics, flix: flix, metadata: metadata, ratings: ratings, now: time.Now}
+}
+
+// WithMapping adds every known external ID to overviews.
+func (s *TitleOverviewService) WithMapping(mapping *TitleMappingService) *TitleOverviewService {
+	s.mapping = mapping
+	return s
 }
 
 // --- stats ----------------------------------------------------------------------
@@ -258,7 +265,7 @@ type NetflixSeasonSummary struct {
 }
 
 func (s *TitleOverviewService) Netflix(ctx context.Context, ref TmdbRef) (*TitleNetflixResponse, error) {
-	global, countries, err := s.analytics.NetflixForTitle(ctx, titleKindForTmdb(ref.Kind), ref.ID)
+	global, countries, err := s.analytics.NetflixForTitle(ctx, ref.Kind, ref.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -370,15 +377,15 @@ var (
 )
 
 // Lookup finds titles by IMDb ID, TMDB ID (kind:id) or FlixPatrol slug.
-func (s *TitleOverviewService) Lookup(ctx context.Context, imdbID, tmdb, slug string) (*LookupResult, error) {
+func (s *TitleOverviewService) Lookup(ctx context.Context, imdbID, tmdb, slug, netflixID string) (*LookupResult, error) {
 	set := 0
-	for _, v := range []string{imdbID, tmdb, slug} {
+	for _, v := range []string{imdbID, tmdb, slug, netflixID} {
 		if strings.TrimSpace(v) != "" {
 			set++
 		}
 	}
 	if set != 1 {
-		return nil, &ValidationError{Message: "give exactly one of imdb, tmdb (kind:id) or slug"}
+		return nil, &ValidationError{Message: "give exactly one of imdb, tmdb (kind:id), slug or netflix"}
 	}
 	out := &LookupResult{Refs: []LookupRef{}, Titles: []RankedTitle{}}
 	refs := map[string]bool{}
@@ -436,6 +443,25 @@ func (s *TitleOverviewService) Lookup(ctx context.Context, imdbID, tmdb, slug st
 		}
 		if len(titles) > 0 || meta != nil {
 			addRef(ref.Kind, ref.ID)
+		}
+	case netflixID != "":
+		netflixID = strings.TrimSpace(netflixID)
+		if !tmdbNumericRe.MatchString(netflixID) {
+			return nil, &ValidationError{Message: "invalid netflix id, expected the number in netflix.com/title/<id>"}
+		}
+		refs, err := s.metadata.RefsByNetflixID(ctx, netflixID)
+		if err != nil {
+			return nil, err
+		}
+		for _, ref := range refs {
+			addRef(ref.Kind, ref.ID)
+			titles, err := s.analytics.TitlesByTmdb(ctx, titleKindForTmdb(ref.Kind), ref.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, t := range titles {
+				addTitle(t.Slug, t.Name, nullStr(t.ImdbID), nullStr(t.RtUrl))
+			}
 		}
 	default:
 		slug = strings.ToLower(strings.TrimSpace(slug))
@@ -507,6 +533,7 @@ type TitleOverview struct {
 	Ratings      *RatingsResponse         `json:"ratings,omitempty"`
 	Availability *AvailabilityResponse    `json:"availability,omitempty"`
 	Netflix      *NetflixSummary          `json:"netflix,omitempty"`
+	IDs          *TitleExternalIDs        `json:"ids,omitempty"`    // every known external ID
 	Errors       map[string]string        `json:"errors,omitempty"` // sections that could not be loaded
 }
 
@@ -573,6 +600,11 @@ func (s *TitleOverviewService) Overview(ctx context.Context, ref TmdbRef, q Over
 	}
 	if !known {
 		return nil, ErrTitleNotFound
+	}
+	if ids, err := s.mapping.ExternalIDs(ctx, ref); err != nil {
+		out.Errors["ids"] = "unavailable"
+	} else {
+		out.IDs = ids
 	}
 	if q.Include["availability"] {
 		av, err := s.Availability(ctx, ref, country)

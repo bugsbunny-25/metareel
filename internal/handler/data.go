@@ -290,9 +290,9 @@ func (h *Handler) GetTitleRatingsBatch(c *echo.Context) error {
 	return writeData(c, out, err)
 }
 
-// LookupTitle: GET /api/v1/titles/lookup?imdb=tt…|tmdb=movie:425|slug=…
+// LookupTitle: GET /api/v1/titles/lookup?imdb=tt…|tmdb=movie:425|slug=…|netflix=81231974
 func (h *Handler) LookupTitle(c *echo.Context) error {
-	out, err := h.Overview.Lookup(c.Request().Context(), c.QueryParam("imdb"), c.QueryParam("tmdb"), c.QueryParam("slug"))
+	out, err := h.Overview.Lookup(c.Request().Context(), c.QueryParam("imdb"), c.QueryParam("tmdb"), c.QueryParam("slug"), c.QueryParam("netflix"))
 	return writeData(c, out, err)
 }
 

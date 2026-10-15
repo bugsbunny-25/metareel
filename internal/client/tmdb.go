@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -171,3 +172,61 @@ func (c *TMDBClient) Details(ctx context.Context, kind string, tmdbID string) (s
 	}
 	return out.Title, yearFromDate(out.ReleaseDate), nil
 }
+
+// TMDBFound is a TMDB title found by an external ID.
+type TMDBFound struct {
+	Kind  string // movie | tv
+	ID    string
+	Title string
+	Year  int
+}
+
+// FindByExternalID returns the TMDB titles with an IMDb (tt…) or Wikidata
+// (Q…) ID, via /find. Other IDs are rejected before any request.
+func (c *TMDBClient) FindByExternalID(ctx context.Context, id string) ([]TMDBFound, error) {
+	if !c.Enabled() {
+		return nil, nil
+	}
+	var source string
+	switch {
+	case imdbTitleRe.MatchString(id):
+		source = "imdb_id"
+	case WikidataQIDRe.MatchString(id):
+		source = "wikidata_id"
+	default:
+		return nil, fmt.Errorf("unsupported external id %q", id)
+	}
+	var out struct {
+		Movies []struct {
+			ID          int    `json:"id"`
+			Title       string `json:"title"`
+			ReleaseDate string `json:"release_date"`
+		} `json:"movie_results"`
+		TV []struct {
+			ID           int    `json:"id"`
+			Name         string `json:"name"`
+			FirstAirDate string `json:"first_air_date"`
+		} `json:"tv_results"`
+	}
+	resp, err := c.http.R().
+		SetContext(ctx).
+		SetQueryParams(map[string]string{"api_key": c.apiKey, "external_source": source}).
+		SetResult(&out).
+		Get("https://api.themoviedb.org/3/find/" + id)
+	if err != nil {
+		return nil, fmt.Errorf("tmdb find: %w", redactErr(err))
+	}
+	if resp.IsError() {
+		return nil, fmt.Errorf("tmdb find status %d", resp.StatusCode())
+	}
+	found := make([]TMDBFound, 0, len(out.Movies)+len(out.TV))
+	for _, m := range out.Movies {
+		found = append(found, TMDBFound{Kind: "movie", ID: strconv.Itoa(m.ID), Title: m.Title, Year: yearFromDate(m.ReleaseDate)})
+	}
+	for _, t := range out.TV {
+		found = append(found, TMDBFound{Kind: "tv", ID: strconv.Itoa(t.ID), Title: t.Name, Year: yearFromDate(t.FirstAirDate)})
+	}
+	return found, nil
+}
+
+var imdbTitleRe = regexp.MustCompile(`^tt\d{5,10}$`)
