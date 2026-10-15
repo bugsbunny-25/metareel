@@ -45,6 +45,9 @@
   const IMPORT_LABEL = {
     'netflix.global': 'Netflix global weekly', 'netflix.countries': 'Netflix per country', 'netflix.most_popular': 'Netflix most popular', 'imdb.ratings': 'IMDb ratings',
   }
+
+  // What decided an IMDb-mismatch entry's mapping.
+  const EVIDENCE_LABEL = { manual: 'fixed by hand', netflix_id: 'Netflix ID', match: 'automatic match' }
 </script>
 
 <div class="page">
@@ -178,6 +181,36 @@
         </div>
         {#if report.unmatched_by_country.length}
           <p class="small muted" style="padding:0 16px 12px">Unmatched titles charting in the last {report.gap_window_days} days: {report.unmatched_by_country.map((c) => `${countryName(c.country)} ${c.titles}`).join(' · ')}</p>
+        {/if}
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">IMDb IDs that disagree with TMDB</div>
+          <span class="badge {(report.imdb_mismatches ?? []).length ? 'badge-warning' : 'badge-success'}">{(report.imdb_mismatches ?? []).length}</span>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Title</th><th>TMDB title</th><th>Match's IMDb</th><th>TMDB title's IMDb</th></tr></thead>
+            <tbody>
+              {#each report.imdb_mismatches ?? [] as m (m.subject_type + m.subject_id)}
+                <tr>
+                  <td>
+                    <a href={m.subject_type === 'netflix' ? href('/netflix', { open: m.subject_id }) : href('/titles', { open: m.subject_id })}>{m.name}</a>
+                    <div class="cell-sub">{m.subject_type === 'netflix' ? 'Netflix' : 'FlixPatrol'} · {EVIDENCE_LABEL[m.evidence_kind] ?? m.evidence_kind}{m.source && m.source !== m.evidence_kind ? ` (${m.source})` : ''}</div>
+                  </td>
+                  <td class="mono"><a href={href('/mapping', { open: `${m.tmdb_kind}:${m.tmdb_id}` })}>{m.tmdb_kind} {m.tmdb_id}</a></td>
+                  <td class="mono">{m.imdb_id}</td>
+                  <td class="mono">{m.tmdb_imdb_id}</td>
+                </tr>
+              {:else}
+                <tr><td colspan="4"><div class="empty small">Every mapped title's IMDb ID matches its TMDB title's.</div></td></tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        {#if (report.imdb_mismatches ?? []).length}
+          <p class="field-hint" style="padding:0 16px 12px">The match or fix that decides the title's mapping came with another IMDb ID than its TMDB title has, so one of the two is wrong. A wrong mapping: fix it on the title. A wrong IMDb ID on the TMDB title: enter the right one on the title (it becomes the TMDB title's, set by hand). Saving the mapping by hand confirms it and clears the entry.</p>
         {/if}
       </div>
     </div>

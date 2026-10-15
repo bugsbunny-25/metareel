@@ -59,9 +59,12 @@ func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFull
 		PosterPath: nullIfEmpty(d.PosterPath), BackdropPath: nullIfEmpty(d.BackdropPath),
 		Popularity: sql.NullFloat64{Float64: d.Popularity, Valid: true}, VoteAverage: sql.NullFloat64{Float64: d.VoteAverage, Valid: true},
 		VoteCount: sql.NullInt64{Int64: int64(d.VoteCount), Valid: true}, DigitalReleaseDates: digital,
-		ImdbID: nullIfEmpty(d.IMDbID), WikidataID: nullIfEmpty(d.WikidataID), Seasons: seasons,
+		Seasons: seasons,
 	}); err != nil {
 		return fmt.Errorf("upsert tmdb title: %w", err)
+	}
+	if err := saveTmdbIDs(ctx, q, TmdbRef{Kind: d.Kind, ID: d.ID}, TmdbIDs{IMDbID: d.IMDbID, WikidataID: d.WikidataID}, IDSourceTMDB); err != nil {
+		return err
 	}
 	if err := q.DeleteTmdbWatchProviders(ctx, sqlc.DeleteTmdbWatchProvidersParams{TmdbKind: d.Kind, TmdbID: d.ID}); err != nil {
 		return fmt.Errorf("delete watch providers: %w", err)
@@ -78,46 +81,123 @@ func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFull
 	return tx.Commit()
 }
 
-// SaveWikidata stores IDs found on Wikidata (or records an empty lookup).
-func (r *MetadataRepository) SaveWikidata(ctx context.Context, ref TmdbRef, ids client.WikidataIDs) error {
-	return r.q.UpsertTmdbTitleWikidata(ctx, sqlc.UpsertTmdbTitleWikidataParams{
-		TmdbKind: ref.Kind, TmdbID: ref.ID, ImdbID: nullIfEmpty(ids.IMDbID), WikidataID: nullIfEmpty(ids.WikidataID),
-		RtID: nullIfEmpty(ids.RottenTomato), MetacriticID: nullIfEmpty(ids.Metacritic), LetterboxdID: nullIfEmpty(ids.Letterboxd),
-		NetflixID: nullIfEmpty(ids.NetflixID),
-	})
+// ID sources (tmdb_titles.*_source), strongest first: an ID is only
+// replaced by one from the same or a stronger source.
+const (
+	IDSourceManual   = "manual"
+	IDSourceTMDB     = "tmdb"
+	IDSourceWikidata = "wikidata"
+	IDSourceMatch    = "match"
+)
+
+// TmdbIDs are external IDs of a TMDB title ("" = not given).
+type TmdbIDs struct {
+	IMDbID       string
+	WikidataID   string
+	RTID         string // m/<slug> | tv/<slug>
+	MetacriticID string
+	LetterboxdID string
+	NetflixID    string
+	JustWatchID  string
 }
 
-// TmdbExternalIDs are IDs of a TMDB title found by matching.
-type TmdbExternalIDs struct {
-	IMDbID      string
-	JustWatchID string
-	NetflixID   string
-	WikidataID  string
-}
+func (ids TmdbIDs) empty() bool { return ids == TmdbIDs{} }
 
-// SaveExternalIDs fills a TMDB title's missing IDs (creating its row if
-// needed); it never overwrites one.
-func (r *MetadataRepository) SaveExternalIDs(ctx context.Context, ref TmdbRef, ids TmdbExternalIDs) error {
-	if ids == (TmdbExternalIDs{}) {
+func saveTmdbIDs(ctx context.Context, q *sqlc.Queries, ref TmdbRef, ids TmdbIDs, source string) error {
+	if ids.empty() || ref.ID == "" {
 		return nil
 	}
-	if err := r.q.SaveTmdbTitleExternalIDs(ctx, sqlc.SaveTmdbTitleExternalIDsParams{
-		TmdbKind: ref.Kind, TmdbID: ref.ID, ImdbID: nullIfEmpty(ids.IMDbID), JustwatchID: nullIfEmpty(ids.JustWatchID),
-		NetflixID: nullIfEmpty(ids.NetflixID), WikidataID: nullIfEmpty(ids.WikidataID),
+	if err := q.UpsertTmdbTitleIDs(ctx, sqlc.UpsertTmdbTitleIDsParams{
+		TmdbKind: ref.Kind, TmdbID: ref.ID, Source: source,
+		ImdbID: nullIfEmpty(ids.IMDbID), WikidataID: nullIfEmpty(ids.WikidataID), RtID: nullIfEmpty(ids.RTID),
+		MetacriticID: nullIfEmpty(ids.MetacriticID), LetterboxdID: nullIfEmpty(ids.LetterboxdID),
+		NetflixID: nullIfEmpty(ids.NetflixID), JustwatchID: nullIfEmpty(ids.JustWatchID),
 	}); err != nil {
-		return fmt.Errorf("save external ids of %s: %w", ref, err)
+		return fmt.Errorf("save %s ids of %s: %w", source, ref, err)
 	}
 	return nil
 }
 
-// ConsolidateExternalIDs fills TMDB titles' missing IMDb, Rotten Tomatoes,
-// JustWatch and Wikidata IDs from the FlixPatrol titles mapped to them.
-func (r *MetadataRepository) ConsolidateExternalIDs(ctx context.Context) (int64, error) {
-	n, err := r.q.ConsolidateTmdbTitleIDs(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("consolidate tmdb title ids: %w", err)
+// SaveIDs stores a TMDB title's IDs from one source (creating its row if
+// needed). An ID is only replaced by one from the same or a stronger source:
+// manual > tmdb > wikidata > match.
+func (r *MetadataRepository) SaveIDs(ctx context.Context, ref TmdbRef, ids TmdbIDs, source string) error {
+	return saveTmdbIDs(ctx, r.q, ref, ids, source)
+}
+
+// ClearIDs clears a TMDB title's IMDb, Wikidata and / or Rotten Tomatoes ID
+// (cleared by hand): TMDB, Wikidata and matching fill them again.
+func (r *MetadataRepository) ClearIDs(ctx context.Context, ref TmdbRef, imdb, wikidata, rt bool) error {
+	if !imdb && !wikidata && !rt {
+		return nil
 	}
-	return n, nil
+	if err := r.q.ClearTmdbTitleIDs(ctx, sqlc.ClearTmdbTitleIDsParams{
+		Imdb: boolInt(imdb), Wikidata: boolInt(wikidata), Rt: boolInt(rt), TmdbKind: ref.Kind, TmdbID: ref.ID,
+	}); err != nil {
+		return fmt.Errorf("clear ids of %s: %w", ref, err)
+	}
+	return nil
+}
+
+// SaveWikidata stores IDs found on Wikidata and records the lookup (also
+// when nothing was found).
+func (r *MetadataRepository) SaveWikidata(ctx context.Context, ref TmdbRef, ids client.WikidataIDs) error {
+	if err := saveTmdbIDs(ctx, r.q, ref, TmdbIDs{IMDbID: ids.IMDbID, WikidataID: ids.WikidataID, RTID: ids.RottenTomato,
+		MetacriticID: ids.Metacritic, LetterboxdID: ids.Letterboxd, NetflixID: ids.NetflixID}, IDSourceWikidata); err != nil {
+		return err
+	}
+	if err := r.q.MarkTmdbTitleWikidataFetched(ctx, sqlc.MarkTmdbTitleWikidataFetchedParams{TmdbKind: ref.Kind, TmdbID: ref.ID}); err != nil {
+		return fmt.Errorf("mark wikidata lookup of %s: %w", ref, err)
+	}
+	return nil
+}
+
+// RTDue is a TMDB title to look up on Rotten Tomatoes, with names to search by.
+type RTDue struct {
+	Ref         TmdbRef
+	Title       string // TMDB's
+	Year        int    // TMDB release year (0 = unknown)
+	Attempts    int64
+	Slug        string // a FlixPatrol title mapped to it
+	Name        string // its chart name
+	MatchedName string // the name it was matched by, if any
+	MatchedYear int
+}
+
+// RefsDueForRT lists TMDB titles FlixPatrol titles are mapped to without a
+// Rotten Tomatoes slug whose backoff has expired (only = one ref, or any).
+func (r *MetadataRepository) RefsDueForRT(ctx context.Context, only *TmdbRef, limit int64) ([]RTDue, error) {
+	onlyRef := ""
+	if only != nil {
+		onlyRef = only.String()
+	}
+	rows, err := r.q.ListTmdbRefsDueForRT(ctx, sqlc.ListTmdbRefsDueForRTParams{OnlyRef: onlyRef, Limit: limit})
+	if err != nil {
+		return nil, fmt.Errorf("list tmdb refs due for rt: %w", err)
+	}
+	out := make([]RTDue, 0, len(rows))
+	for _, row := range rows {
+		d := RTDue{Ref: TmdbRef{Kind: row.TmdbKind, ID: row.TmdbID}, Title: row.Title, Attempts: row.RtAttempts,
+			Slug: row.Slug, Name: row.Name, MatchedName: row.MatchedName.String, MatchedYear: int(row.MatchedYear.Int64)}
+		if len(row.ReleaseDate) >= 4 {
+			_, _ = fmt.Sscanf(row.ReleaseDate[:4], "%d", &d.Year)
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// RecordRTAttempt records one Rotten Tomatoes search for a TMDB title: the
+// slug found (if any) is stored as a match, and the next search waits
+// retryAfter (a SQLite datetime modifier).
+func (r *MetadataRepository) RecordRTAttempt(ctx context.Context, ref TmdbRef, slug, retryAfter string) error {
+	if err := saveTmdbIDs(ctx, r.q, ref, TmdbIDs{RTID: slug}, IDSourceMatch); err != nil {
+		return err
+	}
+	if err := r.q.RecordTmdbRTAttempt(ctx, sqlc.RecordTmdbRTAttemptParams{RetryAfter: retryAfter, TmdbKind: ref.Kind, TmdbID: ref.ID}); err != nil {
+		return fmt.Errorf("record rt attempt of %s: %w", ref, err)
+	}
+	return nil
 }
 
 // RefsByNetflixID returns the TMDB titles with this Netflix title ID.
@@ -166,6 +246,10 @@ type TmdbMetadata struct {
 	NetflixID           *string           `json:"netflix_id"`   // Wikidata P1874 (netflix.com/title/<id>)
 	JustWatchID         *string           `json:"justwatch_id"` // e.g. tm123 / ts123
 	DetailsFetchedAt    *time.Time        `json:"details_fetched_at"`
+	WikidataLookedUp    bool              `json:"-"` // looked up on Wikidata at least once
+	// IDSources says where each ID came from (imdb, wikidata, rotten_tomatoes,
+	// metacritic, letterboxd, netflix, justwatch → manual | tmdb | wikidata | match).
+	IDSources map[string]string `json:"-"`
 }
 
 func toTmdbMetadata(t sqlc.TmdbTitle) *TmdbMetadata {
@@ -182,6 +266,16 @@ func toTmdbMetadata(t sqlc.TmdbTitle) *TmdbMetadata {
 		IMDbID: nullStringPtr(t.ImdbID), WikidataID: nullStringPtr(t.WikidataID), RottenTomatoesID: nullStringPtr(t.RtID),
 		MetacriticID: nullStringPtr(t.MetacriticID), LetterboxdID: nullStringPtr(t.LetterboxdID),
 		NetflixID: nullStringPtr(t.NetflixID), JustWatchID: nullStringPtr(t.JustwatchID),
+		WikidataLookedUp: t.WikidataFetchedAt.Valid,
+		IDSources:        map[string]string{},
+	}
+	for name, src := range map[string]sql.NullString{
+		"imdb": t.ImdbSource, "wikidata": t.WikidataSource, "rotten_tomatoes": t.RtSource, "metacritic": t.MetacriticSource,
+		"letterboxd": t.LetterboxdSource, "netflix": t.NetflixSource, "justwatch": t.JustwatchSource,
+	} {
+		if src.Valid {
+			m.IDSources[name] = src.String
+		}
 	}
 	if t.DigitalReleaseDates.Valid {
 		_ = json.Unmarshal([]byte(t.DigitalReleaseDates.String), &m.DigitalReleaseDates)

@@ -40,16 +40,6 @@ func (r *FlixPatrolRepository) ListTitlesDueForMatch(ctx context.Context, limit 
 	return rows, nil
 }
 
-// ListTitlesDueForRT returns up to limit matched titles without a Rotten
-// Tomatoes slug whose retry backoff has expired.
-func (r *FlixPatrolRepository) ListTitlesDueForRT(ctx context.Context, limit int64) ([]sqlc.Title, error) {
-	rows, err := r.q.ListTitlesDueForRT(ctx, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list titles due for rt: %w", err)
-	}
-	return rows, nil
-}
-
 // TitleMatchResult is the outcome of one matching attempt.
 type TitleMatchResult struct {
 	Kind        string // movie | tv_show
@@ -62,40 +52,6 @@ type TitleMatchResult struct {
 	// RetryAfter is when to try again if unmatched, as a SQLite datetime
 	// modifier ("+3 days"); ignored when matched.
 	RetryAfter string
-}
-
-// SaveTitleMatch records a matching attempt. It returns sql.ErrNoRows if the
-// title is manual (or gone), since automation must not change it.
-func (r *FlixPatrolRepository) SaveTitleMatch(ctx context.Context, titleID int64, m TitleMatchResult) (sqlc.Title, error) {
-	status, retry := MatchStatusUnmatched, m.RetryAfter
-	if m.TmdbID != "" {
-		status, retry = MatchStatusMatched, ""
-	}
-	return r.q.SaveTitleMatch(ctx, sqlc.SaveTitleMatchParams{
-		Kind:        m.Kind,
-		TmdbID:      nullIfEmpty(m.TmdbID),
-		ImdbID:      nullIfEmpty(m.ImdbID),
-		JustwatchID: nullIfEmpty(m.JustWatchID),
-		MatchStatus: status,
-		MatchSource: nullIfEmpty(m.Source),
-		MatchedName: nullIfEmpty(m.MatchedName),
-		MatchedYear: sql.NullInt64{Int64: int64(m.MatchedYear), Valid: m.MatchedYear > 0},
-		RetryAfter:  retry,
-		ID:          titleID,
-	})
-}
-
-// SaveTitleExternalIDs fills IDs the title does not have yet.
-func (r *FlixPatrolRepository) SaveTitleExternalIDs(ctx context.Context, titleID int64, imdbID, wikidataID, rtURL string) error {
-	return r.q.SaveTitleExternalIDs(ctx, sqlc.SaveTitleExternalIDsParams{
-		ImdbID: nullIfEmpty(imdbID), WikidataID: nullIfEmpty(wikidataID), RtUrl: nullIfEmpty(rtURL), ID: titleID,
-	})
-}
-
-// SaveTitleRTAttempt records a Rotten Tomatoes lookup (rtURL empty = not
-// found; retry after retryAfter, a SQLite datetime modifier).
-func (r *FlixPatrolRepository) SaveTitleRTAttempt(ctx context.Context, titleID int64, rtURL, retryAfter string) error {
-	return r.q.SaveTitleRTAttempt(ctx, sqlc.SaveTitleRTAttemptParams{RtUrl: rtURL, RetryAfter: retryAfter, ID: titleID})
 }
 
 // FlixPatrolDetails is what the FlixPatrol title page says about a title.
@@ -111,17 +67,6 @@ func (r *FlixPatrolRepository) SaveFlixPatrolDetails(ctx context.Context, titleI
 		FpName: nullIfEmpty(d.Name), FpKind: nullIfEmpty(d.Kind), FpPremiereDate: nullIfEmpty(d.PremiereDate),
 		FpCountry: nullIfEmpty(d.Country), ID: titleID,
 	})
-}
-
-// ResetTitleMatch makes a title due for matching now (clearing a manual
-// lock but keeping its IDs).
-func (r *FlixPatrolRepository) ResetTitleMatch(ctx context.Context, titleID int64) (sqlc.Title, error) {
-	return r.q.ResetTitleMatch(ctx, titleID)
-}
-
-// ClearTitleMatch drops a title's IDs and queues it for a fresh match.
-func (r *FlixPatrolRepository) ClearTitleMatch(ctx context.Context, titleID int64) (sqlc.Title, error) {
-	return r.q.ClearTitleMatch(ctx, titleID)
 }
 
 // CountTitlesByMatchStatus returns the number of titles per match status.

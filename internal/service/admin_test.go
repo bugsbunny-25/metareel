@@ -110,8 +110,8 @@ func TestAPIKeys(t *testing.T) {
 
 func TestTitlesListFiltersAndSort(t *testing.T) {
 	ctx := context.Background()
-	_, repo := newTestTop10Service(t)
-	seed(t, repo,
+	_, repo, db := newTestTop10Service(t)
+	seed(t, db,
 		[]seedTitle{
 			{Slug: "alpha", Name: "Alpha", Kind: "movie", TmdbID: "1", ImdbID: "tt1", RtURL: "m/alpha"},
 			{Slug: "bravo", Name: "bravo", Kind: "movie", TmdbID: "2"},
@@ -122,7 +122,7 @@ func TestTitlesListFiltersAndSort(t *testing.T) {
 			{"bravo", "2026-10-02", "US", "netflix", "movies", 1},
 			{"alpha", "2026-10-05", "US", "netflix", "movies", 2},
 		})
-	svc := NewTitleAdminService(repo)
+	svc := NewTitleAdminService(repo, testWriter(db))
 
 	slugs := func(q TitlesQuery) []string {
 		t.Helper()

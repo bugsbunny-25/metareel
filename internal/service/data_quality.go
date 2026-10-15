@@ -17,12 +17,23 @@ type DataQualityService struct {
 	metadata    *repository.MetadataRepository
 	schedules   *repository.TaskScheduleRepository
 	maintenance *MaintenanceService
+	mapping     *repository.MappingRepository // optional: IMDb mismatches
 	now         func() time.Time
 }
 
 func NewDataQualityService(flix *repository.FlixPatrolRepository, ops *repository.OpsRepository, imports *repository.ImportsRepository, metadata *repository.MetadataRepository, schedules *repository.TaskScheduleRepository, maintenance *MaintenanceService) *DataQualityService {
 	return &DataQualityService{flix: flix, ops: ops, imports: imports, metadata: metadata, schedules: schedules, maintenance: maintenance, now: time.Now}
 }
+
+// WithMapping also reports mapped titles whose IMDb ID disagrees with their
+// TMDB title's.
+func (s *DataQualityService) WithMapping(mapping *repository.MappingRepository) *DataQualityService {
+	s.mapping = mapping
+	return s
+}
+
+// imdbMismatchLimit caps the IMDb mismatches listed in the report.
+const imdbMismatchLimit = 200
 
 // DataQualityReport is GET /api/v1/admin/data-quality.
 type DataQualityReport struct {
@@ -39,6 +50,9 @@ type DataQualityReport struct {
 	ChartGaps          []ChartGap                `json:"chart_gaps"`
 	GapWindowDays      int                       `json:"gap_window_days"`
 	FreshnessByChart   []ChartFreshnessItem      `json:"chart_freshness"`
+	// Mapped titles whose own IMDb ID differs from their TMDB title's: one of
+	// the two is wrong (fix the title, or set the TMDB title's by hand).
+	IMDbMismatches []repository.IMDbMismatch `json:"imdb_mismatches"`
 }
 
 // ChartGap lists dates missing for a scheduled chart within the gap window.
@@ -104,6 +118,12 @@ func (s *DataQualityService) Report(ctx context.Context) (*DataQualityReport, er
 	}
 	if rep.ChartGaps, err = s.gaps(ctx, now); err != nil {
 		return nil, err
+	}
+	rep.IMDbMismatches = []repository.IMDbMismatch{}
+	if s.mapping != nil {
+		if rep.IMDbMismatches, err = s.mapping.IMDbMismatches(ctx, imdbMismatchLimit); err != nil {
+			return nil, err
+		}
 	}
 	return rep, nil
 }

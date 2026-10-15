@@ -50,7 +50,7 @@ func (n *NetflixImporter) WithNetflixSearch(search NetflixSearcher) *NetflixImpo
 // up to limit titles without one, then maps those not fixed by hand to the
 // TMDB title of their ID, replacing matches made by name. It returns the
 // titles it mapped.
-func (n *NetflixImporter) resolveNetflixIDs(ctx context.Context, ids []int64, limit int64, rep *NetflixIDReport, logf func(level, format string, args ...any)) (map[int64]bool, error) {
+func (n *NetflixImporter) resolveNetflixIDs(ctx context.Context, session *MappingSession, ids []int64, limit int64, rep *NetflixIDReport, logf func(level, format string, args ...any)) (map[int64]bool, error) {
 	mapped := map[int64]bool{}
 	if n.search == nil {
 		return mapped, nil
@@ -116,7 +116,7 @@ func (n *NetflixImporter) resolveNetflixIDs(ctx context.Context, ids []int64, li
 		if c.TmdbID == ref.ID && c.TmdbKind == ref.Kind && c.MatchSource == MatchSourceNetflixID {
 			continue
 		}
-		changed, err := n.repo.SaveNetflixMatchByNetflixID(ctx, c.ID, ref, hit.IMDbID)
+		changed, err := session.MatchNetflixByNetflixID(ctx, c.ID, ref, hit.IMDbID)
 		if err != nil {
 			return mapped, err
 		}
@@ -128,11 +128,8 @@ func (n *NetflixImporter) resolveNetflixIDs(ctx context.Context, ids []int64, li
 		if c.TmdbID != "" && (c.TmdbID != ref.ID || c.TmdbKind != ref.Kind) {
 			logf("info", "%q: Netflix ID %s is TMDB %s %s (was %s %s via %s)", c.ShowTitle, nfID, ref.Kind, ref.ID, c.TmdbKind, c.TmdbID, c.MatchSource)
 		}
-		if n.metadata != nil {
-			if _, err := n.metadata.RefreshDetails(ctx, ref); err != nil {
-				n.log.Warn("tmdb details for netflix title failed", slog.String("show_title", c.ShowTitle), slog.Any("err", err))
-			}
-			if err := n.metadata.SaveExternalIDs(ctx, ref, repository.TmdbExternalIDs{NetflixID: nfID, WikidataID: hit.WikidataID, IMDbID: hit.IMDbID}); err != nil {
+		if n.metadata != nil { // TMDB details follow in the mapping refresh
+			if err := n.metadata.SaveMatchedIDs(ctx, ref, repository.TmdbIDs{NetflixID: nfID, WikidataID: hit.WikidataID, IMDbID: hit.IMDbID}); err != nil {
 				return mapped, err
 			}
 		}

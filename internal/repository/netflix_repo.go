@@ -44,6 +44,7 @@ type NetflixTitleRow struct {
 	FlixPatrolLinks int64
 	TmdbTitle       *string
 	TmdbReleaseDate *string
+	IMDbID          *string // the TMDB title's
 	FlixPatrolSlug  *string
 	FlixPatrolName  *string
 }
@@ -60,7 +61,7 @@ func (r *ImportsRepository) ListNetflixTitles(ctx context.Context, f NetflixTitl
 		out = append(out, NetflixTitleRow{
 			NetflixTitle: row.NetflixTitle, LastWeek: row.LastWeek, WeeksGlobal: row.WeeksGlobal, BestGlobalRank: rankPtr(row.BestGlobalRank),
 			SeasonsTotal: row.SeasonsTotal, SeasonsUnmapped: row.SeasonsUnmapped, FlixPatrolLinks: row.FlixpatrolLinks,
-			TmdbTitle: nullStringPtr(row.TmdbTitle), TmdbReleaseDate: nullStringPtr(row.TmdbReleaseDate),
+			TmdbTitle: nullStringPtr(row.TmdbTitle), TmdbReleaseDate: nullStringPtr(row.TmdbReleaseDate), IMDbID: nullStringPtr(row.TmdbImdbID),
 			FlixPatrolSlug: emptyNil(row.FlixpatrolSlug), FlixPatrolName: emptyNil(row.FlixpatrolName),
 		})
 	}
@@ -84,34 +85,9 @@ func (r *ImportsRepository) GetNetflixTitle(ctx context.Context, id int64) (*Net
 	return &NetflixTitleRow{
 		NetflixTitle: row.NetflixTitle, LastWeek: row.LastWeek, WeeksGlobal: row.WeeksGlobal, BestGlobalRank: rankPtr(row.BestGlobalRank),
 		SeasonsTotal: row.SeasonsTotal, SeasonsUnmapped: row.SeasonsUnmapped, FlixPatrolLinks: row.FlixpatrolLinks,
-		TmdbTitle: nullStringPtr(row.TmdbTitle), TmdbReleaseDate: nullStringPtr(row.TmdbReleaseDate),
+		TmdbTitle: nullStringPtr(row.TmdbTitle), TmdbReleaseDate: nullStringPtr(row.TmdbReleaseDate), IMDbID: nullStringPtr(row.TmdbImdbID),
 		FlixPatrolSlug: emptyNil(row.FlixpatrolSlug), FlixPatrolName: emptyNil(row.FlixpatrolName),
 	}, nil
-}
-
-// SetNetflixTitleIDs stores IDs fixed by hand (empty clears; tmdbKind is
-// movie | tv) and locks the title against automatic matching.
-// sql.ErrNoRows if missing.
-func (r *ImportsRepository) SetNetflixTitleIDs(ctx context.Context, id int64, tmdbKind, tmdbID, imdbID string) error {
-	if tmdbID == "" {
-		tmdbKind = ""
-	}
-	_, err := r.q.UpdateNetflixTitleIDs(ctx, sqlc.UpdateNetflixTitleIDsParams{
-		ID: id, TmdbKind: nullIfEmpty(tmdbKind), TmdbID: nullIfEmpty(tmdbID), ImdbID: nullIfEmpty(imdbID),
-	})
-	return err
-}
-
-// RequeueNetflixTitle puts a title back in the matching queue; clear also
-// forgets its IDs. sql.ErrNoRows if missing.
-func (r *ImportsRepository) RequeueNetflixTitle(ctx context.Context, id int64, clear bool) error {
-	var err error
-	if clear {
-		_, err = r.q.ClearNetflixTitleMatch(ctx, id)
-	} else {
-		_, err = r.q.ResetNetflixTitleMatch(ctx, id)
-	}
-	return err
 }
 
 // NetflixTitlesForMatch returns these titles (with their first week) to match
@@ -490,16 +466,4 @@ func (r *ImportsRepository) SetNetflixSeasonNetflixID(ctx context.Context, seaso
 		return fmt.Errorf("set netflix id of season %d: %w", seasonID, err)
 	}
 	return nil
-}
-
-// SaveNetflixMatchByNetflixID maps a (non-manual) title to the TMDB title
-// its Netflix ID belongs to. Reports whether it changed a row.
-func (r *ImportsRepository) SaveNetflixMatchByNetflixID(ctx context.Context, id int64, ref TmdbRef, imdbID string) (bool, error) {
-	n, err := r.q.SaveNetflixTitleNetflixMatch(ctx, sqlc.SaveNetflixTitleNetflixMatchParams{
-		ID: id, TmdbKind: nullIfEmpty(ref.Kind), TmdbID: nullIfEmpty(ref.ID), ImdbID: imdbID,
-	})
-	if err != nil {
-		return false, fmt.Errorf("save netflix id match of %d: %w", id, err)
-	}
-	return n > 0, nil
 }

@@ -11,10 +11,10 @@ import (
 	"github.com/bugsbunny-25/metareel/internal/repository"
 )
 
-// TitleExternalIDs is every ID of one TMDB title: TMDB's own record (IMDb,
-// Wikidata, Rotten Tomatoes, Metacritic, Letterboxd, Netflix via Wikidata,
-// JustWatch) with gaps filled from the FlixPatrol titles mapped to it, plus
-// the FlixPatrol slugs and Netflix Top 10 names that map to it.
+// TitleExternalIDs is every ID of one TMDB title (IMDb, Wikidata, Rotten
+// Tomatoes, Metacritic, Letterboxd, Netflix, JustWatch: each from the
+// strongest source that has one, see Sources), plus the FlixPatrol slugs and
+// Netflix Top 10 names that map to it.
 type TitleExternalIDs struct {
 	IMDbID           *string  `json:"imdb_id"`
 	WikidataID       *string  `json:"wikidata_id"`
@@ -25,6 +25,9 @@ type TitleExternalIDs struct {
 	LetterboxdID     *string  `json:"letterboxd_id"`
 	FlixPatrolSlugs  []string `json:"flixpatrol_slugs"`
 	NetflixTop10     []string `json:"netflix_top10_titles"` // names in Netflix's official Top 10
+	// Where each ID came from: imdb, wikidata, rotten_tomatoes, metacritic,
+	// letterboxd, netflix, justwatch → manual | tmdb | wikidata | match.
+	Sources map[string]string `json:"sources"`
 }
 
 // MappingQuery filters the admin mapping list.
@@ -268,21 +271,16 @@ func (s *TitleMappingService) ExternalIDs(ctx context.Context, ref TmdbRef) (*Ti
 }
 
 func externalIDs(meta *repository.TmdbMetadata, fps []repository.MappedFlixPatrolTitle, netflixNames []string) TitleExternalIDs {
-	ids := TitleExternalIDs{FlixPatrolSlugs: []string{}, NetflixTop10: []string{}}
+	ids := TitleExternalIDs{FlixPatrolSlugs: []string{}, NetflixTop10: []string{}, Sources: map[string]string{}}
 	if meta != nil {
 		ids.IMDbID, ids.WikidataID, ids.RottenTomatoesID = meta.IMDbID, meta.WikidataID, meta.RottenTomatoesID
 		ids.NetflixID, ids.JustWatchID, ids.MetacriticID, ids.LetterboxdID = meta.NetflixID, meta.JustWatchID, meta.MetacriticID, meta.LetterboxdID
+		for k, v := range meta.IDSources {
+			ids.Sources[k] = v
+		}
 	}
-	// Titles fixed by hand first, so their IDs win the gaps.
-	sort.SliceStable(fps, func(i, j int) bool {
-		return fps[i].MatchStatus == repository.MatchStatusManual && fps[j].MatchStatus != repository.MatchStatusManual
-	})
 	for _, t := range fps {
 		ids.FlixPatrolSlugs = append(ids.FlixPatrolSlugs, t.Slug)
-		fill(&ids.IMDbID, t.ImdbID.String)
-		fill(&ids.WikidataID, t.WikidataID.String)
-		fill(&ids.RottenTomatoesID, t.RtUrl.String)
-		fill(&ids.JustWatchID, t.JustwatchID.String)
 	}
 	sort.Strings(ids.FlixPatrolSlugs)
 	seen := map[string]bool{}
@@ -296,12 +294,6 @@ func externalIDs(meta *repository.TmdbMetadata, fps []repository.MappedFlixPatro
 	return ids
 }
 
-func fill(dst **string, v string) {
-	if (*dst == nil || **dst == "") && v != "" {
-		*dst = &v
-	}
-}
-
 // RemapInput moves everything mapped to one TMDB title to another, given
 // by TMDB kind + ID, or by an IMDb ID or Wikidata item (e.g. Q141461750)
 // resolved to TMDB (tmdb_kind picks one when both a movie and a show match).
@@ -313,10 +305,14 @@ type RemapInput struct {
 }
 
 // Remap moves every FlixPatrol and Netflix title mapped to from onto the
-// given TMDB title (fixed by hand), fetches its TMDB details first so the
-// titles get its IMDb ID, then shares the fix over links and remaps seasons.
+// given TMDB title (fixed by hand). An IMDb or Wikidata ID it was given by
+// is stored as set by hand on the new TMDB title. Mappings are then shared
+// over links; TMDB details, IDs and seasons follow in a mapping refresh.
 func (s *TitleMappingService) Remap(ctx context.Context, from TmdbRef, in RemapInput) (*TmdbMappingEntry, error) {
-	var wiki *client.WikidataItem
+	var (
+		wiki           *client.WikidataItem
+		imdbID, wikiID string
+	)
 	if strings.TrimSpace(in.TmdbID) == "" {
 		ext := strings.TrimSpace(in.WikidataID)
 		if ext == "" {
@@ -333,6 +329,11 @@ func (s *TitleMappingService) Remap(ctx context.Context, from TmdbRef, in RemapI
 			return nil, err
 		}
 		in.TmdbKind, in.TmdbID, wiki = r.Ref.Kind, r.Ref.ID, r.Wiki
+		if client.WikidataQIDRe.MatchString(strings.ToUpper(ext)) {
+			wikiID = strings.ToUpper(ext)
+		} else {
+			imdbID = ext
+		}
 	}
 	to, err := ParseTmdbRef(in.TmdbKind, in.TmdbID)
 	if err != nil {
@@ -341,11 +342,7 @@ func (s *TitleMappingService) Remap(ctx context.Context, from TmdbRef, in RemapI
 	if to == from {
 		return nil, &ValidationError{Message: "the new TMDB title is the current one"}
 	}
-	if s.metadata != nil {
-		if _, err := s.metadata.RefreshDetails(ctx, to); err != nil {
-			s.log.Warn("tmdb details before remap failed", slog.String("ref", to.String()), slog.Any("err", err))
-		}
-	}
+	s.EnsureDetails(ctx, to)
 	if wiki != nil && (wiki.TmdbMovieID == to.ID || wiki.TmdbTVID == to.ID) {
 		// Store what the item says now rather than waiting for the Wikidata job.
 		if err := s.meta.SaveWikidata(ctx, to, client.WikidataIDs{WikidataID: wiki.WikidataID, IMDbID: wiki.IMDbID,
@@ -353,7 +350,11 @@ func (s *TitleMappingService) Remap(ctx context.Context, from TmdbRef, in RemapI
 			return nil, err
 		}
 	}
-	titleIDs, netflixIDs, err := s.repo.Remap(ctx, from, to)
+	session := s.writer.Session(ActorAdmin)
+	if err := s.SetManualIDs(ctx, session, to, optional(imdbID), optional(wikiID), nil); err != nil {
+		return nil, err
+	}
+	titleIDs, netflixIDs, err := session.Remap(ctx, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -362,11 +363,50 @@ func (s *TitleMappingService) Remap(ctx context.Context, from TmdbRef, in RemapI
 	}
 	s.log.Info("tmdb mapping remapped", slog.String("from", from.String()), slog.String("to", to.String()),
 		slog.Int("flixpatrol_titles", len(titleIDs)), slog.Int("netflix_titles", len(netflixIDs)))
-	s.afterChange(ctx, netflixIDs, nil, len(titleIDs) > 0)
-	if _, err := s.Sync(ctx, false, nil); err != nil {
-		return nil, err
-	}
+	session.Flush(ctx)
 	return s.Get(ctx, to)
+}
+
+// SetManualIDs stores IMDb / Wikidata IDs and Rotten Tomatoes slugs of a
+// TMDB title given by hand (nil = unchanged): TMDB, Wikidata and matching
+// never replace them; "" clears one and hands it back to them. The TMDB
+// title joins the session's follow-up, which fills cleared IDs again.
+func (s *TitleMappingService) SetManualIDs(ctx context.Context, session *MappingSession, ref TmdbRef, imdbID, wikidataID, rtID *string) error {
+	if s == nil || s.meta == nil || ref.ID == "" || (imdbID == nil && wikidataID == nil && rtID == nil) {
+		return nil
+	}
+	set := repository.TmdbIDs{}
+	clearIMDb, clearWikidata, clearRT := false, false, false
+	for _, f := range []struct {
+		v     *string
+		dst   *string
+		clear *bool
+	}{{imdbID, &set.IMDbID, &clearIMDb}, {wikidataID, &set.WikidataID, &clearWikidata}, {rtID, &set.RTID, &clearRT}} {
+		if f.v == nil {
+			continue
+		}
+		if *f.v == "" {
+			*f.clear = true
+		} else {
+			*f.dst = *f.v
+		}
+	}
+	if err := s.meta.ClearIDs(ctx, ref, clearIMDb, clearWikidata, clearRT); err != nil {
+		return err
+	}
+	if err := s.meta.SaveIDs(ctx, ref, set, repository.IDSourceManual); err != nil {
+		return err
+	}
+	session.Touch(ref)
+	return nil
+}
+
+// optional returns nil for "" (unchanged), else &v.
+func optional(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
 }
 
 func tmdbKindOfTitle(kind string) string {
@@ -392,4 +432,59 @@ func yearOf(date *string) *int {
 		return nil
 	}
 	return &y
+}
+
+// MappingEventsQuery selects mapping history: subject is "flixpatrol:<id>"
+// or "netflix:<id>", tmdb is "movie:<id>" or "tv:<id>"; empty = any.
+type MappingEventsQuery struct {
+	Subject string
+	Tmdb    string
+	Limit   int64
+}
+
+// Events lists recorded mapping changes, newest first.
+func (s *TitleMappingService) Events(ctx context.Context, q MappingEventsQuery) ([]repository.MappingEvent, error) {
+	f := repository.MappingEventFilter{Limit: q.Limit}
+	if f.Limit <= 0 {
+		f.Limit = 50
+	}
+	f.Limit = min(f.Limit, 500)
+	if q.Subject != "" {
+		kind, id, _ := strings.Cut(q.Subject, ":")
+		n, err := strconv.ParseInt(id, 10, 64)
+		if (kind != repository.SubjectFlixPatrol && kind != repository.SubjectNetflix) || err != nil || n <= 0 {
+			return nil, &ValidationError{Message: "subject must look like flixpatrol:12 or netflix:34"}
+		}
+		f.SubjectType, f.SubjectID = kind, n
+	}
+	if q.Tmdb != "" {
+		kind, id, _ := strings.Cut(q.Tmdb, ":")
+		ref, err := ParseTmdbRef(kind, id)
+		if err != nil {
+			return nil, err
+		}
+		f.Ref = ref
+	}
+	events, err := s.writer.Events(ctx, f)
+	if events == nil {
+		events = []repository.MappingEvent{}
+	}
+	return events, err
+}
+
+// TitleIDsOf returns the IMDb, RT, Wikidata and JustWatch IDs of a TMDB
+// title (empty for an unmapped title, or when unknown).
+func (s *TitleMappingService) TitleIDsOf(ctx context.Context, ref TmdbRef) repository.TitleIDs {
+	if s == nil || s.meta == nil || ref.ID == "" {
+		return repository.TitleIDs{}
+	}
+	m, err := s.meta.Get(ctx, ref)
+	if err != nil {
+		s.log.Warn("tmdb title ids failed", slog.String("ref", ref.String()), slog.Any("err", err))
+		return repository.TitleIDs{}
+	}
+	if m == nil {
+		return repository.TitleIDs{}
+	}
+	return repository.TitleIDs{IMDbID: m.IMDbID, RTID: m.RottenTomatoesID, WikidataID: m.WikidataID, JustWatchID: m.JustWatchID}
 }

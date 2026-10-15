@@ -206,6 +206,7 @@ make reports-open
 | GET/POST/PATCH/DELETE | `/api/v1/admin/...`           | Admin API: schedules, runs, stats, API keys, settings, title corrections (`PATCH /api/v1/admin/titles/:id`, `POST .../rematch`), `POST /jobs/:type/run`, `POST /backfill`, `GET /data-quality`, `GET /task-types`, and admin copies of the read routes above |
 | GET/PATCH/POST | `/api/v1/admin/netflix/titles[/:id[/rematch\|/candidates]]` | Netflix official Top 10 titles: list (`q`, `kind`, `match_status`, `missing=tmdb\|season`, `flag=cross_kind\|linked`, `sort`), detail with season titles, weeks and linked FlixPatrol titles, fix by hand (`tmdb_kind` + `tmdb_id`, or an IMDb / Wikidata ID resolved to TMDB), rematch, candidate search |
 | GET/POST | `/api/v1/admin/mappings[/sync\|/:kind/:id[/remap]]` | The TMDB-keyed mapping: every TMDB title with all its IDs and the FlixPatrol / Netflix titles mapped to it (`q`, `kind`, `flag=conflict\|cross_kind\|both\|netflix_only\|flixpatrol_only\|manual`); `sync` recomputes links now; `remap` moves everything on a TMDB title to another (by TMDB, IMDb or Wikidata ID) |
+| GET    | `/api/v1/admin/mapping-events?subject=flixpatrol:12\|netflix:34&tmdb=movie:550&limit=` | History of mapping changes, newest first: action, TMDB title before / after, source and who made it (job, `mapping.sync`, `admin`) |
 | PATCH  | `/api/v1/admin/netflix/seasons/:id`         | Set a Netflix season title's season number by hand (`{"season_number": 2}`) or hand it back (`{"auto": true}`) |
 | GET    | `/` (and any unmatched path)                | Serves `web/dist/` SPA if present           |
 
@@ -220,12 +221,13 @@ on demand from Data health or `POST /api/v1/admin/jobs/:type/run`.
 | Job | Default | What it does |
 |---|---|---|
 | `flixpatrol.top10.scrape` | your schedules | Scrapes each target's current chart, fills gaps from the last `backfill_days`, re-checks hourly for `recheck_hours` when FlixPatrol has not published the day's chart yet. A failed chart page does not stop the run (status `partial`); retries only redo failed pages. New titles are queued for matching right away. |
-| `titles.enrich` | 03:00 | Matches titles to TMDB / IMDb (FlixPatrol title page → JustWatch → TMDB), retrying unmatched ones after 1, 3, 7, then every 30 days; finds RT slugs via Wikidata SPARQL, then RT search. Titles fixed in the admin UI (`manual`) are never touched. |
-| `titles.metadata` | 04:00 | TMDB details + watch providers (charting titles every 3 days, others monthly) and Wikidata IDs (RT, Metacritic, Letterboxd). Needs `TMDB_API_KEY`. |
+| `titles.enrich` | 03:00 | Matches titles to TMDB / IMDb (FlixPatrol title page → JustWatch → TMDB), retrying unmatched ones after 1, 3, 7, then every 30 days; finds RT slugs via Wikidata SPARQL, then RT search. Titles fixed in the admin UI (`manual`) are never re-matched, but their TMDB titles get missing RT slugs. |
+| `titles.metadata` | 04:00 | TMDB details + watch providers (charting titles every 3 days, others monthly) and Wikidata IDs (RT, Metacritic, Letterboxd) of TMDB titles. Needs `TMDB_API_KEY`. |
 | `ratings.prewarm` | 15:30 | Refreshes expired ratings of titles charting in the last 3 days. |
 | `netflix.top10.import` | 21:00 | Netflix's official weekly Top 10 (global, per country, most popular); skipped when unchanged. Matches up to 400 new titles (see [TMDB mapping](#tmdb-mapping)) and maps season titles to season numbers. |
 | `netflix.titles.match` | 09:00 | Works through the backlog of unmatched Netflix titles (retrying after 1, 3, 7, then every 30 days; `manual` titles are never touched), looks up Netflix IDs of up to 200 more titles (fixing earlier name matches), then remaps seasons. Also queued by "Match again" in the admin UI. |
 | `imdb.ratings.import` | 06:00 | IMDb's daily ratings dataset for the IMDb IDs metareel knows. |
+| `mapping.refresh` | — (queued) | Follows up every mapping change (matches, fixes, remaps, shared mappings): TMDB details and Wikidata IDs of the TMDB titles now mapped to, season numbers. Run by hand, it first recomputes every linked title's mapping. |
 | `maintenance` | 02:00 | Run retention (`RUN_RETENTION_DAYS`), stale-chart alerts, SQLite optimize. |
 
 ### TMDB mapping
@@ -237,6 +239,28 @@ movie). Each TMDB title keeps every ID — IMDb, Wikidata, Rotten Tomatoes,
 Metacritic, Letterboxd, Netflix (Wikidata P1874 or Tudum's Top 10 search),
 JustWatch — and the FlixPatrol slugs and Netflix Top 10 names mapped to it
 (admin UI → TMDB mapping; public `ids` on `/titles/tmdb/:kind/:id`).
+These IDs live only on the TMDB title, so every title mapped to it shows the
+same ones, and moving a title to another TMDB title shows that title's. Each
+ID records where it came from (`ids.sources`) and is only replaced by the
+same or a stronger source: entered by hand > TMDB > Wikidata > an automatic
+match. An IMDb, Wikidata or RT ID you enter on a title is stored as its TMDB
+title's, set by hand (clear it to hand it back). Data health lists titles
+whose deciding match or fix came with another IMDb ID than their TMDB
+title's.
+
+A title's mapping is computed, never copied: matching, Netflix IDs and fixes
+by hand store **evidence** (what each source says the title is), and the
+mapping follows from the title's own evidence and its linked titles' (see
+Links). Taking a match or fix back therefore also takes back what linked
+titles had from it. "Match again" lifts a fix by hand: the title's own
+earlier match applies again (or the fix stays as its match if it has none)
+until matching finds another; "Clear and match again" forgets it.
+
+Every mapping change is written by one writer and recorded with who made it
+(a job, link sharing or the admin UI): see the History section of the title
+and mapping drawers, or `GET /api/v1/admin/mapping-events`. The follow-up
+(TMDB details, IDs, season numbers) runs in a `mapping.refresh` job, so admin
+fixes return quickly.
 
 - **Links.** A Netflix title and a FlixPatrol title with the same normalized
   name (with or without ": Season N") in the same Netflix list (Films / TV)

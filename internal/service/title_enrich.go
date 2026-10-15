@@ -9,6 +9,7 @@ import (
 	"github.com/bugsbunny-25/metareel/internal/repository"
 	"github.com/bugsbunny-25/metareel/internal/repository/sqlc"
 	"github.com/bugsbunny-25/metareel/internal/scraper/flixpatrol"
+	"github.com/bugsbunny-25/metareel/internal/tasks"
 )
 
 // TitleEnricher matches FlixPatrol titles to TMDB / IMDb / Rotten Tomatoes
@@ -18,13 +19,14 @@ import (
 type TitleEnricher struct {
 	log      *slog.Logger
 	repo     *repository.FlixPatrolRepository
+	writer   *MappingWriter
 	matcher  *TitleMatcher
 	metadata *TitleMetadataService // optional: TMDB details + Wikidata IDs
 	mapping  *TitleMappingService  // optional: shares mappings with linked Netflix titles
 }
 
-func NewTitleEnricher(log *slog.Logger, repo *repository.FlixPatrolRepository, matcher *TitleMatcher, metadata *TitleMetadataService) *TitleEnricher {
-	return &TitleEnricher{log: log, repo: repo, matcher: matcher, metadata: metadata}
+func NewTitleEnricher(log *slog.Logger, repo *repository.FlixPatrolRepository, writer *MappingWriter, matcher *TitleMatcher, metadata *TitleMetadataService) *TitleEnricher {
+	return &TitleEnricher{log: log, repo: repo, writer: writer, matcher: matcher, metadata: metadata}
 }
 
 // WithMapping links titles to Netflix's official Top 10 titles before
@@ -98,19 +100,19 @@ func (e *TitleEnricher) Run(ctx context.Context, opts EnrichOptions) (*EnrichRep
 		}
 	}
 
-	var toMatch, toRT []sqlc.Title
+	var toMatch []sqlc.Title
+	var rtRefs []repository.TmdbRef // RT lookups for these TMDB titles (besides the due backlog)
 	if len(opts.TitleIDs) > 0 {
 		titles, err := e.repo.ListTitlesByIDs(ctx, opts.TitleIDs)
 		if err != nil {
 			return rep, err
 		}
 		for _, t := range titles {
-			switch {
-			case t.MatchStatus == repository.MatchStatusManual:
-			case !t.TmdbID.Valid || t.TmdbID.String == "":
+			switch ref := repository.TitleRef(t); {
+			case ref.ID != "":
+				rtRefs = append(rtRefs, ref)
+			case t.MatchStatus != repository.MatchStatusManual:
 				toMatch = append(toMatch, t)
-			case !t.RtUrl.Valid || t.RtUrl.String == "":
-				toRT = append(toRT, t)
 			}
 		}
 	} else {
@@ -121,13 +123,17 @@ func (e *TitleEnricher) Run(ctx context.Context, opts EnrichOptions) (*EnrichRep
 	}
 	opts.logf("info", "Matching %d title(s)", len(toMatch))
 
+	// Matches are written through one session: their TMDB details, IDs and
+	// season numbers follow in one mapping refresh.
+	session := e.writer.Session(tasks.TypeTitlesEnrich)
+	defer session.Flush(ctx)
 	fetched := 0
 	for _, t := range toMatch {
 		if err := ctx.Err(); err != nil {
 			return rep, err
 		}
 		rep.Attempted++
-		updated, err := e.matchOne(ctx, t, opts, &fetched)
+		updated, err := e.matchOne(ctx, session, t, opts, &fetched)
 		if err != nil {
 			if ctx.Err() != nil {
 				return rep, ctx.Err()
@@ -138,27 +144,18 @@ func (e *TitleEnricher) Run(ctx context.Context, opts EnrichOptions) (*EnrichRep
 		}
 		if updated.MatchStatus == repository.MatchStatusMatched {
 			rep.Matched++
-			if !updated.RtUrl.Valid || updated.RtUrl.String == "" {
-				toRT = append(toRT, updated)
-			}
+			rtRefs = append(rtRefs, repository.TitleRef(updated))
 		} else {
 			rep.Unmatched++
 		}
 	}
 
-	if len(opts.TitleIDs) == 0 {
-		due, err := e.repo.ListTitlesDueForRT(ctx, limit)
-		if err != nil {
-			return rep, err
-		}
-		toRT = mergeTitles(toRT, due)
-	}
-	if err := e.findRT(ctx, toRT, opts, rep); err != nil {
+	if err := e.findRT(ctx, rtRefs, len(opts.TitleIDs) == 0, limit, opts, rep); err != nil {
 		return rep, err
 	}
 
-	if e.mapping != nil && (rep.Matched > 0 || len(opts.TitleIDs) > 0) {
-		mr, err := e.mapping.Sync(ctx, len(opts.TitleIDs) > 0, opts.RunLog)
+	if e.mapping != nil && len(opts.TitleIDs) > 0 {
+		mr, err := e.mapping.SyncIn(ctx, session, true, opts.RunLog)
 		if rep.Mapping == nil {
 			rep.Mapping = mr
 		} else if mr != nil {
@@ -181,7 +178,7 @@ func (e *TitleEnricher) Run(ctx context.Context, opts EnrichOptions) (*EnrichRep
 
 // matchOne reads (once) the FlixPatrol title page, matches the title and
 // records the attempt.
-func (e *TitleEnricher) matchOne(ctx context.Context, t sqlc.Title, opts EnrichOptions, fetched *int) (sqlc.Title, error) {
+func (e *TitleEnricher) matchOne(ctx context.Context, session *MappingSession, t sqlc.Title, opts EnrichOptions, fetched *int) (sqlc.Title, error) {
 	details := storedDetails(t)
 	if details == nil && e.matcher.fetcher != nil {
 		delay := opts.RequestDelay
@@ -231,7 +228,7 @@ func (e *TitleEnricher) matchOne(ctx context.Context, t sqlc.Title, opts EnrichO
 		res.TmdbID, res.ImdbID, res.JustWatchID = m.TmdbID, m.ImdbID, m.JustWatchID
 		res.Source, res.MatchedName, res.MatchedYear = m.Source, m.Title, m.Year
 	}
-	updated, err := e.repo.SaveTitleMatch(ctx, t.ID, res)
+	updated, err := session.MatchTitle(ctx, t.ID, res)
 	if repository.IsNoRows(err) {
 		return t, nil // became manual meanwhile
 	}
@@ -242,73 +239,94 @@ func (e *TitleEnricher) matchOne(ctx context.Context, t sqlc.Title, opts EnrichO
 		opts.logf("warn", "%s: no confident match for %s; retry %s", t.Slug, in.QueryDescription(), res.RetryAfter)
 		return updated, nil
 	}
+	// TMDB details, watch providers and IMDb / Wikidata IDs follow in the
+	// mapping refresh.
 	opts.logf("info", "%s: matched %s %q (%d), TMDB %s via %s", t.Slug, m.Kind, m.Title, m.Year, m.TmdbID, m.Source)
-
-	// Details, watch providers and IMDb / Wikidata IDs straight away.
-	if e.metadata != nil {
-		ref := repository.TmdbRef{Kind: tmdbKindOf(m.Kind), ID: m.TmdbID}
-		d, err := e.metadata.RefreshDetails(ctx, ref)
-		if err != nil {
-			e.log.Warn("tmdb details after match failed", slog.String("slug", t.Slug), slog.Any("err", err))
-		} else if d != nil {
-			if err := e.repo.SaveTitleExternalIDs(ctx, t.ID, d.IMDbID, d.WikidataID, ""); err != nil {
-				return updated, err
-			}
-		}
-	}
 	return updated, nil
 }
 
-// findRT looks up missing Rotten Tomatoes slugs: one Wikidata batch for all
-// titles, then RT's search for the rest, recording each attempt's backoff.
-func (e *TitleEnricher) findRT(ctx context.Context, titles []sqlc.Title, opts EnrichOptions, rep *EnrichReport) error {
-	if len(titles) == 0 {
+// findRT looks up missing Rotten Tomatoes slugs of TMDB titles (refs, plus
+// the due backlog when backlog): one Wikidata batch for all, then RT's
+// search for the rest, recording each attempt's backoff on the TMDB title.
+func (e *TitleEnricher) findRT(ctx context.Context, refs []repository.TmdbRef, backlog bool, limit int64, opts EnrichOptions, rep *EnrichReport) error {
+	if e.metadata == nil {
 		return nil
 	}
-	wd := map[string]string{} // ref → RT slug from Wikidata
-	if e.metadata != nil {
-		refs := make([]repository.TmdbRef, 0, len(titles))
-		for _, t := range titles {
-			refs = append(refs, repository.TmdbRef{Kind: tmdbKindOf(flixpatrol.TitleKind(t.Kind)), ID: t.TmdbID.String})
-		}
-		found, err := e.metadata.LookupWikidata(ctx, refs)
-		if err != nil {
-			opts.logf("warn", "Wikidata lookup failed: %v; falling back to Rotten Tomatoes search", err)
-		}
-		for ref, ids := range found {
-			if ids.RottenTomato != "" {
-				wd[ref] = ids.RottenTomato
+	var due []repository.RTDue
+	seen := map[repository.TmdbRef]bool{}
+	add := func(list []repository.RTDue) {
+		for _, d := range list {
+			if !seen[d.Ref] {
+				seen[d.Ref] = true
+				due = append(due, d)
 			}
 		}
 	}
+	for _, ref := range refs {
+		if seen[ref] {
+			continue
+		}
+		ref := ref
+		list, err := e.metadata.RefsDueForRT(ctx, &ref, 1)
+		if err != nil {
+			return err
+		}
+		add(list)
+	}
+	if backlog {
+		list, err := e.metadata.RefsDueForRT(ctx, nil, limit)
+		if err != nil {
+			return err
+		}
+		add(list)
+	}
+	if len(due) == 0 {
+		return nil
+	}
+	wd := map[string]string{} // ref → RT slug from Wikidata
+	lookup := make([]repository.TmdbRef, 0, len(due))
+	for _, d := range due {
+		lookup = append(lookup, d.Ref)
+	}
+	found, err := e.metadata.LookupWikidata(ctx, lookup)
+	if err != nil {
+		opts.logf("warn", "Wikidata lookup failed: %v; falling back to Rotten Tomatoes search", err)
+	}
+	for ref, ids := range found {
+		if ids.RottenTomato != "" {
+			wd[ref] = ids.RottenTomato
+		}
+	}
 
-	for _, t := range titles {
+	for _, d := range due {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		rep.RTChecked++
-		kind := flixpatrol.TitleKind(t.Kind)
-		ref := repository.TmdbRef{Kind: tmdbKindOf(kind), ID: t.TmdbID.String}
-		slug, from := wd[ref.String()], "wikidata"
-		if slug == "" {
-			name, year := t.Name, flixpatrol.YearFromSlug(t.Slug)
-			if t.MatchedName.Valid && t.MatchedYear.Valid {
-				name, year = t.MatchedName.String, int(t.MatchedYear.Int64)
-			}
-			var err error
-			slug, err = e.matcher.FindRTSlug(ctx, RTQuery{Slug: t.Slug, Name: name, Year: year, Kind: kind, TmdbID: t.TmdbID.String, From: "match"})
-			if err != nil {
-				continue // transient: retry on the next run, no backoff recorded
-			}
-			from = "search"
+		kind := flixpatrol.TitleKind(titleKindOf(d.Ref.Kind))
+		slug, from := wd[d.Ref.String()], "wikidata"
+		if slug != "" {
+			rep.RTFound++ // stored with the Wikidata IDs
+			opts.logf("info", "%s: Rotten Tomatoes %s (via %s)", d.Ref, slug, from)
+			continue
 		}
-		retry := retryAfter(t.RtAttempts + 1)
-		if err := e.repo.SaveTitleRTAttempt(ctx, t.ID, slug, retry); err != nil {
+		name, year := d.Name, flixpatrol.YearFromSlug(d.Slug)
+		switch {
+		case d.MatchedName != "" && d.MatchedYear > 0:
+			name, year = d.MatchedName, d.MatchedYear
+		case d.Title != "":
+			name, year = d.Title, d.Year
+		}
+		slug, err := e.matcher.FindRTSlug(ctx, RTQuery{Slug: d.Slug, Name: name, Year: year, Kind: kind, TmdbID: d.Ref.ID, From: "match"})
+		if err != nil {
+			continue // transient: retry on the next run, no backoff recorded
+		}
+		if err := e.metadata.RecordRTAttempt(ctx, d.Ref, slug, retryAfter(d.Attempts+1)); err != nil {
 			return err
 		}
 		if slug != "" {
 			rep.RTFound++
-			opts.logf("info", "%s: Rotten Tomatoes %s (via %s)", t.Slug, slug, from)
+			opts.logf("info", "%s (%s): Rotten Tomatoes %s (via search)", d.Ref, d.Slug, slug)
 		}
 	}
 	return nil
@@ -328,18 +346,4 @@ func storedDetails(t sqlc.Title) *flixpatrol.TitleDetails {
 		d.Year = flixpatrol.YearFromSlug(t.Slug)
 	}
 	return d
-}
-
-func mergeTitles(a, b []sqlc.Title) []sqlc.Title {
-	seen := make(map[int64]bool, len(a))
-	for _, t := range a {
-		seen[t.ID] = true
-	}
-	for _, t := range b {
-		if !seen[t.ID] {
-			a = append(a, t)
-			seen[t.ID] = true
-		}
-	}
-	return a
 }

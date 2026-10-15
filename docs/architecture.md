@@ -147,12 +147,13 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | Task type | Service | Notes |
 |---|---|---|
 | `flixpatrol.top10.scrape` | `FlixPatrolJob` | Charts only; tags the new TV rankings with seasons, enqueues `titles.enrich` for new titles and hourly re-checks for unpublished charts |
-| `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Mapping sync (linked Netflix titles' mappings first), matching with backoff, RT via Wikidata then search, mapping sync; then seasons |
+| `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Mapping sync (linked Netflix titles' mappings first), matching with backoff, RT via Wikidata then search (per TMDB title, backoff in `tmdb_titles.next_rt_at`), mapping sync; then seasons |
 | `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists) + watch providers, Wikidata IDs; then seasons |
 | `ratings.prewarm` | `RatingsService.Prewarm` | Charting titles' expired ratings |
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
 | `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz` |
+| `mapping.refresh` | `TitleMappingService.Refresh` | Queued by the mapping writer after mapping changes (payload: `tmdb_refs`, `netflix_title_ids`; not unique): TMDB details (skipped if fetched within 24 h and an IMDb ID is known) + Wikidata IDs (titles never looked up; the metadata job rechecks the rest) of the TMDB titles now mapped to, seasons of the Netflix titles that changed or sit on those TMDB titles, ranking season tags. Run by hand (empty payload) it first runs a mapping sync |
 | `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, `PRAGMA optimize` |
 
 FlixPatrol fetches from every job go through one `flixpatrol.SerialFetcher`:
@@ -178,12 +179,56 @@ rematch queues `netflix.titles.match` for it.
 TMDB titles (`tmdb_titles`) are the hub of one mapping: `titles.kind` +
 `tmdb_id` and `netflix_titles.tmdb_kind` + `tmdb_id` point at them
 (`netflix_titles.kind` stays Netflix's list, which can differ). Each TMDB
-title holds every external ID: IMDb, Wikidata, RT, Metacritic, Letterboxd,
-`netflix_id` (Wikidata P1874 / Tudum) and `justwatch_id`;
-`ConsolidateTmdbTitleIDs` fills gaps from the FlixPatrol titles' matches.
+title is the only home of external IDs: IMDb, Wikidata, RT, Metacritic,
+Letterboxd, `netflix_id` (Wikidata P1874 / Tudum) and `justwatch_id`; titles
+and Netflix titles read them through their mapping (the old per-title
+columns are kept as `legacy_*` for one release, unread). Each ID has a
+`*_source` column (`manual` > `tmdb` > `wikidata` > `match`), and every write
+goes through one query (`saveTmdbIDs` → `SaveTmdbIDs`) that only replaces an
+ID from the same or a weaker source: TMDB details, Wikidata, matching
+(IDs a JustWatch match came with) and ratings (IDs found while fetching).
+IMDb / Wikidata / RT IDs given by hand (FlixPatrol / Netflix title PATCH,
+remap by IMDb or Wikidata ID) go to `TitleMappingService.SetManualIDs` as
+`manual`; `""` clears one and hands it back to the next refresh. The RT
+lookup (`titles.enrich`) works per TMDB title (`tmdb_titles.rt_attempts`,
+`next_rt_at`), so manual titles get slugs too.
+`GET /admin/data-quality` lists mapped titles whose deciding evidence came
+with an IMDb ID other than their TMDB title's (`imdb_mismatches`, with the
+evidence kind and source).
 
-`TitleMappingService.Sync` (run by the matching jobs, admin fixes and
-`POST /admin/mappings/sync`):
+**Evidence.** A title's mapping is computed, never copied
+(`service/mapping_compute.go`). Writers store `mapping_evidence` — one row
+per title and kind: `manual` (fixed by hand, possibly as unmapped),
+`netflix_id` (a Netflix title's Netflix ID), `match` (automatic match, with
+the IMDb ID it came with and, for Netflix, the FlixPatrol title it went
+through). `computeMapping` takes the title's strongest evidence and that of
+the titles directly linked to it (see Sharing): a fix by hand on the title
+stands; otherwise the group's anchor wins (`match_source`
+`flixpatrol_title` / `netflix_title` when it is another title's), else the
+title's own evidence, else nothing (a title that had a mapping becomes
+`pending`). Each write recomputes the titles it touches and their linked
+titles in the same transaction, so withdrawing evidence (rematch, clear)
+withdraws what was shared from it with no undo bookkeeping. Rematch without
+clear deletes the `manual` evidence, so the title's own earlier match applies
+again; a fix that is all the title has is kept as `match` evidence instead,
+so the mapping stays until matching finds another.
+
+**One writer.** Every change to `titles.tmdb_id` / `netflix_titles.tmdb_id`
+goes through `MappingWriter` (`service/mapping_writer.go`) and its
+repository methods (`repository/mapping_write_repo.go`): automatic matches,
+Netflix-ID matches, admin fixes, rematch / clear, sharing over links,
+withdrawing shared mappings and remaps. Each write records a
+`mapping_events` row (action, TMDB title before / after, source, actor = job
+type, `mapping.sync` or `admin`) in the same transaction
+(`GET /admin/mapping-events`). Writes happen in a `MappingSession` per job or
+request; the session collects the TMDB titles newly mapped to and the
+Netflix titles that changed and, on `Flush`, queues one `mapping.refresh`
+for them. Inline work stays database-only (evidence + sync); admin fixes also
+fetch the target's TMDB details when none are stored, so the response shows
+the title. Without a queue (tests), the refresh runs inline.
+
+`TitleMappingService.Sync` (run by the matching jobs, admin fixes,
+`mapping.refresh` and `POST /admin/mappings/sync`; database only):
 
 1. **Links** (`title_links`): `ComputeTitleLinks` pairs a Netflix title with
    a FlixPatrol title of the same normalized name (chart or page name, with or
@@ -195,11 +240,13 @@ title holds every external ID: IMDb, Wikidata, RT, Metacritic, Letterboxd,
    revival fills neither); the anchor of that set is a title fixed by hand, else a Netflix
    title mapped by its Netflix ID, else FlixPatrol's match, else Netflix's.
    A non-manual title takes the anchor's TMDB kind + ID (`match_source`
-   `flixpatrol_title` / `netflix_title`); up to 3 passes per sync let it reach
-   unmatched titles further along. A set whose deciding tier disagrees is a
-   conflict and left alone. Netflix titles that changed get their seasons
-   remapped. Clearing a title's match ("Clear and rematch") also clears what
-   linked titles took from it.
+   `flixpatrol_title` / `netflix_title`). A set whose deciding tier disagrees
+   is a conflict (counted in the sync report and listed under TMDB mapping →
+   Conflicts): each title keeps its own evidence. Sync recomputes every
+   linked title (and titles that lost a link) from evidence; a title that
+   loses a mapping it had taken is recorded as `unshare` and falls back to its
+   own. Netflix titles that changed get their seasons remapped by the
+   follow-up `mapping.refresh`.
 
 Netflix title matching order (`NetflixImporter.matchTitles`): mapping sync →
 Netflix IDs (`resolveNetflixIDs`: Tudum's Top 10 search by show title, an
@@ -329,7 +376,7 @@ sequenceDiagram
     participant JW as JustWatch
     participant RT as RT Algolia index
 
-    Svc->>DB: title_ratings (stored JustWatch ID, RT slug, name, year)<br/>+ titles with this TMDB ID (name, imdb_id, rt_url)
+    Svc->>DB: title_ratings (stored JustWatch ID, RT slug, name, year)<br/>+ the TMDB title's IMDb / RT IDs + titles with this TMDB ID (name)
     opt MDBLIST_API_KEY set
         Svc->>MDB: GET /tmdb/{movie|show}/{id}
         MDB-->>Svc: title, year, imdb_id, all ratings (+ RT link → slug hint)
@@ -339,11 +386,11 @@ sequenceDiagram
     end
     Svc->>JW: node(stored id), else search name → match TMDB ID
     JW-->>Svc: imdb score/votes, tomatoMeter, certifiedFresh, tmdb, jwRating
-    Svc->>RT: search by slug (stored / titles.rt_url / MDBList link) → exact vanity hit
+    Svc->>RT: search by slug (stored / tmdb_titles.rt_id / MDBList link) → exact vanity hit
     alt no slug hit
         Svc->>RT: Seerr-style search: title similarity × year closeness
     end
-    Svc->>DB: upsert title_ratings; replace each successful provider's sources;<br/>back-fill titles.imdb_id / rt_url
+    Svc->>DB: upsert title_ratings; replace each successful provider's sources;<br/>save found IMDb / RT IDs on tmdb_titles (source match)
 ```
 
 Headline values: IMDb from the preferred provider (then the other); RT
@@ -393,9 +440,11 @@ Added since the diagram below:
 | Table | Purpose |
 |---|---|
 | `chart_snapshots` | One row per stored chart (date × country × provider × category): entry count, content `signature`, `scraped_at`, `changed_at` |
-| `titles` (new columns) | `match_status` (pending / matched / unmatched / manual), `match_source`, `matched_name/year`, `match_attempts`, `next_match_at`, `rt_attempts`, `next_rt_at`, `justwatch_id`, `wikidata_id`, `fp_*` (FlixPatrol title page) |
-| `tmdb_titles` | TMDB metadata per TMDB title + every external ID: Wikidata (RT, Metacritic, Letterboxd), `netflix_id`, `justwatch_id` |
+| `titles` (new columns) | `match_status` (pending / matched / unmatched / manual), `match_source`, `matched_name/year`, `match_attempts`, `next_match_at`, `fp_*` (FlixPatrol title page); `legacy_*` = its former ID / RT backoff columns (unread, dropped next release) |
+| `tmdb_titles` | TMDB metadata per TMDB title + every external ID (IMDb, Wikidata, RT, Metacritic, Letterboxd, `netflix_id`, `justwatch_id`), each with a `*_source` (manual / tmdb / wikidata / match); RT search backoff (`rt_attempts`, `next_rt_at`) |
 | `title_links` | Netflix title ↔ FlixPatrol title that are the same title; linked titles share one TMDB mapping |
+| `mapping_events` | History of every mapping change (subject, action, TMDB title before / after, source, actor), written with the change |
+| `mapping_evidence` | What each source says a title is (subject, kind manual / netflix_id / match, TMDB title, source, IMDb ID it came with); mappings are computed from it |
 | `tmdb_watch_providers` | Watch providers per title × country × monetization |
 | `netflix_titles`, `netflix_top10_global`, `netflix_top10_countries`, `netflix_most_popular` | Netflix's official Top 10 and their TMDB matches (`kind` = Netflix's list, `tmdb_kind` = TMDB namespace, `netflix_id` + `netflix_id_checked_at` from Tudum's search) |
 | `netflix_seasons` | One row per Netflix season title: `season_number`, `season_source` (parsed / tmdb_name / number / tmdb_air_date / tmdb_single / manual), the season's own `netflix_id` |
@@ -412,9 +461,9 @@ erDiagram
         TEXT slug UK "flixpatrol slug e.g. roommates-2026"
         TEXT name
         TEXT kind "movie | tv_show"
-        TEXT tmdb_id
-        TEXT imdb_id
-        TEXT rt_url
+        TEXT tmdb_id "computed from mapping_evidence"
+        TEXT legacy_imdb_id "unread; IDs live on tmdb_titles"
+        TEXT legacy_rt_url "unread; IDs live on tmdb_titles"
         DATETIME created_at
         DATETIME updated_at
     }
@@ -488,7 +537,7 @@ erDiagram
 
 Key constraints:
 - `rankings` has a unique index on `(ranked_on, country, streaming_provider, category, rank)` — upserts replace stale title references cleanly.
-- `titles` is keyed on `slug` (FlixPatrol URL slug). TMDB/IMDb IDs are filled in lazily and only overwrite `NULL`.
+- `titles` is keyed on `slug` (FlixPatrol URL slug). Its TMDB ID is computed from evidence; other IDs live on `tmdb_titles` and are only replaced by an equal or stronger source.
 - `task_schedules.name` is unique — the admin API returns `409 Conflict` on duplicates.
 - SQLite connection pool is capped at 1 (`SetMaxOpenConns(1)`) to serialize writes; WAL mode allows concurrent reads alongside the single writer.
 
@@ -652,7 +701,9 @@ metareel/
 │   │   ├── netflix_import.go      # Netflix official Top 10 import + matching (netflix.titles.match)
 │   │   ├── netflix_admin.go       # Netflix title / season mapping review (admin)
 │   │   ├── netflix_ids.go         # Netflix IDs from Tudum's search, Netflix ID → TMDB
-│   │   ├── title_mapping.go       # TMDB-keyed mapping: links + sharing mappings (sync)
+│   │   ├── mapping_writer.go      # the only writer of mappings: evidence, sessions, events, refresh queue
+│   │   ├── mapping_compute.go     # a title's mapping from its and its linked titles' evidence
+│   │   ├── title_mapping.go       # TMDB-keyed mapping: links + sharing (sync), mapping.refresh
 │   │   ├── title_mapping_admin.go # mapping page: list, IDs per TMDB title, remap
 │   │   ├── seasons.go             # season numbers: Netflix season titles, FlixPatrol TV rankings
 │   │   ├── imdb_import.go         # IMDb ratings dataset import

@@ -10,8 +10,7 @@ import (
 
 func TestDecayAndSimilarity(t *testing.T) {
 	db := newTestDB(t)
-	flix := repository.NewFlixPatrolRepository(db)
-	seed(t, flix,
+	seed(t, db,
 		[]seedTitle{{Slug: "a", Name: "A", Kind: "movie", TmdbID: "1"}, {Slug: "b", Name: "B", Kind: "movie", TmdbID: "2"}},
 		[]seedRanking{
 			{"b", "2026-09-25", "US", "netflix", "movies", 1}, // the chart's first stored date: no debuts counted

@@ -12,24 +12,47 @@ import (
 	"time"
 )
 
-const clearNetflixTitleMatch = `-- name: ClearNetflixTitleMatch :one
+const applyNetflixMapping = `-- name: ApplyNetflixMapping :one
 UPDATE netflix_titles
-SET tmdb_kind = NULL, tmdb_id = NULL, imdb_id = NULL, title_id = NULL, match_status = 'pending', match_source = NULL,
-    match_attempts = 0, next_match_at = NULL, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
-RETURNING id, show_title, kind, tmdb_id, imdb_id, title_id, match_status, match_source, match_attempts, next_match_at, created_at, updated_at, tmdb_kind, netflix_id, netflix_id_checked_at
+SET tmdb_kind     = ?1,
+    tmdb_id       = ?2,
+    title_id      = ?3,
+    match_status  = CASE WHEN CAST(?4 AS TEXT) = '' THEN match_status ELSE ?4 END,
+    match_source  = ?5,
+    next_match_at = CASE WHEN CAST(?4 AS TEXT) = 'matched' OR CAST(?4 AS TEXT) = 'manual'
+                         OR CAST(?4 AS TEXT) = 'pending' THEN NULL ELSE next_match_at END,
+    updated_at    = CURRENT_TIMESTAMP
+WHERE id = ?6
+RETURNING id, show_title, kind, tmdb_id, legacy_imdb_id, title_id, match_status, match_source, match_attempts, next_match_at, created_at, updated_at, tmdb_kind, netflix_id, netflix_id_checked_at
 `
 
-// Forgets a title's IDs and queues it for a fresh match.
-func (q *Queries) ClearNetflixTitleMatch(ctx context.Context, id int64) (NetflixTitle, error) {
-	row := q.db.QueryRowContext(ctx, clearNetflixTitleMatch, id)
+type ApplyNetflixMappingParams struct {
+	TmdbKind    sql.NullString `json:"tmdb_kind"`
+	TmdbID      sql.NullString `json:"tmdb_id"`
+	TitleID     sql.NullInt64  `json:"title_id"`
+	MatchStatus string         `json:"match_status"`
+	MatchSource sql.NullString `json:"match_source"`
+	ID          int64          `json:"id"`
+}
+
+// Stores a Netflix title's computed mapping (see ApplyTitleMapping); title_id
+// is the FlixPatrol title it was matched through, if any.
+func (q *Queries) ApplyNetflixMapping(ctx context.Context, arg ApplyNetflixMappingParams) (NetflixTitle, error) {
+	row := q.db.QueryRowContext(ctx, applyNetflixMapping,
+		arg.TmdbKind,
+		arg.TmdbID,
+		arg.TitleID,
+		arg.MatchStatus,
+		arg.MatchSource,
+		arg.ID,
+	)
 	var i NetflixTitle
 	err := row.Scan(
 		&i.ID,
 		&i.ShowTitle,
 		&i.Kind,
 		&i.TmdbID,
-		&i.ImdbID,
+		&i.LegacyImdbID,
 		&i.TitleID,
 		&i.MatchStatus,
 		&i.MatchSource,
@@ -155,7 +178,7 @@ func (q *Queries) GetNetflixSeason(ctx context.Context, id int64) (NetflixSeason
 
 const getNetflixTitle = `-- name: GetNetflixTitle :one
 SELECT
-    n.id, n.show_title, n.kind, n.tmdb_id, n.imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at, n.tmdb_kind, n.netflix_id, n.netflix_id_checked_at,
+    n.id, n.show_title, n.kind, n.tmdb_id, n.legacy_imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at, n.tmdb_kind, n.netflix_id, n.netflix_id_checked_at,
     CAST(COALESCE(NULLIF(max(
         COALESCE((SELECT MAX(g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id), ''),
         COALESCE((SELECT MAX(c.week) FROM netflix_top10_countries c WHERE c.netflix_title_id = n.id), '')), ''), '') AS TEXT) AS last_week,
@@ -167,6 +190,7 @@ SELECT
     (SELECT COUNT(*) FROM title_links l WHERE l.netflix_title_id = n.id) AS flixpatrol_links,
     tm.title AS tmdb_title,
     tm.release_date AS tmdb_release_date,
+    tm.imdb_id AS tmdb_imdb_id,
     CAST(COALESCE(t.slug, '') AS TEXT) AS flixpatrol_slug,
     CAST(COALESCE(t.name, '') AS TEXT) AS flixpatrol_name
 FROM netflix_titles n
@@ -185,6 +209,7 @@ type GetNetflixTitleRow struct {
 	FlixpatrolLinks int64          `json:"flixpatrol_links"`
 	TmdbTitle       sql.NullString `json:"tmdb_title"`
 	TmdbReleaseDate sql.NullString `json:"tmdb_release_date"`
+	TmdbImdbID      sql.NullString `json:"tmdb_imdb_id"`
 	FlixpatrolSlug  string         `json:"flixpatrol_slug"`
 	FlixpatrolName  string         `json:"flixpatrol_name"`
 }
@@ -197,7 +222,7 @@ func (q *Queries) GetNetflixTitle(ctx context.Context, id int64) (GetNetflixTitl
 		&i.NetflixTitle.ShowTitle,
 		&i.NetflixTitle.Kind,
 		&i.NetflixTitle.TmdbID,
-		&i.NetflixTitle.ImdbID,
+		&i.NetflixTitle.LegacyImdbID,
 		&i.NetflixTitle.TitleID,
 		&i.NetflixTitle.MatchStatus,
 		&i.NetflixTitle.MatchSource,
@@ -216,6 +241,7 @@ func (q *Queries) GetNetflixTitle(ctx context.Context, id int64) (GetNetflixTitl
 		&i.FlixpatrolLinks,
 		&i.TmdbTitle,
 		&i.TmdbReleaseDate,
+		&i.TmdbImdbID,
 		&i.FlixpatrolSlug,
 		&i.FlixpatrolName,
 	)
@@ -223,7 +249,7 @@ func (q *Queries) GetNetflixTitle(ctx context.Context, id int64) (GetNetflixTitl
 }
 
 const getNetflixTitleRow = `-- name: GetNetflixTitleRow :one
-SELECT id, show_title, kind, tmdb_id, imdb_id, title_id, match_status, match_source, match_attempts, next_match_at, created_at, updated_at, tmdb_kind, netflix_id, netflix_id_checked_at FROM netflix_titles WHERE id = ?
+SELECT id, show_title, kind, tmdb_id, legacy_imdb_id, title_id, match_status, match_source, match_attempts, next_match_at, created_at, updated_at, tmdb_kind, netflix_id, netflix_id_checked_at FROM netflix_titles WHERE id = ?
 `
 
 func (q *Queries) GetNetflixTitleRow(ctx context.Context, id int64) (NetflixTitle, error) {
@@ -234,7 +260,7 @@ func (q *Queries) GetNetflixTitleRow(ctx context.Context, id int64) (NetflixTitl
 		&i.ShowTitle,
 		&i.Kind,
 		&i.TmdbID,
-		&i.ImdbID,
+		&i.LegacyImdbID,
 		&i.TitleID,
 		&i.MatchStatus,
 		&i.MatchSource,
@@ -657,6 +683,91 @@ func (q *Queries) ListNetflixSeasonsForTitle(ctx context.Context, netflixTitleID
 	return items, nil
 }
 
+const listNetflixTitleIDsOnRef = `-- name: ListNetflixTitleIDsOnRef :many
+SELECT id FROM netflix_titles WHERE tmdb_kind = ?1 AND tmdb_id = ?2 ORDER BY id
+`
+
+type ListNetflixTitleIDsOnRefParams struct {
+	TmdbKind sql.NullString `json:"tmdb_kind"`
+	TmdbID   sql.NullString `json:"tmdb_id"`
+}
+
+func (q *Queries) ListNetflixTitleIDsOnRef(ctx context.Context, arg ListNetflixTitleIDsOnRefParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listNetflixTitleIDsOnRef, arg.TmdbKind, arg.TmdbID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNetflixTitleRowsByIDs = `-- name: ListNetflixTitleRowsByIDs :many
+SELECT id, show_title, kind, tmdb_id, legacy_imdb_id, title_id, match_status, match_source, match_attempts, next_match_at, created_at, updated_at, tmdb_kind, netflix_id, netflix_id_checked_at FROM netflix_titles WHERE id IN (/*SLICE:ids*/?) ORDER BY id
+`
+
+func (q *Queries) ListNetflixTitleRowsByIDs(ctx context.Context, ids []int64) ([]NetflixTitle, error) {
+	query := listNetflixTitleRowsByIDs
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NetflixTitle{}
+	for rows.Next() {
+		var i NetflixTitle
+		if err := rows.Scan(
+			&i.ID,
+			&i.ShowTitle,
+			&i.Kind,
+			&i.TmdbID,
+			&i.LegacyImdbID,
+			&i.TitleID,
+			&i.MatchStatus,
+			&i.MatchSource,
+			&i.MatchAttempts,
+			&i.NextMatchAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TmdbKind,
+			&i.NetflixID,
+			&i.NetflixIDCheckedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNetflixTitleWeeks = `-- name: ListNetflixTitleWeeks :many
 SELECT g.week FROM netflix_top10_global g WHERE g.netflix_title_id = ?1
 UNION
@@ -690,7 +801,7 @@ func (q *Queries) ListNetflixTitleWeeks(ctx context.Context, id int64) ([]string
 const listNetflixTitles = `-- name: ListNetflixTitles :many
 
 SELECT
-    n.id, n.show_title, n.kind, n.tmdb_id, n.imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at, n.tmdb_kind, n.netflix_id, n.netflix_id_checked_at,
+    n.id, n.show_title, n.kind, n.tmdb_id, n.legacy_imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at, n.tmdb_kind, n.netflix_id, n.netflix_id_checked_at,
     CAST(COALESCE(NULLIF(max(
         COALESCE((SELECT MAX(g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id), ''),
         COALESCE((SELECT MAX(c.week) FROM netflix_top10_countries c WHERE c.netflix_title_id = n.id), '')), ''), '') AS TEXT) AS last_week,
@@ -702,6 +813,7 @@ SELECT
     (SELECT COUNT(*) FROM title_links l WHERE l.netflix_title_id = n.id) AS flixpatrol_links,
     tm.title AS tmdb_title,
     tm.release_date AS tmdb_release_date,
+    tm.imdb_id AS tmdb_imdb_id,
     CAST(COALESCE(t.slug, '') AS TEXT) AS flixpatrol_slug,
     CAST(COALESCE(t.name, '') AS TEXT) AS flixpatrol_name
 FROM netflix_titles n
@@ -753,6 +865,7 @@ type ListNetflixTitlesRow struct {
 	FlixpatrolLinks int64          `json:"flixpatrol_links"`
 	TmdbTitle       sql.NullString `json:"tmdb_title"`
 	TmdbReleaseDate sql.NullString `json:"tmdb_release_date"`
+	TmdbImdbID      sql.NullString `json:"tmdb_imdb_id"`
 	FlixpatrolSlug  string         `json:"flixpatrol_slug"`
 	FlixpatrolName  string         `json:"flixpatrol_name"`
 }
@@ -785,7 +898,7 @@ func (q *Queries) ListNetflixTitles(ctx context.Context, arg ListNetflixTitlesPa
 			&i.NetflixTitle.ShowTitle,
 			&i.NetflixTitle.Kind,
 			&i.NetflixTitle.TmdbID,
-			&i.NetflixTitle.ImdbID,
+			&i.NetflixTitle.LegacyImdbID,
 			&i.NetflixTitle.TitleID,
 			&i.NetflixTitle.MatchStatus,
 			&i.NetflixTitle.MatchSource,
@@ -804,6 +917,7 @@ func (q *Queries) ListNetflixTitles(ctx context.Context, arg ListNetflixTitlesPa
 			&i.FlixpatrolLinks,
 			&i.TmdbTitle,
 			&i.TmdbReleaseDate,
+			&i.TmdbImdbID,
 			&i.FlixpatrolSlug,
 			&i.FlixpatrolName,
 		); err != nil {
@@ -821,7 +935,7 @@ func (q *Queries) ListNetflixTitles(ctx context.Context, arg ListNetflixTitlesPa
 }
 
 const listNetflixTitlesForMatch = `-- name: ListNetflixTitlesForMatch :many
-SELECT n.id, n.show_title, n.kind, n.tmdb_id, n.imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at, n.tmdb_kind, n.netflix_id, n.netflix_id_checked_at,
+SELECT n.id, n.show_title, n.kind, n.tmdb_id, n.legacy_imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at, n.tmdb_kind, n.netflix_id, n.netflix_id_checked_at,
        CAST(COALESCE(
            (SELECT MIN(g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id),
            (SELECT MIN(c.week) FROM netflix_top10_countries c WHERE c.netflix_title_id = n.id),
@@ -861,7 +975,7 @@ func (q *Queries) ListNetflixTitlesForMatch(ctx context.Context, ids []int64) ([
 			&i.NetflixTitle.ShowTitle,
 			&i.NetflixTitle.Kind,
 			&i.NetflixTitle.TmdbID,
-			&i.NetflixTitle.ImdbID,
+			&i.NetflixTitle.LegacyImdbID,
 			&i.NetflixTitle.TitleID,
 			&i.NetflixTitle.MatchStatus,
 			&i.NetflixTitle.MatchSource,
@@ -1098,6 +1212,47 @@ func (q *Queries) ListTmdbTVSeasons(ctx context.Context) ([]ListTmdbTVSeasonsRow
 	return items, nil
 }
 
+const recordNetflixMatchAttempt = `-- name: RecordNetflixMatchAttempt :exec
+UPDATE netflix_titles
+SET match_status   = CASE WHEN CAST(?1 AS INTEGER) = 1 THEN match_status ELSE 'unmatched' END,
+    match_attempts = match_attempts + 1,
+    next_match_at  = CASE WHEN CAST(?2 AS TEXT) = '' THEN NULL
+                          ELSE datetime('now', CAST(?2 AS TEXT)) END,
+    updated_at     = CURRENT_TIMESTAMP
+WHERE id = ?3 AND match_status <> 'manual'
+`
+
+type RecordNetflixMatchAttemptParams struct {
+	Found      int64  `json:"found"`
+	RetryAfter string `json:"retry_after"`
+	ID         int64  `json:"id"`
+}
+
+// One automatic matching attempt of a Netflix title (see
+// RecordTitleMatchAttempt).
+func (q *Queries) RecordNetflixMatchAttempt(ctx context.Context, arg RecordNetflixMatchAttemptParams) error {
+	_, err := q.db.ExecContext(ctx, recordNetflixMatchAttempt, arg.Found, arg.RetryAfter, arg.ID)
+	return err
+}
+
+const requeueNetflixTitleMatch = `-- name: RequeueNetflixTitleMatch :exec
+UPDATE netflix_titles
+SET next_match_at  = NULL,
+    match_attempts = CASE WHEN CAST(?1 AS INTEGER) = 1 THEN 0 ELSE match_attempts END,
+    updated_at     = CURRENT_TIMESTAMP
+WHERE id = ?2
+`
+
+type RequeueNetflixTitleMatchParams struct {
+	Clear int64 `json:"clear"`
+	ID    int64 `json:"id"`
+}
+
+func (q *Queries) RequeueNetflixTitleMatch(ctx context.Context, arg RequeueNetflixTitleMatchParams) error {
+	_, err := q.db.ExecContext(ctx, requeueNetflixTitleMatch, arg.Clear, arg.ID)
+	return err
+}
+
 const resetNetflixSeason = `-- name: ResetNetflixSeason :one
 UPDATE netflix_seasons
 SET season_number = NULL, season_source = NULL, updated_at = CURRENT_TIMESTAMP
@@ -1120,71 +1275,6 @@ func (q *Queries) ResetNetflixSeason(ctx context.Context, id int64) (NetflixSeas
 		&i.NetflixID,
 	)
 	return i, err
-}
-
-const resetNetflixTitleMatch = `-- name: ResetNetflixTitleMatch :one
-UPDATE netflix_titles
-SET match_status  = CASE WHEN COALESCE(tmdb_id, '') = '' THEN 'pending' ELSE 'matched' END,
-    match_source  = CASE WHEN match_status = 'manual' THEN NULL ELSE match_source END,
-    next_match_at = NULL,
-    updated_at    = CURRENT_TIMESTAMP
-WHERE id = ?
-RETURNING id, show_title, kind, tmdb_id, imdb_id, title_id, match_status, match_source, match_attempts, next_match_at, created_at, updated_at, tmdb_kind, netflix_id, netflix_id_checked_at
-`
-
-// Puts a title back in the matching queue (due now), clearing a manual lock.
-func (q *Queries) ResetNetflixTitleMatch(ctx context.Context, id int64) (NetflixTitle, error) {
-	row := q.db.QueryRowContext(ctx, resetNetflixTitleMatch, id)
-	var i NetflixTitle
-	err := row.Scan(
-		&i.ID,
-		&i.ShowTitle,
-		&i.Kind,
-		&i.TmdbID,
-		&i.ImdbID,
-		&i.TitleID,
-		&i.MatchStatus,
-		&i.MatchSource,
-		&i.MatchAttempts,
-		&i.NextMatchAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.TmdbKind,
-		&i.NetflixID,
-		&i.NetflixIDCheckedAt,
-	)
-	return i, err
-}
-
-const saveNetflixTitleNetflixMatch = `-- name: SaveNetflixTitleNetflixMatch :execrows
-UPDATE netflix_titles
-SET tmdb_kind = ?1, tmdb_id = ?2,
-    imdb_id = COALESCE(NULLIF(CAST(?3 AS TEXT), ''), netflix_titles.imdb_id),
-    match_status = 'matched', match_source = 'netflix_id', next_match_at = NULL,
-    match_attempts = netflix_titles.match_attempts + 1, updated_at = CURRENT_TIMESTAMP
-WHERE netflix_titles.id = ?4 AND netflix_titles.match_status <> 'manual'
-`
-
-type SaveNetflixTitleNetflixMatchParams struct {
-	TmdbKind sql.NullString `json:"tmdb_kind"`
-	TmdbID   sql.NullString `json:"tmdb_id"`
-	ImdbID   string         `json:"imdb_id"`
-	ID       int64          `json:"id"`
-}
-
-// Maps a title by its Netflix ID; replaces automatic matches made by name
-// (never manual ones).
-func (q *Queries) SaveNetflixTitleNetflixMatch(ctx context.Context, arg SaveNetflixTitleNetflixMatchParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, saveNetflixTitleNetflixMatch,
-		arg.TmdbKind,
-		arg.TmdbID,
-		arg.ImdbID,
-		arg.ID,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
 }
 
 const setNetflixSeasonManual = `-- name: SetNetflixSeasonManual :one
@@ -1262,55 +1352,6 @@ type UpdateNetflixSeasonMappingParams struct {
 func (q *Queries) UpdateNetflixSeasonMapping(ctx context.Context, arg UpdateNetflixSeasonMappingParams) error {
 	_, err := q.db.ExecContext(ctx, updateNetflixSeasonMapping, arg.SeasonNumber, arg.SeasonSource, arg.ID)
 	return err
-}
-
-const updateNetflixTitleIDs = `-- name: UpdateNetflixTitleIDs :one
-UPDATE netflix_titles
-SET tmdb_kind     = ?1,
-    tmdb_id       = ?2,
-    imdb_id       = ?3,
-    match_status  = 'manual',
-    match_source  = 'manual',
-    next_match_at = NULL,
-    updated_at    = CURRENT_TIMESTAMP
-WHERE id = ?4
-RETURNING id, show_title, kind, tmdb_id, imdb_id, title_id, match_status, match_source, match_attempts, next_match_at, created_at, updated_at, tmdb_kind, netflix_id, netflix_id_checked_at
-`
-
-type UpdateNetflixTitleIDsParams struct {
-	TmdbKind sql.NullString `json:"tmdb_kind"`
-	TmdbID   sql.NullString `json:"tmdb_id"`
-	ImdbID   sql.NullString `json:"imdb_id"`
-	ID       int64          `json:"id"`
-}
-
-// Admin correction: marks the title as a manual match so automation leaves it alone.
-func (q *Queries) UpdateNetflixTitleIDs(ctx context.Context, arg UpdateNetflixTitleIDsParams) (NetflixTitle, error) {
-	row := q.db.QueryRowContext(ctx, updateNetflixTitleIDs,
-		arg.TmdbKind,
-		arg.TmdbID,
-		arg.ImdbID,
-		arg.ID,
-	)
-	var i NetflixTitle
-	err := row.Scan(
-		&i.ID,
-		&i.ShowTitle,
-		&i.Kind,
-		&i.TmdbID,
-		&i.ImdbID,
-		&i.TitleID,
-		&i.MatchStatus,
-		&i.MatchSource,
-		&i.MatchAttempts,
-		&i.NextMatchAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.TmdbKind,
-		&i.NetflixID,
-		&i.NetflixIDCheckedAt,
-	)
-	return i, err
 }
 
 const updateRankingSeason = `-- name: UpdateRankingSeason :exec

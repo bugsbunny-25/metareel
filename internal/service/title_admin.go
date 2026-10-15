@@ -12,11 +12,12 @@ import (
 
 type TitleAdminService struct {
 	repo    *repository.FlixPatrolRepository
+	writer  *MappingWriter
 	mapping *TitleMappingService // optional: linked Netflix titles follow manual fixes
 }
 
-func NewTitleAdminService(repo *repository.FlixPatrolRepository) *TitleAdminService {
-	return &TitleAdminService{repo: repo}
+func NewTitleAdminService(repo *repository.FlixPatrolRepository, writer *MappingWriter) *TitleAdminService {
+	return &TitleAdminService{repo: repo, writer: writer}
 }
 
 // WithMapping makes manual fixes also update the Netflix titles linked to the
@@ -143,7 +144,7 @@ func (s *TitleAdminService) ListTitlesPage(ctx context.Context, q TitlesQuery, l
 	}
 	items := make([]TitleResponse, 0, len(rows))
 	for _, t := range rows {
-		resp := titleToResponse(t.Title)
+		resp := titleToResponse(t.Title, t.IDs)
 		count := t.RankingsCount
 		resp.RankingsCount = &count
 		if t.LastRankedOn != nil {
@@ -161,7 +162,7 @@ func (s *TitleAdminService) GetTitle(ctx context.Context, id int64) (*TitleRespo
 	if err != nil {
 		return nil, err
 	}
-	resp := titleToResponse(*t)
+	resp := titleToResponse(*t, s.mapping.TitleIDsOf(ctx, repository.TitleRef(*t)))
 	if s.mapping != nil {
 		links, err := s.mapping.repo.NetflixLinksOf(ctx, []int64{id})
 		if err != nil {
@@ -185,40 +186,44 @@ func (s *TitleAdminService) PatchTitleIDs(ctx context.Context, titleID int64, in
 		return nil, err
 	}
 
-	merged := repository.UpdateTitleIDsInput{
-		ID:     titleID,
-		Kind:   existing.Kind,
-		TmdbID: existing.TmdbID,
-		ImdbID: existing.ImdbID,
-		RtURL:  existing.RtUrl,
-	}
+	kind, tmdbID := existing.Kind, existing.TmdbID.String
 	if in.Kind != nil {
 		if *in.Kind != "movie" && *in.Kind != "tv_show" {
 			return nil, &ValidationError{Message: "kind must be movie or tv_show"}
 		}
-		merged.Kind = *in.Kind
+		kind = *in.Kind
 	}
 	if in.TmdbID != nil {
-		merged.TmdbID = sql.NullString{String: *in.TmdbID, Valid: *in.TmdbID != ""}
+		tmdbID = strings.TrimSpace(*in.TmdbID)
 	}
+	imdbGiven := ""
 	if in.ImdbID != nil {
-		merged.ImdbID = sql.NullString{String: *in.ImdbID, Valid: *in.ImdbID != ""}
+		imdbGiven = strings.TrimSpace(*in.ImdbID)
 	}
-	if in.RtURL != nil {
-		merged.RtURL = sql.NullString{String: *in.RtURL, Valid: *in.RtURL != ""}
-	}
+	remapped := tmdbID != "" && (tmdbID != existing.TmdbID.String || kind != existing.Kind)
 
-	updated, err := s.repo.UpdateTitleIDs(ctx, merged)
+	// The fix is the title's manual evidence; IMDb / RT IDs given are the
+	// TMDB title's, set by hand ("" hands them back to TMDB / Wikidata /
+	// matching).
+	session := s.writer.Session(ActorAdmin)
+	updated, err := session.SetTitleMapping(ctx, titleID, kind, tmdbID, imdbGiven)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.mapping.Sync(ctx, false, nil); err != nil {
-		return nil, err
+	if ref := repository.TitleRef(updated); ref.ID != "" {
+		if remapped {
+			s.mapping.EnsureDetails(ctx, ref)
+		}
+		if err := s.mapping.SetManualIDs(ctx, session, ref, in.ImdbID, nil, in.RtURL); err != nil {
+			return nil, err
+		}
 	}
+	session.Flush(ctx)
 	return s.GetTitle(ctx, updated.ID)
 }
 
-func titleToResponse(t sqlc.Title) *TitleResponse {
+// titleToResponse builds a title's response; ids are its TMDB title's.
+func titleToResponse(t sqlc.Title, ids repository.TitleIDs) *TitleResponse {
 	resp := &TitleResponse{
 		ID:        t.ID,
 		Slug:      t.Slug,
@@ -229,12 +234,7 @@ func titleToResponse(t sqlc.Title) *TitleResponse {
 	if t.TmdbID.Valid {
 		resp.TmdbID = &t.TmdbID.String
 	}
-	if t.ImdbID.Valid {
-		resp.ImdbID = &t.ImdbID.String
-	}
-	if t.RtUrl.Valid {
-		resp.RtURL = &t.RtUrl.String
-	}
+	resp.ImdbID, resp.RtURL, resp.JustWatchID, resp.WikidataID = ids.IMDbID, ids.RTID, ids.JustWatchID, ids.WikidataID
 	resp.MatchStatus = t.MatchStatus
 	resp.MatchSource = nullStr(t.MatchSource)
 	resp.MatchedName = nullStr(t.MatchedName)
@@ -246,8 +246,6 @@ func titleToResponse(t sqlc.Title) *TitleResponse {
 		v := t.NextMatchAt.Time.UTC()
 		resp.NextMatchAt = &v
 	}
-	resp.JustWatchID = nullStr(t.JustwatchID)
-	resp.WikidataID = nullStr(t.WikidataID)
 	if t.FpFetchedAt.Valid {
 		resp.FlixPatrol = &FlixPatrolTitleDetails{
 			Name: nullStr(t.FpName), Kind: nullStr(t.FpKind), PremiereDate: nullStr(t.FpPremiereDate), Country: nullStr(t.FpCountry),
@@ -264,25 +262,15 @@ func nullStr(v sql.NullString) *string {
 }
 
 // Rematch puts a title back in the matching queue. clear also forgets its
-// current IDs (for a wrong match); otherwise it keeps them and only clears a
-// manual lock and the retry backoff. Returns sql.ErrNoRows if not found.
+// evidence (for a wrong match), and what linked titles took from it;
+// otherwise it keeps its match and only lifts a manual lock and the retry
+// backoff. Returns sql.ErrNoRows if not found.
 func (s *TitleAdminService) Rematch(ctx context.Context, titleID int64, clear bool) (*TitleResponse, error) {
-	var (
-		t   sqlc.Title
-		err error
-	)
-	if clear {
-		t, err = s.repo.ClearTitleMatch(ctx, titleID)
-	} else {
-		t, err = s.repo.ResetTitleMatch(ctx, titleID)
-	}
+	session := s.writer.Session(ActorAdmin)
+	defer session.Flush(ctx)
+	t, err := session.RequeueTitle(ctx, titleID, clear)
 	if err != nil {
 		return nil, err
 	}
-	if clear {
-		if err := s.mapping.ForgetShared(ctx, titleID, 0); err != nil {
-			return nil, err
-		}
-	}
-	return titleToResponse(t), nil
+	return titleToResponse(t, s.mapping.TitleIDsOf(ctx, repository.TitleRef(t))), nil
 }

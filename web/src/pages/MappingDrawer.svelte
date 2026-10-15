@@ -1,13 +1,14 @@
 <script>
   import { getMapping, remapMapping } from '../lib/api.js'
   import { href } from '../lib/router.svelte.js'
-  import { links, parseImdbId, parseTmdbInput, parseWikidataId, dateOnly } from '../lib/format.js'
+  import { links, parseImdbId, parseTmdbInput, parseWikidataId, dateOnly, ID_SOURCES } from '../lib/format.js'
   import { toast } from '../lib/toast.svelte.js'
   import { confirm } from '../lib/confirm.svelte.js'
   import Drawer from '../components/Drawer.svelte'
   import Icon from '../components/Icon.svelte'
   import KindBadge from '../components/KindBadge.svelte'
   import IdCell from '../components/IdCell.svelte'
+  import MappingHistory from '../components/MappingHistory.svelte'
 
   // refKey is "movie:123" / "tv:456".
   let { refKey, onclose, onchanged } = $props()
@@ -90,21 +91,28 @@
     {/if}
   {/snippet}
 
+  {#snippet source(key, value)}
+    {#if value && entry.ids.sources?.[key]}
+      {@const s = ID_SOURCES[entry.ids.sources[key]]}
+      <span class="small muted" style="margin-left:6px" title={s?.hint ?? ''}>{s?.label ?? entry.ids.sources[key]}</span>
+    {/if}
+  {/snippet}
+
   {#if loadError}
     <div class="alert alert-error"><Icon name="alert" />{loadError}</div>
   {:else if entry}
     <div class="section-title" style="margin-top:0">IDs</div>
     <dl class="kv">
       <dt>TMDB</dt><dd><IdCell value={`${entry.tmdb_kind}/${entry.tmdb_id}`} url={links.tmdb(entry.tmdb_kind, entry.tmdb_id)} /></dd>
-      <dt>IMDb</dt><dd><IdCell value={entry.ids.imdb_id} url={links.imdb(entry.ids.imdb_id)} /></dd>
-      <dt>Wikidata</dt><dd><IdCell value={entry.ids.wikidata_id} url={links.wikidata(entry.ids.wikidata_id)} /></dd>
-      <dt>Rotten Tomatoes</dt><dd><IdCell value={entry.ids.rotten_tomatoes_id} url={links.rt(entry.ids.rotten_tomatoes_id)} /></dd>
-      <dt>Netflix</dt><dd><IdCell value={entry.ids.netflix_id} url={links.netflix(entry.ids.netflix_id)} label="Not on Wikidata" /></dd>
-      <dt>JustWatch</dt><dd><IdCell value={entry.ids.justwatch_id} /></dd>
-      {#if entry.ids.metacritic_id}<dt>Metacritic</dt><dd><IdCell value={entry.ids.metacritic_id} /></dd>{/if}
-      {#if entry.ids.letterboxd_id}<dt>Letterboxd</dt><dd><IdCell value={entry.ids.letterboxd_id} /></dd>{/if}
+      <dt>IMDb</dt><dd><IdCell value={entry.ids.imdb_id} url={links.imdb(entry.ids.imdb_id)} />{@render source('imdb', entry.ids.imdb_id)}</dd>
+      <dt>Wikidata</dt><dd><IdCell value={entry.ids.wikidata_id} url={links.wikidata(entry.ids.wikidata_id)} />{@render source('wikidata', entry.ids.wikidata_id)}</dd>
+      <dt>Rotten Tomatoes</dt><dd><IdCell value={entry.ids.rotten_tomatoes_id} url={links.rt(entry.ids.rotten_tomatoes_id)} />{@render source('rotten_tomatoes', entry.ids.rotten_tomatoes_id)}</dd>
+      <dt>Netflix</dt><dd><IdCell value={entry.ids.netflix_id} url={links.netflix(entry.ids.netflix_id)} label="Not on Wikidata" />{@render source('netflix', entry.ids.netflix_id)}</dd>
+      <dt>JustWatch</dt><dd><IdCell value={entry.ids.justwatch_id} />{@render source('justwatch', entry.ids.justwatch_id)}</dd>
+      {#if entry.ids.metacritic_id}<dt>Metacritic</dt><dd><IdCell value={entry.ids.metacritic_id} />{@render source('metacritic', entry.ids.metacritic_id)}</dd>{/if}
+      {#if entry.ids.letterboxd_id}<dt>Letterboxd</dt><dd><IdCell value={entry.ids.letterboxd_id} />{@render source('letterboxd', entry.ids.letterboxd_id)}</dd>{/if}
     </dl>
-    <p class="field-hint">TMDB's own IDs and Wikidata's (looked up by the metadata job), gaps filled from the FlixPatrol titles' matches.</p>
+    <p class="field-hint">These IDs belong to the TMDB title and every title mapped here shows them. Each comes from the strongest source that has one: entered by hand, then TMDB, then Wikidata, then an automatic match. An ID entered by hand on a title is never replaced; clearing it hands it back.</p>
 
     <div class="section-title">FlixPatrol titles</div>
     {#each entry.flixpatrol_titles as t (t.id)}
@@ -139,6 +147,9 @@
         </div>
       </div>
     {:else}<p class="muted small">No Netflix Top 10 title.</p>{/each}
+
+    <div class="section-title" style="margin-top:24px">History</div>
+    <MappingHistory tmdb={refKey} />
 
     <div class="section-title" style="margin-top:24px">Move everything to another TMDB title</div>
     <div class="row" style="flex-wrap:wrap">

@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/bugsbunny-25/metareel/internal/repository"
-	"github.com/bugsbunny-25/metareel/internal/repository/sqlc"
 	"github.com/bugsbunny-25/metareel/internal/scraper/flixpatrol"
+	"github.com/bugsbunny-25/metareel/internal/tasks"
 )
 
 // TitleMappingService keeps one TMDB-keyed mapping across sources. TMDB
@@ -34,24 +33,36 @@ import (
 type TitleMappingService struct {
 	log      *slog.Logger
 	repo     *repository.MappingRepository
+	writer   *MappingWriter
 	meta     *repository.MetadataRepository
-	metadata *TitleMetadataService // optional: TMDB details for newly shared mappings
+	metadata *TitleMetadataService // optional: TMDB details / Wikidata for newly mapped titles
 	seasons  *SeasonMapper         // optional: remaps seasons of Netflix titles that changed
 }
 
-func NewTitleMappingService(log *slog.Logger, repo *repository.MappingRepository, meta *repository.MetadataRepository, metadata *TitleMetadataService, seasons *SeasonMapper) *TitleMappingService {
-	return &TitleMappingService{log: log, repo: repo, meta: meta, metadata: metadata, seasons: seasons}
+// NewTitleMappingService builds the mapping service around writer. Without a
+// refresh queue on writer, follow-ups of mapping changes run inline.
+func NewTitleMappingService(log *slog.Logger, repo *repository.MappingRepository, writer *MappingWriter, meta *repository.MetadataRepository, metadata *TitleMetadataService, seasons *SeasonMapper) *TitleMappingService {
+	s := &TitleMappingService{log: log, repo: repo, writer: writer, meta: meta, metadata: metadata, seasons: seasons}
+	if writer.queue == nil {
+		writer.queue = func(ctx context.Context, r MappingRefresh) error {
+			_, err := s.Refresh(ctx, r, nil)
+			return err
+		}
+	}
+	return s
 }
+
+// Writer is the mapping writer every mapping change goes through.
+func (s *TitleMappingService) Writer() *MappingWriter { return s.writer }
 
 // MappingSyncReport summarises a sync.
 type MappingSyncReport struct {
 	Links             int `json:"links"`
 	LinksAdded        int `json:"links_added"`
 	LinksRemoved      int `json:"links_removed"`
-	NetflixUpdated    int `json:"netflix_titles_updated"`
-	FlixPatrolUpdated int `json:"flixpatrol_titles_updated"`
-	Conflicts         int `json:"conflicts"` // titles whose linked titles disagree (left alone)
-	IDsFilled         int `json:"tmdb_titles_ids_filled"`
+	NetflixUpdated    int `json:"netflix_titles_updated"`    // took a linked title's mapping
+	FlixPatrolUpdated int `json:"flixpatrol_titles_updated"` // took a linked title's mapping
+	Conflicts         int `json:"conflicts"`                 // titles whose linked titles disagree (they keep their own match)
 }
 
 // Match sources of mappings shared over a link.
@@ -60,71 +71,229 @@ const (
 	MatchSourceNetflixTitle    = "netflix_title"    // a FlixPatrol title took a linked Netflix title's mapping
 )
 
-// metadataOnSync caps TMDB detail fetches per sync; the metadata job gets the rest.
-const metadataOnSync = 25
-
-// Sync recomputes the links (when refreshLinks) and shares mappings over
-// them. Netflix titles whose mapping changed get their seasons remapped.
+// Sync recomputes the links (when refreshLinks) and the mappings of every
+// linked title (and of titles that lost a link) from their evidence. It
+// only touches the database; TMDB details and season numbers of what
+// changed follow in a mapping refresh.
 func (s *TitleMappingService) Sync(ctx context.Context, refreshLinks bool, runLog func(level, msg string)) (*MappingSyncReport, error) {
-	rep := &MappingSyncReport{}
 	if s == nil {
-		return rep, nil
+		return &MappingSyncReport{}, nil
 	}
+	session := s.writer.Session(ActorMappingSync)
+	defer session.Flush(ctx)
+	return s.sync(ctx, refreshLinks, runLog, session)
+}
+
+// SyncIn is Sync writing through the caller's session (one follow-up for
+// the caller's changes and what they spread to).
+func (s *TitleMappingService) SyncIn(ctx context.Context, session *MappingSession, refreshLinks bool, runLog func(level, msg string)) (*MappingSyncReport, error) {
+	if s == nil {
+		return &MappingSyncReport{}, nil
+	}
+	return s.sync(ctx, refreshLinks, runLog, session)
+}
+
+func (s *TitleMappingService) sync(ctx context.Context, refreshLinks bool, runLog func(level, msg string), session *MappingSession) (*MappingSyncReport, error) {
+	rep := &MappingSyncReport{}
+	var removed []repository.TitleLink
 	if refreshLinks {
-		if err := s.refreshLinks(ctx, rep); err != nil {
+		var err error
+		if removed, err = s.refreshLinks(ctx, rep); err != nil {
 			return rep, err
 		}
 	}
-	changedNetflix, newRefs, err := s.propagate(ctx, rep)
+	subjects, err := s.repo.LinkedSubjects(ctx)
 	if err != nil {
 		return rep, err
 	}
-	s.afterChange(ctx, changedNetflix, newRefs, rep.FlixPatrolUpdated > 0)
-	if s.meta != nil {
-		n, err := s.meta.ConsolidateExternalIDs(ctx)
-		if err != nil {
-			return rep, err
-		}
-		rep.IDsFilled = int(n)
+	for _, l := range removed {
+		subjects = append(subjects, repository.NetflixSubject(l.NetflixTitleID), repository.FlixPatrolSubject(l.TitleID))
 	}
+	st, err := session.Recompute(ctx, subjects)
+	if err != nil {
+		return rep, err
+	}
+	rep.NetflixUpdated, rep.FlixPatrolUpdated, rep.Conflicts = st.NetflixAdopted, st.FlixPatrolAdopted, st.Conflicts
 	if runLog != nil && (refreshLinks || rep.NetflixUpdated+rep.FlixPatrolUpdated+rep.Conflicts > 0) {
 		msg := fmt.Sprintf("Mapping: %d Netflix titles and %d FlixPatrol titles took a linked title's TMDB mapping", rep.NetflixUpdated, rep.FlixPatrolUpdated)
 		if refreshLinks {
 			msg += fmt.Sprintf("; %d links (%d new, %d removed)", rep.Links, rep.LinksAdded, rep.LinksRemoved)
 		}
 		if rep.Conflicts > 0 {
-			msg += fmt.Sprintf("; %d title(s) left alone because their linked titles disagree (see TMDB mapping → conflicts)", rep.Conflicts)
+			msg += fmt.Sprintf("; %d title(s) kept their own match because their linked titles disagree (see TMDB mapping → conflicts)", rep.Conflicts)
 		}
 		runLog("info", msg)
 	}
 	return rep, nil
 }
 
-// afterChange fetches TMDB details for newly shared mappings, remaps the
-// seasons of Netflix titles that changed and re-tags recent TV rankings.
-func (s *TitleMappingService) afterChange(ctx context.Context, netflixIDs []int64, refs []repository.TmdbRef, flixPatrolChanged bool) {
-	if s.metadata != nil {
-		for i, ref := range refs {
-			if i >= metadataOnSync || ctx.Err() != nil {
-				break
-			}
-			if _, err := s.metadata.RefreshDetails(ctx, ref); err != nil {
-				s.log.Warn("tmdb details for shared mapping failed", slog.String("ref", ref.String()), slog.Any("err", err))
-			}
+// MappingRefreshReport summarises a mapping.refresh run.
+type MappingRefreshReport struct {
+	TmdbTitles      int                `json:"tmdb_titles"`
+	DetailsFetched  int                `json:"details_fetched"`
+	DetailsFresh    int                `json:"details_fresh"` // fetched recently, skipped
+	DetailsFailed   int                `json:"details_failed"`
+	WikidataChecked int                `json:"wikidata_checked"` // never looked up before
+	WikidataFound   int                `json:"wikidata_found"`
+	NetflixTitles   int                `json:"netflix_titles"` // whose seasons were remapped
+	Sync            *MappingSyncReport `json:"sync,omitempty"` // run by hand: mappings recomputed
+}
+
+// detailsFreshFor is how long fetched TMDB details count as current for a
+// mapping refresh (the metadata job refreshes them on its own schedule).
+const detailsFreshFor = 24 * time.Hour
+
+// Refresh does the follow-up of mapping changes (the mapping.refresh job):
+// fetches TMDB details and Wikidata IDs of the TMDB titles now mapped to,
+// remaps the seasons of Netflix titles that changed and re-tags recent TV
+// rankings. Run with nothing to follow up, it recomputes every linked
+// title's mapping first.
+func (s *TitleMappingService) Refresh(ctx context.Context, r MappingRefresh, runLog func(level, msg string)) (*MappingRefreshReport, error) {
+	rep := &MappingRefreshReport{}
+	logf := func(level, format string, args ...any) {
+		if runLog != nil {
+			runLog(level, fmt.Sprintf(format, args...))
 		}
 	}
-	if s.seasons == nil || (len(netflixIDs) == 0 && !flixPatrolChanged) {
+	// Run by hand (nothing to follow up): recompute every linked title's
+	// mapping, and refresh what that changes.
+	session := s.writer.Session(tasks.TypeMappingRefresh)
+	if r.Empty() {
+		sr, err := s.sync(ctx, false, runLog, session)
+		rep.Sync = sr
+		if err != nil {
+			return rep, err
+		}
+	}
+	shared := session.Take()
+	for _, ref := range r.Refs {
+		session.Touch(ref)
+	}
+	for _, ref := range shared.Refs {
+		session.Touch(ref)
+	}
+	refs := session.Take().Refs
+	netflixIDs := mergeIDs(r.NetflixIDs, shared.NetflixIDs)
+	rep.TmdbTitles = len(refs)
+
+	if s.metadata != nil && len(refs) > 0 {
+		have, err := s.meta.GetMany(ctx, refs)
+		if err != nil {
+			return rep, err
+		}
+		fetched := 0
+		for _, ref := range refs {
+			if err := ctx.Err(); err != nil {
+				return rep, err
+			}
+			// Recent details are kept, unless the IMDb ID is missing (e.g. a
+			// hand-set one was just handed back to TMDB).
+			if m := have[ref.String()]; m != nil && m.DetailsFetchedAt != nil && time.Since(*m.DetailsFetchedAt) < detailsFreshFor && m.IMDbID != nil {
+				rep.DetailsFresh++
+				continue
+			}
+			if fetched > 0 {
+				if err := sleepCtx(ctx, tmdbRequestGap); err != nil {
+					return rep, err
+				}
+			}
+			fetched++
+			if _, err := s.metadata.RefreshDetails(ctx, ref); err != nil {
+				rep.DetailsFailed++
+				s.log.Warn("tmdb details for mapping refresh failed", slog.String("ref", ref.String()), slog.Any("err", err))
+				if rep.DetailsFailed <= 5 {
+					logf("warn", "%s: TMDB details failed: %s", ref, truncateErr(err, 200))
+				}
+				continue
+			}
+			rep.DetailsFetched++
+		}
+		// Wikidata only for TMDB titles never looked up: the metadata job
+		// rechecks the rest, and Wikidata's endpoint throttles bursts.
+		var newRefs []repository.TmdbRef
+		for _, ref := range refs {
+			if m := have[ref.String()]; m == nil || !m.WikidataLookedUp {
+				newRefs = append(newRefs, ref)
+			}
+		}
+		found, err := s.metadata.LookupWikidata(ctx, newRefs)
+		if err != nil {
+			logf("warn", "Wikidata lookup failed: %s", truncateErr(err, 200))
+		}
+		rep.WikidataChecked, rep.WikidataFound = len(newRefs), len(found)
+		logf("info", "TMDB titles: %d to refresh, %d details fetched (%d fresh, %d failed); Wikidata: %d new looked up, %d found",
+			len(refs), rep.DetailsFetched, rep.DetailsFresh, rep.DetailsFailed, rep.WikidataChecked, rep.WikidataFound)
+	}
+
+	if s.seasons != nil && (len(refs) > 0 || len(netflixIDs) > 0) {
+		// Netflix titles on the refreshed TMDB titles: their season list may have changed.
+		_, nfs, err := s.repo.TitlesForTmdbIDs(ctx, refIDs(refs))
+		if err != nil {
+			return rep, err
+		}
+		want := map[repository.TmdbRef]bool{}
+		for _, ref := range refs {
+			want[ref] = true
+		}
+		for _, n := range nfs {
+			if want[repository.NetflixTitleRef(n.NetflixTitle)] {
+				netflixIDs = mergeIDs(netflixIDs, []int64{n.ID})
+			}
+		}
+		srep := &SeasonMapReport{}
+		for _, id := range netflixIDs {
+			if err := s.seasons.MapNetflixSeasons(ctx, id, srep); err != nil {
+				s.log.Warn("remap seasons after mapping change failed", slog.Int64("netflix_title_id", id), slog.Any("err", err))
+			}
+		}
+		rep.NetflixTitles = len(netflixIDs)
+		if err := s.seasons.TagRankings(ctx, time.Now().UTC().AddDate(-1, 0, 0), srep); err != nil {
+			s.log.Warn("tag ranking seasons after mapping change failed", slog.Any("err", err))
+		}
+		logf("info", "Seasons: %d Netflix title(s) remapped", rep.NetflixTitles)
+	}
+	return rep, nil
+}
+
+// EnsureDetails fetches a TMDB title's details when none are stored, so an
+// admin fix can show (and fill) them straight away; the rest of the
+// follow-up runs in the mapping refresh.
+func (s *TitleMappingService) EnsureDetails(ctx context.Context, ref repository.TmdbRef) {
+	if s == nil || s.metadata == nil || ref.ID == "" {
 		return
 	}
-	rep := &SeasonMapReport{}
-	for _, id := range netflixIDs {
-		if err := s.seasons.MapNetflixSeasons(ctx, id, rep); err != nil {
-			s.log.Warn("remap seasons after mapping sync failed", slog.Int64("netflix_title_id", id), slog.Any("err", err))
+	if m, err := s.meta.Get(ctx, ref); err == nil && m != nil && m.DetailsFetchedAt != nil {
+		return
+	}
+	if _, err := s.metadata.RefreshDetails(ctx, ref); err != nil {
+		s.log.Warn("tmdb details after manual mapping failed", slog.String("ref", ref.String()), slog.Any("err", err))
+	}
+}
+
+func refIDs(refs []repository.TmdbRef) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range refs {
+		if !seen[r.ID] {
+			seen[r.ID] = true
+			out = append(out, r.ID)
 		}
 	}
-	if err := s.seasons.TagRankings(ctx, time.Now().UTC().AddDate(-1, 0, 0), rep); err != nil {
-		s.log.Warn("tag ranking seasons after mapping sync failed", slog.Any("err", err))
+	return out
+}
+
+func mergeIDs(a, b []int64) []int64 {
+	seen := make(map[int64]bool, len(a))
+	out := make([]int64, 0, len(a)+len(b))
+	for _, list := range [][]int64{a, b} {
+		for _, id := range list {
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
 	}
+	return out
 }
 
 // --- links ------------------------------------------------------------------
@@ -134,10 +303,10 @@ func (s *TitleMappingService) afterChange(ctx context.Context, netflixIDs []int6
 // it is in Netflix's weekly lists.
 const linkWeekSlack = 1
 
-func (s *TitleMappingService) refreshLinks(ctx context.Context, rep *MappingSyncReport) error {
+func (s *TitleMappingService) refreshLinks(ctx context.Context, rep *MappingSyncReport) ([]repository.TitleLink, error) {
 	fpWeeks, err := s.repo.FlixPatrolNetflixWeeks(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	want := map[repository.TitleLink]bool{}
 	if len(fpWeeks) > 0 {
@@ -150,7 +319,7 @@ func (s *TitleMappingService) refreshLinks(ctx context.Context, rep *MappingSync
 		// Netflix weeks only matter from the first week FlixPatrol has.
 		titles, weeks, err := s.repo.NetflixLinkInputs(ctx, shiftWeek(from, -linkWeekSlack))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, l := range ComputeTitleLinks(titles, weeks, fpWeeks) {
 			want[l] = true
@@ -158,7 +327,7 @@ func (s *TitleMappingService) refreshLinks(ctx context.Context, rep *MappingSync
 	}
 	have, err := s.repo.Links(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var add, remove []repository.TitleLink
 	for _, l := range have {
@@ -171,11 +340,11 @@ func (s *TitleMappingService) refreshLinks(ctx context.Context, rep *MappingSync
 		add = append(add, l)
 	}
 	if err := s.repo.ReplaceLinks(ctx, add, remove); err != nil {
-		return err
+		return nil, err
 	}
 	rep.Links = len(have) - len(remove) + len(add)
 	rep.LinksAdded, rep.LinksRemoved = len(add), len(remove)
-	return nil
+	return remove, nil
 }
 
 // ComputeTitleLinks links Netflix titles to FlixPatrol titles with the same
@@ -275,34 +444,14 @@ func shiftWeek(week string, n int) string {
 
 // --- sharing mappings ---------------------------------------------------------
 
-// mappingMember is one side of a linked group.
+// mappingMember is one title's strongest evidence in a linked group.
 type mappingMember struct {
 	netflix bool
 	id      int64
 	ref     repository.TmdbRef // zero when unmapped
-	imdbID  string
 	manual  bool
 	matched bool // has a mapping and is not manual
 	exact   bool // mapped through its Netflix ID
-}
-
-func netflixMember(n sqlc.NetflixTitle) mappingMember {
-	m := mappingMember{netflix: true, id: n.ID, imdbID: n.ImdbID.String, manual: n.MatchStatus == repository.MatchStatusManual}
-	if n.TmdbID.String != "" && (n.TmdbKind.String == "movie" || n.TmdbKind.String == "tv") {
-		m.ref = repository.TmdbRef{Kind: n.TmdbKind.String, ID: n.TmdbID.String}
-	}
-	m.matched = !m.manual && m.ref.ID != ""
-	m.exact = m.matched && n.MatchSource.String == MatchSourceNetflixID
-	return m
-}
-
-func flixPatrolMember(t sqlc.Title) mappingMember {
-	m := mappingMember{id: t.ID, imdbID: t.ImdbID.String, manual: t.MatchStatus == repository.MatchStatusManual}
-	if t.TmdbID.String != "" {
-		m.ref = repository.TmdbRef{Kind: tmdbKindOf(flixpatrol.TitleKind(t.Kind)), ID: t.TmdbID.String}
-	}
-	m.matched = !m.manual && m.ref.ID != ""
-	return m
 }
 
 // groupAnchor picks the mapping a linked group shares: a title fixed by hand,
@@ -331,136 +480,10 @@ func groupAnchor(members []mappingMember) (anchor mappingMember, ok, conflict bo
 			if m.ref != a.ref {
 				return a, false, true
 			}
-			if a.imdbID == "" {
-				a.imdbID = m.imdbID
-			}
 		}
 		return a, true, false
 	}
 	return mappingMember{}, false, false
-}
-
-// propagatePasses bounds how far one sync spreads a mapping: each pass moves
-// it one link (Netflix ↔ FlixPatrol) into titles that take it.
-const propagatePasses = 3
-
-// propagate shares mappings over links. Each title looks only at itself and
-// the titles directly linked to it that are linked to nothing else, and
-// takes the anchor of that set (see groupAnchor): a mapping never travels
-// through an intermediary, nor from a title that links to several (one
-// Netflix title for two same-name FlixPatrol titles). It returns the Netflix titles that changed and the TMDB
-// titles newly mapped to.
-func (s *TitleMappingService) propagate(ctx context.Context, rep *MappingSyncReport) ([]int64, []repository.TmdbRef, error) {
-	var changedNetflix []int64
-	var newRefs []repository.TmdbRef
-	seenRef := map[repository.TmdbRef]bool{}
-	for pass := 0; pass < propagatePasses; pass++ {
-		changed, conflicts, err := s.propagateOnce(ctx, &changedNetflix, &newRefs, seenRef, rep)
-		if err != nil {
-			return changedNetflix, newRefs, err
-		}
-		rep.Conflicts = conflicts
-		if changed == 0 {
-			break
-		}
-	}
-	return changedNetflix, newRefs, nil
-}
-
-func (s *TitleMappingService) propagateOnce(ctx context.Context, changedNetflix *[]int64, newRefs *[]repository.TmdbRef, seenRef map[repository.TmdbRef]bool, rep *MappingSyncReport) (int, int, error) {
-	links, err := s.repo.Links(ctx)
-	if err != nil || len(links) == 0 {
-		return 0, 0, err
-	}
-	nts, fts, err := s.repo.LinkedTitles(ctx)
-	if err != nil {
-		return 0, 0, err
-	}
-	members := map[string]mappingMember{}
-	for _, n := range nts {
-		members[memberKey(true, n.ID)] = netflixMember(n)
-	}
-	for _, t := range fts {
-		members[memberKey(false, t.ID)] = flixPatrolMember(t)
-	}
-	neighbours := map[string][]string{}
-	for _, l := range links {
-		a, b := memberKey(true, l.NetflixTitleID), memberKey(false, l.TitleID)
-		neighbours[a] = append(neighbours[a], b)
-		neighbours[b] = append(neighbours[b], a)
-	}
-	keys := make([]string, 0, len(members))
-	for k := range members {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	changedCount, conflicts := 0, 0
-	for _, k := range keys {
-		if err := ctx.Err(); err != nil {
-			return changedCount, conflicts, err
-		}
-		m := members[k]
-		set := []mappingMember{m}
-		for _, nk := range neighbours[k] {
-			// A linked title also linked elsewhere (one Netflix title for a
-			// show and its revival) says nothing certain about this one.
-			if nm, ok := members[nk]; ok && len(neighbours[nk]) == 1 {
-				set = append(set, nm)
-			}
-		}
-		anchor, ok, conflict := groupAnchor(set)
-		if conflict {
-			conflicts++
-			continue
-		}
-		if !ok || m.manual || m.ref == anchor.ref {
-			continue
-		}
-		var changed bool
-		if m.netflix {
-			// The directly linked FlixPatrol title it is matched through.
-			var via int64
-			for _, nk := range neighbours[k] {
-				if nm := members[nk]; !nm.netflix && nm.ref == anchor.ref {
-					via = nm.id
-					break
-				}
-			}
-			source := MatchSourceFlixPatrolTitle
-			if anchor.netflix {
-				source = MatchSourceNetflixTitle
-			}
-			changed, err = s.repo.AdoptForNetflix(ctx, m.id, anchor.ref.Kind, anchor.ref.ID, anchor.imdbID, via, source)
-			if changed {
-				rep.NetflixUpdated++
-				*changedNetflix = append(*changedNetflix, m.id)
-			}
-		} else {
-			changed, err = s.repo.AdoptForFlixPatrol(ctx, m.id, titleKindOf(anchor.ref.Kind), anchor.ref.ID, anchor.imdbID)
-			if changed {
-				rep.FlixPatrolUpdated++
-			}
-		}
-		if err != nil {
-			return changedCount, conflicts, err
-		}
-		if changed {
-			changedCount++
-			if !seenRef[anchor.ref] {
-				seenRef[anchor.ref] = true
-				*newRefs = append(*newRefs, anchor.ref)
-			}
-		}
-	}
-	return changedCount, conflicts, nil
-}
-
-func memberKey(netflix bool, id int64) string {
-	if netflix {
-		return "n" + strconv.FormatInt(id, 10)
-	}
-	return "f" + strconv.FormatInt(id, 10)
 }
 
 // titleKindOf maps a TMDB kind (movie | tv) to titles.kind (movie | tv_show).
@@ -469,27 +492,4 @@ func titleKindOf(tmdbKind string) string {
 		return "tv_show"
 	}
 	return "movie"
-}
-
-// ForgetShared clears what linked titles took from a title whose match was
-// just cleared (a FlixPatrol title by titleID, or a Netflix title by
-// netflixTitleID), so the wrong mapping does not come back over the link;
-// both sides are then matched afresh.
-func (s *TitleMappingService) ForgetShared(ctx context.Context, titleID, netflixTitleID int64) error {
-	if s == nil {
-		return nil
-	}
-	if titleID > 0 {
-		ids, err := s.repo.ClearAdoptedFromFlixPatrol(ctx, titleID)
-		if err != nil {
-			return err
-		}
-		s.afterChange(ctx, ids, nil, false)
-	}
-	if netflixTitleID > 0 {
-		if err := s.repo.ClearAdoptedFromNetflix(ctx, netflixTitleID); err != nil {
-			return err
-		}
-	}
-	return nil
 }

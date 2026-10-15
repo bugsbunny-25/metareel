@@ -9,6 +9,7 @@
   import Icon from '../components/Icon.svelte'
   import KindBadge from '../components/KindBadge.svelte'
   import RankChart from '../components/RankChart.svelte'
+  import MappingHistory from '../components/MappingHistory.svelte'
 
   let { id, onclose, onsaved } = $props()
 
@@ -30,16 +31,18 @@
 
   // Matching
   let rematching = $state(false)
+  let historyVersion = $state(0)
   async function rematch(clear) {
-    if (clear && !(await confirm({ title: 'Clear and match again?', message: `Forget the TMDB, IMDb and Rotten Tomatoes IDs of "${title.name}" and match it from scratch.`, confirmLabel: 'Clear and match', danger: true }))) return
+    if (clear && !(await confirm({ title: 'Clear and match again?', message: `Forget what "${title.name}" is mapped to (and Netflix matches made through it) and match it from scratch. Linked titles that took this mapping fall back to their own.`, confirmLabel: 'Clear and match', danger: true }))) return
     rematching = true
     try {
       const res = await rematchTitle(title.id, clear)
       title = { ...title, ...res.title }
       resetForm()
+      historyVersion++
       onsaved?.(res.title)
       toast.success(res.job ? 'Matching queued — the result appears in a few seconds (see Job runs)' : 'Matching is already queued')
-      setTimeout(() => getTitle(title.id).then((t) => { if (t.id === id) { title = t; resetForm(); onsaved?.(t) } }).catch(() => {}), 8000)
+      setTimeout(() => getTitle(title.id).then((t) => { if (t.id === id) { title = t; resetForm(); historyVersion++; onsaved?.(t) } }).catch(() => {}), 8000)
     } catch (e) {
       toast.error(e.message)
     } finally {
@@ -100,12 +103,15 @@
   async function save() {
     saving = true
     try {
-      const updated = await patchTitle(title.id, {
-        kind: form.kind,
-        tmdb_id: form.tmdb_id.trim(),
-        imdb_id: parseImdbId(form.imdb_id),
-        rt_url: parseRtSlug(form.rt_url),
-      })
+      // Only what changed: IMDb / RT IDs belong to the TMDB title, and one
+      // sent is stored as its, set by hand.
+      const body = {}
+      if (form.kind !== title.kind) body.kind = form.kind
+      if (form.tmdb_id.trim() !== (title.tmdb_id ?? '')) body.tmdb_id = form.tmdb_id.trim()
+      if (parseImdbId(form.imdb_id) !== (title.imdb_id ?? '')) body.imdb_id = parseImdbId(form.imdb_id)
+      if (parseRtSlug(form.rt_url) !== (title.rt_url ?? '')) body.rt_url = parseRtSlug(form.rt_url)
+      const updated = await patchTitle(title.id, body)
+      historyVersion++
       title = { ...title, ...updated }
       resetForm()
       ratings = null
@@ -266,12 +272,15 @@
           <input class="input mono" bind:value={form.rt_url} onblur={() => (form.rt_url = parseRtSlug(form.rt_url))} placeholder="m/slug, tv/slug or RT URL" />
         </label>
       </div>
-      <p class="field-hint" style="margin-top:-6px">Paste IDs or full URLs; they are normalized automatically. Leave a field empty to clear it.</p>
+      <p class="field-hint" style="margin-top:-6px">Paste IDs or full URLs; they are normalized automatically. Leave a field empty to clear it. Only changed fields are saved. IMDb and RT IDs belong to the TMDB title: one you enter becomes its, set by hand, and changing the TMDB ID shows the new title's.</p>
       <div class="row" style="margin-top:12px">
         <button class="btn btn-primary" onclick={save} disabled={!dirty || saving}>{saving ? 'Saving…' : 'Save mapping'}</button>
         <button class="btn" onclick={resetForm} disabled={!dirty}>Discard changes</button>
         {#if dirty}<span class="badge badge-warning">Unsaved changes</span>{/if}
       </div>
+
+      <div class="section-title" style="margin-top:24px">History</div>
+      <MappingHistory subject={`flixpatrol:${title.id}`} version={historyVersion} />
 
       <div class="section-title" style="margin-top:24px">Find matches</div>
       <div class="row" style="flex-wrap:wrap">

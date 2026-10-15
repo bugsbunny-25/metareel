@@ -161,12 +161,13 @@ func (s *TitleMetadataService) FindNetflixOnWikidata(ctx context.Context, names 
 	return s.wikidata.FindNetflixTitles(ctx, names)
 }
 
-// SaveExternalIDs fills a TMDB title's missing IDs found by matching.
-func (s *TitleMetadataService) SaveExternalIDs(ctx context.Context, ref repository.TmdbRef, ids repository.TmdbExternalIDs) error {
+// SaveMatchedIDs stores IDs of a TMDB title found by matching (TMDB's,
+// Wikidata's and hand-set ones win over them).
+func (s *TitleMetadataService) SaveMatchedIDs(ctx context.Context, ref repository.TmdbRef, ids repository.TmdbIDs) error {
 	if s == nil {
 		return nil
 	}
-	return s.repo.SaveExternalIDs(ctx, ref, ids)
+	return s.repo.SaveIDs(ctx, ref, ids, repository.IDSourceMatch)
 }
 
 // ResolvedTmdb is the TMDB title an IMDb or Wikidata ID resolved to.
@@ -249,4 +250,16 @@ func (s *TitleMetadataService) RefsByNetflixID(ctx context.Context, netflixID st
 		return nil, nil
 	}
 	return s.repo.RefsByNetflixID(ctx, netflixID)
+}
+
+// RefsDueForRT lists TMDB titles to look up on Rotten Tomatoes (only = one
+// ref, or any due one).
+func (s *TitleMetadataService) RefsDueForRT(ctx context.Context, only *repository.TmdbRef, limit int64) ([]repository.RTDue, error) {
+	return s.repo.RefsDueForRT(ctx, only, limit)
+}
+
+// RecordRTAttempt records one Rotten Tomatoes lookup of a TMDB title (slug
+// "" = not found; the next one waits retryAfter).
+func (s *TitleMetadataService) RecordRTAttempt(ctx context.Context, ref repository.TmdbRef, slug, retryAfter string) error {
+	return s.repo.RecordRTAttempt(ctx, ref, slug, retryAfter)
 }

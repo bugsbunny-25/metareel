@@ -126,9 +126,10 @@ SELECT strftime('%Y-%W', r.ranked_on) AS week,
        MIN(r.ranked_on) AS first_date,
        COUNT(*) AS entries,
        CAST(SUM(CASE WHEN COALESCE(t.tmdb_id, '') <> '' THEN 1 ELSE 0 END) AS INTEGER) AS mapped,
-       CAST(SUM(CASE WHEN COALESCE(t.rt_url, '') <> '' THEN 1 ELSE 0 END) AS INTEGER) AS with_rt
+       CAST(SUM(CASE WHEN COALESCE(m.rt_id, '') <> '' THEN 1 ELSE 0 END) AS INTEGER) AS with_rt
 FROM rankings r
 JOIN titles t ON t.id = r.title_id
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
 WHERE r.ranked_on >= CAST(?1 AS TEXT)
 GROUP BY week
 ORDER BY week

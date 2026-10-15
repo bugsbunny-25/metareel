@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"log/slog"
@@ -112,6 +113,7 @@ func bugoniaMDBList() *client.MDBListMedia {
 type ratingsFixture struct {
 	svc   *RatingsService
 	repo  *repository.FlixPatrolRepository
+	db    *sql.DB
 	jw    *fakeJustWatch
 	mdb   *fakeMDBList
 	rt    *fakeRT
@@ -124,6 +126,7 @@ func newRatingsFixture(t *testing.T) *ratingsFixture {
 	flixRepo := repository.NewFlixPatrolRepository(db)
 	f := &ratingsFixture{
 		repo:  flixRepo,
+		db:    db,
 		jw:    &fakeJustWatch{search: []client.MovieOrShowFragment{bugoniaFragment()}},
 		mdb:   &fakeMDBList{media: bugoniaMDBList()},
 		rt:    &fakeRT{bySlug: map[string]*client.RTRating{"m/bugonia": {Slug: "m/bugonia", Title: "Bugonia", Year: 2025, CriticsScore: i64(88), AudienceScore: i64(72), CertifiedFresh: boolp(true)}}},
@@ -148,7 +151,7 @@ var bugonia = TmdbRef{Kind: "movie", ID: "701387"}
 func TestRatings_RefreshThenCache(t *testing.T) {
 	f := newRatingsFixture(t)
 	ctx := context.Background()
-	if _, err := seedOne(t, f.repo, seedTitle{Slug: "bugonia", Name: "Bugonia", Kind: "movie", TmdbID: "701387"}); err != nil {
+	if _, err := seedOne(t, f.db, seedTitle{Slug: "bugonia", Name: "Bugonia", Kind: "movie", TmdbID: "701387"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -189,13 +192,13 @@ func TestRatings_RefreshThenCache(t *testing.T) {
 		t.Errorf("null MDBList rating should not be stored")
 	}
 
-	// IDs found while rating are back-filled onto the scraped title.
-	title, err := f.repo.GetTitleBySlug(ctx, "bugonia")
-	if err != nil {
-		t.Fatal(err)
+	// IDs found while rating are stored on the TMDB title (as a match).
+	m, err := repository.NewMetadataRepository(f.db).Get(ctx, bugonia)
+	if err != nil || m == nil {
+		t.Fatalf("tmdb title: %+v %v", m, err)
 	}
-	if title.ImdbID.String != "tt12300742" || title.RtUrl.String != "m/bugonia" {
-		t.Fatalf("title ids not back-filled: imdb=%q rt=%q", title.ImdbID.String, title.RtUrl.String)
+	if ptrStr(m.IMDbID) != "tt12300742" || ptrStr(m.RottenTomatoesID) != "m/bugonia" || m.IDSources["imdb"] != repository.IDSourceMatch {
+		t.Fatalf("ids not stored: imdb=%q rt=%q sources=%v", ptrStr(m.IMDbID), ptrStr(m.RottenTomatoesID), m.IDSources)
 	}
 
 	// Within the TTL: served from the database without calling providers.
@@ -253,7 +256,7 @@ func TestRatings_SearchFindsSlugWithoutMDBList(t *testing.T) {
 	f.rt.bySlug = nil
 	f.rt.search = &client.RTRating{Slug: "m/bugonia", Title: "Bugonia", Year: 2025, CriticsScore: i64(88), AudienceScore: i64(72), CertifiedFresh: boolp(true)}
 	ctx := context.Background()
-	if _, err := seedOne(t, f.repo, seedTitle{Slug: "bugonia", Name: "Bugonia", Kind: "movie", TmdbID: "701387"}); err != nil {
+	if _, err := seedOne(t, f.db, seedTitle{Slug: "bugonia", Name: "Bugonia", Kind: "movie", TmdbID: "701387"}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -29,6 +29,7 @@ type Bootstrap struct {
 	Metadata    *service.TitleMetadataService
 	Seasons     *service.SeasonMapper
 	Mapping     *service.TitleMappingService
+	Writer      *service.MappingWriter // every mapping change goes through it
 	Maintenance *service.MaintenanceService
 	Alerts      *service.AlertService
 }
@@ -76,8 +77,13 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 	maintenance := service.NewMaintenanceService(log, opsRepo, taskScheduleRepo, alerts, cfg.Maintenance.RunRetentionDays, cfg.Alerts.StaleChartHours)
 
 	seasons := service.NewSeasonMapper(log, importsRepo)
-	mapping := service.NewTitleMappingService(log, repository.NewMappingRepository(db), metadataRepo, metadata, seasons)
-	netflix := service.NewNetflixImporter(log, downloader, importsRepo, flixRepo, taskScheduleRepo, matcher, metadata, seasons, cfg.Imports.NetflixCountries).WithMapping(mapping)
+	mappingRepo := repository.NewMappingRepository(db)
+	writer := service.NewMappingWriter(log, mappingRepo)
+	if deps.Asynq != nil {
+		writer.WithRefreshQueue(mappingRefreshQueue(deps.Asynq, cfg.Asynq.Queue))
+	}
+	mapping := service.NewTitleMappingService(log, mappingRepo, writer, metadataRepo, metadata, seasons)
+	netflix := service.NewNetflixImporter(log, downloader, importsRepo, writer, flixRepo, taskScheduleRepo, matcher, metadata, seasons, cfg.Imports.NetflixCountries).WithMapping(mapping)
 	if cfg.Imports.NetflixSearch {
 		netflix.WithNetflixSearch(client.NewNetflixTop10Search(cfg.HTTP.Timeout, cfg.Imports.NetflixSearchQueryID, cfg.Imports.NetflixSearchQueryVer))
 	}
@@ -87,11 +93,12 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 		service.NewFlixPatrolJob(log, fetcher, flixRepo), seasons, deps.Asynq, cfg.Asynq.Queue)
 
 	jobs := taskhandlers.NewJobHandler(runner).
-		Handle(tasks.TypeTitlesEnrich, taskhandlers.EnrichJob(service.NewTitleEnricher(log, flixRepo, matcher, metadata).WithMapping(mapping), seasons, cfg.Scraper.UserAgent)).
+		Handle(tasks.TypeTitlesEnrich, taskhandlers.EnrichJob(service.NewTitleEnricher(log, flixRepo, writer, matcher, metadata).WithMapping(mapping), seasons, cfg.Scraper.UserAgent)).
 		Handle(tasks.TypeTitlesMetadata, taskhandlers.MetadataJob(metadata, seasons)).
 		Handle(tasks.TypeNetflixTop10Import, taskhandlers.NetflixImportJob(netflix)).
 		Handle(tasks.TypeNetflixTitlesMatch, taskhandlers.NetflixMatchJob(netflix)).
 		Handle(tasks.TypeIMDbRatingsImport, taskhandlers.IMDbImportJob(service.NewIMDbImporter(log, downloader, importsRepo, cfg.Imports.IMDbScope == "all"))).
+		Handle(tasks.TypeMappingRefresh, taskhandlers.MappingRefreshJob(mapping)).
 		Handle(tasks.TypeMaintenance, taskhandlers.MaintenanceJob(maintenance))
 	if deps.Ratings != nil {
 		jobs.Handle(tasks.TypeRatingsPrewarm, taskhandlers.RatingsPrewarmJob(deps.Ratings, flixRepo))
@@ -107,8 +114,31 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 		Metadata:       metadata,
 		Seasons:        seasons,
 		Mapping:        mapping,
+		Writer:         writer,
 		Maintenance:    maintenance,
 		Alerts:         alerts,
+	}
+}
+
+// mappingRefreshQueue enqueues mapping.refresh for the follow-up of mapping
+// changes. Not unique: a change made while a refresh runs gets its own run
+// (cheap: details fetched within a day are skipped).
+func mappingRefreshQueue(c *asynq.Client, queue string) func(ctx context.Context, r service.MappingRefresh) error {
+	return func(ctx context.Context, r service.MappingRefresh) error {
+		p := tasks.JobPayload{Reason: r.Reason, NetflixTitleIDs: r.NetflixIDs}
+		for _, ref := range r.Refs {
+			p.TmdbRefs = append(p.TmdbRefs, ref.String())
+		}
+		task, err := tasks.NewJobTask(tasks.TypeMappingRefresh, p)
+		if err != nil {
+			return err
+		}
+		opts := []asynq.Option{asynq.MaxRetry(2), asynq.Timeout(tasks.Timeout(tasks.TypeMappingRefresh))}
+		if queue != "" {
+			opts = append(opts, asynq.Queue(queue))
+		}
+		_, err = c.EnqueueContext(ctx, task, opts...)
+		return err
 	}
 }
 

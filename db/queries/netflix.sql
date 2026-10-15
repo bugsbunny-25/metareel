@@ -18,6 +18,7 @@ SELECT
     (SELECT COUNT(*) FROM title_links l WHERE l.netflix_title_id = n.id) AS flixpatrol_links,
     tm.title AS tmdb_title,
     tm.release_date AS tmdb_release_date,
+    tm.imdb_id AS tmdb_imdb_id,
     CAST(COALESCE(t.slug, '') AS TEXT) AS flixpatrol_slug,
     CAST(COALESCE(t.name, '') AS TEXT) AS flixpatrol_name
 FROM netflix_titles n
@@ -76,6 +77,7 @@ SELECT
     (SELECT COUNT(*) FROM title_links l WHERE l.netflix_title_id = n.id) AS flixpatrol_links,
     tm.title AS tmdb_title,
     tm.release_date AS tmdb_release_date,
+    tm.imdb_id AS tmdb_imdb_id,
     CAST(COALESCE(t.slug, '') AS TEXT) AS flixpatrol_slug,
     CAST(COALESCE(t.name, '') AS TEXT) AS flixpatrol_name
 FROM netflix_titles n
@@ -85,37 +87,6 @@ WHERE n.id = sqlc.arg(id);
 
 -- name: GetNetflixTitleRow :one
 SELECT * FROM netflix_titles WHERE id = ?;
-
--- name: UpdateNetflixTitleIDs :one
--- Admin correction: marks the title as a manual match so automation leaves it alone.
-UPDATE netflix_titles
-SET tmdb_kind     = sqlc.narg(tmdb_kind),
-    tmdb_id       = sqlc.narg(tmdb_id),
-    imdb_id       = sqlc.narg(imdb_id),
-    match_status  = 'manual',
-    match_source  = 'manual',
-    next_match_at = NULL,
-    updated_at    = CURRENT_TIMESTAMP
-WHERE id = sqlc.arg(id)
-RETURNING *;
-
--- name: ResetNetflixTitleMatch :one
--- Puts a title back in the matching queue (due now), clearing a manual lock.
-UPDATE netflix_titles
-SET match_status  = CASE WHEN COALESCE(tmdb_id, '') = '' THEN 'pending' ELSE 'matched' END,
-    match_source  = CASE WHEN match_status = 'manual' THEN NULL ELSE match_source END,
-    next_match_at = NULL,
-    updated_at    = CURRENT_TIMESTAMP
-WHERE id = ?
-RETURNING *;
-
--- name: ClearNetflixTitleMatch :one
--- Forgets a title's IDs and queues it for a fresh match.
-UPDATE netflix_titles
-SET tmdb_kind = NULL, tmdb_id = NULL, imdb_id = NULL, title_id = NULL, match_status = 'pending', match_source = NULL,
-    match_attempts = 0, next_match_at = NULL, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
-RETURNING *;
 
 -- name: ListNetflixTitlesForMatch :many
 -- Specific titles to match now (ignoring backoff), with the first week they
@@ -311,12 +282,41 @@ WHERE id = sqlc.arg(id);
 -- name: SetNetflixSeasonNetflixID :exec
 UPDATE netflix_seasons SET netflix_id = sqlc.arg(netflix_id), updated_at = CURRENT_TIMESTAMP WHERE id = sqlc.arg(id);
 
--- name: SaveNetflixTitleNetflixMatch :execrows
--- Maps a title by its Netflix ID; replaces automatic matches made by name
--- (never manual ones).
+-- name: RecordNetflixMatchAttempt :exec
+-- One automatic matching attempt of a Netflix title (see
+-- RecordTitleMatchAttempt).
 UPDATE netflix_titles
-SET tmdb_kind = sqlc.arg(tmdb_kind), tmdb_id = sqlc.arg(tmdb_id),
-    imdb_id = COALESCE(NULLIF(CAST(sqlc.arg(imdb_id) AS TEXT), ''), netflix_titles.imdb_id),
-    match_status = 'matched', match_source = 'netflix_id', next_match_at = NULL,
-    match_attempts = netflix_titles.match_attempts + 1, updated_at = CURRENT_TIMESTAMP
-WHERE netflix_titles.id = sqlc.arg(id) AND netflix_titles.match_status <> 'manual';
+SET match_status   = CASE WHEN CAST(sqlc.arg(found) AS INTEGER) = 1 THEN match_status ELSE 'unmatched' END,
+    match_attempts = match_attempts + 1,
+    next_match_at  = CASE WHEN CAST(sqlc.arg(retry_after) AS TEXT) = '' THEN NULL
+                          ELSE datetime('now', CAST(sqlc.arg(retry_after) AS TEXT)) END,
+    updated_at     = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id) AND match_status <> 'manual';
+
+-- name: RequeueNetflixTitleMatch :exec
+UPDATE netflix_titles
+SET next_match_at  = NULL,
+    match_attempts = CASE WHEN CAST(sqlc.arg(clear) AS INTEGER) = 1 THEN 0 ELSE match_attempts END,
+    updated_at     = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id);
+
+-- name: ApplyNetflixMapping :one
+-- Stores a Netflix title's computed mapping (see ApplyTitleMapping); title_id
+-- is the FlixPatrol title it was matched through, if any.
+UPDATE netflix_titles
+SET tmdb_kind     = sqlc.narg(tmdb_kind),
+    tmdb_id       = sqlc.narg(tmdb_id),
+    title_id      = sqlc.narg(title_id),
+    match_status  = CASE WHEN CAST(sqlc.arg(match_status) AS TEXT) = '' THEN match_status ELSE sqlc.arg(match_status) END,
+    match_source  = sqlc.narg(match_source),
+    next_match_at = CASE WHEN CAST(sqlc.arg(match_status) AS TEXT) = 'matched' OR CAST(sqlc.arg(match_status) AS TEXT) = 'manual'
+                         OR CAST(sqlc.arg(match_status) AS TEXT) = 'pending' THEN NULL ELSE next_match_at END,
+    updated_at    = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id)
+RETURNING *;
+
+-- name: ListNetflixTitleIDsOnRef :many
+SELECT id FROM netflix_titles WHERE tmdb_kind = sqlc.arg(tmdb_kind) AND tmdb_id = sqlc.arg(tmdb_id) ORDER BY id;
+
+-- name: ListNetflixTitleRowsByIDs :many
+SELECT * FROM netflix_titles WHERE id IN (sqlc.slice(ids)) ORDER BY id;

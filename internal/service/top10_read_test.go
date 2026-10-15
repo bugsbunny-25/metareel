@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
+	"log/slog"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,11 +15,31 @@ import (
 )
 
 // newTestTop10Service returns a Top10ReadService backed by a migrated,
-// file-based SQLite database, plus the repository for seeding.
-func newTestTop10Service(t *testing.T) (*Top10ReadService, *repository.FlixPatrolRepository) {
+// file-based SQLite database, plus the repository and the database for seeding.
+func newTestTop10Service(t *testing.T) (*Top10ReadService, *repository.FlixPatrolRepository, *sql.DB) {
 	t.Helper()
-	repo := repository.NewFlixPatrolRepository(newTestDB(t))
-	return NewTop10ReadService(repo), repo
+	db := newTestDB(t)
+	repo := repository.NewFlixPatrolRepository(db)
+	return NewTop10ReadService(repo), repo, db
+}
+
+var (
+	testWritersMu sync.Mutex
+	testWriters   = map[*sql.DB]*MappingWriter{}
+)
+
+// testWriter returns the one mapping writer of a test database, shared like
+// in the server (the first TitleMappingService built with it runs its
+// follow-ups inline).
+func testWriter(db *sql.DB) *MappingWriter {
+	testWritersMu.Lock()
+	defer testWritersMu.Unlock()
+	if w, ok := testWriters[db]; ok {
+		return w
+	}
+	w := NewMappingWriter(slog.New(slog.NewTextHandler(io.Discard, nil)), repository.NewMappingRepository(db))
+	testWriters[db] = w
+	return w
 }
 
 // newTestDB returns a migrated, file-based SQLite database.
@@ -57,9 +80,11 @@ type seedTitle struct {
 	TmdbID, ImdbID, RtURL string
 }
 
-func seed(t *testing.T, repo *repository.FlixPatrolRepository, titles []seedTitle, rankings []seedRanking) {
+func seed(t *testing.T, db *sql.DB, titles []seedTitle, rankings []seedRanking) {
 	t.Helper()
 	ctx := context.Background()
+	repo := repository.NewFlixPatrolRepository(db)
+	session := testWriter(db).Session("test")
 	ids := map[string]int64{}
 	for _, in := range titles {
 		row, err := repo.EnsureTitle(ctx, in.Slug, in.Name, in.Kind)
@@ -68,12 +93,13 @@ func seed(t *testing.T, repo *repository.FlixPatrolRepository, titles []seedTitl
 		}
 		ids[in.Slug] = row.ID
 		if in.TmdbID != "" {
-			if _, err := repo.SaveTitleMatch(ctx, row.ID, repository.TitleMatchResult{Kind: in.Kind, TmdbID: in.TmdbID, ImdbID: in.ImdbID, Source: "test"}); err != nil {
+			if _, err := session.MatchTitle(ctx, row.ID, repository.TitleMatchResult{Kind: in.Kind, TmdbID: in.TmdbID, ImdbID: in.ImdbID, Source: "test"}); err != nil {
 				t.Fatalf("save match %s: %v", in.Slug, err)
 			}
 		}
-		if in.RtURL != "" {
-			if err := repo.SaveTitleExternalIDs(ctx, row.ID, "", "", in.RtURL); err != nil {
+		if in.RtURL != "" && in.TmdbID != "" {
+			ref := repository.TmdbRef{Kind: tmdbKindOfTitle(in.Kind), ID: in.TmdbID}
+			if err := repository.NewMetadataRepository(db).SaveIDs(ctx, ref, repository.TmdbIDs{RTID: in.RtURL}, repository.IDSourceMatch); err != nil {
 				t.Fatalf("save rt %s: %v", in.Slug, err)
 			}
 		}
@@ -98,8 +124,8 @@ func seed(t *testing.T, repo *repository.FlixPatrolRepository, titles []seedTitl
 }
 
 func TestTop10_PreviousRankAndDaysInTop10(t *testing.T) {
-	svc, repo := newTestTop10Service(t)
-	seed(t, repo,
+	svc, _, db := newTestTop10Service(t)
+	seed(t, db,
 		[]seedTitle{
 			{Slug: "a", Name: "A", Kind: "movie"},
 			{Slug: "b", Name: "B", Kind: "movie"},
@@ -155,8 +181,8 @@ func TestTop10_PreviousRankAndDaysInTop10(t *testing.T) {
 }
 
 func TestTop10_AllProvidersLatestIsPerProvider(t *testing.T) {
-	svc, repo := newTestTop10Service(t)
-	seed(t, repo,
+	svc, _, db := newTestTop10Service(t)
+	seed(t, db,
 		[]seedTitle{{Slug: "a", Name: "A", Kind: "tv_show"}},
 		[]seedRanking{
 			{"a", "2026-10-02", "US", "netflix", "tv_shows", 1},
@@ -182,7 +208,7 @@ func TestTop10_AllProvidersLatestIsPerProvider(t *testing.T) {
 }
 
 func TestTop10_NotFound(t *testing.T) {
-	svc, _ := newTestTop10Service(t)
+	svc, _, _ := newTestTop10Service(t)
 	_, err := svc.GetMoviesByProvider(context.Background(), Top10Query{CountryCode: "US", Provider: "netflix"})
 	if !errors.Is(err, ErrTop10NotFound) {
 		t.Fatalf("err = %v, want ErrTop10NotFound", err)
@@ -190,8 +216,8 @@ func TestTop10_NotFound(t *testing.T) {
 }
 
 func TestTitleRankings(t *testing.T) {
-	svc, repo := newTestTop10Service(t)
-	seed(t, repo,
+	svc, _, db := newTestTop10Service(t)
+	seed(t, db,
 		[]seedTitle{
 			// Two FlixPatrol slugs mapped to the same TMDB movie.
 			{Slug: "ice-age", Name: "Ice Age", Kind: "movie", TmdbID: "425", ImdbID: "tt0268380"},
@@ -316,10 +342,10 @@ func deref(p *int64) any {
 	return *p
 }
 
-func seedOne(t *testing.T, repo *repository.FlixPatrolRepository, in seedTitle) (int64, error) {
+func seedOne(t *testing.T, db *sql.DB, in seedTitle) (int64, error) {
 	t.Helper()
-	seed(t, repo, []seedTitle{in}, nil)
-	row, err := repo.GetTitleBySlug(context.Background(), in.Slug)
+	seed(t, db, []seedTitle{in}, nil)
+	row, err := repository.NewFlixPatrolRepository(db).GetTitleBySlug(context.Background(), in.Slug)
 	if err != nil || row == nil {
 		return 0, err
 	}

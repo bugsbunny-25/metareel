@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bugsbunny-25/metareel/internal/repository"
+	"github.com/bugsbunny-25/metareel/internal/repository/sqlc"
 	"github.com/bugsbunny-25/metareel/internal/scraper/flixpatrol"
 )
 
@@ -395,8 +396,25 @@ func (s *TitleOverviewService) Lookup(ctx context.Context, imdbID, tmdb, slug, n
 			out.Refs = append(out.Refs, LookupRef{Kind: kind, TmdbID: id})
 		}
 	}
-	addTitle := func(slug, name string, imdb, rt *string) {
-		out.Titles = append(out.Titles, RankedTitle{Slug: slug, Name: name, IMDbID: imdb, RottenTomatoesURL: rt})
+	// A title's IMDb ID and RT slug are its TMDB title's.
+	metaCache := map[repository.TmdbRef]*repository.TmdbMetadata{}
+	addTitle := func(t sqlc.Title) error {
+		rt := RankedTitle{Slug: t.Slug, Name: t.Name}
+		if ref := repository.TitleRef(t); ref.ID != "" {
+			m, ok := metaCache[ref]
+			if !ok {
+				var err error
+				if m, err = s.metadata.Get(ctx, ref); err != nil {
+					return err
+				}
+				metaCache[ref] = m
+			}
+			if m != nil {
+				rt.IMDbID, rt.RottenTomatoesURL = m.IMDbID, m.RottenTomatoesID
+			}
+		}
+		out.Titles = append(out.Titles, rt)
+		return nil
 	}
 	switch {
 	case imdbID != "":
@@ -409,7 +427,9 @@ func (s *TitleOverviewService) Lookup(ctx context.Context, imdbID, tmdb, slug, n
 			return nil, err
 		}
 		for _, t := range titles {
-			addTitle(t.Slug, t.Name, nullStr(t.ImdbID), nullStr(t.RtUrl))
+			if err := addTitle(t); err != nil {
+				return nil, err
+			}
 			if t.TmdbID.Valid {
 				addRef(tmdbKindOf(flixpatrol.TitleKind(t.Kind)), t.TmdbID.String)
 			}
@@ -435,7 +455,9 @@ func (s *TitleOverviewService) Lookup(ctx context.Context, imdbID, tmdb, slug, n
 			return nil, err
 		}
 		for _, t := range titles {
-			addTitle(t.Slug, t.Name, nullStr(t.ImdbID), nullStr(t.RtUrl))
+			if err := addTitle(t); err != nil {
+				return nil, err
+			}
 		}
 		meta, err := s.metadata.Get(ctx, ref)
 		if err != nil {
@@ -460,7 +482,9 @@ func (s *TitleOverviewService) Lookup(ctx context.Context, imdbID, tmdb, slug, n
 				return nil, err
 			}
 			for _, t := range titles {
-				addTitle(t.Slug, t.Name, nullStr(t.ImdbID), nullStr(t.RtUrl))
+				if err := addTitle(t); err != nil {
+					return nil, err
+				}
 			}
 		}
 	default:
@@ -473,7 +497,9 @@ func (s *TitleOverviewService) Lookup(ctx context.Context, imdbID, tmdb, slug, n
 			return nil, err
 		}
 		if t != nil {
-			addTitle(t.Slug, t.Name, nullStr(t.ImdbID), nullStr(t.RtUrl))
+			if err := addTitle(*t); err != nil {
+				return nil, err
+			}
 			if t.TmdbID.Valid {
 				addRef(tmdbKindOf(flixpatrol.TitleKind(t.Kind)), t.TmdbID.String)
 			}

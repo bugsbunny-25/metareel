@@ -8,6 +8,7 @@
   import Drawer from '../components/Drawer.svelte'
   import Icon from '../components/Icon.svelte'
   import KindBadge from '../components/KindBadge.svelte'
+  import MappingHistory from '../components/MappingHistory.svelte'
 
   let { id, onclose, onsaved } = $props()
 
@@ -55,6 +56,7 @@
   function apply(t) {
     title = t
     resetForm()
+    historyVersion++
     onsaved?.(t)
   }
 
@@ -71,7 +73,15 @@
   async function save() {
     saving = true
     try {
-      const body = { tmdb_kind: form.tmdb_kind, tmdb_id: form.tmdb_id.trim(), imdb_id: parseImdbId(form.imdb_id) }
+      // Only what changed: IMDb / Wikidata IDs belong to the TMDB title, and
+      // one sent is stored as its, set by hand.
+      const body = {}
+      const curKind = title.tmdb_kind ?? (title.kind === 'tv_show' ? 'tv' : 'movie')
+      if (form.tmdb_id.trim() !== (title.tmdb_id ?? '') || form.tmdb_kind !== curKind) {
+        body.tmdb_kind = form.tmdb_kind
+        body.tmdb_id = form.tmdb_id.trim()
+      }
+      if (parseImdbId(form.imdb_id) !== (title.imdb_id ?? '')) body.imdb_id = parseImdbId(form.imdb_id)
       if (form.wikidata_id) body.wikidata_id = parseWikidataId(form.wikidata_id)
       apply(await patchNetflixTitle(title.id, body))
       seasonEdits = {}
@@ -84,8 +94,9 @@
   }
 
   let rematching = $state(false)
+  let historyVersion = $state(0)
   async function rematch(clear) {
-    if (clear && !(await confirm({ title: 'Clear and match again?', message: `Forget the TMDB and IMDb IDs of "${title.show_title}" and match it from scratch.`, confirmLabel: 'Clear and match', danger: true }))) return
+    if (clear && !(await confirm({ title: 'Clear and match again?', message: `Forget what "${title.show_title}" is mapped to and match it from scratch. Linked titles that took this mapping fall back to their own.`, confirmLabel: 'Clear and match', danger: true }))) return
     rematching = true
     try {
       const res = await rematchNetflixTitle(title.id, clear)
@@ -238,12 +249,15 @@
           <input class="input mono" bind:value={form.wikidata_id} onblur={() => (form.wikidata_id = parseWikidataId(form.wikidata_id))} placeholder="Q141461750 or Wikidata URL" />
         </label>
       </div>
-      <p class="field-hint" style="margin-top:-6px">Paste IDs or URLs. Netflix lists this under {title.kind === 'tv_show' ? 'TV' : 'Films'}; pick the TMDB kind it really is. Leave the TMDB ID empty to find it from the IMDb or Wikidata ID. Saving also updates linked FlixPatrol titles, fetches TMDB's season list and remaps seasons.</p>
+      <p class="field-hint" style="margin-top:-6px">Paste IDs or URLs. Netflix lists this under {title.kind === 'tv_show' ? 'TV' : 'Films'}; pick the TMDB kind it really is. Leave the TMDB ID empty to find it from the IMDb or Wikidata ID. Only changed fields are saved; IMDb / Wikidata IDs you enter become the TMDB title's, set by hand. Saving also updates linked FlixPatrol titles; TMDB details and season numbers follow within a minute.</p>
       <div class="row" style="margin-top:12px">
         <button class="btn btn-primary" onclick={save} disabled={!dirty || saving}>{saving ? 'Saving…' : 'Save mapping'}</button>
         <button class="btn" onclick={resetForm} disabled={!dirty}>Discard changes</button>
         {#if dirty}<span class="badge badge-warning">Unsaved changes</span>{/if}
       </div>
+
+      <div class="section-title" style="margin-top:24px">History</div>
+      <MappingHistory subject={`netflix:${title.id}`} version={historyVersion} />
 
       <div class="section-title" style="margin-top:24px">Find matches</div>
       <div class="row" style="flex-wrap:wrap">

@@ -55,6 +55,33 @@ type ImdbRating struct {
 	ImportedAt    time.Time `json:"imported_at"`
 }
 
+type MappingEvent struct {
+	ID           int64          `json:"id"`
+	SubjectType  string         `json:"subject_type"`
+	SubjectID    int64          `json:"subject_id"`
+	Action       string         `json:"action"`
+	FromTmdbKind sql.NullString `json:"from_tmdb_kind"`
+	FromTmdbID   sql.NullString `json:"from_tmdb_id"`
+	ToTmdbKind   sql.NullString `json:"to_tmdb_kind"`
+	ToTmdbID     sql.NullString `json:"to_tmdb_id"`
+	Source       sql.NullString `json:"source"`
+	Actor        string         `json:"actor"`
+	CreatedAt    time.Time      `json:"created_at"`
+}
+
+type MappingEvidence struct {
+	SubjectType string         `json:"subject_type"`
+	SubjectID   int64          `json:"subject_id"`
+	Kind        string         `json:"kind"`
+	TmdbKind    sql.NullString `json:"tmdb_kind"`
+	TmdbID      sql.NullString `json:"tmdb_id"`
+	Source      sql.NullString `json:"source"`
+	ImdbID      sql.NullString `json:"imdb_id"`
+	ViaTitleID  sql.NullInt64  `json:"via_title_id"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
 type NetflixMostPopular struct {
 	Category       string          `json:"category"`
 	Rank           int64           `json:"rank"`
@@ -82,7 +109,7 @@ type NetflixTitle struct {
 	ShowTitle          string         `json:"show_title"`
 	Kind               string         `json:"kind"`
 	TmdbID             sql.NullString `json:"tmdb_id"`
-	ImdbID             sql.NullString `json:"imdb_id"`
+	LegacyImdbID       sql.NullString `json:"legacy_imdb_id"`
 	TitleID            sql.NullInt64  `json:"title_id"`
 	MatchStatus        string         `json:"match_status"`
 	MatchSource        sql.NullString `json:"match_source"`
@@ -187,31 +214,31 @@ type TaskScheduleTarget struct {
 }
 
 type Title struct {
-	ID               int64          `json:"id"`
-	Slug             string         `json:"slug"`
-	Name             string         `json:"name"`
-	Kind             string         `json:"kind"`
-	TmdbID           sql.NullString `json:"tmdb_id"`
-	ImdbID           sql.NullString `json:"imdb_id"`
-	RtUrl            sql.NullString `json:"rt_url"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
-	MatchStatus      string         `json:"match_status"`
-	MatchSource      sql.NullString `json:"match_source"`
-	MatchedName      sql.NullString `json:"matched_name"`
-	MatchedYear      sql.NullInt64  `json:"matched_year"`
-	MatchAttempts    int64          `json:"match_attempts"`
-	MatchAttemptedAt sql.NullTime   `json:"match_attempted_at"`
-	NextMatchAt      sql.NullTime   `json:"next_match_at"`
-	RtAttempts       int64          `json:"rt_attempts"`
-	NextRtAt         sql.NullTime   `json:"next_rt_at"`
-	JustwatchID      sql.NullString `json:"justwatch_id"`
-	WikidataID       sql.NullString `json:"wikidata_id"`
-	FpName           sql.NullString `json:"fp_name"`
-	FpKind           sql.NullString `json:"fp_kind"`
-	FpPremiereDate   sql.NullString `json:"fp_premiere_date"`
-	FpCountry        sql.NullString `json:"fp_country"`
-	FpFetchedAt      sql.NullTime   `json:"fp_fetched_at"`
+	ID                int64          `json:"id"`
+	Slug              string         `json:"slug"`
+	Name              string         `json:"name"`
+	Kind              string         `json:"kind"`
+	TmdbID            sql.NullString `json:"tmdb_id"`
+	LegacyImdbID      sql.NullString `json:"legacy_imdb_id"`
+	LegacyRtUrl       sql.NullString `json:"legacy_rt_url"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	MatchStatus       string         `json:"match_status"`
+	MatchSource       sql.NullString `json:"match_source"`
+	MatchedName       sql.NullString `json:"matched_name"`
+	MatchedYear       sql.NullInt64  `json:"matched_year"`
+	MatchAttempts     int64          `json:"match_attempts"`
+	MatchAttemptedAt  sql.NullTime   `json:"match_attempted_at"`
+	NextMatchAt       sql.NullTime   `json:"next_match_at"`
+	LegacyRtAttempts  int64          `json:"legacy_rt_attempts"`
+	LegacyNextRtAt    sql.NullTime   `json:"legacy_next_rt_at"`
+	LegacyJustwatchID sql.NullString `json:"legacy_justwatch_id"`
+	LegacyWikidataID  sql.NullString `json:"legacy_wikidata_id"`
+	FpName            sql.NullString `json:"fp_name"`
+	FpKind            sql.NullString `json:"fp_kind"`
+	FpPremiereDate    sql.NullString `json:"fp_premiere_date"`
+	FpCountry         sql.NullString `json:"fp_country"`
+	FpFetchedAt       sql.NullTime   `json:"fp_fetched_at"`
 }
 
 type TitleLink struct {
@@ -281,6 +308,15 @@ type TmdbTitle struct {
 	Seasons             sql.NullString  `json:"seasons"`
 	NetflixID           sql.NullString  `json:"netflix_id"`
 	JustwatchID         sql.NullString  `json:"justwatch_id"`
+	ImdbSource          sql.NullString  `json:"imdb_source"`
+	WikidataSource      sql.NullString  `json:"wikidata_source"`
+	RtSource            sql.NullString  `json:"rt_source"`
+	MetacriticSource    sql.NullString  `json:"metacritic_source"`
+	LetterboxdSource    sql.NullString  `json:"letterboxd_source"`
+	NetflixSource       sql.NullString  `json:"netflix_source"`
+	JustwatchSource     sql.NullString  `json:"justwatch_source"`
+	RtAttempts          int64           `json:"rt_attempts"`
+	NextRtAt            sql.NullTime    `json:"next_rt_at"`
 }
 
 type TmdbWatchProvider struct {

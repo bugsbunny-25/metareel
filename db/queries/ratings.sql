@@ -31,15 +31,3 @@ WHERE tmdb_kind = ? AND tmdb_id = ? AND provider = ?;
 -- name: InsertTitleRatingSource :exec
 INSERT INTO title_rating_sources (tmdb_kind, tmdb_id, provider, source, value, votes, url, fetched_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-
--- Back-fill IDs found while rating onto scraped titles that lack them.
--- name: FillTitleExternalIDs :exec
-UPDATE titles
-SET
-    imdb_id    = COALESCE(imdb_id, sqlc.narg(imdb_id)),
-    rt_url     = COALESCE(rt_url, sqlc.narg(rt_url)),
-    updated_at = CURRENT_TIMESTAMP
-WHERE tmdb_id = sqlc.arg(tmdb_id)
-  AND kind = sqlc.arg(kind)
-  AND ((imdb_id IS NULL AND sqlc.narg(imdb_id) IS NOT NULL)
-    OR (rt_url IS NULL AND sqlc.narg(rt_url) IS NOT NULL));

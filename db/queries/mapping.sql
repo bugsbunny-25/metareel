@@ -35,45 +35,6 @@ SELECT n.* FROM netflix_titles n WHERE n.id IN (SELECT netflix_title_id FROM tit
 -- name: ListLinkedFlixPatrolTitles :many
 SELECT t.* FROM titles t WHERE t.id IN (SELECT title_id FROM title_links);
 
--- name: AdoptNetflixTitleMapping :execrows
--- Shares a linked FlixPatrol title's mapping (never touches manual titles).
--- The IMDb ID falls back to TMDB's.
-UPDATE netflix_titles
-SET tmdb_kind     = sqlc.arg(tmdb_kind),
-    tmdb_id       = sqlc.arg(tmdb_id),
-    imdb_id       = COALESCE(NULLIF(CAST(sqlc.arg(imdb_id) AS TEXT), ''),
-                             (SELECT m.imdb_id FROM tmdb_titles m WHERE m.tmdb_kind = sqlc.arg(tmdb_kind) AND m.tmdb_id = sqlc.arg(tmdb_id))),
-    title_id      = COALESCE(sqlc.narg(title_id), netflix_titles.title_id),
-    match_status  = 'matched',
-    match_source  = sqlc.arg(match_source),
-    next_match_at = NULL,
-    updated_at    = CURRENT_TIMESTAMP
-WHERE netflix_titles.id = sqlc.arg(id) AND netflix_titles.match_status <> 'manual';
-
--- name: AdoptFlixPatrolTitleMapping :execrows
--- Shares a linked Netflix title's mapping (never touches manual titles).
--- IDs that belonged to the previous match (RT, JustWatch, Wikidata) are
--- dropped when the TMDB title changes, and the RT lookup is due again.
-UPDATE titles
-SET kind         = sqlc.arg(kind),
-    tmdb_id      = sqlc.arg(tmdb_id),
-    imdb_id      = COALESCE(NULLIF(CAST(sqlc.arg(imdb_id) AS TEXT), ''),
-                            (SELECT m.imdb_id FROM tmdb_titles m
-                             WHERE m.tmdb_kind = CASE sqlc.arg(kind) WHEN 'tv_show' THEN 'tv' ELSE 'movie' END
-                               AND m.tmdb_id = sqlc.arg(tmdb_id))),
-    rt_url       = CASE WHEN titles.kind = sqlc.arg(kind) AND COALESCE(titles.tmdb_id, '') = sqlc.arg(tmdb_id) THEN titles.rt_url END,
-    justwatch_id = CASE WHEN titles.kind = sqlc.arg(kind) AND COALESCE(titles.tmdb_id, '') = sqlc.arg(tmdb_id) THEN titles.justwatch_id END,
-    wikidata_id  = CASE WHEN titles.kind = sqlc.arg(kind) AND COALESCE(titles.tmdb_id, '') = sqlc.arg(tmdb_id) THEN titles.wikidata_id END,
-    matched_name = NULL,
-    matched_year = NULL,
-    rt_attempts  = 0,
-    next_rt_at   = NULL,
-    match_status = 'matched',
-    match_source = 'netflix_title',
-    next_match_at = NULL,
-    updated_at   = CURRENT_TIMESTAMP
-WHERE titles.id = sqlc.arg(id) AND titles.match_status <> 'manual';
-
 -- name: ListTmdbMappings :many
 -- TMDB titles that FlixPatrol or Netflix titles are mapped to, with how many
 -- of each and flags. flag: conflict (linked titles mapped elsewhere) |
@@ -181,56 +142,70 @@ FROM title_links l
 JOIN netflix_titles n ON n.id = l.netflix_title_id
 WHERE l.title_id IN (sqlc.slice(ids));
 
--- name: RemapFlixPatrolTitles :many
--- Moves every FlixPatrol title on one TMDB title to another (fixed by hand).
-UPDATE titles
-SET kind          = sqlc.arg(new_kind),
-    tmdb_id       = sqlc.arg(new_tmdb_id),
-    imdb_id       = (SELECT m.imdb_id FROM tmdb_titles m
-                     WHERE m.tmdb_kind = CASE sqlc.arg(new_kind) WHEN 'tv_show' THEN 'tv' ELSE 'movie' END
-                       AND m.tmdb_id = sqlc.arg(new_tmdb_id)),
-    rt_url        = NULL,
-    justwatch_id  = NULL,
-    wikidata_id   = NULL,
-    matched_name  = NULL,
-    matched_year  = NULL,
-    rt_attempts   = 0,
-    next_rt_at    = NULL,
-    match_status  = 'manual',
-    match_source  = 'manual',
-    next_match_at = NULL,
-    updated_at    = CURRENT_TIMESTAMP
-WHERE titles.kind = sqlc.arg(old_kind) AND titles.tmdb_id = sqlc.arg(old_tmdb_id)
-RETURNING id;
+-- name: InsertMappingEvent :exec
+INSERT INTO mapping_events (subject_type, subject_id, action, from_tmdb_kind, from_tmdb_id, to_tmdb_kind, to_tmdb_id, source, actor)
+VALUES (sqlc.arg(subject_type), sqlc.arg(subject_id), sqlc.arg(action), sqlc.narg(from_tmdb_kind), sqlc.narg(from_tmdb_id),
+        sqlc.narg(to_tmdb_kind), sqlc.narg(to_tmdb_id), sqlc.narg(source), sqlc.arg(actor));
 
--- name: RemapNetflixTitles :many
--- Moves every Netflix title on one TMDB title to another (fixed by hand).
-UPDATE netflix_titles
-SET tmdb_kind     = sqlc.arg(new_tmdb_kind),
-    tmdb_id       = sqlc.arg(new_tmdb_id),
-    imdb_id       = (SELECT m.imdb_id FROM tmdb_titles m WHERE m.tmdb_kind = sqlc.arg(new_tmdb_kind) AND m.tmdb_id = sqlc.arg(new_tmdb_id)),
-    match_status  = 'manual',
-    match_source  = 'manual',
-    next_match_at = NULL,
-    updated_at    = CURRENT_TIMESTAMP
-WHERE netflix_titles.tmdb_kind = sqlc.arg(old_tmdb_kind) AND netflix_titles.tmdb_id = sqlc.arg(old_tmdb_id)
-RETURNING id;
+-- name: ListMappingEvents :many
+-- Newest first, optionally of one subject (flixpatrol | netflix + id) and/or
+-- one TMDB title (as the old or the new mapping).
+SELECT e.*,
+       CAST(COALESCE(CASE e.subject_type
+           WHEN 'flixpatrol' THEN (SELECT t.name FROM titles t WHERE t.id = e.subject_id)
+           ELSE (SELECT n.show_title FROM netflix_titles n WHERE n.id = e.subject_id) END, '') AS TEXT) AS subject_name
+FROM mapping_events e
+WHERE (CAST(sqlc.arg(subject_type) AS TEXT) = ''
+       OR (e.subject_type = sqlc.arg(subject_type) AND e.subject_id = CAST(sqlc.arg(subject_id) AS INTEGER)))
+  AND (CAST(sqlc.arg(tmdb_kind) AS TEXT) = ''
+       OR (e.to_tmdb_kind = sqlc.arg(tmdb_kind) AND e.to_tmdb_id = CAST(sqlc.arg(tmdb_id) AS TEXT))
+       OR (e.from_tmdb_kind = sqlc.arg(tmdb_kind) AND e.from_tmdb_id = CAST(sqlc.arg(tmdb_id) AS TEXT)))
+ORDER BY e.id DESC
+LIMIT sqlc.arg(limit);
 
--- name: ClearNetflixTitlesAdoptedFrom :many
--- After a FlixPatrol title's match is cleared, linked Netflix titles that only
--- took their mapping from it are cleared too (else they would hand it back).
-UPDATE netflix_titles
-SET tmdb_kind = NULL, tmdb_id = NULL, imdb_id = NULL, match_status = 'pending', match_source = NULL,
-    next_match_at = NULL, updated_at = CURRENT_TIMESTAMP
-WHERE netflix_titles.match_source = 'flixpatrol_title' AND netflix_titles.match_status <> 'manual'
-  AND netflix_titles.id IN (SELECT l.netflix_title_id FROM title_links l WHERE l.title_id = sqlc.arg(title_id))
-RETURNING id;
+-- name: UpsertMappingEvidence :exec
+-- What one source says a title is (one row per title and kind of evidence).
+INSERT INTO mapping_evidence (subject_type, subject_id, kind, tmdb_kind, tmdb_id, source, imdb_id, via_title_id)
+VALUES (sqlc.arg(subject_type), sqlc.arg(subject_id), sqlc.arg(kind), sqlc.narg(tmdb_kind), sqlc.narg(tmdb_id),
+        sqlc.narg(source), sqlc.narg(imdb_id), sqlc.narg(via_title_id))
+ON CONFLICT(subject_type, subject_id, kind) DO UPDATE SET
+    tmdb_kind = excluded.tmdb_kind, tmdb_id = excluded.tmdb_id, source = excluded.source,
+    imdb_id = excluded.imdb_id, via_title_id = excluded.via_title_id, updated_at = CURRENT_TIMESTAMP;
 
--- name: ClearFlixPatrolTitlesAdoptedFrom :exec
--- The same for FlixPatrol titles that took a cleared Netflix title's mapping.
-UPDATE titles
-SET tmdb_id = NULL, imdb_id = NULL, rt_url = NULL, justwatch_id = NULL, wikidata_id = NULL,
-    match_status = 'pending', match_source = NULL, matched_name = NULL, matched_year = NULL,
-    next_match_at = NULL, rt_attempts = 0, next_rt_at = NULL, updated_at = CURRENT_TIMESTAMP
-WHERE titles.match_source = 'netflix_title' AND titles.match_status <> 'manual'
-  AND titles.id IN (SELECT l.title_id FROM title_links l WHERE l.netflix_title_id = sqlc.arg(netflix_title_id));
+-- name: DeleteMappingEvidence :execrows
+-- One kind of a title's evidence, or all of it (kind '').
+DELETE FROM mapping_evidence
+WHERE subject_type = sqlc.arg(subject_type) AND subject_id = sqlc.arg(subject_id)
+  AND (CAST(sqlc.arg(kind) AS TEXT) = '' OR kind = sqlc.arg(kind));
+
+-- name: DeleteNetflixEvidenceVia :many
+-- Netflix matches made through a FlixPatrol title (whose match was cleared).
+DELETE FROM mapping_evidence
+WHERE subject_type = 'netflix' AND kind = 'match' AND via_title_id = sqlc.arg(title_id)
+RETURNING subject_id;
+
+-- name: ListMappingEvidence :many
+SELECT * FROM mapping_evidence WHERE subject_type = sqlc.arg(subject_type) AND subject_id IN (sqlc.slice(ids));
+
+-- name: ListAllMappingEvidence :many
+SELECT * FROM mapping_evidence;
+
+-- name: ListIMDbMismatches :many
+-- Titles whose deciding evidence came with an IMDb ID other than their TMDB
+-- title's: the match or TMDB's IMDb ID is wrong.
+SELECT e.subject_type, e.subject_id,
+       CAST(COALESCE(CASE e.subject_type
+           WHEN 'flixpatrol' THEN (SELECT t.name FROM titles t WHERE t.id = e.subject_id)
+           ELSE (SELECT n.show_title FROM netflix_titles n WHERE n.id = e.subject_id) END, '') AS TEXT) AS name,
+       CAST(e.tmdb_kind AS TEXT) AS tmdb_kind, CAST(e.tmdb_id AS TEXT) AS tmdb_id, CAST(e.imdb_id AS TEXT) AS imdb_id,
+       CAST(m.imdb_id AS TEXT) AS tmdb_imdb_id, e.kind AS evidence_kind, CAST(COALESCE(e.source, '') AS TEXT) AS source
+FROM mapping_evidence e
+JOIN tmdb_titles m ON m.tmdb_kind = e.tmdb_kind AND m.tmdb_id = e.tmdb_id
+WHERE COALESCE(e.imdb_id, '') <> '' AND COALESCE(m.imdb_id, '') <> '' AND e.imdb_id <> m.imdb_id
+  AND NOT EXISTS (
+    SELECT 1 FROM mapping_evidence h
+    WHERE h.subject_type = e.subject_type AND h.subject_id = e.subject_id
+      AND (CASE h.kind WHEN 'manual' THEN 3 WHEN 'netflix_id' THEN 2 ELSE 1 END)
+        > (CASE e.kind WHEN 'manual' THEN 3 WHEN 'netflix_id' THEN 2 ELSE 1 END))
+ORDER BY 1, 3
+LIMIT sqlc.arg(limit);

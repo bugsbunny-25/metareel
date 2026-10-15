@@ -13,7 +13,7 @@ func newChartsFixture(t *testing.T) (*ChartsService, *TitleOverviewService) {
 	t.Helper()
 	db := newTestDB(t)
 	flix := repository.NewFlixPatrolRepository(db)
-	seed(t, flix,
+	seed(t, db,
 		[]seedTitle{
 			{Slug: "a", Name: "A", Kind: "movie", TmdbID: "1", ImdbID: "tt0000001"},
 			{Slug: "a-2026", Name: "A", Kind: "movie", TmdbID: "1"}, // same TMDB title, other slug

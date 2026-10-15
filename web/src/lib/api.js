@@ -60,6 +60,7 @@ export const listMappings = (q) => req('/mappings', { query: q })
 export const getMapping = (kind, tmdbId) => req(`/mappings/${kind}/${tmdbId}`)
 export const remapMapping = (kind, tmdbId, body) => req(`/mappings/${kind}/${tmdbId}/remap`, { method: 'POST', body })
 export const syncMappings = () => req('/mappings/sync', { method: 'POST' })
+export const listMappingEvents = (q) => req('/mapping-events', { query: q })
 
 // ── Top 10 ──────────────────────────────────────────────────────────
 export function getTop10({ country, provider, category, date }) {

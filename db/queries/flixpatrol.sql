@@ -19,42 +19,6 @@ SELECT * FROM titles WHERE id = ?;
 -- name: ListTitlesByIDs :many
 SELECT * FROM titles WHERE id IN (sqlc.slice(ids)) ORDER BY id;
 
--- name: UpdateTitleIDs :one
--- Admin correction: marks the title as a manual match so automation leaves it alone.
-UPDATE titles
-SET
-    kind               = ?,
-    tmdb_id            = ?,
-    imdb_id            = ?,
-    rt_url             = ?,
-    match_status       = 'manual',
-    match_source       = 'manual',
-    next_match_at      = NULL,
-    updated_at         = CURRENT_TIMESTAMP
-WHERE id = ?
-RETURNING *;
-
--- name: ResetTitleMatch :one
--- Puts a title back in the matching queue (due now), clearing a manual lock.
-UPDATE titles
-SET match_status  = CASE WHEN COALESCE(tmdb_id, '') = '' THEN 'pending' ELSE 'matched' END,
-    match_source  = CASE WHEN match_status = 'manual' THEN NULL ELSE match_source END,
-    next_match_at = NULL,
-    next_rt_at    = NULL,
-    updated_at    = CURRENT_TIMESTAMP
-WHERE id = ?
-RETURNING *;
-
--- name: ClearTitleMatch :one
--- Forgets a title's IDs and queues it for a fresh match.
-UPDATE titles
-SET tmdb_id = NULL, imdb_id = NULL, rt_url = NULL, justwatch_id = NULL, wikidata_id = NULL,
-    match_status = 'pending', match_source = NULL, matched_name = NULL, matched_year = NULL,
-    match_attempts = 0, next_match_at = NULL, rt_attempts = 0, next_rt_at = NULL,
-    updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
-RETURNING *;
-
 -- name: ListTitlesDueForMatch :many
 -- Unmatched titles whose backoff has expired, never-tried first, then the
 -- most recently charting.
@@ -66,57 +30,6 @@ ORDER BY CASE WHEN t.match_status = 'pending' THEN 0 ELSE 1 END,
          (SELECT MAX(r.ranked_on) FROM rankings r WHERE r.title_id = t.id) DESC,
          t.id DESC
 LIMIT sqlc.arg(limit);
-
--- name: ListTitlesDueForRT :many
--- Matched titles still without a Rotten Tomatoes slug whose backoff has expired.
-SELECT t.*
-FROM titles t
-WHERE t.match_status = 'matched'
-  AND COALESCE(t.tmdb_id, '') <> ''
-  AND COALESCE(t.rt_url, '') = ''
-  AND (t.next_rt_at IS NULL OR t.next_rt_at <= CURRENT_TIMESTAMP)
-ORDER BY (SELECT MAX(r.ranked_on) FROM rankings r WHERE r.title_id = t.id) DESC, t.id DESC
-LIMIT sqlc.arg(limit);
-
--- name: SaveTitleMatch :one
--- Records one matching attempt. retry_after is a SQLite datetime modifier
--- ('+3 days'); an empty tmdb_id leaves the title unmatched. Never touches
--- manual titles.
-UPDATE titles
-SET kind               = sqlc.arg(kind),
-    tmdb_id            = COALESCE(sqlc.narg(tmdb_id), tmdb_id),
-    imdb_id            = COALESCE(sqlc.narg(imdb_id), imdb_id),
-    justwatch_id       = COALESCE(sqlc.narg(justwatch_id), justwatch_id),
-    match_status       = sqlc.arg(match_status),
-    match_source       = sqlc.narg(match_source),
-    matched_name       = sqlc.narg(matched_name),
-    matched_year       = sqlc.narg(matched_year),
-    match_attempts     = match_attempts + 1,
-    match_attempted_at = CURRENT_TIMESTAMP,
-    next_match_at      = CASE WHEN CAST(sqlc.arg(retry_after) AS TEXT) = '' THEN NULL
-                              ELSE datetime('now', CAST(sqlc.arg(retry_after) AS TEXT)) END,
-    updated_at         = CURRENT_TIMESTAMP
-WHERE id = sqlc.arg(id) AND match_status <> 'manual'
-RETURNING *;
-
--- name: SaveTitleExternalIDs :exec
--- Fills IDs found later (TMDB external IDs, Wikidata); never overwrites.
-UPDATE titles
-SET imdb_id     = COALESCE(imdb_id, sqlc.narg(imdb_id)),
-    wikidata_id = COALESCE(wikidata_id, sqlc.narg(wikidata_id)),
-    rt_url      = COALESCE(rt_url, sqlc.narg(rt_url)),
-    updated_at  = CURRENT_TIMESTAMP
-WHERE id = sqlc.arg(id) AND match_status <> 'manual';
-
--- name: SaveTitleRTAttempt :exec
--- Records one Rotten Tomatoes lookup; rt_url empty = not found, retry after
--- retry_after (a SQLite datetime modifier).
-UPDATE titles
-SET rt_url      = COALESCE(rt_url, NULLIF(CAST(sqlc.arg(rt_url) AS TEXT), '')),
-    rt_attempts = rt_attempts + 1,
-    next_rt_at  = datetime('now', CAST(sqlc.arg(retry_after) AS TEXT)),
-    updated_at  = CURRENT_TIMESTAMP
-WHERE id = sqlc.arg(id) AND match_status <> 'manual';
 
 -- name: SaveFlixPatrolDetails :exec
 UPDATE titles
@@ -137,16 +50,19 @@ SELECT match_status, COUNT(*) AS titles FROM titles GROUP BY match_status;
 SELECT
     sqlc.embed(t),
     CAST(COALESCE((SELECT MAX(r.ranked_on) FROM rankings r WHERE r.title_id = t.id), '') AS TEXT) AS last_ranked_on,
-    (SELECT COUNT(*) FROM rankings r WHERE r.title_id = t.id) AS rankings_count
+    (SELECT COUNT(*) FROM rankings r WHERE r.title_id = t.id) AS rankings_count,
+    m.imdb_id AS ref_imdb_id, m.rt_id AS ref_rt_id, m.wikidata_id AS ref_wikidata_id, m.justwatch_id AS ref_justwatch_id
 -- sqlc does not rewrite params inside ORDER BY, so the sort key comes in
 -- through this one-row subquery.
-FROM titles t, (SELECT CAST(sqlc.arg(sort) AS TEXT) AS sort_key) o
+FROM titles t
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id,
+     (SELECT CAST(sqlc.arg(sort) AS TEXT) AS sort_key) o
 WHERE (CAST(sqlc.arg(kind) AS TEXT) = '' OR t.kind = sqlc.arg(kind))
   AND (CAST(sqlc.arg(name) AS TEXT) = '' OR t.name LIKE '%' || sqlc.arg(name) || '%' OR t.slug LIKE '%' || sqlc.arg(name) || '%')
   AND (CAST(sqlc.arg(missing) AS TEXT) = ''
     OR (sqlc.arg(missing) = 'tmdb' AND COALESCE(t.tmdb_id, '') = '')
-    OR (sqlc.arg(missing) = 'imdb' AND COALESCE(t.imdb_id, '') = '')
-    OR (sqlc.arg(missing) = 'rt' AND COALESCE(t.rt_url, '') = ''))
+    OR (sqlc.arg(missing) = 'imdb' AND COALESCE(m.imdb_id, '') = '')
+    OR (sqlc.arg(missing) = 'rt' AND COALESCE(m.rt_id, '') = ''))
   AND (CAST(sqlc.arg(match_status) AS TEXT) = '' OR t.match_status = sqlc.arg(match_status))
 ORDER BY
     CASE WHEN o.sort_key = 'name_asc' THEN t.name END COLLATE NOCASE ASC,
@@ -163,22 +79,24 @@ LIMIT sqlc.arg(limit) OFFSET sqlc.arg(offset);
 
 -- name: CountTitles :one
 SELECT COUNT(*)
-FROM titles
-WHERE (CAST(sqlc.arg(kind) AS TEXT) = '' OR kind = sqlc.arg(kind))
-  AND (CAST(sqlc.arg(name) AS TEXT) = '' OR name LIKE '%' || sqlc.arg(name) || '%' OR slug LIKE '%' || sqlc.arg(name) || '%')
+FROM titles t
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
+WHERE (CAST(sqlc.arg(kind) AS TEXT) = '' OR t.kind = sqlc.arg(kind))
+  AND (CAST(sqlc.arg(name) AS TEXT) = '' OR t.name LIKE '%' || sqlc.arg(name) || '%' OR t.slug LIKE '%' || sqlc.arg(name) || '%')
   AND (CAST(sqlc.arg(missing) AS TEXT) = ''
-    OR (sqlc.arg(missing) = 'tmdb' AND COALESCE(tmdb_id, '') = '')
-    OR (sqlc.arg(missing) = 'imdb' AND COALESCE(imdb_id, '') = '')
-    OR (sqlc.arg(missing) = 'rt' AND COALESCE(rt_url, '') = ''))
-  AND (CAST(sqlc.arg(match_status) AS TEXT) = '' OR match_status = sqlc.arg(match_status));
+    OR (sqlc.arg(missing) = 'tmdb' AND COALESCE(t.tmdb_id, '') = '')
+    OR (sqlc.arg(missing) = 'imdb' AND COALESCE(m.imdb_id, '') = '')
+    OR (sqlc.arg(missing) = 'rt' AND COALESCE(m.rt_id, '') = ''))
+  AND (CAST(sqlc.arg(match_status) AS TEXT) = '' OR t.match_status = sqlc.arg(match_status));
 
 -- name: TitleMappingStats :one
 SELECT
     COUNT(*) AS total,
-    CAST(COALESCE(SUM(CASE WHEN COALESCE(tmdb_id, '') = '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missing_tmdb,
-    CAST(COALESCE(SUM(CASE WHEN COALESCE(imdb_id, '') = '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missing_imdb,
-    CAST(COALESCE(SUM(CASE WHEN COALESCE(rt_url, '') = '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missing_rt
-FROM titles;
+    CAST(COALESCE(SUM(CASE WHEN COALESCE(t.tmdb_id, '') = '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missing_tmdb,
+    CAST(COALESCE(SUM(CASE WHEN COALESCE(m.imdb_id, '') = '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missing_imdb,
+    CAST(COALESCE(SUM(CASE WHEN COALESCE(m.rt_id, '') = '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missing_rt
+FROM titles t
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id;
 
 -- name: RankingStats :one
 SELECT COUNT(*) AS rankings, CAST(COALESCE(MAX(ranked_on), '') AS TEXT) AS latest_ranked_on
@@ -256,3 +174,49 @@ WHERE r.ranked_on >= CAST(sqlc.arg(since) AS TEXT)
 GROUP BY t.kind, t.tmdb_id
 ORDER BY MAX(r.ranked_on) DESC, MIN(r.rank) ASC
 LIMIT sqlc.arg(limit);
+
+-- name: RecordTitleMatchAttempt :one
+-- One automatic matching attempt (what it found is mapping evidence): a
+-- title without a result is unmatched until retry_after (a SQLite datetime
+-- modifier). Never touches a title fixed by hand.
+UPDATE titles
+SET match_status       = CASE WHEN CAST(sqlc.arg(found) AS INTEGER) = 1 THEN match_status ELSE 'unmatched' END,
+    matched_name       = CASE WHEN CAST(sqlc.arg(found) AS INTEGER) = 1 THEN sqlc.narg(matched_name) ELSE matched_name END,
+    matched_year       = CASE WHEN CAST(sqlc.arg(found) AS INTEGER) = 1 THEN sqlc.narg(matched_year) ELSE matched_year END,
+    match_attempts     = match_attempts + 1,
+    match_attempted_at = CURRENT_TIMESTAMP,
+    next_match_at      = CASE WHEN CAST(sqlc.arg(retry_after) AS TEXT) = '' THEN NULL
+                              ELSE datetime('now', CAST(sqlc.arg(retry_after) AS TEXT)) END,
+    updated_at         = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id) AND match_status <> 'manual'
+RETURNING *;
+
+-- name: RequeueTitleMatch :exec
+-- Due for matching now; clear also forgets the attempts and matched name.
+UPDATE titles
+SET next_match_at  = NULL,
+    match_attempts = CASE WHEN CAST(sqlc.arg(clear) AS INTEGER) = 1 THEN 0 ELSE match_attempts END,
+    matched_name   = CASE WHEN CAST(sqlc.arg(clear) AS INTEGER) = 1 THEN NULL ELSE matched_name END,
+    matched_year   = CASE WHEN CAST(sqlc.arg(clear) AS INTEGER) = 1 THEN NULL ELSE matched_year END,
+    updated_at     = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id);
+
+-- name: ApplyTitleMapping :one
+-- Stores a title's computed mapping. kind '' keeps the kind (an unmapped
+-- title); status '' keeps the match status; status pending (a title that lost
+-- its mapping) makes it due for matching now.
+UPDATE titles
+SET kind          = CASE WHEN CAST(sqlc.arg(kind) AS TEXT) = '' THEN kind ELSE sqlc.arg(kind) END,
+    tmdb_id       = sqlc.narg(tmdb_id),
+    match_status  = CASE WHEN CAST(sqlc.arg(match_status) AS TEXT) = '' THEN match_status ELSE sqlc.arg(match_status) END,
+    match_source  = sqlc.narg(match_source),
+    next_match_at = CASE WHEN CAST(sqlc.arg(match_status) AS TEXT) = 'matched' OR CAST(sqlc.arg(match_status) AS TEXT) = 'manual'
+                         OR CAST(sqlc.arg(match_status) AS TEXT) = 'pending' THEN NULL ELSE next_match_at END,
+    matched_name  = CASE WHEN CAST(sqlc.arg(own_match) AS INTEGER) = 1 THEN matched_name END,
+    matched_year  = CASE WHEN CAST(sqlc.arg(own_match) AS INTEGER) = 1 THEN matched_year END,
+    updated_at    = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id)
+RETURNING *;
+
+-- name: ListTitleIDsOnRef :many
+SELECT id FROM titles WHERE kind = sqlc.arg(kind) AND tmdb_id = sqlc.arg(tmdb_id) ORDER BY id;

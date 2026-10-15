@@ -126,6 +126,15 @@ export const links = {
 }
 
 /** How a season number was found, for badges and tooltips. */
+// Where a TMDB title's ID came from (strongest first; a weaker source never
+// replaces a stronger one).
+export const ID_SOURCES = {
+  manual: { label: 'by hand', hint: 'Entered in the admin UI; never replaced automatically' },
+  tmdb: { label: 'TMDB', hint: "TMDB's external IDs" },
+  wikidata: { label: 'Wikidata', hint: "Wikidata's statements for this TMDB ID" },
+  match: { label: 'match', hint: 'Came with an automatic match (JustWatch); TMDB or Wikidata replace it' },
+}
+
 export const SEASON_SOURCES = {
   parsed: { label: 'from title', hint: 'The season title says it ("Season 2", "S3", "Limited Series")' },
   tmdb_name: { label: 'TMDB name', hint: 'The season title names a TMDB season' },

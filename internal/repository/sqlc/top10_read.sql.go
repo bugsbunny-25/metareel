@@ -89,7 +89,7 @@ func (q *Queries) ListRankingsByTitleIDs(ctx context.Context, arg ListRankingsBy
 
 const listTitlesByTmdbIDs = `-- name: ListTitlesByTmdbIDs :many
 
-SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at
+SELECT id, slug, name, kind, tmdb_id, legacy_imdb_id, legacy_rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, legacy_rt_attempts, legacy_next_rt_at, legacy_justwatch_id, legacy_wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at
 FROM titles
 WHERE tmdb_id IN (/*SLICE:tmdb_ids*/?)
 ORDER BY tmdb_id, id
@@ -122,8 +122,8 @@ func (q *Queries) ListTitlesByTmdbIDs(ctx context.Context, tmdbIds []sql.NullStr
 			&i.Name,
 			&i.Kind,
 			&i.TmdbID,
-			&i.ImdbID,
-			&i.RtUrl,
+			&i.LegacyImdbID,
+			&i.LegacyRtUrl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MatchStatus,
@@ -133,10 +133,10 @@ func (q *Queries) ListTitlesByTmdbIDs(ctx context.Context, tmdbIds []sql.NullStr
 			&i.MatchAttempts,
 			&i.MatchAttemptedAt,
 			&i.NextMatchAt,
-			&i.RtAttempts,
-			&i.NextRtAt,
-			&i.JustwatchID,
-			&i.WikidataID,
+			&i.LegacyRtAttempts,
+			&i.LegacyNextRtAt,
+			&i.LegacyJustwatchID,
+			&i.LegacyWikidataID,
 			&i.FpName,
 			&i.FpKind,
 			&i.FpPremiereDate,
@@ -171,8 +171,8 @@ SELECT
     t.name,
     t.kind,
     t.tmdb_id,
-    t.imdb_id,
-    t.rt_url,
+    m.imdb_id,
+    m.rt_id AS rt_url,
     COALESCE((
         SELECT MIN(p.rank)
         FROM rankings p
@@ -200,6 +200,7 @@ SELECT
     ) AS days_in_top10
 FROM rankings r
 JOIN titles t ON t.id = r.title_id
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
 WHERE r.country = ?1
   AND r.category = ?2
   AND r.ranked_on = COALESCE(CAST(?3 AS TEXT), (
@@ -294,8 +295,8 @@ SELECT
     t.name,
     t.kind,
     t.tmdb_id,
-    t.imdb_id,
-    t.rt_url,
+    m.imdb_id,
+    m.rt_id AS rt_url,
     COALESCE((
         SELECT MIN(p.rank)
         FROM rankings p
@@ -323,6 +324,7 @@ SELECT
     ) AS days_in_top10
 FROM rankings r
 JOIN titles t ON t.id = r.title_id
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
 WHERE r.country = ?1
   AND r.streaming_provider = ?2
   AND r.category = ?3

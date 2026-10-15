@@ -150,6 +150,10 @@ func (s *Top10ReadService) GetTitleRankingsBatch(ctx context.Context, refs []Tmd
 		return nil, err
 	}
 
+	ids, err := s.repo.IDsOfRefs(ctx, refs)
+	if err != nil {
+		return nil, err
+	}
 	byRef := make(map[TmdbRef]*TitleRankingsResponse, len(refs))
 	refByTitleID := make(map[int64]TmdbRef)
 	slugByTitleID := make(map[int64]string)
@@ -164,14 +168,8 @@ func (s *Top10ReadService) GetTitleRankingsBatch(ctx context.Context, refs []Tmd
 				resp = &TitleRankingsResponse{Kind: ref.Kind, TmdbID: ref.ID, Titles: []RankedTitle{}, Charts: []ChartSummary{}, Rankings: []RankingSnapshot{}}
 				byRef[ref] = resp
 			}
-			rt := RankedTitle{Slug: t.Slug, Name: t.Name}
-			if t.ImdbID.Valid {
-				rt.IMDbID = &t.ImdbID.String
-			}
-			if t.RtUrl.Valid {
-				rt.RottenTomatoesURL = &t.RtUrl.String
-			}
-			resp.Titles = append(resp.Titles, rt)
+			// IMDb ID and RT slug are the TMDB title's.
+			resp.Titles = append(resp.Titles, RankedTitle{Slug: t.Slug, Name: t.Name, IMDbID: ids[ref].IMDbID, RottenTomatoesURL: ids[ref].RTID})
 			refByTitleID[t.ID] = ref
 			slugByTitleID[t.ID] = t.Slug
 			titleIDs = append(titleIDs, t.ID)
@@ -300,11 +298,12 @@ func (s *Top10ReadService) GetTitleRankingsByID(ctx context.Context, titleID int
 		kind = "tv"
 	}
 	rt := RankedTitle{Slug: t.Slug, Name: t.Name}
-	if t.ImdbID.Valid {
-		rt.IMDbID = &t.ImdbID.String
-	}
-	if t.RtUrl.Valid {
-		rt.RottenTomatoesURL = &t.RtUrl.String
+	if ref := repository.TitleRef(*t); ref.ID != "" {
+		ids, err := s.repo.IDsOfRefs(ctx, []TmdbRef{ref})
+		if err != nil {
+			return nil, err
+		}
+		rt.IMDbID, rt.RottenTomatoesURL = ids[ref].IMDbID, ids[ref].RTID
 	}
 	out := &TitleRankingsResponse{Kind: kind, TmdbID: t.TmdbID.String, Titles: []RankedTitle{rt}, Rankings: []RankingSnapshot{}}
 	rankings, err := s.repo.ListRankingsByTitleIDs(ctx, []int64{t.ID}, filter)

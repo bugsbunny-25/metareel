@@ -1,7 +1,7 @@
 <script>
   import { listMappings, syncMappings } from '../lib/api.js'
   import { route, setQuery, intParam } from '../lib/router.svelte.js'
-  import { dateOnly, links, downloadCSV } from '../lib/format.js'
+  import { dateOnly, links, downloadCSV, ID_SOURCES } from '../lib/format.js'
   import { toast } from '../lib/toast.svelte.js'
   import Icon from '../components/Icon.svelte'
   import Pagination from '../components/Pagination.svelte'
@@ -76,6 +76,12 @@
       { key: 'flixpatrol_slugs', label: 'flixpatrol_slugs' }, { key: 'netflix_top10_titles', label: 'netflix_top10_titles' },
     ], data.items.map((e) => ({ ...e, ...e.ids, flixpatrol_slugs: e.ids.flixpatrol_slugs.join('|'), netflix_top10_titles: e.ids.netflix_top10_titles.join('|') })))
   }
+
+  // An ID badge's tooltip: the ID and where it came from.
+  function idTitle(e, key, value) {
+    const src = e.ids.sources?.[key]
+    return src ? `${value} (${ID_SOURCES[src]?.label ?? src})` : value
+  }
 </script>
 
 <div class="page">
@@ -143,11 +149,11 @@
               </td>
               <td><KindBadge kind={e.tmdb_kind === 'tv' ? 'tv_show' : 'movie'} /></td>
               <td class="small nowrap">
-                {#if e.ids.imdb_id}<span class="badge" title={e.ids.imdb_id}>IMDb</span>{/if}
-                {#if e.ids.wikidata_id}<span class="badge" title={e.ids.wikidata_id}>Wikidata</span>{/if}
-                {#if e.ids.rotten_tomatoes_id}<span class="badge" title={e.ids.rotten_tomatoes_id}>RT</span>{/if}
-                {#if e.ids.netflix_id}<span class="badge" title="Netflix {e.ids.netflix_id}">Netflix</span>{/if}
-                {#if e.ids.justwatch_id}<span class="badge" title={e.ids.justwatch_id}>JustWatch</span>{/if}
+                {#if e.ids.imdb_id}<span class="badge" title={idTitle(e, 'imdb', e.ids.imdb_id)}>IMDb</span>{/if}
+                {#if e.ids.wikidata_id}<span class="badge" title={idTitle(e, 'wikidata', e.ids.wikidata_id)}>Wikidata</span>{/if}
+                {#if e.ids.rotten_tomatoes_id}<span class="badge" title={idTitle(e, 'rotten_tomatoes', e.ids.rotten_tomatoes_id)}>RT</span>{/if}
+                {#if e.ids.netflix_id}<span class="badge" title={idTitle(e, 'netflix', `Netflix ${e.ids.netflix_id}`)}>Netflix</span>{/if}
+                {#if e.ids.justwatch_id}<span class="badge" title={idTitle(e, 'justwatch', e.ids.justwatch_id)}>JustWatch</span>{/if}
               </td>
               <td class="small">
                 {#each e.flixpatrol_titles.slice(0, 2) as t (t.id)}<div class="mono truncate" style="max-width:220px">{t.slug}</div>{/each}

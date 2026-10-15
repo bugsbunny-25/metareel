@@ -21,6 +21,7 @@ import (
 type NetflixAdminService struct {
 	log        *slog.Logger
 	repo       *repository.ImportsRepository
+	writer     *MappingWriter
 	meta       *repository.MetadataRepository
 	metadata   *TitleMetadataService // optional: fetches TMDB details (seasons) after a manual fix
 	seasons    *SeasonMapper
@@ -28,8 +29,8 @@ type NetflixAdminService struct {
 	mapping    *TitleMappingService // optional: shares fixes with linked FlixPatrol titles
 }
 
-func NewNetflixAdminService(log *slog.Logger, repo *repository.ImportsRepository, meta *repository.MetadataRepository, metadata *TitleMetadataService, seasons *SeasonMapper, candidates *TitleCandidatesService) *NetflixAdminService {
-	return &NetflixAdminService{log: log, repo: repo, meta: meta, metadata: metadata, seasons: seasons, candidates: candidates}
+func NewNetflixAdminService(log *slog.Logger, repo *repository.ImportsRepository, writer *MappingWriter, meta *repository.MetadataRepository, metadata *TitleMetadataService, seasons *SeasonMapper, candidates *TitleCandidatesService) *NetflixAdminService {
+	return &NetflixAdminService{log: log, repo: repo, writer: writer, meta: meta, metadata: metadata, seasons: seasons, candidates: candidates}
 }
 
 // WithMapping shares manual fixes with linked FlixPatrol titles.
@@ -51,7 +52,7 @@ type NetflixTitleResponse struct {
 	Kind          string     `json:"kind"`      // Netflix's list: movie (Films) | tv_show (TV)
 	TmdbKind      *string    `json:"tmdb_kind"` // movie | tv: TMDB namespace of tmdb_id (can differ from the list)
 	TmdbID        *string    `json:"tmdb_id"`
-	ImdbID        *string    `json:"imdb_id"`
+	ImdbID        *string    `json:"imdb_id"`      // the TMDB title's
 	NetflixID     *string    `json:"netflix_id"`   // Netflix's title ID (netflix.com/title/<id>), from Tudum's Top 10 search
 	MatchStatus   string     `json:"match_status"` // pending | matched | unmatched | manual
 	MatchSource   *string    `json:"match_source,omitempty"`
@@ -227,7 +228,7 @@ func (s *NetflixAdminService) Patch(ctx context.Context, id int64, in PatchNetfl
 	if err != nil {
 		return nil, err
 	}
-	tmdbKind, tmdbID, imdbID := row.TmdbKind.String, row.TmdbID.String, row.ImdbID.String
+	tmdbKind, tmdbID, imdbID := row.TmdbKind.String, row.TmdbID.String, ""
 	if in.TmdbKind != nil {
 		tmdbKind = strings.TrimSpace(*in.TmdbKind)
 		if tmdbKind != "movie" && tmdbKind != "tv" {
@@ -274,42 +275,50 @@ func (s *NetflixAdminService) Patch(ctx context.Context, id int64, in PatchNetfl
 		}
 		tmdbKind, tmdbID = r.Ref.Kind, r.Ref.ID
 	}
-	if err := s.repo.SetNetflixTitleIDs(ctx, id, tmdbKind, tmdbID, imdbID); err != nil {
+	session := s.writer.Session(ActorAdmin)
+	if err := session.SetNetflixMapping(ctx, id, tmdbKind, tmdbID, imdbID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNetflixTitleNotFound
+		}
 		return nil, err
 	}
-	if tmdbID != "" && (tmdbID != row.TmdbID.String || tmdbKind != row.TmdbKind.String) && s.metadata != nil {
+	if tmdbID != "" {
 		ref := repository.TmdbRef{Kind: tmdbKind, ID: tmdbID}
-		if _, err := s.metadata.RefreshDetails(ctx, ref); err != nil {
-			s.log.Warn("tmdb details after netflix mapping fix failed", slog.Int64("netflix_title_id", id), slog.String("ref", ref.String()), slog.Any("err", err))
+		s.mapping.EnsureDetails(ctx, ref)
+		// IMDb / Wikidata IDs given here belong to the TMDB title: stored as
+		// set by hand, so TMDB and Wikidata never replace them ("" hands
+		// them back).
+		var imdbSet, wikiSet *string
+		if in.ImdbID != nil {
+			imdbSet = &imdbID
 		}
-	}
-	if tmdbID != "" && s.metadata != nil {
-		if err := s.metadata.SaveExternalIDs(ctx, repository.TmdbRef{Kind: tmdbKind, ID: tmdbID}, repository.TmdbExternalIDs{IMDbID: imdbID, WikidataID: wikidataID}); err != nil {
+		if in.WikidataID != nil {
+			wikiSet = &wikidataID
+		}
+		if err := s.mapping.SetManualIDs(ctx, session, ref, imdbSet, wikiSet, nil); err != nil {
 			return nil, err
 		}
 	}
 	if err := s.seasons.RefreshTitle(ctx, id); err != nil {
 		return nil, err
 	}
-	if _, err := s.mapping.Sync(ctx, false, nil); err != nil {
-		return nil, err
-	}
+	session.Flush(ctx)
 	return s.Get(ctx, id)
 }
 
 // Rematch puts a title back in the matching queue; clear also forgets its
-// IDs. The caller enqueues netflix.titles.match for it.
+// evidence (FlixPatrol titles that took its mapping lose it too). The caller
+// enqueues netflix.titles.match for it.
 func (s *NetflixAdminService) Rematch(ctx context.Context, id int64, clear bool) (*NetflixTitleDetail, error) {
-	if err := s.repo.RequeueNetflixTitle(ctx, id, clear); err != nil {
+	session := s.writer.Session(ActorAdmin)
+	defer session.Flush(ctx)
+	if err := session.RequeueNetflixTitle(ctx, id, clear); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNetflixTitleNotFound
 		}
 		return nil, err
 	}
 	if clear {
-		if err := s.mapping.ForgetShared(ctx, 0, id); err != nil {
-			return nil, err
-		}
 		if err := s.seasons.RefreshTitle(ctx, id); err != nil {
 			return nil, err
 		}
@@ -376,7 +385,7 @@ func (s *NetflixAdminService) PatchSeason(ctx context.Context, seasonID int64, i
 
 func netflixTitleResponse(r repository.NetflixTitleRow) NetflixTitleResponse {
 	out := NetflixTitleResponse{
-		ID: r.ID, ShowTitle: r.ShowTitle, Kind: r.Kind, TmdbKind: nullStr(r.TmdbKind), TmdbID: nullStr(r.TmdbID), ImdbID: nullStr(r.ImdbID), NetflixID: nullStr(r.NetflixID),
+		ID: r.ID, ShowTitle: r.ShowTitle, Kind: r.Kind, TmdbKind: nullStr(r.TmdbKind), TmdbID: nullStr(r.TmdbID), ImdbID: r.IMDbID, NetflixID: nullStr(r.NetflixID),
 		MatchStatus: r.MatchStatus, MatchSource: nullStr(r.MatchSource), MatchAttempts: r.MatchAttempts, UpdatedAt: r.UpdatedAt.UTC(),
 		TmdbTitle: r.TmdbTitle, LastWeek: emptyToNil(r.LastWeek), WeeksGlobal: r.WeeksGlobal, BestGlobalRank: r.BestGlobalRank,
 		SeasonsTotal: r.SeasonsTotal, SeasonsUnmapped: r.SeasonsUnmapped, FlixPatrolLinks: r.FlixPatrolLinks,
