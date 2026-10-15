@@ -15,6 +15,7 @@ import (
 	"github.com/bugsbunny-25/metareel/internal/repository"
 	"github.com/bugsbunny-25/metareel/internal/repository/sqlc"
 	"github.com/bugsbunny-25/metareel/internal/scraper/flixpatrol"
+	"github.com/bugsbunny-25/metareel/internal/tasks"
 )
 
 // Netflix's official Top 10 downloads (https://www.netflix.com/tudum/top10).
@@ -30,6 +31,7 @@ type NetflixImporter struct {
 	log       *slog.Logger
 	dl        *client.Downloader
 	repo      *repository.ImportsRepository
+	writer    *MappingWriter
 	flixRepo  *repository.FlixPatrolRepository
 	schedules *repository.TaskScheduleRepository
 	matcher   *TitleMatcher
@@ -42,8 +44,8 @@ type NetflixImporter struct {
 	Countries []string
 }
 
-func NewNetflixImporter(log *slog.Logger, dl *client.Downloader, repo *repository.ImportsRepository, flixRepo *repository.FlixPatrolRepository, schedules *repository.TaskScheduleRepository, matcher *TitleMatcher, metadata *TitleMetadataService, seasons *SeasonMapper, countries []string) *NetflixImporter {
-	return &NetflixImporter{log: log, dl: dl, repo: repo, flixRepo: flixRepo, schedules: schedules, matcher: matcher, metadata: metadata, seasons: seasons, Countries: countries}
+func NewNetflixImporter(log *slog.Logger, dl *client.Downloader, repo *repository.ImportsRepository, writer *MappingWriter, flixRepo *repository.FlixPatrolRepository, schedules *repository.TaskScheduleRepository, matcher *TitleMatcher, metadata *TitleMetadataService, seasons *SeasonMapper, countries []string) *NetflixImporter {
+	return &NetflixImporter{log: log, dl: dl, repo: repo, writer: writer, flixRepo: flixRepo, schedules: schedules, matcher: matcher, metadata: metadata, seasons: seasons, Countries: countries}
 }
 
 // WithMapping makes matching use and update the mapping shared with linked
@@ -423,10 +425,9 @@ func (n *NetflixImporter) RunMatch(ctx context.Context, ids []int64, runLog func
 	err := n.matchTitles(ctx, ids, netflixMatchJobBatch, rep, logf)
 	if err == nil && len(ids) == 0 {
 		// Backlog: Netflix IDs of titles matched earlier (fixing name matches).
-		var mapped map[int64]bool
-		if mapped, err = n.resolveNetflixIDs(ctx, nil, netflixIDBacklog, rep.NetflixID, logf); err == nil && len(mapped) > 0 {
-			_, err = n.mapping.Sync(ctx, false, func(level, msg string) { logf(level, "%s", msg) })
-		}
+		session := n.writer.Session(tasks.TypeNetflixTitlesMatch)
+		_, err = n.resolveNetflixIDs(ctx, session, nil, netflixIDBacklog, rep.NetflixID, logf)
+		session.Flush(ctx)
 	}
 	out := &MatchReport{Requested: len(ids), Matched: rep.Matched, Unmatched: rep.Unmatched, Mapping: rep.Mapping, NetflixID: rep.NetflixID}
 	if err != nil {
@@ -481,7 +482,9 @@ func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit in
 	for _, nt := range due {
 		dueIDs = append(dueIDs, nt.ID)
 	}
-	byNetflixID, err := n.resolveNetflixIDs(ctx, dueIDs, netflixIDDueLimit, rep.NetflixID, logf)
+	session := n.writer.Session(tasks.TypeNetflixTitlesMatch)
+	defer session.Flush(ctx)
+	byNetflixID, err := n.resolveNetflixIDs(ctx, session, dueIDs, netflixIDDueLimit, rep.NetflixID, logf)
 	if err != nil {
 		return err
 	}
@@ -500,9 +503,9 @@ func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit in
 		if err != nil {
 			return err
 		}
-		var ids repository.TmdbExternalIDs
+		var ids repository.TmdbIDs
 		if ref, title, ok := singleTmdb(fp); ok {
-			m.TmdbKind, m.TmdbID, m.ImdbID, m.TitleID, m.Source = ref.Kind, ref.ID, title.ImdbID.String, title.ID, MatchSourceFlixPatrolTitle
+			m.TmdbKind, m.TmdbID, m.TitleID, m.Source = ref.Kind, ref.ID, title.ID, MatchSourceFlixPatrolTitle
 		} else if h, ok := pickWikidataNetflix(wiki[nt.ShowTitle], nt.Kind, weekYear(nt.FirstWeek)); ok {
 			m.TmdbKind, m.TmdbID, m.ImdbID, m.Source = h.TmdbKind, h.TmdbID, h.IMDbID, "wikidata_netflix"
 			ids.NetflixID, ids.WikidataID = h.NetflixID, h.WikidataID
@@ -518,7 +521,7 @@ func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit in
 				ids.JustWatchID = c.JustWatchID
 			}
 		}
-		if err := n.repo.SaveNetflixTitleMatch(ctx, nt.ID, m); err != nil {
+		if err := session.MatchNetflixTitle(ctx, nt.ID, m); err != nil {
 			return err
 		}
 		if m.TmdbID == "" {
@@ -529,30 +532,13 @@ func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit in
 		if m.TmdbKind != tmdbKindOf(flixpatrol.TitleKind(nt.Kind)) {
 			logf("info", "%q (Netflix %s list) matched a TMDB %s: %s via %s", nt.ShowTitle, netflixListName(nt.Kind), m.TmdbKind, m.TmdbID, m.Source)
 		}
-		if n.metadata != nil {
-			ref := repository.TmdbRef{Kind: m.TmdbKind, ID: m.TmdbID}
-			if _, err := n.metadata.RefreshDetails(ctx, ref); err != nil {
-				n.log.Warn("tmdb details for netflix title failed", slog.String("show_title", nt.ShowTitle), slog.Any("err", err))
-			}
-			ids.IMDbID = m.ImdbID
-			if err := n.metadata.SaveExternalIDs(ctx, ref, ids); err != nil {
-				return err
-			}
+		// IDs the match came with; TMDB details follow in the mapping refresh.
+		if err := n.metadata.SaveMatchedIDs(ctx, repository.TmdbRef{Kind: m.TmdbKind, ID: m.TmdbID}, ids); err != nil {
+			return err
 		}
 	}
 	if len(due) > 0 {
 		logf("info", "Netflix titles: %d matched, %d not matched (retried with backoff)", rep.Matched, rep.Unmatched)
-	}
-	if n.mapping != nil && rep.Matched > 0 {
-		mr, err := n.mapping.Sync(ctx, false, runLog)
-		if rep.Mapping != nil && mr != nil {
-			rep.Mapping.NetflixUpdated += mr.NetflixUpdated
-			rep.Mapping.FlixPatrolUpdated += mr.FlixPatrolUpdated
-			rep.Mapping.Conflicts = mr.Conflicts
-		}
-		if err != nil {
-			return err
-		}
 	}
 	return nil
 }

@@ -408,6 +408,8 @@ paths:
         or /backfill). title_ids limits titles.enrich (FlixPatrol title IDs)
         or netflix.titles.match (Netflix title IDs) to those titles and
         ignores their retry backoff; force re-imports unchanged files.
+        mapping.refresh is queued automatically after mapping changes; run by
+        hand it first recomputes every linked title's mapping.
       parameters:
         - name: type
           in: path
@@ -492,7 +494,11 @@ paths:
       summary: Match a title again now
       description: >
         Clears the retry backoff (and a manual lock) and queues titles.enrich
-        for the title. clear=true also forgets its current IDs (wrong match).
+        for the title. Its own earlier match applies again (or, if it has
+        none, the lifted fix stays as its match) until matching finds another.
+        clear=true forgets its mapping instead (wrong match),
+        along with Netflix matches made through it; linked titles that had
+        taken it fall back to their own.
       parameters:
         - name: id
           in: path
@@ -533,7 +539,13 @@ paths:
         "unmapped" = none yet), TMDB metadata and
         IMDb dataset coverage, last imports, weekly share of chart entries
         with a TMDB / RT match, unmatched titles by country, stale charts and
-        missing dates in the last 30 days per scheduled chart.
+        missing dates in the last 30 days per scheduled chart, and mapped
+        titles whose deciding match or fix came with an IMDb ID other than
+        their TMDB title's (imdb_mismatches, up to 200; each with
+        subject_type flixpatrol | netflix, subject_id, name, tmdb_kind,
+        tmdb_id, imdb_id = what the match / fix came with, tmdb_imdb_id =
+        the TMDB title's, evidence_kind manual | netflix_id | match and its
+        source).
       responses:
         "200":
           description: Report
@@ -549,7 +561,14 @@ paths:
       summary: Correct a title's kind and external IDs
       description: >
         Admin only. A title corrected here is marked as a manual match, so
-        scheduled scrapes and remap jobs never overwrite it.
+        scheduled scrapes and remap jobs never overwrite it; linked Netflix
+        titles follow. IMDb, Wikidata, Rotten Tomatoes and JustWatch IDs
+        belong to the TMDB title (shown here for convenience), so moving the
+        title to another TMDB title shows that title's IDs (its details are
+        fetched if missing). imdb_id / rt_url given here are stored as the
+        TMDB title's, set by hand (TMDB, Wikidata and matching never replace
+        them; "" hands them back). The rest follows in a mapping.refresh
+        job.
       parameters:
         - name: id
           in: path
@@ -699,7 +718,11 @@ paths:
         string clears an ID. tmdb_kind is the TMDB namespace (default: the
         current one, else Netflix's list); a special in Netflix's TV list can
         be a TMDB movie. Without a TMDB ID, an IMDb or Wikidata ID is resolved
-        to one through TMDB's /find, then Wikidata.
+        to one through TMDB's /find, then Wikidata. IMDb / Wikidata IDs
+        belong to the TMDB title: imdb_id / wikidata_id given here are stored
+        as the TMDB title's, set by hand (TMDB, Wikidata and matching never
+        replace them; "" hands them back). Linked FlixPatrol titles follow;
+        TMDB details, IDs and seasons follow in a mapping.refresh job.
       parameters:
         - name: id
           in: path
@@ -743,8 +766,11 @@ paths:
       summary: Match a Netflix title again now
       description: >
         Clears the retry backoff (and a manual lock) and queues
-        netflix.titles.match for the title. clear=true also forgets its
-        current IDs (wrong match).
+        netflix.titles.match for the title. Its own earlier match applies
+        again (or, if it has none, the lifted fix stays as its match) until
+        matching finds another. clear=true forgets its mapping
+        instead (wrong match); linked titles that had taken it fall back to
+        their own.
       parameters:
         - name: id
           in: path
@@ -856,10 +882,16 @@ paths:
       description: >
         Links Netflix titles to FlixPatrol titles (same normalized name, same
         Netflix list, on Netflix's charts in the same or an adjacent week) and
-        shares mappings over them: each title weighs itself and its directly
-        linked titles that are linked to nothing else; a title fixed by hand wins, then a Netflix ID match,
-        then FlixPatrol's match, then Netflix's. Also fills TMDB titles' missing
-        IDs from FlixPatrol matches. The matching jobs do this too.
+        recomputes the mapping of every linked title (and of titles that lost
+        a link) from evidence: what matching, Netflix IDs and fixes by hand
+        say each title is. Each title weighs its own evidence and that of its
+        directly linked titles that are linked to nothing else; a fix by hand
+        wins, then a Netflix ID match, then FlixPatrol's match, then
+        Netflix's. Nothing is copied, so withdrawn evidence withdraws what was
+        shared from it. Every change is recorded (GET
+        /api/v1/admin/mapping-events). The matching jobs do this too; TMDB
+        details, IDs and seasons of what changed follow in a mapping.refresh
+        job.
       responses:
         "200":
           description: Sync report
@@ -871,10 +903,9 @@ paths:
                   links: { type: integer }
                   links_added: { type: integer }
                   links_removed: { type: integer }
-                  netflix_titles_updated: { type: integer }
-                  flixpatrol_titles_updated: { type: integer }
-                  conflicts: { type: integer, description: Titles left alone because the titles directly linked to them disagree }
-                  tmdb_titles_ids_filled: { type: integer }
+                  netflix_titles_updated: { type: integer, description: "Netflix titles that took a linked title's mapping" }
+                  flixpatrol_titles_updated: { type: integer, description: "FlixPatrol titles that took a linked title's mapping" }
+                  conflicts: { type: integer, description: "Titles whose directly linked titles disagree (they keep their own match or fix)" }
 
   /api/v1/admin/mappings/{kind}/{id}:
     get:
@@ -912,7 +943,9 @@ paths:
         target (marked as fixed by hand); linked titles follow. Give the
         target as tmdb_kind + tmdb_id, or as imdb_id / wikidata_id, resolved
         through TMDB's /find and then Wikidata (tmdb_kind breaks a tie between
-        a movie and a show).
+        a movie and a show); an ID given this way is stored as the target's,
+        set by hand. TMDB details, IDs and seasons follow in a mapping.refresh
+        job.
       parameters:
         - name: kind
           in: path
@@ -949,6 +982,43 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Nothing is mapped to {kind}/{id}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/mapping-events:
+    get:
+      operationId: listMappingEvents
+      summary: History of mapping changes
+      description: >
+        Every change to what a FlixPatrol or Netflix title is mapped to,
+        newest first, recorded with the change by the mapping writer: action
+        (match, manual, adopt, remap, clear, unshare, requeue), the TMDB title
+        before and after, the match source and who made it (a job type,
+        mapping.sync for sharing over links, or admin). Filter by subject
+        and/or by TMDB title (as the old or the new mapping).
+      parameters:
+        - name: subject
+          in: query
+          schema: { type: string, example: "flixpatrol:12", pattern: "^(flixpatrol|netflix):[0-9]+$" }
+        - name: tmdb
+          in: query
+          schema: { type: string, example: "movie:550", pattern: "^(movie|tv):[0-9]+$" }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+      responses:
+        "200":
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MappingEvent"
+        "400":
+          description: Bad subject, tmdb or limit
           content:
             application/json:
               schema:
@@ -1412,13 +1482,29 @@ components:
             type: string
       required: [id, task_type, name, enabled, utc_runtimes]
 
+    MappingEvent:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        subject_type: { type: string, enum: [flixpatrol, netflix] }
+        subject_id: { type: integer, format: int64 }
+        subject_name: { type: string }
+        action: { type: string, enum: [match, manual, adopt, remap, clear, unshare, requeue] }
+        from_tmdb_kind: { type: string, nullable: true, enum: [movie, tv] }
+        from_tmdb_id: { type: string, nullable: true }
+        to_tmdb_kind: { type: string, nullable: true, enum: [movie, tv] }
+        to_tmdb_id: { type: string, nullable: true }
+        source: { type: string, nullable: true, description: Match source after the change }
+        actor: { type: string, description: "Job type, mapping.sync or admin" }
+        created_at: { type: string, format: date-time }
+
     CreateTaskScheduleInput:
       type: object
       additionalProperties: false
       properties:
         task_type:
           type: string
-          enum: [flixpatrol.top10.scrape, titles.enrich, titles.metadata, ratings.prewarm, netflix.top10.import, imdb.ratings.import, maintenance]
+          enum: [flixpatrol.top10.scrape, titles.enrich, titles.metadata, ratings.prewarm, netflix.top10.import, netflix.titles.match, imdb.ratings.import, mapping.refresh, maintenance]
           description: See GET /api/v1/admin/task-types
         name:
           type: string

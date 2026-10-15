@@ -135,31 +135,6 @@ func (r *MappingRepository) LinkedTitles(ctx context.Context) ([]sqlc.NetflixTit
 	return n, t, nil
 }
 
-// AdoptForNetflix gives a (non-manual) Netflix title a linked FlixPatrol
-// title's mapping (tmdbKind is movie | tv). Reports whether it changed a row.
-func (r *MappingRepository) AdoptForNetflix(ctx context.Context, id int64, tmdbKind, tmdbID, imdbID string, viaTitleID int64, source string) (bool, error) {
-	n, err := r.q.AdoptNetflixTitleMapping(ctx, sqlc.AdoptNetflixTitleMappingParams{
-		TmdbKind: nullIfEmpty(tmdbKind), TmdbID: nullIfEmpty(tmdbID), ImdbID: imdbID,
-		TitleID: sql.NullInt64{Int64: viaTitleID, Valid: viaTitleID > 0}, MatchSource: nullIfEmpty(source), ID: id,
-	})
-	if err != nil {
-		return false, fmt.Errorf("adopt mapping for netflix title %d: %w", id, err)
-	}
-	return n > 0, nil
-}
-
-// AdoptForFlixPatrol gives a (non-manual) FlixPatrol title a linked Netflix
-// title's mapping (kind is movie | tv_show).
-func (r *MappingRepository) AdoptForFlixPatrol(ctx context.Context, id int64, kind, tmdbID, imdbID string) (bool, error) {
-	n, err := r.q.AdoptFlixPatrolTitleMapping(ctx, sqlc.AdoptFlixPatrolTitleMappingParams{
-		Kind: kind, TmdbID: nullIfEmpty(tmdbID), ImdbID: imdbID, ID: id,
-	})
-	if err != nil {
-		return false, fmt.Errorf("adopt mapping for title %d: %w", id, err)
-	}
-	return n > 0, nil
-}
-
 // MappingFilter filters the admin mapping list.
 type MappingFilter struct {
 	TmdbKind string // "" | movie | tv
@@ -299,53 +274,10 @@ func (r *MappingRepository) NetflixLinksOf(ctx context.Context, titleIDs []int64
 	return out, nil
 }
 
-// Remap moves every FlixPatrol and Netflix title mapped to from onto to,
-// marking them fixed by hand, in one transaction. Returns the IDs moved.
-func (r *MappingRepository) Remap(ctx context.Context, from, to TmdbRef) (titleIDs, netflixIDs []int64, err error) {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	q := r.q.WithTx(tx)
-	titleIDs, err = q.RemapFlixPatrolTitles(ctx, sqlc.RemapFlixPatrolTitlesParams{
-		NewKind: titleKindOf(to.Kind), NewTmdbID: nullIfEmpty(to.ID), OldKind: titleKindOf(from.Kind), OldTmdbID: nullIfEmpty(from.ID),
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("remap flixpatrol titles: %w", err)
-	}
-	netflixIDs, err = q.RemapNetflixTitles(ctx, sqlc.RemapNetflixTitlesParams{
-		NewTmdbKind: nullIfEmpty(to.Kind), NewTmdbID: nullIfEmpty(to.ID), OldTmdbKind: nullIfEmpty(from.Kind), OldTmdbID: nullIfEmpty(from.ID),
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("remap netflix titles: %w", err)
-	}
-	return titleIDs, netflixIDs, tx.Commit()
-}
-
 // titleKindOf maps a TMDB kind (movie | tv) to titles.kind (movie | tv_show).
 func titleKindOf(tmdbKind string) string {
 	if tmdbKind == "tv" {
 		return "tv_show"
 	}
 	return "movie"
-}
-
-// ClearAdoptedFromFlixPatrol clears the linked Netflix titles that took their
-// mapping from a FlixPatrol title, returning their IDs.
-func (r *MappingRepository) ClearAdoptedFromFlixPatrol(ctx context.Context, titleID int64) ([]int64, error) {
-	ids, err := r.q.ClearNetflixTitlesAdoptedFrom(ctx, titleID)
-	if err != nil {
-		return nil, fmt.Errorf("clear netflix titles adopted from %d: %w", titleID, err)
-	}
-	return ids, nil
-}
-
-// ClearAdoptedFromNetflix clears the linked FlixPatrol titles that took their
-// mapping from a Netflix title.
-func (r *MappingRepository) ClearAdoptedFromNetflix(ctx context.Context, netflixTitleID int64) error {
-	if err := r.q.ClearFlixPatrolTitlesAdoptedFrom(ctx, netflixTitleID); err != nil {
-		return fmt.Errorf("clear flixpatrol titles adopted from %d: %w", netflixTitleID, err)
-	}
-	return nil
 }

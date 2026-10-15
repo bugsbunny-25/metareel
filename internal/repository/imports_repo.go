@@ -224,18 +224,6 @@ type NetflixMatch struct {
 	RetryAfter string // SQLite modifier, when unmatched
 }
 
-func (r *ImportsRepository) SaveNetflixTitleMatch(ctx context.Context, id int64, m NetflixMatch) error {
-	status, retry := MatchStatusUnmatched, m.RetryAfter
-	if m.TmdbID != "" {
-		status, retry = MatchStatusMatched, ""
-	}
-	return r.q.SaveNetflixTitleMatch(ctx, sqlc.SaveNetflixTitleMatchParams{
-		TmdbKind: nullIfEmpty(m.TmdbKind), TmdbID: nullIfEmpty(m.TmdbID), ImdbID: nullIfEmpty(m.ImdbID),
-		TitleID: sql.NullInt64{Int64: m.TitleID, Valid: m.TitleID > 0}, MatchStatus: status,
-		MatchSource: nullIfEmpty(m.Source), RetryAfter: retry, ID: id,
-	})
-}
-
 // FlixPatrolTitlesNamed returns matched FlixPatrol titles named name (or
 // whose title-page name is name) that charted in the same Netflix list as a
 // Netflix title of listKind (movie | tv_show). Their kind is the TMDB

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/labstack/echo/v5"
 
@@ -44,6 +45,23 @@ func (h *Handler) RemapMapping(c *echo.Context) error {
 		return badRequest(c, errors.New("invalid JSON body"))
 	}
 	out, err := h.Mapping.Remap(c.Request().Context(), ref, in)
+	return writeData(c, out, err)
+}
+
+// ListMappingEvents lists the history of mapping changes, newest first:
+// GET /api/v1/admin/mapping-events?subject=flixpatrol:12|netflix:34&tmdb=movie:100&limit=50
+func (h *Handler) ListMappingEvents(c *echo.Context) error {
+	var limit int64
+	if v := c.QueryParam("limit"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 1 {
+			return badRequest(c, errors.New("limit must be a positive integer"))
+		}
+		limit = n
+	}
+	out, err := h.Mapping.Events(c.Request().Context(), service.MappingEventsQuery{
+		Subject: c.QueryParam("subject"), Tmdb: c.QueryParam("tmdb"), Limit: limit,
+	})
 	return writeData(c, out, err)
 }
 

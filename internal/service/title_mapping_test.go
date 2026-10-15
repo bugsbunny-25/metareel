@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -118,12 +120,12 @@ func TestTitleMappingFlow(t *testing.T) {
 	meta := repository.NewMetadataRepository(db)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	seasons := NewSeasonMapper(log, imports)
-	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), meta, nil, seasons)
-	n := NewNetflixImporter(log, nil, imports, flix, repository.NewTaskScheduleRepository(db), nil, nil, seasons, nil).WithMapping(mapping)
-	admin := NewNetflixAdminService(log, imports, meta, nil, seasons, nil).WithMapping(mapping)
-	titles := NewTitleAdminService(flix).WithMapping(mapping)
+	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), testWriter(db), meta, nil, seasons)
+	n := NewNetflixImporter(log, nil, imports, testWriter(db), flix, repository.NewTaskScheduleRepository(db), nil, nil, seasons, nil).WithMapping(mapping)
+	admin := NewNetflixAdminService(log, imports, testWriter(db), meta, nil, seasons, nil).WithMapping(mapping)
+	titles := NewTitleAdminService(flix, testWriter(db)).WithMapping(mapping)
 
-	seed(t, flix, []seedTitle{
+	seed(t, db, []seedTitle{
 		{Slug: "taylor-tomlinson-have-it-all", Name: "Taylor Tomlinson: Have It All", Kind: "tv_show"}, // not matched
 		{Slug: "wednesday", Name: "Wednesday: Season 2", Kind: "tv_show", TmdbID: "119051", ImdbID: "tt13443470", RtURL: "tv/wednesday"},
 		{Slug: "the-gambler", Name: "The Gambler", Kind: "movie", TmdbID: "111"},
@@ -298,7 +300,7 @@ func TestNetflixIDMatching(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	seasons := NewSeasonMapper(log, imports)
 	metadata := NewTitleMetadataService(log, meta, nil, nil)
-	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), meta, nil, seasons)
+	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), testWriter(db), meta, nil, seasons)
 	search := &fakeNetflixSearch{
 		items: map[string][]client.NetflixSearchItem{
 			"Wednesday": {{NetflixID: "81435630", Title: "Wednesday: Season 2", Category: "TV", GlobalWeeks: []string{"2026-10-04"}}},
@@ -309,16 +311,16 @@ func TestNetflixIDMatching(t *testing.T) {
 		},
 		shows: map[string]string{"81435630": "81231974"},
 	}
-	n := NewNetflixImporter(log, nil, imports, flix, repository.NewTaskScheduleRepository(db), nil, metadata, seasons, nil).
+	n := NewNetflixImporter(log, nil, imports, testWriter(db), flix, repository.NewTaskScheduleRepository(db), nil, metadata, seasons, nil).
 		WithMapping(mapping).WithNetflixSearch(search)
-	admin := NewNetflixAdminService(log, imports, meta, nil, seasons, nil).WithMapping(mapping)
+	admin := NewNetflixAdminService(log, imports, testWriter(db), meta, nil, seasons, nil).WithMapping(mapping)
 
 	// TMDB already knows Wednesday's Netflix ID (from Wikidata); FlixPatrol
 	// matched its title to the wrong show by name.
 	if err := meta.SaveWikidata(ctx, repository.TmdbRef{Kind: "tv", ID: "119051"}, client.WikidataIDs{NetflixID: "81231974"}); err != nil {
 		t.Fatal(err)
 	}
-	seed(t, flix, []seedTitle{{Slug: "wednesday", Name: "Wednesday", Kind: "tv_show", TmdbID: "555"}},
+	seed(t, db, []seedTitle{{Slug: "wednesday", Name: "Wednesday", Kind: "tv_show", TmdbID: "555"}},
 		[]seedRanking{{"wednesday", "2026-10-01", "US", "netflix", "tv_shows", 1}})
 	global := "week\tcategory\tweekly_rank\tshow_title\tseason_title\tweekly_hours_viewed\truntime\tweekly_views\tcumulative_weeks_in_top_10\n" +
 		"2026-10-04\tTV (English)\t1\tWednesday\tWednesday: Season 2\t10\t1\t10\t1\n" +
@@ -374,11 +376,11 @@ func TestMappingDoesNotSpreadThroughLinks(t *testing.T) {
 	meta := repository.NewMetadataRepository(db)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	seasons := NewSeasonMapper(log, imports)
-	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), meta, nil, seasons)
-	n := NewNetflixImporter(log, nil, imports, flix, repository.NewTaskScheduleRepository(db), nil, nil, seasons, nil).WithMapping(mapping)
-	titles := NewTitleAdminService(flix).WithMapping(mapping)
+	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), testWriter(db), meta, nil, seasons)
+	n := NewNetflixImporter(log, nil, imports, testWriter(db), flix, repository.NewTaskScheduleRepository(db), nil, nil, seasons, nil).WithMapping(mapping)
+	titles := NewTitleAdminService(flix, testWriter(db)).WithMapping(mapping)
 
-	seed(t, flix, []seedTitle{
+	seed(t, db, []seedTitle{
 		{Slug: "a-different-world", Name: "A Different World", Kind: "tv_show", TmdbID: "115"},
 		{Slug: "a-different-world-2026", Name: "A Different World", Kind: "tv_show", TmdbID: "999"},
 	}, []seedRanking{
@@ -427,5 +429,244 @@ func TestMappingDoesNotSpreadThroughLinks(t *testing.T) {
 	}
 	if orig, _ = flix.GetTitleBySlug(ctx, "a-different-world"); orig.TmdbID.Valid {
 		t.Fatalf("unmatched flixpatrol title took an ambiguous link's mapping: %s", orig.TmdbID.String)
+	}
+}
+
+// A TMDB title's IDs come from the strongest source that has one: manual >
+// tmdb > wikidata > match; clearing a hand-set ID hands it back.
+func TestTmdbTitleIDSources(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	meta := repository.NewMetadataRepository(db)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), testWriter(db), meta, nil, nil)
+	ref := repository.TmdbRef{Kind: "movie", ID: "100"}
+	ids := func() string {
+		t.Helper()
+		m, err := meta.Get(ctx, ref)
+		if err != nil || m == nil {
+			t.Fatalf("tmdb title: %+v %v", m, err)
+		}
+		return ptrStr(m.IMDbID) + "/" + m.IDSources["imdb"] + " " + ptrStr(m.WikidataID) + "/" + m.IDSources["wikidata"]
+	}
+	save := func(imdb, wd, source string) {
+		t.Helper()
+		if err := meta.SaveIDs(ctx, ref, repository.TmdbIDs{IMDbID: imdb, WikidataID: wd}, source); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, step := range []struct {
+		imdb, wd, source, want string
+	}{
+		{"tt1", "", repository.IDSourceMatch, "tt1/match <nil>/"},
+		{"tt2", "Q2", repository.IDSourceWikidata, "tt2/wikidata Q2/wikidata"},
+		{"tt3", "", repository.IDSourceTMDB, "tt3/tmdb Q2/wikidata"},
+		{"tt4", "Q4", repository.IDSourceMatch, "tt3/tmdb Q2/wikidata"}, // weaker: ignored
+		{"tt5", "", repository.IDSourceTMDB, "tt5/tmdb Q2/wikidata"},    // TMDB corrects itself
+	} {
+		save(step.imdb, step.wd, step.source)
+		if got := ids(); got != step.want {
+			t.Fatalf("step %d: ids = %s, want %s", i, got, step.want)
+		}
+	}
+	session := testWriter(db).Session("test")
+	hand, none := "tt9", ""
+	if err := mapping.SetManualIDs(ctx, session, ref, &hand, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	save("tt6", "", repository.IDSourceTMDB)
+	if got := ids(); got != "tt9/manual Q2/wikidata" {
+		t.Fatalf("after a hand-set IMDb ID = %s", got)
+	}
+	if err := mapping.SetManualIDs(ctx, session, ref, &none, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(); got != "<nil>/ Q2/wikidata" {
+		t.Fatalf("after clearing it = %s", got)
+	}
+	save("tt6", "", repository.IDSourceTMDB)
+	if got := ids(); got != "tt6/tmdb Q2/wikidata" {
+		t.Fatalf("handed back = %s", got)
+	}
+	if p := session.Take(); len(p.Refs) != 1 || p.Refs[0] != ref {
+		t.Fatalf("hand-set IDs did not queue a refresh: %+v", p)
+	}
+}
+
+// A title's mapping is computed from its own evidence and that of the title
+// linked to it; nothing is copied, so withdrawing evidence withdraws what
+// was shared from it.
+func TestEvidenceMapping(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	flix := repository.NewFlixPatrolRepository(db)
+	imports := repository.NewImportsRepository(db)
+	meta := repository.NewMetadataRepository(db)
+	mrepo := repository.NewMappingRepository(db)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	w := testWriter(db)
+	mapping := NewTitleMappingService(log, mrepo, w, meta, nil, NewSeasonMapper(log, imports))
+	n := NewNetflixImporter(log, nil, imports, w, flix, repository.NewTaskScheduleRepository(db), nil, nil, nil, nil)
+
+	seed(t, db, []seedTitle{{Slug: "show", Name: "Show", Kind: "movie"}}, nil)
+	global := "week\tcategory\tweekly_rank\tshow_title\tseason_title\tweekly_hours_viewed\truntime\tweekly_views\tcumulative_weeks_in_top_10\n" +
+		"2026-10-04\tFilms (English)\t1\tShow\tN/A\t10\t1\t10\t1\n"
+	if _, _, err := n.importGlobal(ctx, strings.NewReader(global)); err != nil {
+		t.Fatal(err)
+	}
+	fp, _ := flix.GetTitleBySlug(ctx, "show")
+	const nfID = int64(1)
+	if err := mrepo.ReplaceLinks(ctx, []repository.TitleLink{{NetflixTitleID: nfID, TitleID: fp.ID}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	state := func() string {
+		t.Helper()
+		f, err := flix.GetTitleBySlug(ctx, "show")
+		if err != nil {
+			t.Fatal(err)
+		}
+		nt, err := imports.GetNetflixTitle(ctx, nfID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fmt.Sprintf("fp %s/%s/%s nf %s/%s/%s", f.TmdbID.String, f.MatchStatus, f.MatchSource.String,
+			nt.TmdbID.String, nt.MatchStatus, nt.MatchSource.String)
+	}
+	s := w.Session("test")
+	steps := []struct {
+		name string
+		do   func() error
+		want string
+	}{
+		{"netflix match is shared with the unmatched FlixPatrol title", func() error {
+			return s.MatchNetflixTitle(ctx, nfID, repository.NetflixMatch{TmdbKind: "movie", TmdbID: "1", Source: "justwatch"})
+		}, "fp 1/matched/netflix_title nf 1/matched/justwatch"},
+		{"FlixPatrol's own match beats Netflix's", func() error {
+			_, err := s.MatchTitle(ctx, fp.ID, repository.TitleMatchResult{Kind: "movie", TmdbID: "2", Source: "justwatch_path", ImdbID: "tt2"})
+			return err
+		}, "fp 2/matched/justwatch_path nf 2/matched/flixpatrol_title"},
+		{"a Netflix fix by hand wins for both", func() error {
+			return s.SetNetflixMapping(ctx, nfID, "movie", "9", "")
+		}, "fp 9/matched/netflix_title nf 9/manual/manual"},
+		{"lifting the lock brings back the matches", func() error {
+			return s.RequeueNetflixTitle(ctx, nfID, false)
+		}, "fp 2/matched/justwatch_path nf 2/matched/flixpatrol_title"},
+		{"clearing FlixPatrol's match falls back to Netflix's", func() error {
+			_, err := s.RequeueTitle(ctx, fp.ID, true)
+			return err
+		}, "fp 1/matched/netflix_title nf 1/matched/justwatch"},
+		{"clearing Netflix's leaves both unmapped and due", func() error {
+			return s.RequeueNetflixTitle(ctx, nfID, true)
+		}, "fp /pending/ nf /pending/"},
+		{"a Netflix ID beats a FlixPatrol match", func() error {
+			if _, err := s.MatchTitle(ctx, fp.ID, repository.TitleMatchResult{Kind: "movie", TmdbID: "2", Source: "justwatch_path"}); err != nil {
+				return err
+			}
+			_, err := s.MatchNetflixByNetflixID(ctx, nfID, repository.TmdbRef{Kind: "movie", ID: "3"}, "")
+			return err
+		}, "fp 3/matched/netflix_title nf 3/matched/netflix_id"},
+	}
+	for _, st := range steps {
+		if err := st.do(); err != nil {
+			t.Fatalf("%s: %v", st.name, err)
+		}
+		if got := state(); got != st.want {
+			t.Fatalf("%s: %s, want %s", st.name, got, st.want)
+		}
+	}
+
+	// Each change is in the history with what caused it.
+	events, err := mapping.Events(ctx, MappingEventsQuery{Subject: "flixpatrol:" + strconv.FormatInt(fp.ID, 10), Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for i := len(events) - 1; i >= 0; i-- {
+		e := events[i]
+		got = append(got, e.Action+":"+ptrStr(e.FromID)+">"+ptrStr(e.ToID))
+	}
+	want := "adopt:<nil>>1 match:1>2 adopt:2>9 unshare:9>2 clear:2>1 unshare:1><nil> match:<nil>>2 adopt:2>3"
+	if strings.Join(got, " ") != want {
+		t.Fatalf("flixpatrol history = %v\nwant %s", got, want)
+	}
+
+	// The FlixPatrol match's IMDb ID disagrees with TMDB's: listed only while
+	// that match decides the title's mapping.
+	if err := meta.SaveIDs(ctx, repository.TmdbRef{Kind: "movie", ID: "2"}, repository.TmdbIDs{IMDbID: "tt2-tmdb"}, repository.IDSourceTMDB); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MatchTitle(ctx, fp.ID, repository.TitleMatchResult{Kind: "movie", TmdbID: "2", Source: "justwatch_path", ImdbID: "tt2"}); err != nil {
+		t.Fatal(err)
+	}
+	mm, err := mrepo.IMDbMismatches(ctx, 10)
+	if err != nil || len(mm) != 1 || mm[0].SubjectID != fp.ID || mm[0].IMDbID != "tt2" || mm[0].TmdbIMDbID != "tt2-tmdb" {
+		t.Fatalf("imdb mismatches = %+v %v", mm, err)
+	}
+	if _, err := s.SetTitleMapping(ctx, fp.ID, "movie", "2", ""); err != nil { // confirmed by hand
+		t.Fatal(err)
+	}
+	if mm, _ := mrepo.IMDbMismatches(ctx, 10); len(mm) != 0 {
+		t.Fatalf("mismatch after confirming by hand = %+v", mm)
+	}
+}
+
+func ptrStr(p *string) string {
+	if p == nil {
+		return "<nil>"
+	}
+	return *p
+}
+
+// A session queues one refresh with every TMDB title it mapped to and every
+// Netflix title whose mapping changed; nothing when nothing changed.
+func TestMappingWriterQueuesOneRefresh(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	flix := repository.NewFlixPatrolRepository(db)
+	imports := repository.NewImportsRepository(db)
+	var queued []MappingRefresh
+	w := NewMappingWriter(slog.New(slog.NewTextHandler(io.Discard, nil)), repository.NewMappingRepository(db)).
+		WithRefreshQueue(func(_ context.Context, r MappingRefresh) error { queued = append(queued, r); return nil })
+	seed(t, db, []seedTitle{{Slug: "a", Name: "A", Kind: "movie"}, {Slug: "b", Name: "B", Kind: "tv_show"}}, nil)
+	n := NewNetflixImporter(slog.New(slog.NewTextHandler(io.Discard, nil)), nil, imports, w, flix, repository.NewTaskScheduleRepository(db), nil, nil, nil, nil)
+	global := "week\tcategory\tweekly_rank\tshow_title\tseason_title\tweekly_hours_viewed\truntime\tweekly_views\tcumulative_weeks_in_top_10\n" +
+		"2026-10-04\tFilms (English)\t1\tN\tN/A\t10\t1\t10\t1\n"
+	if _, _, err := n.importGlobal(ctx, strings.NewReader(global)); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := flix.GetTitleBySlug(ctx, "a")
+	b, _ := flix.GetTitleBySlug(ctx, "b")
+
+	s := w.Session("test")
+	if _, err := s.MatchTitle(ctx, a.ID, repository.TitleMatchResult{Kind: "movie", TmdbID: "1", Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MatchTitle(ctx, b.ID, repository.TitleMatchResult{Kind: "tv_show", RetryAfter: "+1 day"}); err != nil { // no match: no change
+		t.Fatal(err)
+	}
+	if err := s.MatchNetflixTitle(ctx, 1, repository.NetflixMatch{TmdbKind: "movie", TmdbID: "1", Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Flush(ctx)
+	s.Flush(ctx) // nothing new
+	if len(queued) != 1 || len(queued[0].Refs) != 1 || queued[0].Refs[0] != (repository.TmdbRef{Kind: "movie", ID: "1"}) ||
+		len(queued[0].NetflixIDs) != 1 || queued[0].NetflixIDs[0] != 1 || s.Changes() != 2 {
+		t.Fatalf("queued = %+v, changes %d", queued, s.Changes())
+	}
+	// The same match again is no change.
+	s2 := w.Session("test")
+	if _, err := s2.MatchTitle(ctx, a.ID, repository.TitleMatchResult{Kind: "movie", TmdbID: "1", Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	s2.Flush(ctx)
+	if len(queued) != 1 {
+		t.Fatalf("unchanged match queued a refresh: %+v", queued)
+	}
+	// Automation never touches a title fixed by hand.
+	if _, err := s2.SetTitleMapping(ctx, a.ID, "movie", "2", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s2.MatchTitle(ctx, a.ID, repository.TitleMatchResult{Kind: "movie", TmdbID: "3"}); !repository.IsNoRows(err) {
+		t.Fatalf("match over a manual title: %v", err)
 	}
 }

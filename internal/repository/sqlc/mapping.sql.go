@@ -9,132 +9,50 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+	"time"
 )
 
-const adoptFlixPatrolTitleMapping = `-- name: AdoptFlixPatrolTitleMapping :execrows
-UPDATE titles
-SET kind         = ?1,
-    tmdb_id      = ?2,
-    imdb_id      = COALESCE(NULLIF(CAST(?3 AS TEXT), ''),
-                            (SELECT m.imdb_id FROM tmdb_titles m
-                             WHERE m.tmdb_kind = CASE ?1 WHEN 'tv_show' THEN 'tv' ELSE 'movie' END
-                               AND m.tmdb_id = ?2)),
-    rt_url       = CASE WHEN titles.kind = ?1 AND COALESCE(titles.tmdb_id, '') = ?2 THEN titles.rt_url END,
-    justwatch_id = CASE WHEN titles.kind = ?1 AND COALESCE(titles.tmdb_id, '') = ?2 THEN titles.justwatch_id END,
-    wikidata_id  = CASE WHEN titles.kind = ?1 AND COALESCE(titles.tmdb_id, '') = ?2 THEN titles.wikidata_id END,
-    matched_name = NULL,
-    matched_year = NULL,
-    rt_attempts  = 0,
-    next_rt_at   = NULL,
-    match_status = 'matched',
-    match_source = 'netflix_title',
-    next_match_at = NULL,
-    updated_at   = CURRENT_TIMESTAMP
-WHERE titles.id = ?4 AND titles.match_status <> 'manual'
+const deleteMappingEvidence = `-- name: DeleteMappingEvidence :execrows
+DELETE FROM mapping_evidence
+WHERE subject_type = ?1 AND subject_id = ?2
+  AND (CAST(?3 AS TEXT) = '' OR kind = ?3)
 `
 
-type AdoptFlixPatrolTitleMappingParams struct {
-	Kind   string         `json:"kind"`
-	TmdbID sql.NullString `json:"tmdb_id"`
-	ImdbID string         `json:"imdb_id"`
-	ID     int64          `json:"id"`
+type DeleteMappingEvidenceParams struct {
+	SubjectType string `json:"subject_type"`
+	SubjectID   int64  `json:"subject_id"`
+	Kind        string `json:"kind"`
 }
 
-// Shares a linked Netflix title's mapping (never touches manual titles).
-// IDs that belonged to the previous match (RT, JustWatch, Wikidata) are
-// dropped when the TMDB title changes, and the RT lookup is due again.
-func (q *Queries) AdoptFlixPatrolTitleMapping(ctx context.Context, arg AdoptFlixPatrolTitleMappingParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, adoptFlixPatrolTitleMapping,
-		arg.Kind,
-		arg.TmdbID,
-		arg.ImdbID,
-		arg.ID,
-	)
+// One kind of a title's evidence, or all of it (kind ”).
+func (q *Queries) DeleteMappingEvidence(ctx context.Context, arg DeleteMappingEvidenceParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteMappingEvidence, arg.SubjectType, arg.SubjectID, arg.Kind)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected()
 }
 
-const adoptNetflixTitleMapping = `-- name: AdoptNetflixTitleMapping :execrows
-UPDATE netflix_titles
-SET tmdb_kind     = ?1,
-    tmdb_id       = ?2,
-    imdb_id       = COALESCE(NULLIF(CAST(?3 AS TEXT), ''),
-                             (SELECT m.imdb_id FROM tmdb_titles m WHERE m.tmdb_kind = ?1 AND m.tmdb_id = ?2)),
-    title_id      = COALESCE(?4, netflix_titles.title_id),
-    match_status  = 'matched',
-    match_source  = ?5,
-    next_match_at = NULL,
-    updated_at    = CURRENT_TIMESTAMP
-WHERE netflix_titles.id = ?6 AND netflix_titles.match_status <> 'manual'
+const deleteNetflixEvidenceVia = `-- name: DeleteNetflixEvidenceVia :many
+DELETE FROM mapping_evidence
+WHERE subject_type = 'netflix' AND kind = 'match' AND via_title_id = ?1
+RETURNING subject_id
 `
 
-type AdoptNetflixTitleMappingParams struct {
-	TmdbKind    sql.NullString `json:"tmdb_kind"`
-	TmdbID      sql.NullString `json:"tmdb_id"`
-	ImdbID      string         `json:"imdb_id"`
-	TitleID     sql.NullInt64  `json:"title_id"`
-	MatchSource sql.NullString `json:"match_source"`
-	ID          int64          `json:"id"`
-}
-
-// Shares a linked FlixPatrol title's mapping (never touches manual titles).
-// The IMDb ID falls back to TMDB's.
-func (q *Queries) AdoptNetflixTitleMapping(ctx context.Context, arg AdoptNetflixTitleMappingParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, adoptNetflixTitleMapping,
-		arg.TmdbKind,
-		arg.TmdbID,
-		arg.ImdbID,
-		arg.TitleID,
-		arg.MatchSource,
-		arg.ID,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
-const clearFlixPatrolTitlesAdoptedFrom = `-- name: ClearFlixPatrolTitlesAdoptedFrom :exec
-UPDATE titles
-SET tmdb_id = NULL, imdb_id = NULL, rt_url = NULL, justwatch_id = NULL, wikidata_id = NULL,
-    match_status = 'pending', match_source = NULL, matched_name = NULL, matched_year = NULL,
-    next_match_at = NULL, rt_attempts = 0, next_rt_at = NULL, updated_at = CURRENT_TIMESTAMP
-WHERE titles.match_source = 'netflix_title' AND titles.match_status <> 'manual'
-  AND titles.id IN (SELECT l.title_id FROM title_links l WHERE l.netflix_title_id = ?1)
-`
-
-// The same for FlixPatrol titles that took a cleared Netflix title's mapping.
-func (q *Queries) ClearFlixPatrolTitlesAdoptedFrom(ctx context.Context, netflixTitleID int64) error {
-	_, err := q.db.ExecContext(ctx, clearFlixPatrolTitlesAdoptedFrom, netflixTitleID)
-	return err
-}
-
-const clearNetflixTitlesAdoptedFrom = `-- name: ClearNetflixTitlesAdoptedFrom :many
-UPDATE netflix_titles
-SET tmdb_kind = NULL, tmdb_id = NULL, imdb_id = NULL, match_status = 'pending', match_source = NULL,
-    next_match_at = NULL, updated_at = CURRENT_TIMESTAMP
-WHERE netflix_titles.match_source = 'flixpatrol_title' AND netflix_titles.match_status <> 'manual'
-  AND netflix_titles.id IN (SELECT l.netflix_title_id FROM title_links l WHERE l.title_id = ?1)
-RETURNING id
-`
-
-// After a FlixPatrol title's match is cleared, linked Netflix titles that only
-// took their mapping from it are cleared too (else they would hand it back).
-func (q *Queries) ClearNetflixTitlesAdoptedFrom(ctx context.Context, titleID int64) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, clearNetflixTitlesAdoptedFrom, titleID)
+// Netflix matches made through a FlixPatrol title (whose match was cleared).
+func (q *Queries) DeleteNetflixEvidenceVia(ctx context.Context, titleID sql.NullInt64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, deleteNetflixEvidenceVia, titleID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	items := []int64{}
 	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
+		var subject_id int64
+		if err := rows.Scan(&subject_id); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, subject_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -159,6 +77,39 @@ func (q *Queries) DeleteTitleLink(ctx context.Context, arg DeleteTitleLinkParams
 	return err
 }
 
+const insertMappingEvent = `-- name: InsertMappingEvent :exec
+INSERT INTO mapping_events (subject_type, subject_id, action, from_tmdb_kind, from_tmdb_id, to_tmdb_kind, to_tmdb_id, source, actor)
+VALUES (?1, ?2, ?3, ?4, ?5,
+        ?6, ?7, ?8, ?9)
+`
+
+type InsertMappingEventParams struct {
+	SubjectType  string         `json:"subject_type"`
+	SubjectID    int64          `json:"subject_id"`
+	Action       string         `json:"action"`
+	FromTmdbKind sql.NullString `json:"from_tmdb_kind"`
+	FromTmdbID   sql.NullString `json:"from_tmdb_id"`
+	ToTmdbKind   sql.NullString `json:"to_tmdb_kind"`
+	ToTmdbID     sql.NullString `json:"to_tmdb_id"`
+	Source       sql.NullString `json:"source"`
+	Actor        string         `json:"actor"`
+}
+
+func (q *Queries) InsertMappingEvent(ctx context.Context, arg InsertMappingEventParams) error {
+	_, err := q.db.ExecContext(ctx, insertMappingEvent,
+		arg.SubjectType,
+		arg.SubjectID,
+		arg.Action,
+		arg.FromTmdbKind,
+		arg.FromTmdbID,
+		arg.ToTmdbKind,
+		arg.ToTmdbID,
+		arg.Source,
+		arg.Actor,
+	)
+	return err
+}
+
 const insertTitleLink = `-- name: InsertTitleLink :exec
 INSERT INTO title_links (netflix_title_id, title_id) VALUES (?, ?)
 ON CONFLICT(netflix_title_id, title_id) DO NOTHING
@@ -172,6 +123,44 @@ type InsertTitleLinkParams struct {
 func (q *Queries) InsertTitleLink(ctx context.Context, arg InsertTitleLinkParams) error {
 	_, err := q.db.ExecContext(ctx, insertTitleLink, arg.NetflixTitleID, arg.TitleID)
 	return err
+}
+
+const listAllMappingEvidence = `-- name: ListAllMappingEvidence :many
+SELECT subject_type, subject_id, kind, tmdb_kind, tmdb_id, source, imdb_id, via_title_id, created_at, updated_at FROM mapping_evidence
+`
+
+func (q *Queries) ListAllMappingEvidence(ctx context.Context) ([]MappingEvidence, error) {
+	rows, err := q.db.QueryContext(ctx, listAllMappingEvidence)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MappingEvidence{}
+	for rows.Next() {
+		var i MappingEvidence
+		if err := rows.Scan(
+			&i.SubjectType,
+			&i.SubjectID,
+			&i.Kind,
+			&i.TmdbKind,
+			&i.TmdbID,
+			&i.Source,
+			&i.ImdbID,
+			&i.ViaTitleID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listFlixPatrolNetflixWeeks = `-- name: ListFlixPatrolNetflixWeeks :many
@@ -222,7 +211,7 @@ func (q *Queries) ListFlixPatrolNetflixWeeks(ctx context.Context) ([]ListFlixPat
 }
 
 const listFlixPatrolTitlesByTmdbIDs = `-- name: ListFlixPatrolTitlesByTmdbIDs :many
-SELECT t.id, t.slug, t.name, t.kind, t.tmdb_id, t.imdb_id, t.rt_url, t.created_at, t.updated_at, t.match_status, t.match_source, t.matched_name, t.matched_year, t.match_attempts, t.match_attempted_at, t.next_match_at, t.rt_attempts, t.next_rt_at, t.justwatch_id, t.wikidata_id, t.fp_name, t.fp_kind, t.fp_premiere_date, t.fp_country, t.fp_fetched_at,
+SELECT t.id, t.slug, t.name, t.kind, t.tmdb_id, t.legacy_imdb_id, t.legacy_rt_url, t.created_at, t.updated_at, t.match_status, t.match_source, t.matched_name, t.matched_year, t.match_attempts, t.match_attempted_at, t.next_match_at, t.legacy_rt_attempts, t.legacy_next_rt_at, t.legacy_justwatch_id, t.legacy_wikidata_id, t.fp_name, t.fp_kind, t.fp_premiere_date, t.fp_country, t.fp_fetched_at,
        CAST(COALESCE((SELECT MAX(CAST(r.ranked_on AS TEXT)) FROM rankings r WHERE r.title_id = t.id), '') AS TEXT) AS last_ranked_on
 FROM titles t
 WHERE t.tmdb_id IN (/*SLICE:tmdb_ids*/?)
@@ -260,8 +249,8 @@ func (q *Queries) ListFlixPatrolTitlesByTmdbIDs(ctx context.Context, tmdbIds []s
 			&i.Title.Name,
 			&i.Title.Kind,
 			&i.Title.TmdbID,
-			&i.Title.ImdbID,
-			&i.Title.RtUrl,
+			&i.Title.LegacyImdbID,
+			&i.Title.LegacyRtUrl,
 			&i.Title.CreatedAt,
 			&i.Title.UpdatedAt,
 			&i.Title.MatchStatus,
@@ -271,10 +260,10 @@ func (q *Queries) ListFlixPatrolTitlesByTmdbIDs(ctx context.Context, tmdbIds []s
 			&i.Title.MatchAttempts,
 			&i.Title.MatchAttemptedAt,
 			&i.Title.NextMatchAt,
-			&i.Title.RtAttempts,
-			&i.Title.NextRtAt,
-			&i.Title.JustwatchID,
-			&i.Title.WikidataID,
+			&i.Title.LegacyRtAttempts,
+			&i.Title.LegacyNextRtAt,
+			&i.Title.LegacyJustwatchID,
+			&i.Title.LegacyWikidataID,
 			&i.Title.FpName,
 			&i.Title.FpKind,
 			&i.Title.FpPremiereDate,
@@ -295,8 +284,74 @@ func (q *Queries) ListFlixPatrolTitlesByTmdbIDs(ctx context.Context, tmdbIds []s
 	return items, nil
 }
 
+const listIMDbMismatches = `-- name: ListIMDbMismatches :many
+SELECT e.subject_type, e.subject_id,
+       CAST(COALESCE(CASE e.subject_type
+           WHEN 'flixpatrol' THEN (SELECT t.name FROM titles t WHERE t.id = e.subject_id)
+           ELSE (SELECT n.show_title FROM netflix_titles n WHERE n.id = e.subject_id) END, '') AS TEXT) AS name,
+       CAST(e.tmdb_kind AS TEXT) AS tmdb_kind, CAST(e.tmdb_id AS TEXT) AS tmdb_id, CAST(e.imdb_id AS TEXT) AS imdb_id,
+       CAST(m.imdb_id AS TEXT) AS tmdb_imdb_id, e.kind AS evidence_kind, CAST(COALESCE(e.source, '') AS TEXT) AS source
+FROM mapping_evidence e
+JOIN tmdb_titles m ON m.tmdb_kind = e.tmdb_kind AND m.tmdb_id = e.tmdb_id
+WHERE COALESCE(e.imdb_id, '') <> '' AND COALESCE(m.imdb_id, '') <> '' AND e.imdb_id <> m.imdb_id
+  AND NOT EXISTS (
+    SELECT 1 FROM mapping_evidence h
+    WHERE h.subject_type = e.subject_type AND h.subject_id = e.subject_id
+      AND (CASE h.kind WHEN 'manual' THEN 3 WHEN 'netflix_id' THEN 2 ELSE 1 END)
+        > (CASE e.kind WHEN 'manual' THEN 3 WHEN 'netflix_id' THEN 2 ELSE 1 END))
+ORDER BY 1, 3
+LIMIT ?1
+`
+
+type ListIMDbMismatchesRow struct {
+	SubjectType  string `json:"subject_type"`
+	SubjectID    int64  `json:"subject_id"`
+	Name         string `json:"name"`
+	TmdbKind     string `json:"tmdb_kind"`
+	TmdbID       string `json:"tmdb_id"`
+	ImdbID       string `json:"imdb_id"`
+	TmdbImdbID   string `json:"tmdb_imdb_id"`
+	EvidenceKind string `json:"evidence_kind"`
+	Source       string `json:"source"`
+}
+
+// Titles whose deciding evidence came with an IMDb ID other than their TMDB
+// title's: the match or TMDB's IMDb ID is wrong.
+func (q *Queries) ListIMDbMismatches(ctx context.Context, limit int64) ([]ListIMDbMismatchesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listIMDbMismatches, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIMDbMismatchesRow{}
+	for rows.Next() {
+		var i ListIMDbMismatchesRow
+		if err := rows.Scan(
+			&i.SubjectType,
+			&i.SubjectID,
+			&i.Name,
+			&i.TmdbKind,
+			&i.TmdbID,
+			&i.ImdbID,
+			&i.TmdbImdbID,
+			&i.EvidenceKind,
+			&i.Source,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLinkedFlixPatrolTitles = `-- name: ListLinkedFlixPatrolTitles :many
-SELECT t.id, t.slug, t.name, t.kind, t.tmdb_id, t.imdb_id, t.rt_url, t.created_at, t.updated_at, t.match_status, t.match_source, t.matched_name, t.matched_year, t.match_attempts, t.match_attempted_at, t.next_match_at, t.rt_attempts, t.next_rt_at, t.justwatch_id, t.wikidata_id, t.fp_name, t.fp_kind, t.fp_premiere_date, t.fp_country, t.fp_fetched_at FROM titles t WHERE t.id IN (SELECT title_id FROM title_links)
+SELECT t.id, t.slug, t.name, t.kind, t.tmdb_id, t.legacy_imdb_id, t.legacy_rt_url, t.created_at, t.updated_at, t.match_status, t.match_source, t.matched_name, t.matched_year, t.match_attempts, t.match_attempted_at, t.next_match_at, t.legacy_rt_attempts, t.legacy_next_rt_at, t.legacy_justwatch_id, t.legacy_wikidata_id, t.fp_name, t.fp_kind, t.fp_premiere_date, t.fp_country, t.fp_fetched_at FROM titles t WHERE t.id IN (SELECT title_id FROM title_links)
 `
 
 func (q *Queries) ListLinkedFlixPatrolTitles(ctx context.Context) ([]Title, error) {
@@ -314,8 +369,8 @@ func (q *Queries) ListLinkedFlixPatrolTitles(ctx context.Context) ([]Title, erro
 			&i.Name,
 			&i.Kind,
 			&i.TmdbID,
-			&i.ImdbID,
-			&i.RtUrl,
+			&i.LegacyImdbID,
+			&i.LegacyRtUrl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MatchStatus,
@@ -325,10 +380,10 @@ func (q *Queries) ListLinkedFlixPatrolTitles(ctx context.Context) ([]Title, erro
 			&i.MatchAttempts,
 			&i.MatchAttemptedAt,
 			&i.NextMatchAt,
-			&i.RtAttempts,
-			&i.NextRtAt,
-			&i.JustwatchID,
-			&i.WikidataID,
+			&i.LegacyRtAttempts,
+			&i.LegacyNextRtAt,
+			&i.LegacyJustwatchID,
+			&i.LegacyWikidataID,
 			&i.FpName,
 			&i.FpKind,
 			&i.FpPremiereDate,
@@ -349,7 +404,7 @@ func (q *Queries) ListLinkedFlixPatrolTitles(ctx context.Context) ([]Title, erro
 }
 
 const listLinkedNetflixTitles = `-- name: ListLinkedNetflixTitles :many
-SELECT n.id, n.show_title, n.kind, n.tmdb_id, n.imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at, n.tmdb_kind, n.netflix_id, n.netflix_id_checked_at FROM netflix_titles n WHERE n.id IN (SELECT netflix_title_id FROM title_links)
+SELECT n.id, n.show_title, n.kind, n.tmdb_id, n.legacy_imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at, n.tmdb_kind, n.netflix_id, n.netflix_id_checked_at FROM netflix_titles n WHERE n.id IN (SELECT netflix_title_id FROM title_links)
 `
 
 func (q *Queries) ListLinkedNetflixTitles(ctx context.Context) ([]NetflixTitle, error) {
@@ -366,7 +421,7 @@ func (q *Queries) ListLinkedNetflixTitles(ctx context.Context) ([]NetflixTitle, 
 			&i.ShowTitle,
 			&i.Kind,
 			&i.TmdbID,
-			&i.ImdbID,
+			&i.LegacyImdbID,
 			&i.TitleID,
 			&i.MatchStatus,
 			&i.MatchSource,
@@ -377,6 +432,142 @@ func (q *Queries) ListLinkedNetflixTitles(ctx context.Context) ([]NetflixTitle, 
 			&i.TmdbKind,
 			&i.NetflixID,
 			&i.NetflixIDCheckedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMappingEvents = `-- name: ListMappingEvents :many
+SELECT e.id, e.subject_type, e.subject_id, e."action", e.from_tmdb_kind, e.from_tmdb_id, e.to_tmdb_kind, e.to_tmdb_id, e.source, e.actor, e.created_at,
+       CAST(COALESCE(CASE e.subject_type
+           WHEN 'flixpatrol' THEN (SELECT t.name FROM titles t WHERE t.id = e.subject_id)
+           ELSE (SELECT n.show_title FROM netflix_titles n WHERE n.id = e.subject_id) END, '') AS TEXT) AS subject_name
+FROM mapping_events e
+WHERE (CAST(?1 AS TEXT) = ''
+       OR (e.subject_type = ?1 AND e.subject_id = CAST(?2 AS INTEGER)))
+  AND (CAST(?3 AS TEXT) = ''
+       OR (e.to_tmdb_kind = ?3 AND e.to_tmdb_id = CAST(?4 AS TEXT))
+       OR (e.from_tmdb_kind = ?3 AND e.from_tmdb_id = CAST(?4 AS TEXT)))
+ORDER BY e.id DESC
+LIMIT ?5
+`
+
+type ListMappingEventsParams struct {
+	SubjectType string `json:"subject_type"`
+	SubjectID   int64  `json:"subject_id"`
+	TmdbKind    string `json:"tmdb_kind"`
+	TmdbID      string `json:"tmdb_id"`
+	Limit       int64  `json:"limit"`
+}
+
+type ListMappingEventsRow struct {
+	ID           int64          `json:"id"`
+	SubjectType  string         `json:"subject_type"`
+	SubjectID    int64          `json:"subject_id"`
+	Action       string         `json:"action"`
+	FromTmdbKind sql.NullString `json:"from_tmdb_kind"`
+	FromTmdbID   sql.NullString `json:"from_tmdb_id"`
+	ToTmdbKind   sql.NullString `json:"to_tmdb_kind"`
+	ToTmdbID     sql.NullString `json:"to_tmdb_id"`
+	Source       sql.NullString `json:"source"`
+	Actor        string         `json:"actor"`
+	CreatedAt    time.Time      `json:"created_at"`
+	SubjectName  string         `json:"subject_name"`
+}
+
+// Newest first, optionally of one subject (flixpatrol | netflix + id) and/or
+// one TMDB title (as the old or the new mapping).
+func (q *Queries) ListMappingEvents(ctx context.Context, arg ListMappingEventsParams) ([]ListMappingEventsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listMappingEvents,
+		arg.SubjectType,
+		arg.SubjectID,
+		arg.TmdbKind,
+		arg.TmdbID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMappingEventsRow{}
+	for rows.Next() {
+		var i ListMappingEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SubjectType,
+			&i.SubjectID,
+			&i.Action,
+			&i.FromTmdbKind,
+			&i.FromTmdbID,
+			&i.ToTmdbKind,
+			&i.ToTmdbID,
+			&i.Source,
+			&i.Actor,
+			&i.CreatedAt,
+			&i.SubjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMappingEvidence = `-- name: ListMappingEvidence :many
+SELECT subject_type, subject_id, kind, tmdb_kind, tmdb_id, source, imdb_id, via_title_id, created_at, updated_at FROM mapping_evidence WHERE subject_type = ?1 AND subject_id IN (/*SLICE:ids*/?)
+`
+
+type ListMappingEvidenceParams struct {
+	SubjectType string  `json:"subject_type"`
+	Ids         []int64 `json:"ids"`
+}
+
+func (q *Queries) ListMappingEvidence(ctx context.Context, arg ListMappingEvidenceParams) ([]MappingEvidence, error) {
+	query := listMappingEvidence
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.SubjectType)
+	if len(arg.Ids) > 0 {
+		for _, v := range arg.Ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(arg.Ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MappingEvidence{}
+	for rows.Next() {
+		var i MappingEvidence
+		if err := rows.Scan(
+			&i.SubjectType,
+			&i.SubjectID,
+			&i.Kind,
+			&i.TmdbKind,
+			&i.TmdbID,
+			&i.Source,
+			&i.ImdbID,
+			&i.ViaTitleID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -427,7 +618,7 @@ func (q *Queries) ListNetflixTitleWeeksFrom(ctx context.Context, fromWeek string
 }
 
 const listNetflixTitlesByTmdbIDs = `-- name: ListNetflixTitlesByTmdbIDs :many
-SELECT n.id, n.show_title, n.kind, n.tmdb_id, n.imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at, n.tmdb_kind, n.netflix_id, n.netflix_id_checked_at,
+SELECT n.id, n.show_title, n.kind, n.tmdb_id, n.legacy_imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at, n.tmdb_kind, n.netflix_id, n.netflix_id_checked_at,
        CAST(COALESCE(NULLIF(max(
            COALESCE((SELECT MAX(g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id), ''),
            COALESCE((SELECT MAX(c.week) FROM netflix_top10_countries c WHERE c.netflix_title_id = n.id), '')), ''), '') AS TEXT) AS last_week
@@ -464,7 +655,7 @@ func (q *Queries) ListNetflixTitlesByTmdbIDs(ctx context.Context, tmdbIds []sql.
 			&i.NetflixTitle.ShowTitle,
 			&i.NetflixTitle.Kind,
 			&i.NetflixTitle.TmdbID,
-			&i.NetflixTitle.ImdbID,
+			&i.NetflixTitle.LegacyImdbID,
 			&i.NetflixTitle.TitleID,
 			&i.NetflixTitle.MatchStatus,
 			&i.NetflixTitle.MatchSource,
@@ -819,109 +1010,37 @@ func (q *Queries) ListTmdbMappings(ctx context.Context, arg ListTmdbMappingsPara
 	return items, nil
 }
 
-const remapFlixPatrolTitles = `-- name: RemapFlixPatrolTitles :many
-UPDATE titles
-SET kind          = ?1,
-    tmdb_id       = ?2,
-    imdb_id       = (SELECT m.imdb_id FROM tmdb_titles m
-                     WHERE m.tmdb_kind = CASE ?1 WHEN 'tv_show' THEN 'tv' ELSE 'movie' END
-                       AND m.tmdb_id = ?2),
-    rt_url        = NULL,
-    justwatch_id  = NULL,
-    wikidata_id   = NULL,
-    matched_name  = NULL,
-    matched_year  = NULL,
-    rt_attempts   = 0,
-    next_rt_at    = NULL,
-    match_status  = 'manual',
-    match_source  = 'manual',
-    next_match_at = NULL,
-    updated_at    = CURRENT_TIMESTAMP
-WHERE titles.kind = ?3 AND titles.tmdb_id = ?4
-RETURNING id
+const upsertMappingEvidence = `-- name: UpsertMappingEvidence :exec
+INSERT INTO mapping_evidence (subject_type, subject_id, kind, tmdb_kind, tmdb_id, source, imdb_id, via_title_id)
+VALUES (?1, ?2, ?3, ?4, ?5,
+        ?6, ?7, ?8)
+ON CONFLICT(subject_type, subject_id, kind) DO UPDATE SET
+    tmdb_kind = excluded.tmdb_kind, tmdb_id = excluded.tmdb_id, source = excluded.source,
+    imdb_id = excluded.imdb_id, via_title_id = excluded.via_title_id, updated_at = CURRENT_TIMESTAMP
 `
 
-type RemapFlixPatrolTitlesParams struct {
-	NewKind   string         `json:"new_kind"`
-	NewTmdbID sql.NullString `json:"new_tmdb_id"`
-	OldKind   string         `json:"old_kind"`
-	OldTmdbID sql.NullString `json:"old_tmdb_id"`
+type UpsertMappingEvidenceParams struct {
+	SubjectType string         `json:"subject_type"`
+	SubjectID   int64          `json:"subject_id"`
+	Kind        string         `json:"kind"`
+	TmdbKind    sql.NullString `json:"tmdb_kind"`
+	TmdbID      sql.NullString `json:"tmdb_id"`
+	Source      sql.NullString `json:"source"`
+	ImdbID      sql.NullString `json:"imdb_id"`
+	ViaTitleID  sql.NullInt64  `json:"via_title_id"`
 }
 
-// Moves every FlixPatrol title on one TMDB title to another (fixed by hand).
-func (q *Queries) RemapFlixPatrolTitles(ctx context.Context, arg RemapFlixPatrolTitlesParams) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, remapFlixPatrolTitles,
-		arg.NewKind,
-		arg.NewTmdbID,
-		arg.OldKind,
-		arg.OldTmdbID,
+// What one source says a title is (one row per title and kind of evidence).
+func (q *Queries) UpsertMappingEvidence(ctx context.Context, arg UpsertMappingEvidenceParams) error {
+	_, err := q.db.ExecContext(ctx, upsertMappingEvidence,
+		arg.SubjectType,
+		arg.SubjectID,
+		arg.Kind,
+		arg.TmdbKind,
+		arg.TmdbID,
+		arg.Source,
+		arg.ImdbID,
+		arg.ViaTitleID,
 	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []int64{}
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const remapNetflixTitles = `-- name: RemapNetflixTitles :many
-UPDATE netflix_titles
-SET tmdb_kind     = ?1,
-    tmdb_id       = ?2,
-    imdb_id       = (SELECT m.imdb_id FROM tmdb_titles m WHERE m.tmdb_kind = ?1 AND m.tmdb_id = ?2),
-    match_status  = 'manual',
-    match_source  = 'manual',
-    next_match_at = NULL,
-    updated_at    = CURRENT_TIMESTAMP
-WHERE netflix_titles.tmdb_kind = ?3 AND netflix_titles.tmdb_id = ?4
-RETURNING id
-`
-
-type RemapNetflixTitlesParams struct {
-	NewTmdbKind sql.NullString `json:"new_tmdb_kind"`
-	NewTmdbID   sql.NullString `json:"new_tmdb_id"`
-	OldTmdbKind sql.NullString `json:"old_tmdb_kind"`
-	OldTmdbID   sql.NullString `json:"old_tmdb_id"`
-}
-
-// Moves every Netflix title on one TMDB title to another (fixed by hand).
-func (q *Queries) RemapNetflixTitles(ctx context.Context, arg RemapNetflixTitlesParams) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, remapNetflixTitles,
-		arg.NewTmdbKind,
-		arg.NewTmdbID,
-		arg.OldTmdbKind,
-		arg.OldTmdbID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []int64{}
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+	return err
 }

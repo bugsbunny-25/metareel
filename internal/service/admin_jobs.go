@@ -36,6 +36,8 @@ var taskTypeInfo = map[string]TaskTypeInfo{
 		Description: "Works through the backlog of unmatched Netflix titles (retrying with backoff: 1, 3, 7, then 30 days), then maps Netflix season titles and FlixPatrol TV rankings to season numbers."},
 	tasks.TypeIMDbRatingsImport: {Label: "IMDb ratings dataset",
 		Description: "Imports IMDb's daily title.ratings dataset (personal, non-commercial use) for the IMDb IDs metareel knows; used as the headline IMDb rating."},
+	tasks.TypeMappingRefresh: {Label: "Mapping refresh",
+		Description: "Follows up mapping changes (queued automatically): shares mappings over links, fetches TMDB details and Wikidata IDs of the TMDB titles now mapped to, fills mapped titles' missing IMDb / Wikidata IDs and remaps season numbers. Run by hand, it shares mappings and fills IDs."},
 	tasks.TypeMaintenance: {Label: "Maintenance",
 		Description: "Deletes old task runs, alerts on stale charts, marks interrupted runs failed and optimises the database."},
 }

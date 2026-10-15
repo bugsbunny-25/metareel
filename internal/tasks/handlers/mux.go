@@ -15,4 +15,3 @@ func NewServeMux(registrars ...Registrar) *asynq.ServeMux {
 	}
 	return mux
 }
-

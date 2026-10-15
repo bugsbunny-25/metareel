@@ -12,9 +12,12 @@ import (
 )
 
 const findTitlesByIMDb = `-- name: FindTitlesByIMDb :many
-SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at FROM titles WHERE imdb_id = ? ORDER BY id
+SELECT t.id, t.slug, t.name, t.kind, t.tmdb_id, t.legacy_imdb_id, t.legacy_rt_url, t.created_at, t.updated_at, t.match_status, t.match_source, t.matched_name, t.matched_year, t.match_attempts, t.match_attempted_at, t.next_match_at, t.legacy_rt_attempts, t.legacy_next_rt_at, t.legacy_justwatch_id, t.legacy_wikidata_id, t.fp_name, t.fp_kind, t.fp_premiere_date, t.fp_country, t.fp_fetched_at FROM titles t
+JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
+WHERE m.imdb_id = ?1 ORDER BY t.id
 `
 
+// FlixPatrol titles mapped to the TMDB titles with this IMDb ID.
 func (q *Queries) FindTitlesByIMDb(ctx context.Context, imdbID sql.NullString) ([]Title, error) {
 	rows, err := q.db.QueryContext(ctx, findTitlesByIMDb, imdbID)
 	if err != nil {
@@ -30,8 +33,8 @@ func (q *Queries) FindTitlesByIMDb(ctx context.Context, imdbID sql.NullString) (
 			&i.Name,
 			&i.Kind,
 			&i.TmdbID,
-			&i.ImdbID,
-			&i.RtUrl,
+			&i.LegacyImdbID,
+			&i.LegacyRtUrl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MatchStatus,
@@ -41,10 +44,10 @@ func (q *Queries) FindTitlesByIMDb(ctx context.Context, imdbID sql.NullString) (
 			&i.MatchAttempts,
 			&i.MatchAttemptedAt,
 			&i.NextMatchAt,
-			&i.RtAttempts,
-			&i.NextRtAt,
-			&i.JustwatchID,
-			&i.WikidataID,
+			&i.LegacyRtAttempts,
+			&i.LegacyNextRtAt,
+			&i.LegacyJustwatchID,
+			&i.LegacyWikidataID,
 			&i.FpName,
 			&i.FpKind,
 			&i.FpPremiereDate,
@@ -291,9 +294,10 @@ SELECT CAST(r.ranked_on AS TEXT) AS ranked_on,
        t.name,
        t.kind,
        t.tmdb_id,
-       t.imdb_id
+       m.imdb_id
 FROM rankings r
 JOIN titles t ON t.id = r.title_id
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
 WHERE r.ranked_on >= CAST(?1 AS TEXT)
   AND r.ranked_on <= CAST(?2 AS TEXT)
   AND (CAST(?3 AS TEXT) = '' OR r.country = ?3)
@@ -433,9 +437,10 @@ func (q *Queries) ListNetflixCountriesByTmdb(ctx context.Context, arg ListNetfli
 }
 
 const listNetflixCountryWeek = `-- name: ListNetflixCountryWeek :many
-SELECT c.country, c.week, c.category, c.weekly_rank, c.netflix_title_id, c.show_title, c.season_title, c.cumulative_weeks, n.tmdb_id, n.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
+SELECT c.country, c.week, c.category, c.weekly_rank, c.netflix_title_id, c.show_title, c.season_title, c.cumulative_weeks, n.tmdb_id, tm.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_top10_countries c
 JOIN netflix_titles n ON n.id = c.netflix_title_id
+LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND tm.tmdb_id = n.tmdb_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = c.netflix_title_id AND s.season_title = c.season_title
 WHERE c.country = ?1 AND c.week = ?2
   AND (CAST(?3 AS TEXT) = '' OR c.category = ?3)
@@ -625,9 +630,10 @@ func (q *Queries) ListNetflixGlobalRange(ctx context.Context, arg ListNetflixGlo
 }
 
 const listNetflixGlobalWeek = `-- name: ListNetflixGlobalWeek :many
-SELECT g.week, g.category, g.weekly_rank, g.netflix_title_id, g.show_title, g.season_title, g.weekly_hours_viewed, g.runtime_hours, g.weekly_views, g.cumulative_weeks, n.tmdb_id, n.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
+SELECT g.week, g.category, g.weekly_rank, g.netflix_title_id, g.show_title, g.season_title, g.weekly_hours_viewed, g.runtime_hours, g.weekly_views, g.cumulative_weeks, n.tmdb_id, tm.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
+LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND tm.tmdb_id = n.tmdb_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = g.netflix_title_id AND s.season_title = g.season_title
 WHERE g.week = ?1
   AND (CAST(?2 AS TEXT) = '' OR g.category = ?2)
@@ -697,9 +703,10 @@ func (q *Queries) ListNetflixGlobalWeek(ctx context.Context, arg ListNetflixGlob
 }
 
 const listNetflixMostPopular = `-- name: ListNetflixMostPopular :many
-SELECT p.category, p.rank, p.netflix_title_id, p.show_title, p.season_title, p.hours_viewed_91d, p.runtime_hours, p.views_91d, n.tmdb_id, n.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
+SELECT p.category, p.rank, p.netflix_title_id, p.show_title, p.season_title, p.hours_viewed_91d, p.runtime_hours, p.views_91d, n.tmdb_id, tm.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_most_popular p
 JOIN netflix_titles n ON n.id = p.netflix_title_id
+LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND tm.tmdb_id = n.tmdb_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = p.netflix_title_id AND s.season_title = p.season_title
 WHERE (CAST(?1 AS TEXT) = '' OR p.category = ?1)
 ORDER BY p.category, p.rank
@@ -759,7 +766,7 @@ func (q *Queries) ListNetflixMostPopular(ctx context.Context, category string) (
 }
 
 const listTitlesByTmdbRef = `-- name: ListTitlesByTmdbRef :many
-SELECT id, slug, name, kind, tmdb_id, imdb_id, rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, rt_attempts, next_rt_at, justwatch_id, wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at FROM titles
+SELECT id, slug, name, kind, tmdb_id, legacy_imdb_id, legacy_rt_url, created_at, updated_at, match_status, match_source, matched_name, matched_year, match_attempts, match_attempted_at, next_match_at, legacy_rt_attempts, legacy_next_rt_at, legacy_justwatch_id, legacy_wikidata_id, fp_name, fp_kind, fp_premiere_date, fp_country, fp_fetched_at FROM titles
 WHERE kind = ?1 AND tmdb_id = ?2
 ORDER BY id
 `
@@ -784,8 +791,8 @@ func (q *Queries) ListTitlesByTmdbRef(ctx context.Context, arg ListTitlesByTmdbR
 			&i.Name,
 			&i.Kind,
 			&i.TmdbID,
-			&i.ImdbID,
-			&i.RtUrl,
+			&i.LegacyImdbID,
+			&i.LegacyRtUrl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MatchStatus,
@@ -795,10 +802,10 @@ func (q *Queries) ListTitlesByTmdbRef(ctx context.Context, arg ListTitlesByTmdbR
 			&i.MatchAttempts,
 			&i.MatchAttemptedAt,
 			&i.NextMatchAt,
-			&i.RtAttempts,
-			&i.NextRtAt,
-			&i.JustwatchID,
-			&i.WikidataID,
+			&i.LegacyRtAttempts,
+			&i.LegacyNextRtAt,
+			&i.LegacyJustwatchID,
+			&i.LegacyWikidataID,
 			&i.FpName,
 			&i.FpKind,
 			&i.FpPremiereDate,

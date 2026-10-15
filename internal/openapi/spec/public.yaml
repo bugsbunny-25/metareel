@@ -1717,9 +1717,9 @@ components:
     TitleExternalIDs:
       type: object
       description: >
-        Every known ID of a TMDB title: TMDB's and Wikidata's IDs, gaps filled
-        from FlixPatrol titles' matches, plus the FlixPatrol slugs and Netflix
-        Top 10 names mapped to it.
+        Every known ID of a TMDB title, each from the strongest source that
+        has one (manual > tmdb > wikidata > match; see sources), plus the
+        FlixPatrol slugs and Netflix Top 10 names mapped to it.
       properties:
         imdb_id: { type: string, nullable: true, example: tt13443470 }
         wikidata_id: { type: string, nullable: true, example: Q105553568 }
@@ -1730,6 +1730,11 @@ components:
         letterboxd_id: { type: string, nullable: true }
         flixpatrol_slugs: { type: array, items: { type: string } }
         netflix_top10_titles: { type: array, items: { type: string }, description: "Names in Netflix's official Top 10" }
+        sources:
+          type: object
+          description: "Where each ID came from, keyed by imdb, wikidata, rotten_tomatoes, metacritic, letterboxd, netflix, justwatch (IDs with a recorded source)"
+          additionalProperties: { type: string, enum: [manual, tmdb, wikidata, match] }
+          example: { imdb: tmdb, wikidata: wikidata, netflix: wikidata }
 
     NetflixWeekRow:
       type: object

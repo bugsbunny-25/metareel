@@ -136,22 +136,30 @@ func (r *RatingsRepository) listSources(ctx context.Context, q *sqlc.Queries, tm
 	return out, nil
 }
 
-// FillTitleExternalIDs sets imdb_id / rt_url on scraped titles with this TMDB
-// ID and kind ("movie" | "tv_show") where they are still empty.
-func (r *RatingsRepository) FillTitleExternalIDs(ctx context.Context, titleKind, tmdbID string, imdbID, rtURL *string) error {
-	if imdbID == nil && rtURL == nil {
-		return nil
+// KnownIDs returns the IMDb ID and Rotten Tomatoes slug stored for a TMDB
+// title ("" when unknown).
+func (r *RatingsRepository) KnownIDs(ctx context.Context, ref TmdbRef) (imdbID, rtSlug string, err error) {
+	t, err := r.q.GetTmdbTitle(ctx, sqlc.GetTmdbTitleParams{TmdbKind: ref.Kind, TmdbID: ref.ID})
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", nil
 	}
-	err := r.q.FillTitleExternalIDs(ctx, sqlc.FillTitleExternalIDsParams{
-		ImdbID: toNullString(imdbID),
-		RtUrl:  toNullString(rtURL),
-		TmdbID: sql.NullString{String: tmdbID, Valid: true},
-		Kind:   titleKind,
-	})
 	if err != nil {
-		return fmt.Errorf("fill title external ids: %w", err)
+		return "", "", fmt.Errorf("get tmdb title %s: %w", ref, err)
 	}
-	return nil
+	return t.ImdbID.String, t.RtID.String, nil
+}
+
+// SaveFoundIDs stores the IMDb ID / Rotten Tomatoes slug found while
+// rating a TMDB title (as a match: TMDB's, Wikidata's and hand-set ones win).
+func (r *RatingsRepository) SaveFoundIDs(ctx context.Context, ref TmdbRef, imdbID, rtSlug *string) error {
+	ids := TmdbIDs{}
+	if imdbID != nil {
+		ids.IMDbID = *imdbID
+	}
+	if rtSlug != nil {
+		ids.RTID = *rtSlug
+	}
+	return saveTmdbIDs(ctx, r.q, ref, ids, IDSourceMatch)
 }
 
 func ratingsFromRow(row sqlc.TitleRating) *TitleRatings {

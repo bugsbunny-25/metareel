@@ -108,9 +108,9 @@ func TestSeasonMappingFlow(t *testing.T) {
 	meta := repository.NewMetadataRepository(db)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	seasons := NewSeasonMapper(log, imports)
-	n := NewNetflixImporter(log, nil, imports, flix, repository.NewTaskScheduleRepository(db), nil, nil, seasons, []string{"US"})
+	n := NewNetflixImporter(log, nil, imports, testWriter(db), flix, repository.NewTaskScheduleRepository(db), nil, nil, seasons, []string{"US"})
 
-	seed(t, flix, []seedTitle{{Slug: "the-gentlemen", Name: "The Gentlemen", Kind: "tv_show", TmdbID: "236235"}},
+	seed(t, db, []seedTitle{{Slug: "the-gentlemen", Name: "The Gentlemen", Kind: "tv_show", TmdbID: "236235"}},
 		[]seedRanking{
 			{"the-gentlemen", "2026-09-30", "US", "netflix", "tv_shows", 3}, // week ending 2026-10-04
 			{"the-gentlemen", "2026-09-30", "GB", "netflix", "tv_shows", 5}, // GB week not imported: global
@@ -187,7 +187,7 @@ func TestSeasonMappingFlow(t *testing.T) {
 	}
 
 	// Admin: the unmapped "Mystery" season is fixed by hand.
-	admin := NewNetflixAdminService(log, imports, meta, nil, seasons, nil)
+	admin := NewNetflixAdminService(log, imports, testWriter(db), meta, nil, seasons, nil)
 	page, err := admin.List(ctx, NetflixTitlesQuery{Missing: "season"}, 50, 0)
 	if err != nil || page.Total != 1 || page.Items[0].ShowTitle != "Mystery" || page.Items[0].SeasonsUnmapped != 1 {
 		t.Fatalf("missing season page = %+v, %v", page, err)
@@ -227,11 +227,11 @@ func TestNetflixAdminMapping(t *testing.T) {
 	meta := repository.NewMetadataRepository(db)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	seasons := NewSeasonMapper(log, imports)
-	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), meta, nil, seasons)
-	n := NewNetflixImporter(log, nil, imports, flix, repository.NewTaskScheduleRepository(db), nil, nil, seasons, nil).WithMapping(mapping)
-	admin := NewNetflixAdminService(log, imports, meta, nil, seasons, nil).WithMapping(mapping)
+	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), testWriter(db), meta, nil, seasons)
+	n := NewNetflixImporter(log, nil, imports, testWriter(db), flix, repository.NewTaskScheduleRepository(db), nil, nil, seasons, nil).WithMapping(mapping)
+	admin := NewNetflixAdminService(log, imports, testWriter(db), meta, nil, seasons, nil).WithMapping(mapping)
 
-	seed(t, flix, []seedTitle{{Slug: "unabomber", Name: "UNABOMBER", Kind: "movie", TmdbID: "999"}},
+	seed(t, db, []seedTitle{{Slug: "unabomber", Name: "UNABOMBER", Kind: "movie", TmdbID: "999"}},
 		[]seedRanking{{"unabomber", "2026-10-01", "US", "netflix", "movies", 1}})
 	global := "week\tcategory\tweekly_rank\tshow_title\tseason_title\tweekly_hours_viewed\truntime\tweekly_views\tcumulative_weeks_in_top_10\n" +
 		"2026-10-04\tFilms (English)\t1\tUNABOMBER\tN/A\t41500000\t1.6667\t24900000\t2\n" +
@@ -295,7 +295,7 @@ func TestNetflixAdminMapping(t *testing.T) {
 	}
 
 	// Fixing the FlixPatrol title by hand moves the Netflix title linked to it.
-	titles := NewTitleAdminService(flix).WithMapping(mapping)
+	titles := NewTitleAdminService(flix, testWriter(db)).WithMapping(mapping)
 	fp, err := flix.GetTitleBySlug(ctx, "unabomber")
 	if err != nil {
 		t.Fatal(err)

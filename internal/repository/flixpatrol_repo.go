@@ -61,7 +61,45 @@ type TitleListFilter struct {
 	Sort        string // see ListTitles in db/queries/flixpatrol.sql
 }
 
+// TitleIDs are the external IDs of the TMDB title a title is mapped to.
+type TitleIDs struct {
+	IMDbID      *string
+	RTID        *string // m/<slug> | tv/<slug>
+	WikidataID  *string
+	JustWatchID *string
+}
+
+// IDsOfRefs returns the external IDs of TMDB titles (refs unknown to
+// tmdb_titles are left out).
+func (r *FlixPatrolRepository) IDsOfRefs(ctx context.Context, refs []TmdbRef) (map[TmdbRef]TitleIDs, error) {
+	out := map[TmdbRef]TitleIDs{}
+	if len(refs) == 0 {
+		return out, nil
+	}
+	want := map[TmdbRef]bool{}
+	var ids []string
+	for _, ref := range refs {
+		if ref.ID != "" && !want[ref] {
+			want[ref] = true
+			ids = append(ids, ref.ID)
+		}
+	}
+	rows, err := r.q.ListTmdbTitlesByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list tmdb titles: %w", err)
+	}
+	for _, t := range rows {
+		ref := TmdbRef{Kind: t.TmdbKind, ID: t.TmdbID}
+		if want[ref] {
+			out[ref] = TitleIDs{IMDbID: nullStringPtr(t.ImdbID), RTID: nullStringPtr(t.RtID),
+				WikidataID: nullStringPtr(t.WikidataID), JustWatchID: nullStringPtr(t.JustwatchID)}
+		}
+	}
+	return out, nil
+}
+
 type TitleListItem struct {
+	IDs TitleIDs // the TMDB title\'s
 	sqlc.Title
 	LastRankedOn  *time.Time
 	RankingsCount int64
@@ -82,7 +120,10 @@ func (r *FlixPatrolRepository) ListTitles(ctx context.Context, f TitleListFilter
 	}
 	out := make([]TitleListItem, 0, len(rows))
 	for _, row := range rows {
-		item := TitleListItem{Title: row.Title, RankingsCount: row.RankingsCount}
+		item := TitleListItem{Title: row.Title, RankingsCount: row.RankingsCount, IDs: TitleIDs{
+			IMDbID: nullStringPtr(row.RefImdbID), RTID: nullStringPtr(row.RefRtID),
+			WikidataID: nullStringPtr(row.RefWikidataID), JustWatchID: nullStringPtr(row.RefJustwatchID),
+		}}
 		item.LastRankedOn = parseStoredDate(row.LastRankedOn)
 		out = append(out, item)
 	}
@@ -144,19 +185,6 @@ type UpdateTitleIDsInput struct {
 	TmdbID sql.NullString
 	ImdbID sql.NullString
 	RtURL  sql.NullString
-}
-
-func (r *FlixPatrolRepository) UpdateTitleIDs(ctx context.Context, in UpdateTitleIDsInput) (sqlc.Title, error) {
-	if in.Kind != "movie" && in.Kind != "tv_show" {
-		return sqlc.Title{}, fmt.Errorf("invalid kind: %s", in.Kind)
-	}
-	return r.q.UpdateTitleIDs(ctx, sqlc.UpdateTitleIDsParams{
-		ID:     in.ID,
-		Kind:   in.Kind,
-		TmdbID: in.TmdbID,
-		ImdbID: in.ImdbID,
-		RtUrl:  in.RtURL,
-	})
 }
 
 // ChartEntry is one row of a chart to store.

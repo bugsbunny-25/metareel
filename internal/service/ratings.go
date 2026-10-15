@@ -235,21 +235,20 @@ func (s *RatingsService) refresh(ctx context.Context, ref TmdbRef, prev *reposit
 	}
 	titleKind := titleKindForTmdb(ref.Kind)
 
-	// Scraped titles mapped to this TMDB ID give us a name, IMDb ID and RT slug.
+	// The TMDB title's stored IDs and the scraped titles' names.
+	imdbID, rtSlug, err := s.repo.KnownIDs(ctx, ref)
+	if err != nil {
+		return refreshResult{}, err
+	}
+	setIfEmpty(&ident.ImdbID, imdbID)
+	setIfEmpty(&ident.RTSlug, rtSlug)
 	scraped, err := s.titles.ListTitlesByTmdbIDs(ctx, []string{ref.ID})
 	if err != nil {
 		return refreshResult{}, err
 	}
 	for _, t := range scraped {
-		if t.Kind != titleKind {
-			continue
-		}
-		setIfEmpty(&ident.Title, t.Name)
-		if t.ImdbID.Valid {
-			setIfEmpty(&ident.ImdbID, t.ImdbID.String)
-		}
-		if t.RtUrl.Valid {
-			setIfEmpty(&ident.RTSlug, t.RtUrl.String)
+		if t.Kind == titleKind {
+			setIfEmpty(&ident.Title, t.Name)
 		}
 	}
 
@@ -350,8 +349,8 @@ func (s *RatingsService) refresh(ctx context.Context, ref TmdbRef, prev *reposit
 	if err != nil {
 		return refreshResult{}, err
 	}
-	if err := s.repo.FillTitleExternalIDs(ctx, titleKind, ref.ID, saved.ImdbID, saved.RTSlug); err != nil {
-		s.log.Warn("back-filling title ids failed", slog.String("title", ref.String()), slog.Any("err", err))
+	if err := s.repo.SaveFoundIDs(ctx, ref, saved.ImdbID, saved.RTSlug); err != nil {
+		s.log.Warn("saving found ids failed", slog.String("title", ref.String()), slog.Any("err", err))
 	}
 	s.log.Info("ratings refreshed",
 		slog.String("title", ref.String()),

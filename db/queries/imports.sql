@@ -55,20 +55,6 @@ ORDER BY CASE WHEN n.match_status = 'pending' THEN 0 ELSE 1 END,
          (SELECT MAX(g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id) DESC
 LIMIT sqlc.arg(limit);
 
--- name: SaveNetflixTitleMatch :exec
-UPDATE netflix_titles
-SET tmdb_kind      = COALESCE(sqlc.narg(tmdb_kind), tmdb_kind),
-    tmdb_id        = COALESCE(sqlc.narg(tmdb_id), tmdb_id),
-    imdb_id        = COALESCE(sqlc.narg(imdb_id), imdb_id),
-    title_id       = COALESCE(sqlc.narg(title_id), title_id),
-    match_status   = sqlc.arg(match_status),
-    match_source   = sqlc.narg(match_source),
-    match_attempts = match_attempts + 1,
-    next_match_at  = CASE WHEN CAST(sqlc.arg(retry_after) AS TEXT) = '' THEN NULL
-                          ELSE datetime('now', CAST(sqlc.arg(retry_after) AS TEXT)) END,
-    updated_at     = CURRENT_TIMESTAMP
-WHERE id = sqlc.arg(id) AND match_status <> 'manual';
-
 -- name: FindFlixPatrolTitlesByName :many
 -- Matched FlixPatrol titles with this exact name (case-insensitive) that
 -- charted in the same Netflix list (category movies | tv_shows), to match
@@ -91,10 +77,9 @@ ON CONFLICT(imdb_id) DO UPDATE SET
 
 -- name: ListKnownIMDbIDs :many
 -- Every IMDb ID metareel knows, for filtering the IMDb ratings dataset.
-SELECT imdb_id FROM titles WHERE COALESCE(imdb_id, '') <> ''
-UNION SELECT imdb_id FROM tmdb_titles WHERE COALESCE(imdb_id, '') <> ''
+SELECT imdb_id FROM tmdb_titles WHERE COALESCE(imdb_id, '') <> ''
 UNION SELECT imdb_id FROM title_ratings WHERE COALESCE(imdb_id, '') <> ''
-UNION SELECT imdb_id FROM netflix_titles WHERE COALESCE(imdb_id, '') <> '';
+UNION SELECT imdb_id FROM mapping_evidence WHERE COALESCE(imdb_id, '') <> '';
 
 -- name: GetIMDbRating :one
 SELECT * FROM imdb_ratings WHERE imdb_id = ?;

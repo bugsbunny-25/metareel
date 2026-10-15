@@ -11,43 +11,40 @@ import (
 	"strings"
 )
 
-const consolidateTmdbTitleIDs = `-- name: ConsolidateTmdbTitleIDs :execrows
+const clearTmdbTitleIDs = `-- name: ClearTmdbTitleIDs :exec
 UPDATE tmdb_titles
-SET imdb_id = COALESCE(tmdb_titles.imdb_id, (
-        SELECT t.imdb_id FROM titles t
-        WHERE t.tmdb_id = tmdb_titles.tmdb_id AND CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = tmdb_titles.tmdb_kind
-          AND COALESCE(t.imdb_id, '') <> '' ORDER BY t.match_status = 'manual' DESC, t.id LIMIT 1)),
-    rt_id = COALESCE(tmdb_titles.rt_id, (
-        SELECT t.rt_url FROM titles t
-        WHERE t.tmdb_id = tmdb_titles.tmdb_id AND CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = tmdb_titles.tmdb_kind
-          AND COALESCE(t.rt_url, '') <> '' ORDER BY t.match_status = 'manual' DESC, t.id LIMIT 1)),
-    justwatch_id = COALESCE(tmdb_titles.justwatch_id, (
-        SELECT t.justwatch_id FROM titles t
-        WHERE t.tmdb_id = tmdb_titles.tmdb_id AND CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = tmdb_titles.tmdb_kind
-          AND COALESCE(t.justwatch_id, '') <> '' ORDER BY t.id LIMIT 1)),
-    wikidata_id = COALESCE(tmdb_titles.wikidata_id, (
-        SELECT t.wikidata_id FROM titles t
-        WHERE t.tmdb_id = tmdb_titles.tmdb_id AND CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = tmdb_titles.tmdb_kind
-          AND COALESCE(t.wikidata_id, '') <> '' ORDER BY t.id LIMIT 1)),
-    updated_at = CURRENT_TIMESTAMP
-WHERE (tmdb_titles.imdb_id IS NULL OR tmdb_titles.rt_id IS NULL OR tmdb_titles.justwatch_id IS NULL OR tmdb_titles.wikidata_id IS NULL)
-  AND EXISTS (
-    SELECT 1 FROM titles t
-    WHERE t.tmdb_id = tmdb_titles.tmdb_id AND CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = tmdb_titles.tmdb_kind
-      AND ((tmdb_titles.imdb_id IS NULL AND COALESCE(t.imdb_id, '') <> '')
-        OR (tmdb_titles.rt_id IS NULL AND COALESCE(t.rt_url, '') <> '')
-        OR (tmdb_titles.justwatch_id IS NULL AND COALESCE(t.justwatch_id, '') <> '')
-        OR (tmdb_titles.wikidata_id IS NULL AND COALESCE(t.wikidata_id, '') <> '')))
+SET imdb_id         = CASE WHEN CAST(?1 AS INTEGER) = 1 THEN NULL ELSE imdb_id END,
+    imdb_source     = CASE WHEN CAST(?1 AS INTEGER) = 1 THEN NULL ELSE imdb_source END,
+    wikidata_id     = CASE WHEN CAST(?2 AS INTEGER) = 1 THEN NULL ELSE wikidata_id END,
+    wikidata_source = CASE WHEN CAST(?2 AS INTEGER) = 1 THEN NULL ELSE wikidata_source END,
+    wikidata_fetched_at = CASE WHEN CAST(?2 AS INTEGER) = 1 THEN NULL ELSE wikidata_fetched_at END,
+    rt_id           = CASE WHEN CAST(?3 AS INTEGER) = 1 THEN NULL ELSE rt_id END,
+    rt_source       = CASE WHEN CAST(?3 AS INTEGER) = 1 THEN NULL ELSE rt_source END,
+    rt_attempts     = CASE WHEN CAST(?3 AS INTEGER) = 1 THEN 0 ELSE rt_attempts END,
+    next_rt_at      = CASE WHEN CAST(?3 AS INTEGER) = 1 THEN NULL ELSE next_rt_at END,
+    updated_at      = CURRENT_TIMESTAMP
+WHERE tmdb_kind = ?4 AND tmdb_id = ?5
 `
 
-// Fills a TMDB title's missing IMDb / Rotten Tomatoes / JustWatch / Wikidata
-// IDs from the FlixPatrol titles mapped to it (found by their own matching).
-func (q *Queries) ConsolidateTmdbTitleIDs(ctx context.Context) (int64, error) {
-	result, err := q.db.ExecContext(ctx, consolidateTmdbTitleIDs)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+type ClearTmdbTitleIDsParams struct {
+	Imdb     int64  `json:"imdb"`
+	Wikidata int64  `json:"wikidata"`
+	Rt       int64  `json:"rt"`
+	TmdbKind string `json:"tmdb_kind"`
+	TmdbID   string `json:"tmdb_id"`
+}
+
+// IDs cleared by hand (1 = clear): they are filled again from TMDB,
+// Wikidata or matching.
+func (q *Queries) ClearTmdbTitleIDs(ctx context.Context, arg ClearTmdbTitleIDsParams) error {
+	_, err := q.db.ExecContext(ctx, clearTmdbTitleIDs,
+		arg.Imdb,
+		arg.Wikidata,
+		arg.Rt,
+		arg.TmdbKind,
+		arg.TmdbID,
+	)
+	return err
 }
 
 const countTmdbTitles = `-- name: CountTmdbTitles :one
@@ -84,6 +81,22 @@ func (q *Queries) DeleteTmdbWatchProviders(ctx context.Context, arg DeleteTmdbWa
 	return err
 }
 
+const ensureTmdbTitle = `-- name: EnsureTmdbTitle :exec
+INSERT INTO tmdb_titles (tmdb_kind, tmdb_id) VALUES (?1, ?2)
+ON CONFLICT(tmdb_kind, tmdb_id) DO NOTHING
+`
+
+type EnsureTmdbTitleParams struct {
+	TmdbKind string `json:"tmdb_kind"`
+	TmdbID   string `json:"tmdb_id"`
+}
+
+// Every TMDB title anything is mapped to has a row (filled by the refresh).
+func (q *Queries) EnsureTmdbTitle(ctx context.Context, arg EnsureTmdbTitleParams) error {
+	_, err := q.db.ExecContext(ctx, ensureTmdbTitle, arg.TmdbKind, arg.TmdbID)
+	return err
+}
+
 const findTmdbRefsByNetflixID = `-- name: FindTmdbRefsByNetflixID :many
 SELECT tmdb_kind, tmdb_id FROM tmdb_titles WHERE netflix_id = ?
 `
@@ -117,7 +130,7 @@ func (q *Queries) FindTmdbRefsByNetflixID(ctx context.Context, netflixID sql.Nul
 }
 
 const getTmdbTitle = `-- name: GetTmdbTitle :one
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
 `
 
 type GetTmdbTitleParams struct {
@@ -163,6 +176,15 @@ func (q *Queries) GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (Tmd
 		&i.Seasons,
 		&i.NetflixID,
 		&i.JustwatchID,
+		&i.ImdbSource,
+		&i.WikidataSource,
+		&i.RtSource,
+		&i.MetacriticSource,
+		&i.LetterboxdSource,
+		&i.NetflixSource,
+		&i.JustwatchSource,
+		&i.RtAttempts,
+		&i.NextRtAt,
 	)
 	return i, err
 }
@@ -265,6 +287,77 @@ func (q *Queries) ListTmdbRefsDueForDetails(ctx context.Context, arg ListTmdbRef
 	return items, nil
 }
 
+const listTmdbRefsDueForRT = `-- name: ListTmdbRefsDueForRT :many
+SELECT m.tmdb_kind, m.tmdb_id, CAST(COALESCE(m.title, '') AS TEXT) AS title,
+       CAST(COALESCE(m.release_date, '') AS TEXT) AS release_date, m.rt_attempts,
+       t.slug, t.name, t.matched_name, t.matched_year
+FROM tmdb_titles m
+JOIN titles t ON t.id = (
+    SELECT t2.id FROM titles t2
+    WHERE t2.tmdb_id = m.tmdb_id AND CASE t2.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = m.tmdb_kind
+    ORDER BY t2.id LIMIT 1)
+WHERE COALESCE(m.rt_id, '') = ''
+  AND (m.next_rt_at IS NULL OR m.next_rt_at <= CURRENT_TIMESTAMP)
+  AND (CAST(?1 AS TEXT) = '' OR m.tmdb_kind || ':' || m.tmdb_id = ?1)
+ORDER BY (SELECT MAX(r.ranked_on) FROM rankings r WHERE r.title_id IN (
+    SELECT t3.id FROM titles t3 WHERE t3.tmdb_id = m.tmdb_id AND CASE t3.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = m.tmdb_kind)) DESC,
+    m.tmdb_id DESC
+LIMIT ?2
+`
+
+type ListTmdbRefsDueForRTParams struct {
+	OnlyRef string `json:"only_ref"`
+	Limit   int64  `json:"limit"`
+}
+
+type ListTmdbRefsDueForRTRow struct {
+	TmdbKind    string         `json:"tmdb_kind"`
+	TmdbID      string         `json:"tmdb_id"`
+	Title       string         `json:"title"`
+	ReleaseDate string         `json:"release_date"`
+	RtAttempts  int64          `json:"rt_attempts"`
+	Slug        string         `json:"slug"`
+	Name        string         `json:"name"`
+	MatchedName sql.NullString `json:"matched_name"`
+	MatchedYear sql.NullInt64  `json:"matched_year"`
+}
+
+// TMDB titles FlixPatrol titles are mapped to, without a Rotten Tomatoes
+// slug, whose RT search backoff has expired; most recently charting first,
+// with the names to search by.
+func (q *Queries) ListTmdbRefsDueForRT(ctx context.Context, arg ListTmdbRefsDueForRTParams) ([]ListTmdbRefsDueForRTRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTmdbRefsDueForRT, arg.OnlyRef, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTmdbRefsDueForRTRow{}
+	for rows.Next() {
+		var i ListTmdbRefsDueForRTRow
+		if err := rows.Scan(
+			&i.TmdbKind,
+			&i.TmdbID,
+			&i.Title,
+			&i.ReleaseDate,
+			&i.RtAttempts,
+			&i.Slug,
+			&i.Name,
+			&i.MatchedName,
+			&i.MatchedYear,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTmdbRefsDueForWikidata = `-- name: ListTmdbRefsDueForWikidata :many
 SELECT k.tmdb_kind, k.tmdb_id
 FROM (
@@ -314,7 +407,7 @@ func (q *Queries) ListTmdbRefsDueForWikidata(ctx context.Context, arg ListTmdbRe
 }
 
 const listTmdbTitlesByIDs = `-- name: ListTmdbTitlesByIDs :many
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
 `
 
 // Callers filter by kind (TMDB movie and TV IDs overlap).
@@ -372,6 +465,15 @@ func (q *Queries) ListTmdbTitlesByIDs(ctx context.Context, ids []string) ([]Tmdb
 			&i.Seasons,
 			&i.NetflixID,
 			&i.JustwatchID,
+			&i.ImdbSource,
+			&i.WikidataSource,
+			&i.RtSource,
+			&i.MetacriticSource,
+			&i.LetterboxdSource,
+			&i.NetflixSource,
+			&i.JustwatchSource,
+			&i.RtAttempts,
+			&i.NextRtAt,
 		); err != nil {
 			return nil, err
 		}
@@ -434,37 +536,41 @@ func (q *Queries) ListTmdbWatchProviders(ctx context.Context, arg ListTmdbWatchP
 	return items, nil
 }
 
-const saveTmdbTitleExternalIDs = `-- name: SaveTmdbTitleExternalIDs :exec
-INSERT INTO tmdb_titles (tmdb_kind, tmdb_id, imdb_id, justwatch_id, netflix_id, wikidata_id)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
-    imdb_id      = COALESCE(tmdb_titles.imdb_id, excluded.imdb_id),
-    justwatch_id = COALESCE(tmdb_titles.justwatch_id, excluded.justwatch_id),
-    netflix_id   = COALESCE(tmdb_titles.netflix_id, excluded.netflix_id),
-    wikidata_id  = COALESCE(tmdb_titles.wikidata_id, excluded.wikidata_id),
-    updated_at   = CURRENT_TIMESTAMP
+const markTmdbTitleWikidataFetched = `-- name: MarkTmdbTitleWikidataFetched :exec
+INSERT INTO tmdb_titles (tmdb_kind, tmdb_id, wikidata_fetched_at)
+VALUES (?1, ?2, CURRENT_TIMESTAMP)
+ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET wikidata_fetched_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 `
 
-type SaveTmdbTitleExternalIDsParams struct {
-	TmdbKind    string         `json:"tmdb_kind"`
-	TmdbID      string         `json:"tmdb_id"`
-	ImdbID      sql.NullString `json:"imdb_id"`
-	JustwatchID sql.NullString `json:"justwatch_id"`
-	NetflixID   sql.NullString `json:"netflix_id"`
-	WikidataID  sql.NullString `json:"wikidata_id"`
+type MarkTmdbTitleWikidataFetchedParams struct {
+	TmdbKind string `json:"tmdb_kind"`
+	TmdbID   string `json:"tmdb_id"`
 }
 
-// Fills IDs found by matching (JustWatch, Netflix via Wikidata, IMDb) on a
-// TMDB title, creating its row if needed; never overwrites.
-func (q *Queries) SaveTmdbTitleExternalIDs(ctx context.Context, arg SaveTmdbTitleExternalIDsParams) error {
-	_, err := q.db.ExecContext(ctx, saveTmdbTitleExternalIDs,
-		arg.TmdbKind,
-		arg.TmdbID,
-		arg.ImdbID,
-		arg.JustwatchID,
-		arg.NetflixID,
-		arg.WikidataID,
-	)
+// Records a Wikidata lookup (found or not), creating the row if needed.
+func (q *Queries) MarkTmdbTitleWikidataFetched(ctx context.Context, arg MarkTmdbTitleWikidataFetchedParams) error {
+	_, err := q.db.ExecContext(ctx, markTmdbTitleWikidataFetched, arg.TmdbKind, arg.TmdbID)
+	return err
+}
+
+const recordTmdbRTAttempt = `-- name: RecordTmdbRTAttempt :exec
+UPDATE tmdb_titles
+SET rt_attempts = rt_attempts + 1,
+    next_rt_at  = datetime('now', CAST(?1 AS TEXT)),
+    updated_at  = CURRENT_TIMESTAMP
+WHERE tmdb_kind = ?2 AND tmdb_id = ?3
+`
+
+type RecordTmdbRTAttemptParams struct {
+	RetryAfter string `json:"retry_after"`
+	TmdbKind   string `json:"tmdb_kind"`
+	TmdbID     string `json:"tmdb_id"`
+}
+
+// One Rotten Tomatoes search for a TMDB title; retry after retry_after (a
+// SQLite datetime modifier). A slug found is stored with UpsertTmdbTitleIDs.
+func (q *Queries) RecordTmdbRTAttempt(ctx context.Context, arg RecordTmdbRTAttemptParams) error {
+	_, err := q.db.ExecContext(ctx, recordTmdbRTAttempt, arg.RetryAfter, arg.TmdbKind, arg.TmdbID)
 	return err
 }
 
@@ -474,7 +580,7 @@ INSERT INTO tmdb_titles (
     tmdb_kind, tmdb_id, title, original_title, original_language, overview, status,
     release_date, last_air_date, runtime, number_of_seasons, number_of_episodes,
     genres, origin_countries, production_companies, networks, poster_path, backdrop_path,
-    popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, seasons,
+    popularity, vote_average, vote_count, digital_release_dates, seasons,
     details_fetched_at
 ) VALUES (
     ?1, ?2, ?3, ?4, ?5,
@@ -482,7 +588,7 @@ INSERT INTO tmdb_titles (
     ?11, ?12, ?13, ?14,
     ?15, ?16, ?17, ?18,
     ?19, ?20, ?21, ?22,
-    ?23, ?24, ?25, CURRENT_TIMESTAMP
+    ?23, CURRENT_TIMESTAMP
 )
 ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
     title = excluded.title, original_title = excluded.original_title, original_language = excluded.original_language,
@@ -493,8 +599,6 @@ ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
     poster_path = excluded.poster_path, backdrop_path = excluded.backdrop_path, popularity = excluded.popularity,
     vote_average = excluded.vote_average, vote_count = excluded.vote_count,
     digital_release_dates = excluded.digital_release_dates, seasons = excluded.seasons,
-    imdb_id = COALESCE(excluded.imdb_id, tmdb_titles.imdb_id),
-    wikidata_id = COALESCE(excluded.wikidata_id, tmdb_titles.wikidata_id),
     details_fetched_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 `
 
@@ -521,12 +625,11 @@ type UpsertTmdbTitleDetailsParams struct {
 	VoteAverage         sql.NullFloat64 `json:"vote_average"`
 	VoteCount           sql.NullInt64   `json:"vote_count"`
 	DigitalReleaseDates sql.NullString  `json:"digital_release_dates"`
-	ImdbID              sql.NullString  `json:"imdb_id"`
-	WikidataID          sql.NullString  `json:"wikidata_id"`
 	Seasons             sql.NullString  `json:"seasons"`
 }
 
 // TMDB metadata, watch providers and Wikidata IDs per TMDB title.
+// TMDB's own IDs are stored with UpsertTmdbTitleIDs (source tmdb).
 func (q *Queries) UpsertTmdbTitleDetails(ctx context.Context, arg UpsertTmdbTitleDetailsParams) error {
 	_, err := q.db.ExecContext(ctx, upsertTmdbTitleDetails,
 		arg.TmdbKind,
@@ -551,48 +654,83 @@ func (q *Queries) UpsertTmdbTitleDetails(ctx context.Context, arg UpsertTmdbTitl
 		arg.VoteAverage,
 		arg.VoteCount,
 		arg.DigitalReleaseDates,
-		arg.ImdbID,
-		arg.WikidataID,
 		arg.Seasons,
 	)
 	return err
 }
 
-const upsertTmdbTitleWikidata = `-- name: UpsertTmdbTitleWikidata :exec
-INSERT INTO tmdb_titles (tmdb_kind, tmdb_id, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, netflix_id, wikidata_fetched_at)
-VALUES (?1, ?2, ?3, ?4, ?5,
-        ?6, ?7, ?8, CURRENT_TIMESTAMP)
+const upsertTmdbTitleIDs = `-- name: UpsertTmdbTitleIDs :exec
+INSERT INTO tmdb_titles (tmdb_kind, tmdb_id,
+    imdb_id, imdb_source, wikidata_id, wikidata_source, rt_id, rt_source, metacritic_id, metacritic_source,
+    letterboxd_id, letterboxd_source, netflix_id, netflix_source, justwatch_id, justwatch_source)
+VALUES (?1, ?2,
+    ?3, CASE WHEN ?3 IS NULL THEN NULL ELSE CAST(?4 AS TEXT) END,
+    ?5, CASE WHEN ?5 IS NULL THEN NULL ELSE CAST(?4 AS TEXT) END,
+    ?6, CASE WHEN ?6 IS NULL THEN NULL ELSE CAST(?4 AS TEXT) END,
+    ?7, CASE WHEN ?7 IS NULL THEN NULL ELSE CAST(?4 AS TEXT) END,
+    ?8, CASE WHEN ?8 IS NULL THEN NULL ELSE CAST(?4 AS TEXT) END,
+    ?9, CASE WHEN ?9 IS NULL THEN NULL ELSE CAST(?4 AS TEXT) END,
+    ?10, CASE WHEN ?10 IS NULL THEN NULL ELSE CAST(?4 AS TEXT) END)
 ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
-    imdb_id = COALESCE(tmdb_titles.imdb_id, excluded.imdb_id),
-    wikidata_id = COALESCE(excluded.wikidata_id, tmdb_titles.wikidata_id),
-    rt_id = COALESCE(excluded.rt_id, tmdb_titles.rt_id),
-    metacritic_id = COALESCE(excluded.metacritic_id, tmdb_titles.metacritic_id),
-    letterboxd_id = COALESCE(excluded.letterboxd_id, tmdb_titles.letterboxd_id),
-    netflix_id = COALESCE(excluded.netflix_id, tmdb_titles.netflix_id),
-    wikidata_fetched_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    imdb_id = CASE WHEN excluded.imdb_id IS NOT NULL AND (CASE excluded.imdb_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.imdb_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.imdb_id ELSE tmdb_titles.imdb_id END,
+    imdb_source = CASE WHEN excluded.imdb_id IS NOT NULL AND (CASE excluded.imdb_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.imdb_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.imdb_source ELSE tmdb_titles.imdb_source END,
+    wikidata_id = CASE WHEN excluded.wikidata_id IS NOT NULL AND (CASE excluded.wikidata_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.wikidata_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.wikidata_id ELSE tmdb_titles.wikidata_id END,
+    wikidata_source = CASE WHEN excluded.wikidata_id IS NOT NULL AND (CASE excluded.wikidata_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.wikidata_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.wikidata_source ELSE tmdb_titles.wikidata_source END,
+    rt_id = CASE WHEN excluded.rt_id IS NOT NULL AND (CASE excluded.rt_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.rt_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.rt_id ELSE tmdb_titles.rt_id END,
+    rt_source = CASE WHEN excluded.rt_id IS NOT NULL AND (CASE excluded.rt_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.rt_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.rt_source ELSE tmdb_titles.rt_source END,
+    metacritic_id = CASE WHEN excluded.metacritic_id IS NOT NULL AND (CASE excluded.metacritic_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.metacritic_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.metacritic_id ELSE tmdb_titles.metacritic_id END,
+    metacritic_source = CASE WHEN excluded.metacritic_id IS NOT NULL AND (CASE excluded.metacritic_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.metacritic_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.metacritic_source ELSE tmdb_titles.metacritic_source END,
+    letterboxd_id = CASE WHEN excluded.letterboxd_id IS NOT NULL AND (CASE excluded.letterboxd_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.letterboxd_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.letterboxd_id ELSE tmdb_titles.letterboxd_id END,
+    letterboxd_source = CASE WHEN excluded.letterboxd_id IS NOT NULL AND (CASE excluded.letterboxd_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.letterboxd_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.letterboxd_source ELSE tmdb_titles.letterboxd_source END,
+    netflix_id = CASE WHEN excluded.netflix_id IS NOT NULL AND (CASE excluded.netflix_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.netflix_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.netflix_id ELSE tmdb_titles.netflix_id END,
+    netflix_source = CASE WHEN excluded.netflix_id IS NOT NULL AND (CASE excluded.netflix_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.netflix_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.netflix_source ELSE tmdb_titles.netflix_source END,
+    justwatch_id = CASE WHEN excluded.justwatch_id IS NOT NULL AND (CASE excluded.justwatch_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.justwatch_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.justwatch_id ELSE tmdb_titles.justwatch_id END,
+    justwatch_source = CASE WHEN excluded.justwatch_id IS NOT NULL AND (CASE excluded.justwatch_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END) >= (CASE tmdb_titles.justwatch_source WHEN 'manual' THEN 4 WHEN 'tmdb' THEN 3 WHEN 'wikidata' THEN 2 WHEN 'match' THEN 1 ELSE 0 END)
+        THEN excluded.justwatch_source ELSE tmdb_titles.justwatch_source END,
+    updated_at = CURRENT_TIMESTAMP
 `
 
-type UpsertTmdbTitleWikidataParams struct {
+type UpsertTmdbTitleIDsParams struct {
 	TmdbKind     string         `json:"tmdb_kind"`
 	TmdbID       string         `json:"tmdb_id"`
 	ImdbID       sql.NullString `json:"imdb_id"`
+	Source       string         `json:"source"`
 	WikidataID   sql.NullString `json:"wikidata_id"`
 	RtID         sql.NullString `json:"rt_id"`
 	MetacriticID sql.NullString `json:"metacritic_id"`
 	LetterboxdID sql.NullString `json:"letterboxd_id"`
 	NetflixID    sql.NullString `json:"netflix_id"`
+	JustwatchID  sql.NullString `json:"justwatch_id"`
 }
 
-func (q *Queries) UpsertTmdbTitleWikidata(ctx context.Context, arg UpsertTmdbTitleWikidataParams) error {
-	_, err := q.db.ExecContext(ctx, upsertTmdbTitleWikidata,
+// Stores the IDs given (NULL = not given) from one source (manual | tmdb |
+// wikidata | match). An ID is only replaced by one from the same or a
+// higher-ranked source: manual > tmdb > wikidata > match.
+func (q *Queries) UpsertTmdbTitleIDs(ctx context.Context, arg UpsertTmdbTitleIDsParams) error {
+	_, err := q.db.ExecContext(ctx, upsertTmdbTitleIDs,
 		arg.TmdbKind,
 		arg.TmdbID,
 		arg.ImdbID,
+		arg.Source,
 		arg.WikidataID,
 		arg.RtID,
 		arg.MetacriticID,
 		arg.LetterboxdID,
 		arg.NetflixID,
+		arg.JustwatchID,
 	)
 	return err
 }

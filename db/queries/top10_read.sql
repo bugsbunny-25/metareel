@@ -19,8 +19,8 @@ SELECT
     t.name,
     t.kind,
     t.tmdb_id,
-    t.imdb_id,
-    t.rt_url,
+    m.imdb_id,
+    m.rt_id AS rt_url,
     COALESCE((
         SELECT MIN(p.rank)
         FROM rankings p
@@ -48,6 +48,7 @@ SELECT
     ) AS days_in_top10
 FROM rankings r
 JOIN titles t ON t.id = r.title_id
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
 WHERE r.country = sqlc.arg(country)
   AND r.streaming_provider = sqlc.arg(streaming_provider)
   AND r.category = sqlc.arg(category)
@@ -77,8 +78,8 @@ SELECT
     t.name,
     t.kind,
     t.tmdb_id,
-    t.imdb_id,
-    t.rt_url,
+    m.imdb_id,
+    m.rt_id AS rt_url,
     COALESCE((
         SELECT MIN(p.rank)
         FROM rankings p
@@ -106,6 +107,7 @@ SELECT
     ) AS days_in_top10
 FROM rankings r
 JOIN titles t ON t.id = r.title_id
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
 WHERE r.country = sqlc.arg(country)
   AND r.category = sqlc.arg(category)
   AND r.ranked_on = COALESCE(CAST(sqlc.narg(ranked_on) AS TEXT), (

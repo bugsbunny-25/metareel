@@ -16,10 +16,10 @@ func TestNetflixImportParsesAndMatches(t *testing.T) {
 	flix := repository.NewFlixPatrolRepository(db)
 	imports := repository.NewImportsRepository(db)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	n := NewNetflixImporter(log, nil, imports, flix, repository.NewTaskScheduleRepository(db), nil, nil, NewSeasonMapper(log, imports), []string{"US"})
+	n := NewNetflixImporter(log, nil, imports, testWriter(db), flix, repository.NewTaskScheduleRepository(db), nil, nil, NewSeasonMapper(log, imports), []string{"US"})
 
 	// A FlixPatrol title that charted on Netflix gives the match.
-	seed(t, flix, []seedTitle{{Slug: "unabomber", Name: "UNABOMBER", Kind: "movie", TmdbID: "999"}},
+	seed(t, db, []seedTitle{{Slug: "unabomber", Name: "UNABOMBER", Kind: "movie", TmdbID: "999"}},
 		[]seedRanking{{"unabomber", "2026-10-01", "US", "netflix", "movies", 1}})
 
 	global := "week\tcategory\tweekly_rank\tshow_title\tseason_title\tweekly_hours_viewed\truntime\tweekly_views\tcumulative_weeks_in_top_10\n" +

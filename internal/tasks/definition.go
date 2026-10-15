@@ -18,6 +18,10 @@ const (
 	TypeNetflixTitlesMatch    = "netflix.titles.match"
 	TypeIMDbRatingsImport     = "imdb.ratings.import"
 	TypeMaintenance           = "maintenance"
+	// TypeMappingRefresh follows mapping changes: TMDB details and IDs of
+	// the TMDB titles now mapped to, season numbers of Netflix titles that
+	// changed. Queued by the mapping writer; runnable by hand.
+	TypeMappingRefresh = "mapping.refresh"
 )
 
 // Types lists every task type a schedule can have, in display order.
@@ -29,6 +33,7 @@ var Types = []string{
 	TypeNetflixTop10Import,
 	TypeNetflixTitlesMatch,
 	TypeIMDbRatingsImport,
+	TypeMappingRefresh,
 	TypeMaintenance,
 }
 
@@ -117,6 +122,11 @@ type JobPayload struct {
 	Force bool `json:"force,omitempty"`
 	// Reason is shown in the run log, e.g. "after scrape run 12".
 	Reason string `json:"reason,omitempty"`
+	// TmdbRefs ("movie:123" | "tv:456") and NetflixTitleIDs are what
+	// mapping.refresh follows up; both empty = only share mappings over links
+	// and fill IDs.
+	TmdbRefs        []string `json:"tmdb_refs,omitempty"`
+	NetflixTitleIDs []int64  `json:"netflix_title_ids,omitempty"`
 }
 
 func NewJobTask(taskType string, payload JobPayload) (*asynq.Task, error) {

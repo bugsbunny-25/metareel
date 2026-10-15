@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -122,6 +123,23 @@ func NetflixMatchJob(n *service.NetflixImporter) JobFunc {
 func IMDbImportJob(i *service.IMDbImporter) JobFunc {
 	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
 		return i.Run(ctx, p.Force, run.Log)
+	}
+}
+
+// MappingRefreshJob follows up mapping changes (see TitleMappingService.Refresh).
+func MappingRefreshJob(m *service.TitleMappingService) JobFunc {
+	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
+		r := service.MappingRefresh{NetflixIDs: p.NetflixTitleIDs}
+		for _, s := range p.TmdbRefs {
+			kind, id, _ := strings.Cut(s, ":")
+			ref, err := service.ParseTmdbRef(kind, id)
+			if err != nil {
+				run.Log("warn", fmt.Sprintf("skipping TMDB title %q: %v", s, err))
+				continue
+			}
+			r.Refs = append(r.Refs, ref)
+		}
+		return m.Refresh(ctx, r, run.Log)
 	}
 }
 

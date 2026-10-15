@@ -27,36 +27,6 @@ func (q *Queries) DeleteTitleRatingSourcesByProvider(ctx context.Context, arg De
 	return err
 }
 
-const fillTitleExternalIDs = `-- name: FillTitleExternalIDs :exec
-UPDATE titles
-SET
-    imdb_id    = COALESCE(imdb_id, ?1),
-    rt_url     = COALESCE(rt_url, ?2),
-    updated_at = CURRENT_TIMESTAMP
-WHERE tmdb_id = ?3
-  AND kind = ?4
-  AND ((imdb_id IS NULL AND ?1 IS NOT NULL)
-    OR (rt_url IS NULL AND ?2 IS NOT NULL))
-`
-
-type FillTitleExternalIDsParams struct {
-	ImdbID sql.NullString `json:"imdb_id"`
-	RtUrl  sql.NullString `json:"rt_url"`
-	TmdbID sql.NullString `json:"tmdb_id"`
-	Kind   string         `json:"kind"`
-}
-
-// Back-fill IDs found while rating onto scraped titles that lack them.
-func (q *Queries) FillTitleExternalIDs(ctx context.Context, arg FillTitleExternalIDsParams) error {
-	_, err := q.db.ExecContext(ctx, fillTitleExternalIDs,
-		arg.ImdbID,
-		arg.RtUrl,
-		arg.TmdbID,
-		arg.Kind,
-	)
-	return err
-}
-
 const getTitleRatings = `-- name: GetTitleRatings :one
 
 SELECT id, tmdb_kind, tmdb_id, title, year, imdb_id, justwatch_id, rt_slug, refreshed_at, created_at, updated_at
