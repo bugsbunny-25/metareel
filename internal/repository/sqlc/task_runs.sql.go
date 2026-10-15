@@ -90,6 +90,44 @@ func (q *Queries) CountTaskRuns(ctx context.Context, arg CountTaskRunsParams) (i
 	return count, err
 }
 
+const countTaskRunsByDaySince = `-- name: CountTaskRunsByDaySince :many
+SELECT CAST(date(started_at) AS TEXT) AS day, status, COUNT(*) AS runs
+FROM task_runs
+WHERE started_at >= datetime('now', CAST(?1 AS TEXT))
+GROUP BY day, status
+ORDER BY day
+`
+
+type CountTaskRunsByDaySinceRow struct {
+	Day    string `json:"day"`
+	Status string `json:"status"`
+	Runs   int64  `json:"runs"`
+}
+
+// Runs per UTC day and status; since is a SQLite datetime modifier, e.g. '-14 days'.
+func (q *Queries) CountTaskRunsByDaySince(ctx context.Context, since string) ([]CountTaskRunsByDaySinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, countTaskRunsByDaySince, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountTaskRunsByDaySinceRow{}
+	for rows.Next() {
+		var i CountTaskRunsByDaySinceRow
+		if err := rows.Scan(&i.Day, &i.Status, &i.Runs); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countTaskRunsByStatusSince = `-- name: CountTaskRunsByStatusSince :many
 SELECT status, COUNT(*) AS runs
 FROM task_runs

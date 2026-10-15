@@ -375,7 +375,9 @@ paths:
                 type: object
                 description: >
                   schedules {total, enabled}; runs {running, last_24h, last_7d}
-                  (counts by status); schedule_health [{schedule_id, name,
+                  (counts by status), runs.daily [{date, succeeded, partial,
+                  failed, started}] for the last 14 UTC days (oldest first, days
+                  without runs are zero); schedule_health [{schedule_id, name,
                   enabled, utc_runtimes, next_run_at, last_run, last_success_at}];
                   titles {total, missing_tmdb, missing_imdb, missing_rt};
                   rankings {total, latest_date}

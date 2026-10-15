@@ -84,12 +84,9 @@
   }
 </script>
 
-<div class="page">
-  <div class="page-header">
-    <div>
-      <h1 class="page-title">TMDB mapping</h1>
-      <p class="page-desc">One mapping keyed by TMDB: every TMDB title that FlixPatrol or Netflix Top 10 titles map to, with all its IDs (IMDb, Wikidata, Rotten Tomatoes, Netflix, JustWatch). A Netflix title and a FlixPatrol title with the same name on Netflix's charts in the same weeks are linked and share one mapping. Click a row to see everything mapped to a TMDB title or move it all to another.</p>
-    </div>
+<div>
+  <div class="subhead">
+    <p class="tab-hint">One row per TMDB title with every ID and every chart title mapped to it. FlixPatrol and Netflix titles that are the same show are linked and share one mapping. Click a row to see or move everything mapped to it.</p>
     <div class="page-actions">
       <button class="btn" onclick={sync} disabled={syncing} title="Recompute links between Netflix and FlixPatrol titles and share mappings over them"><Icon name="refresh" />{syncing ? 'Syncing…' : 'Sync links now'}</button>
       <button class="btn" onclick={exportCSV} disabled={!data.items.length}><Icon name="download" />Export page</button>

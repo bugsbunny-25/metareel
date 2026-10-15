@@ -1,4 +1,5 @@
 <script>
+  import PageHeader from '../components/PageHeader.svelte'
   import { getSettings, updateSettings, listApiKeys, createApiKey, renameApiKey, rotateApiKey, deleteApiKey } from '../lib/api.js'
   import { relativeTime, dateTime } from '../lib/format.js'
   import { toast } from '../lib/toast.svelte.js'
@@ -122,12 +123,10 @@
 </script>
 
 <div class="page">
-  <div class="page-header">
-    <div>
-      <h1 class="page-title">Settings & API keys</h1>
-      <p class="page-desc">Control who can use the public API (<span class="mono">/api/v1</span>, everything except <span class="mono">/api/v1/admin</span>).</p>
-    </div>
-  </div>
+  <PageHeader
+    title="Settings & API keys"
+    desc="Who can use the public API (/api/v1, everything except /api/v1/admin)."
+  />
 
   {#if error}<div class="alert alert-error"><Icon name="alert" />{error}</div>{/if}
 

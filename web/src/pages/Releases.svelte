@@ -1,4 +1,5 @@
 <script>
+  import PageHeader from '../components/PageHeader.svelte'
   import { getReleases, listServices } from '../lib/api.js'
   import { route, setQuery, intParam } from '../lib/router.svelte.js'
   import { dateOnly, number, links, downloadCSV } from '../lib/format.js'
@@ -83,15 +84,14 @@
 </script>
 
 <div class="page">
-  <div class="page-header">
-    <div>
-      <h1 class="page-title">New & upcoming</h1>
-      <p class="page-desc">Titles added to, or announced for, a streaming service — live from JustWatch, nothing is stored.</p>
-    </div>
-    <div class="page-actions">
+  <PageHeader
+    title="New & upcoming"
+    desc="Titles just added to, or announced for, a streaming service. Fetched live from JustWatch and not stored."
+  >
+    {#snippet actions()}
       <button class="btn" onclick={exportCSV} disabled={!filtered.length}><Icon name="download" />Export CSV</button>
-    </div>
-  </div>
+    {/snippet}
+  </PageHeader>
 
   <div class="toolbar">
     <div class="segmented" role="group" aria-label="Listing">

@@ -96,12 +96,9 @@
 
 <svelte:window {onkeydown} />
 
-<div class="page">
-  <div class="page-header">
-    <div>
-      <h1 class="page-title">Netflix mapping</h1>
-      <p class="page-desc">Every title in Netflix's official Top 10 (netflix.com/tudum/top10), its TMDB / IMDb match and how its season titles map to season numbers. Titles linked to a FlixPatrol title share one mapping (see <a href={href('/mapping')}>TMDB mapping</a>). Click a row to review or fix it.</p>
-    </div>
+<div>
+  <div class="subhead">
+    <p class="tab-hint">Titles from Netflix's own weekly Top 10, the TMDB title each maps to and which season each season title means. Titles linked to a FlixPatrol title share its mapping. Click a row to review or fix it.</p>
     <div class="page-actions">
       <button class="btn" onclick={matchBacklog} disabled={running}><Icon name="play" />Match backlog now</button>
       <button class="btn" onclick={exportCSV} disabled={!data.items.length}><Icon name="download" />Export page</button>

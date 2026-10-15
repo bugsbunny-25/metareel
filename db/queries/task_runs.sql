@@ -50,6 +50,14 @@ FROM task_runs
 WHERE started_at >= datetime('now', CAST(sqlc.arg(since) AS TEXT))
 GROUP BY status;
 
+-- name: CountTaskRunsByDaySince :many
+-- Runs per UTC day and status; since is a SQLite datetime modifier, e.g. '-14 days'.
+SELECT CAST(date(started_at) AS TEXT) AS day, status, COUNT(*) AS runs
+FROM task_runs
+WHERE started_at >= datetime('now', CAST(sqlc.arg(since) AS TEXT))
+GROUP BY day, status
+ORDER BY day;
+
 -- name: ListLatestTaskRunPerSchedule :many
 SELECT *
 FROM task_runs r

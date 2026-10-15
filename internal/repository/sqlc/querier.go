@@ -28,6 +28,8 @@ type Querier interface {
 	// Runs of a schedule started recently and not finished (overlap guard).
 	CountRunningTaskRuns(ctx context.Context, arg CountRunningTaskRunsParams) (int64, error)
 	CountTaskRuns(ctx context.Context, arg CountTaskRunsParams) (int64, error)
+	// Runs per UTC day and status; since is a SQLite datetime modifier, e.g. '-14 days'.
+	CountTaskRunsByDaySince(ctx context.Context, since string) ([]CountTaskRunsByDaySinceRow, error)
 	// since is a SQLite datetime modifier, e.g. '-24 hours'.
 	CountTaskRunsByStatusSince(ctx context.Context, since string) ([]CountTaskRunsByStatusSinceRow, error)
 	CountTitles(ctx context.Context, arg CountTitlesParams) (int64, error)
