@@ -376,13 +376,13 @@ SELECT c.country, c.week, c.category, c.weekly_rank, c.netflix_title_id, c.show_
 FROM netflix_top10_countries c
 JOIN netflix_titles n ON n.id = c.netflix_title_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = c.netflix_title_id AND s.season_title = c.season_title
-WHERE n.kind = ?1 AND n.tmdb_id = ?2
+WHERE n.tmdb_kind = ?1 AND n.tmdb_id = ?2
 ORDER BY c.week, c.country
 `
 
 type ListNetflixCountriesByTmdbParams struct {
-	Kind   string         `json:"kind"`
-	TmdbID sql.NullString `json:"tmdb_id"`
+	TmdbKind sql.NullString `json:"tmdb_kind"`
+	TmdbID   sql.NullString `json:"tmdb_id"`
 }
 
 type ListNetflixCountriesByTmdbRow struct {
@@ -399,7 +399,7 @@ type ListNetflixCountriesByTmdbRow struct {
 }
 
 func (q *Queries) ListNetflixCountriesByTmdb(ctx context.Context, arg ListNetflixCountriesByTmdbParams) ([]ListNetflixCountriesByTmdbRow, error) {
-	rows, err := q.db.QueryContext(ctx, listNetflixCountriesByTmdb, arg.Kind, arg.TmdbID)
+	rows, err := q.db.QueryContext(ctx, listNetflixCountriesByTmdb, arg.TmdbKind, arg.TmdbID)
 	if err != nil {
 		return nil, err
 	}
@@ -433,7 +433,7 @@ func (q *Queries) ListNetflixCountriesByTmdb(ctx context.Context, arg ListNetfli
 }
 
 const listNetflixCountryWeek = `-- name: ListNetflixCountryWeek :many
-SELECT c.country, c.week, c.category, c.weekly_rank, c.netflix_title_id, c.show_title, c.season_title, c.cumulative_weeks, n.tmdb_id, n.imdb_id, n.kind, s.season_number, s.season_source
+SELECT c.country, c.week, c.category, c.weekly_rank, c.netflix_title_id, c.show_title, c.season_title, c.cumulative_weeks, n.tmdb_id, n.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_top10_countries c
 JOIN netflix_titles n ON n.id = c.netflix_title_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = c.netflix_title_id AND s.season_title = c.season_title
@@ -506,13 +506,13 @@ SELECT g.week, g.category, g.weekly_rank, g.netflix_title_id, g.show_title, g.se
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = g.netflix_title_id AND s.season_title = g.season_title
-WHERE n.kind = ?1 AND n.tmdb_id = ?2
+WHERE n.tmdb_kind = ?1 AND n.tmdb_id = ?2
 ORDER BY g.week, g.category
 `
 
 type ListNetflixGlobalByTmdbParams struct {
-	Kind   string         `json:"kind"`
-	TmdbID sql.NullString `json:"tmdb_id"`
+	TmdbKind sql.NullString `json:"tmdb_kind"`
+	TmdbID   sql.NullString `json:"tmdb_id"`
 }
 
 type ListNetflixGlobalByTmdbRow struct {
@@ -531,7 +531,7 @@ type ListNetflixGlobalByTmdbRow struct {
 }
 
 func (q *Queries) ListNetflixGlobalByTmdb(ctx context.Context, arg ListNetflixGlobalByTmdbParams) ([]ListNetflixGlobalByTmdbRow, error) {
-	rows, err := q.db.QueryContext(ctx, listNetflixGlobalByTmdb, arg.Kind, arg.TmdbID)
+	rows, err := q.db.QueryContext(ctx, listNetflixGlobalByTmdb, arg.TmdbKind, arg.TmdbID)
 	if err != nil {
 		return nil, err
 	}
@@ -567,7 +567,8 @@ func (q *Queries) ListNetflixGlobalByTmdb(ctx context.Context, arg ListNetflixGl
 }
 
 const listNetflixGlobalRange = `-- name: ListNetflixGlobalRange :many
-SELECT g.week, g.category, g.weekly_rank, g.show_title, g.weekly_hours_viewed, g.weekly_views, n.tmdb_id, n.kind
+SELECT g.week, g.category, g.weekly_rank, g.show_title, g.weekly_hours_viewed, g.weekly_views, n.tmdb_id,
+       CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
 WHERE g.week >= CAST(?1 AS TEXT) AND g.week <= CAST(?2 AS TEXT)
@@ -624,7 +625,7 @@ func (q *Queries) ListNetflixGlobalRange(ctx context.Context, arg ListNetflixGlo
 }
 
 const listNetflixGlobalWeek = `-- name: ListNetflixGlobalWeek :many
-SELECT g.week, g.category, g.weekly_rank, g.netflix_title_id, g.show_title, g.season_title, g.weekly_hours_viewed, g.runtime_hours, g.weekly_views, g.cumulative_weeks, n.tmdb_id, n.imdb_id, n.kind, s.season_number, s.season_source
+SELECT g.week, g.category, g.weekly_rank, g.netflix_title_id, g.show_title, g.season_title, g.weekly_hours_viewed, g.runtime_hours, g.weekly_views, g.cumulative_weeks, n.tmdb_id, n.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = g.netflix_title_id AND s.season_title = g.season_title
@@ -696,7 +697,7 @@ func (q *Queries) ListNetflixGlobalWeek(ctx context.Context, arg ListNetflixGlob
 }
 
 const listNetflixMostPopular = `-- name: ListNetflixMostPopular :many
-SELECT p.category, p.rank, p.netflix_title_id, p.show_title, p.season_title, p.hours_viewed_91d, p.runtime_hours, p.views_91d, n.tmdb_id, n.imdb_id, n.kind, s.season_number, s.season_source
+SELECT p.category, p.rank, p.netflix_title_id, p.show_title, p.season_title, p.hours_viewed_91d, p.runtime_hours, p.views_91d, n.tmdb_id, n.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_most_popular p
 JOIN netflix_titles n ON n.id = p.netflix_title_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = p.netflix_title_id AND s.season_title = p.season_title

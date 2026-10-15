@@ -14,6 +14,7 @@
   import Insights from './pages/Insights.svelte'
   import DataHealth from './pages/DataHealth.svelte'
   import NetflixTitles from './pages/NetflixTitles.svelte'
+  import Mapping from './pages/Mapping.svelte'
 
   const NAV = [
     { section: 'Data' },
@@ -22,6 +23,7 @@
     { path: '/insights', label: 'Insights', icon: 'sparkles', page: Insights },
     { path: '/titles', label: 'Titles & mapping', icon: 'film', page: Titles, badge: 'missing' },
     { path: '/netflix', label: 'Netflix mapping', icon: 'tv', page: NetflixTitles },
+    { path: '/mapping', label: 'TMDB mapping', icon: 'link', page: Mapping },
     { path: '/releases', label: 'New & upcoming', icon: 'calendar', page: Releases },
     { section: 'Jobs' },
     { path: '/schedules', label: 'Schedules', icon: 'clock', page: Schedules },

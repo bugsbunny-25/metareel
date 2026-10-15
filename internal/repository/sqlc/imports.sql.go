@@ -66,7 +66,7 @@ func (q *Queries) DeleteNetflixMostPopular(ctx context.Context) error {
 const ensureNetflixTitle = `-- name: EnsureNetflixTitle :one
 INSERT INTO netflix_titles (show_title, kind) VALUES (?, ?)
 ON CONFLICT(show_title, kind) DO UPDATE SET show_title = excluded.show_title
-RETURNING id, show_title, kind, tmdb_id, imdb_id, title_id, match_status, match_source, match_attempts, next_match_at, created_at, updated_at
+RETURNING id, show_title, kind, tmdb_id, imdb_id, title_id, match_status, match_source, match_attempts, next_match_at, created_at, updated_at, tmdb_kind, netflix_id, netflix_id_checked_at
 `
 
 type EnsureNetflixTitleParams struct {
@@ -90,6 +90,9 @@ func (q *Queries) EnsureNetflixTitle(ctx context.Context, arg EnsureNetflixTitle
 		&i.NextMatchAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TmdbKind,
+		&i.NetflixID,
+		&i.NetflixIDCheckedAt,
 	)
 	return i, err
 }
@@ -97,21 +100,22 @@ func (q *Queries) EnsureNetflixTitle(ctx context.Context, arg EnsureNetflixTitle
 const findFlixPatrolTitlesByName = `-- name: FindFlixPatrolTitlesByName :many
 SELECT DISTINCT t.id, t.slug, t.name, t.kind, t.tmdb_id, t.imdb_id, t.rt_url, t.created_at, t.updated_at, t.match_status, t.match_source, t.matched_name, t.matched_year, t.match_attempts, t.match_attempted_at, t.next_match_at, t.rt_attempts, t.next_rt_at, t.justwatch_id, t.wikidata_id, t.fp_name, t.fp_kind, t.fp_premiere_date, t.fp_country, t.fp_fetched_at
 FROM titles t
-JOIN rankings r ON r.title_id = t.id AND r.streaming_provider = 'netflix'
-WHERE t.kind = ?1
-  AND COALESCE(t.tmdb_id, '') <> ''
+JOIN rankings r ON r.title_id = t.id AND r.streaming_provider = 'netflix' AND r.category = ?1
+WHERE COALESCE(t.tmdb_id, '') <> ''
   AND (lower(t.name) = lower(?2) OR lower(COALESCE(t.fp_name, '')) = lower(?2))
 `
 
 type FindFlixPatrolTitlesByNameParams struct {
-	Kind string `json:"kind"`
-	Name string `json:"name"`
+	Category string `json:"category"`
+	Name     string `json:"name"`
 }
 
-// FlixPatrol titles of a kind with this exact name (case-insensitive) that
-// charted on Netflix, to match Netflix titles without another lookup.
+// Matched FlixPatrol titles with this exact name (case-insensitive) that
+// charted in the same Netflix list (category movies | tv_shows), to match
+// Netflix titles without another lookup. t.kind (the TMDB namespace) can
+// differ from the list.
 func (q *Queries) FindFlixPatrolTitlesByName(ctx context.Context, arg FindFlixPatrolTitlesByNameParams) ([]Title, error) {
-	rows, err := q.db.QueryContext(ctx, findFlixPatrolTitlesByName, arg.Kind, arg.Name)
+	rows, err := q.db.QueryContext(ctx, findFlixPatrolTitlesByName, arg.Category, arg.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +335,7 @@ func (q *Queries) ListKnownIMDbIDs(ctx context.Context) ([]sql.NullString, error
 }
 
 const listNetflixTitlesDueForMatch = `-- name: ListNetflixTitlesDueForMatch :many
-SELECT n.id, n.show_title, n.kind, n.tmdb_id, n.imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at,
+SELECT n.id, n.show_title, n.kind, n.tmdb_id, n.imdb_id, n.title_id, n.match_status, n.match_source, n.match_attempts, n.next_match_at, n.created_at, n.updated_at, n.tmdb_kind, n.netflix_id, n.netflix_id_checked_at,
        CAST(COALESCE(
            (SELECT MIN(g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id),
            (SELECT MIN(c.week) FROM netflix_top10_countries c WHERE c.netflix_title_id = n.id),
@@ -373,6 +377,9 @@ func (q *Queries) ListNetflixTitlesDueForMatch(ctx context.Context, limit int64)
 			&i.NetflixTitle.NextMatchAt,
 			&i.NetflixTitle.CreatedAt,
 			&i.NetflixTitle.UpdatedAt,
+			&i.NetflixTitle.TmdbKind,
+			&i.NetflixTitle.NetflixID,
+			&i.NetflixTitle.NetflixIDCheckedAt,
 			&i.FirstWeek,
 		); err != nil {
 			return nil, err
@@ -414,19 +421,21 @@ func (q *Queries) SaveDataImport(ctx context.Context, arg SaveDataImportParams) 
 
 const saveNetflixTitleMatch = `-- name: SaveNetflixTitleMatch :exec
 UPDATE netflix_titles
-SET tmdb_id        = COALESCE(?1, tmdb_id),
-    imdb_id        = COALESCE(?2, imdb_id),
-    title_id       = COALESCE(?3, title_id),
-    match_status   = ?4,
-    match_source   = ?5,
+SET tmdb_kind      = COALESCE(?1, tmdb_kind),
+    tmdb_id        = COALESCE(?2, tmdb_id),
+    imdb_id        = COALESCE(?3, imdb_id),
+    title_id       = COALESCE(?4, title_id),
+    match_status   = ?5,
+    match_source   = ?6,
     match_attempts = match_attempts + 1,
-    next_match_at  = CASE WHEN CAST(?6 AS TEXT) = '' THEN NULL
-                          ELSE datetime('now', CAST(?6 AS TEXT)) END,
+    next_match_at  = CASE WHEN CAST(?7 AS TEXT) = '' THEN NULL
+                          ELSE datetime('now', CAST(?7 AS TEXT)) END,
     updated_at     = CURRENT_TIMESTAMP
-WHERE id = ?7 AND match_status <> 'manual'
+WHERE id = ?8 AND match_status <> 'manual'
 `
 
 type SaveNetflixTitleMatchParams struct {
+	TmdbKind    sql.NullString `json:"tmdb_kind"`
 	TmdbID      sql.NullString `json:"tmdb_id"`
 	ImdbID      sql.NullString `json:"imdb_id"`
 	TitleID     sql.NullInt64  `json:"title_id"`
@@ -438,6 +447,7 @@ type SaveNetflixTitleMatchParams struct {
 
 func (q *Queries) SaveNetflixTitleMatch(ctx context.Context, arg SaveNetflixTitleMatchParams) error {
 	_, err := q.db.ExecContext(ctx, saveNetflixTitleMatch,
+		arg.TmdbKind,
 		arg.TmdbID,
 		arg.ImdbID,
 		arg.TitleID,

@@ -216,6 +216,7 @@ func (r *ImportsRepository) NetflixTitlesDueForMatch(ctx context.Context, limit 
 
 // NetflixMatch is one matching attempt of a Netflix title.
 type NetflixMatch struct {
+	TmdbKind   string // movie | tv (the TMDB namespace, which can differ from Netflix's list)
 	TmdbID     string // empty = not matched
 	ImdbID     string
 	TitleID    int64 // FlixPatrol title it matched through
@@ -229,16 +230,22 @@ func (r *ImportsRepository) SaveNetflixTitleMatch(ctx context.Context, id int64,
 		status, retry = MatchStatusMatched, ""
 	}
 	return r.q.SaveNetflixTitleMatch(ctx, sqlc.SaveNetflixTitleMatchParams{
-		TmdbID: nullIfEmpty(m.TmdbID), ImdbID: nullIfEmpty(m.ImdbID),
+		TmdbKind: nullIfEmpty(m.TmdbKind), TmdbID: nullIfEmpty(m.TmdbID), ImdbID: nullIfEmpty(m.ImdbID),
 		TitleID: sql.NullInt64{Int64: m.TitleID, Valid: m.TitleID > 0}, MatchStatus: status,
 		MatchSource: nullIfEmpty(m.Source), RetryAfter: retry, ID: id,
 	})
 }
 
-// FlixPatrolTitlesNamed returns matched FlixPatrol titles of a kind named
-// name (or whose title-page name is name) that charted on Netflix.
-func (r *ImportsRepository) FlixPatrolTitlesNamed(ctx context.Context, name, kind string) ([]sqlc.Title, error) {
-	return r.q.FindFlixPatrolTitlesByName(ctx, sqlc.FindFlixPatrolTitlesByNameParams{Kind: kind, Name: name})
+// FlixPatrolTitlesNamed returns matched FlixPatrol titles named name (or
+// whose title-page name is name) that charted in the same Netflix list as a
+// Netflix title of listKind (movie | tv_show). Their kind is the TMDB
+// namespace, which can differ from the list.
+func (r *ImportsRepository) FlixPatrolTitlesNamed(ctx context.Context, name, listKind string) ([]sqlc.Title, error) {
+	category := "movies"
+	if listKind == "tv_show" {
+		category = "tv_shows"
+	}
+	return r.q.FindFlixPatrolTitlesByName(ctx, sqlc.FindFlixPatrolTitlesByNameParams{Category: category, Name: name})
 }
 
 func (r *ImportsRepository) CountNetflixTitlesByMatchStatus(ctx context.Context) (map[string]int64, error) {

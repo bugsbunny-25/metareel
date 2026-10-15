@@ -12,7 +12,7 @@ import (
 )
 
 // ListNetflixTitles lists Netflix official Top 10 titles and their mapping:
-// GET /api/v1/admin/netflix/titles?q=&kind=&match_status=&missing=&sort=&limit=&offset=
+// GET /api/v1/admin/netflix/titles?q=&kind=&match_status=&missing=&flag=&sort=&limit=&offset=
 func (h *Handler) ListNetflixTitles(c *echo.Context) error {
 	limit, offset, err := parsePagination(c.QueryParam("limit"), c.QueryParam("offset"))
 	if err != nil {
@@ -20,7 +20,7 @@ func (h *Handler) ListNetflixTitles(c *echo.Context) error {
 	}
 	out, err := h.Netflix.List(c.Request().Context(), service.NetflixTitlesQuery{
 		Kind: c.QueryParam("kind"), Search: c.QueryParam("q"), MatchStatus: c.QueryParam("match_status"),
-		Missing: c.QueryParam("missing"), Sort: c.QueryParam("sort"),
+		Missing: c.QueryParam("missing"), Flag: c.QueryParam("flag"), Sort: c.QueryParam("sort"),
 	}, limit, offset)
 	return writeData(c, out, err)
 }
@@ -36,7 +36,7 @@ func (h *Handler) GetNetflixTitle(c *echo.Context) error {
 }
 
 // PatchNetflixTitle fixes a Netflix title's TMDB / IMDb IDs by hand:
-// PATCH /api/v1/admin/netflix/titles/{id} {"tmdb_id": "...", "imdb_id": "..."}
+// PATCH /api/v1/admin/netflix/titles/{id} {"tmdb_kind": "movie|tv", "tmdb_id": "...", "imdb_id": "..."}
 func (h *Handler) PatchNetflixTitle(c *echo.Context) error {
 	id, err := parseID(c.Param("id"), "netflix title id")
 	if err != nil {

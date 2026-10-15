@@ -37,15 +37,16 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(tmdb_kind, tmdb_id, country, monetization, provider_id) DO NOTHING;
 
 -- name: UpsertTmdbTitleWikidata :exec
-INSERT INTO tmdb_titles (tmdb_kind, tmdb_id, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, wikidata_fetched_at)
+INSERT INTO tmdb_titles (tmdb_kind, tmdb_id, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, netflix_id, wikidata_fetched_at)
 VALUES (sqlc.arg(tmdb_kind), sqlc.arg(tmdb_id), sqlc.narg(imdb_id), sqlc.narg(wikidata_id), sqlc.narg(rt_id),
-        sqlc.narg(metacritic_id), sqlc.narg(letterboxd_id), CURRENT_TIMESTAMP)
+        sqlc.narg(metacritic_id), sqlc.narg(letterboxd_id), sqlc.narg(netflix_id), CURRENT_TIMESTAMP)
 ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
     imdb_id = COALESCE(tmdb_titles.imdb_id, excluded.imdb_id),
     wikidata_id = COALESCE(excluded.wikidata_id, tmdb_titles.wikidata_id),
     rt_id = COALESCE(excluded.rt_id, tmdb_titles.rt_id),
     metacritic_id = COALESCE(excluded.metacritic_id, tmdb_titles.metacritic_id),
     letterboxd_id = COALESCE(excluded.letterboxd_id, tmdb_titles.letterboxd_id),
+    netflix_id = COALESCE(excluded.netflix_id, tmdb_titles.netflix_id),
     wikidata_fetched_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP;
 
 -- name: GetTmdbTitle :one
@@ -77,10 +78,10 @@ FROM (
         FROM titles t
         WHERE COALESCE(t.tmdb_id, '') <> ''
         UNION ALL
-        SELECT CASE n.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END, n.tmdb_id,
+        SELECT n.tmdb_kind, n.tmdb_id,
                (SELECT MAX(g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id)
         FROM netflix_titles n
-        WHERE COALESCE(n.tmdb_id, '') <> ''
+        WHERE COALESCE(n.tmdb_id, '') <> '' AND n.tmdb_kind IS NOT NULL
     ) u
     GROUP BY u.tmdb_kind, u.tmdb_id
 ) k
@@ -99,8 +100,8 @@ FROM (
     SELECT CASE kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AS tmdb_kind, tmdb_id
     FROM titles WHERE COALESCE(tmdb_id, '') <> ''
     UNION
-    SELECT CASE kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END, tmdb_id
-    FROM netflix_titles WHERE COALESCE(tmdb_id, '') <> ''
+    SELECT tmdb_kind, tmdb_id
+    FROM netflix_titles WHERE COALESCE(tmdb_id, '') <> '' AND tmdb_kind IS NOT NULL
 ) k
 LEFT JOIN tmdb_titles m ON m.tmdb_kind = k.tmdb_kind AND m.tmdb_id = k.tmdb_id
 WHERE m.wikidata_fetched_at IS NULL OR m.wikidata_fetched_at < datetime('now', CAST(sqlc.arg(window) AS TEXT))
@@ -111,3 +112,48 @@ SELECT COUNT(*) AS titles,
        CAST(COALESCE(SUM(CASE WHEN details_fetched_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS INTEGER) AS with_details,
        CAST(COALESCE(SUM(CASE WHEN wikidata_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS INTEGER) AS with_wikidata
 FROM tmdb_titles;
+
+-- name: SaveTmdbTitleExternalIDs :exec
+-- Fills IDs found by matching (JustWatch, Netflix via Wikidata, IMDb) on a
+-- TMDB title, creating its row if needed; never overwrites.
+INSERT INTO tmdb_titles (tmdb_kind, tmdb_id, imdb_id, justwatch_id, netflix_id, wikidata_id)
+VALUES (sqlc.arg(tmdb_kind), sqlc.arg(tmdb_id), sqlc.narg(imdb_id), sqlc.narg(justwatch_id), sqlc.narg(netflix_id), sqlc.narg(wikidata_id))
+ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
+    imdb_id      = COALESCE(tmdb_titles.imdb_id, excluded.imdb_id),
+    justwatch_id = COALESCE(tmdb_titles.justwatch_id, excluded.justwatch_id),
+    netflix_id   = COALESCE(tmdb_titles.netflix_id, excluded.netflix_id),
+    wikidata_id  = COALESCE(tmdb_titles.wikidata_id, excluded.wikidata_id),
+    updated_at   = CURRENT_TIMESTAMP;
+
+-- name: ConsolidateTmdbTitleIDs :execrows
+-- Fills a TMDB title's missing IMDb / Rotten Tomatoes / JustWatch / Wikidata
+-- IDs from the FlixPatrol titles mapped to it (found by their own matching).
+UPDATE tmdb_titles
+SET imdb_id = COALESCE(tmdb_titles.imdb_id, (
+        SELECT t.imdb_id FROM titles t
+        WHERE t.tmdb_id = tmdb_titles.tmdb_id AND CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = tmdb_titles.tmdb_kind
+          AND COALESCE(t.imdb_id, '') <> '' ORDER BY t.match_status = 'manual' DESC, t.id LIMIT 1)),
+    rt_id = COALESCE(tmdb_titles.rt_id, (
+        SELECT t.rt_url FROM titles t
+        WHERE t.tmdb_id = tmdb_titles.tmdb_id AND CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = tmdb_titles.tmdb_kind
+          AND COALESCE(t.rt_url, '') <> '' ORDER BY t.match_status = 'manual' DESC, t.id LIMIT 1)),
+    justwatch_id = COALESCE(tmdb_titles.justwatch_id, (
+        SELECT t.justwatch_id FROM titles t
+        WHERE t.tmdb_id = tmdb_titles.tmdb_id AND CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = tmdb_titles.tmdb_kind
+          AND COALESCE(t.justwatch_id, '') <> '' ORDER BY t.id LIMIT 1)),
+    wikidata_id = COALESCE(tmdb_titles.wikidata_id, (
+        SELECT t.wikidata_id FROM titles t
+        WHERE t.tmdb_id = tmdb_titles.tmdb_id AND CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = tmdb_titles.tmdb_kind
+          AND COALESCE(t.wikidata_id, '') <> '' ORDER BY t.id LIMIT 1)),
+    updated_at = CURRENT_TIMESTAMP
+WHERE (tmdb_titles.imdb_id IS NULL OR tmdb_titles.rt_id IS NULL OR tmdb_titles.justwatch_id IS NULL OR tmdb_titles.wikidata_id IS NULL)
+  AND EXISTS (
+    SELECT 1 FROM titles t
+    WHERE t.tmdb_id = tmdb_titles.tmdb_id AND CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = tmdb_titles.tmdb_kind
+      AND ((tmdb_titles.imdb_id IS NULL AND COALESCE(t.imdb_id, '') <> '')
+        OR (tmdb_titles.rt_id IS NULL AND COALESCE(t.rt_url, '') <> '')
+        OR (tmdb_titles.justwatch_id IS NULL AND COALESCE(t.justwatch_id, '') <> '')
+        OR (tmdb_titles.wikidata_id IS NULL AND COALESCE(t.wikidata_id, '') <> '')));
+
+-- name: FindTmdbRefsByNetflixID :many
+SELECT tmdb_kind, tmdb_id FROM tmdb_titles WHERE netflix_id = ?;

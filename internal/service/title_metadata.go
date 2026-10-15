@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/bugsbunny-25/metareel/internal/client"
@@ -149,4 +150,103 @@ func (s *TitleMetadataService) Run(ctx context.Context, runLog func(level, msg s
 		return rep, fmt.Errorf("every TMDB details request failed (%d)", rep.DetailsFailed)
 	}
 	return rep, nil
+}
+
+// FindNetflixOnWikidata looks Netflix Top 10 names up among Wikidata items
+// with a Netflix ID (nil map when Wikidata is not configured).
+func (s *TitleMetadataService) FindNetflixOnWikidata(ctx context.Context, names []string) (map[string][]client.WikidataNetflixHit, error) {
+	if s == nil || s.wikidata == nil || len(names) == 0 {
+		return nil, nil
+	}
+	return s.wikidata.FindNetflixTitles(ctx, names)
+}
+
+// SaveExternalIDs fills a TMDB title's missing IDs found by matching.
+func (s *TitleMetadataService) SaveExternalIDs(ctx context.Context, ref repository.TmdbRef, ids repository.TmdbExternalIDs) error {
+	if s == nil {
+		return nil
+	}
+	return s.repo.SaveExternalIDs(ctx, ref, ids)
+}
+
+// ResolvedTmdb is the TMDB title an IMDb or Wikidata ID resolved to.
+type ResolvedTmdb struct {
+	Ref   repository.TmdbRef
+	Title string
+	Year  int
+	Via   string               // tmdb_find | wikidata
+	Wiki  *client.WikidataItem // the Wikidata item, when resolved through it
+}
+
+// ResolveExternalID finds the TMDB title of an IMDb (tt…) or Wikidata (Q…)
+// ID: TMDB's /find first, then (Wikidata IDs) the item's own TMDB IDs.
+// kindHint (movie | tv) picks one when both a movie and a TV show match.
+// Returns a ValidationError when the ID is malformed, matches nothing or is
+// ambiguous.
+func (s *TitleMetadataService) ResolveExternalID(ctx context.Context, id, kindHint string) (*ResolvedTmdb, error) {
+	id = strings.TrimSpace(id)
+	isQID := client.WikidataQIDRe.MatchString(strings.ToUpper(id))
+	if isQID {
+		id = strings.ToUpper(id)
+	} else if !imdbIDRe.MatchString(id) {
+		return nil, &ValidationError{Message: "expected an IMDb ID (tt1234567) or a Wikidata ID (Q141461750)"}
+	}
+	var found []client.TMDBFound
+	via := "tmdb_find"
+	if s.tmdb.Enabled() {
+		var err error
+		if found, err = s.tmdb.FindByExternalID(ctx, id); err != nil {
+			s.log.Warn("tmdb find failed", slog.String("external_id", id), slog.Any("err", err))
+		}
+	}
+	var wiki *client.WikidataItem
+	if isQID && s.wikidata != nil {
+		it, err := s.wikidata.LookupByQID(ctx, id)
+		if err != nil {
+			s.log.Warn("wikidata item lookup failed", slog.String("wikidata_id", id), slog.Any("err", err))
+		}
+		wiki = it
+		if len(found) == 0 && it != nil {
+			via = "wikidata"
+			if it.TmdbMovieID != "" {
+				found = append(found, client.TMDBFound{Kind: "movie", ID: it.TmdbMovieID})
+			}
+			if it.TmdbTVID != "" {
+				found = append(found, client.TMDBFound{Kind: "tv", ID: it.TmdbTVID})
+			}
+		}
+	}
+	if kindHint != "" && len(found) > 1 {
+		var keep []client.TMDBFound
+		for _, f := range found {
+			if f.Kind == kindHint {
+				keep = append(keep, f)
+			}
+		}
+		found = keep
+	}
+	switch len(found) {
+	case 0:
+		return nil, &ValidationError{Message: "no TMDB title has " + id}
+	case 1:
+		return &ResolvedTmdb{Ref: repository.TmdbRef{Kind: found[0].Kind, ID: found[0].ID}, Title: found[0].Title, Year: found[0].Year, Via: via, Wiki: wiki}, nil
+	default:
+		return nil, &ValidationError{Message: id + " matches several TMDB titles; pick the TMDB kind"}
+	}
+}
+
+// FindNetflixIDsOnWikidata returns Wikidata's TMDB titles per Netflix ID.
+func (s *TitleMetadataService) FindNetflixIDsOnWikidata(ctx context.Context, netflixIDs []string) (map[string][]client.WikidataNetflixHit, error) {
+	if s == nil || s.wikidata == nil || len(netflixIDs) == 0 {
+		return nil, nil
+	}
+	return s.wikidata.LookupByNetflixIDs(ctx, netflixIDs)
+}
+
+// RefsByNetflixID returns the TMDB titles already holding a Netflix ID.
+func (s *TitleMetadataService) RefsByNetflixID(ctx context.Context, netflixID string) ([]repository.TmdbRef, error) {
+	if s == nil {
+		return nil, nil
+	}
+	return s.repo.RefsByNetflixID(ctx, netflixID)
 }

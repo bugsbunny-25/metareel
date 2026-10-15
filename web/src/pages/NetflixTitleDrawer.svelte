@@ -1,7 +1,7 @@
 <script>
   import { getNetflixTitle, patchNetflixTitle, rematchNetflixTitle, getNetflixTitleCandidates, patchNetflixSeason } from '../lib/api.js'
   import { href } from '../lib/router.svelte.js'
-  import { links, parseImdbId, parseTmdbInput, dateOnly, relativeTime, dateTime, number, SEASON_SOURCES, seasonLabel } from '../lib/format.js'
+  import { links, parseImdbId, parseTmdbInput, parseWikidataId, dateOnly, relativeTime, dateTime, number, SEASON_SOURCES, seasonLabel } from '../lib/format.js'
   import { countryName } from '../lib/constants.js'
   import { toast } from '../lib/toast.svelte.js'
   import { confirm } from '../lib/confirm.svelte.js'
@@ -17,13 +17,17 @@
   let loadError = $state('')
   let tab = $state('mapping')
 
-  // Mapping form
-  let form = $state({ tmdb_id: '', imdb_id: '' })
+  // Mapping form. tmdb_kind is the TMDB namespace, which can differ from
+  // Netflix's list (a stand-up special in the TV list is a TMDB movie).
+  let form = $state({ tmdb_kind: 'movie', tmdb_id: '', imdb_id: '', wikidata_id: '' })
   let saving = $state(false)
-  const dirty = $derived(title && (form.tmdb_id !== (title.tmdb_id ?? '') || form.imdb_id !== (title.imdb_id ?? '')))
+  const listTmdbKind = $derived(title?.kind === 'tv_show' ? 'tv' : 'movie')
+  const dirty = $derived(title && (form.tmdb_id !== (title.tmdb_id ?? '') || form.imdb_id !== (title.imdb_id ?? '') || form.wikidata_id !== '' ||
+    (form.tmdb_id && form.tmdb_kind !== (title.tmdb_kind ?? listTmdbKind))))
+  const showSeasons = $derived(title?.kind === 'tv_show' && title?.tmdb_kind !== 'movie')
 
   // Candidate search (Netflix gives no year; a year narrows Rotten Tomatoes only).
-  let search = $state({ name: '', year: '' })
+  let search = $state({ name: '', year: '', kind: 'movie' })
   let candidates = $state(null)
   let searching = $state(false)
 
@@ -41,8 +45,8 @@
       .then((t) => {
         if (titleId !== id) return
         apply(t)
-        search = { name: t.show_title, year: '' }
-        tab = t.kind === 'tv_show' && t.tmdb_id && t.seasons_unmapped > 0 ? 'seasons' : 'mapping'
+        search = { name: t.show_title, year: '', kind: t.kind }
+        tab = t.kind === 'tv_show' && t.tmdb_kind !== 'movie' && t.tmdb_id && t.seasons_unmapped > 0 ? 'seasons' : 'mapping'
         if (!t.tmdb_id) findCandidates()
       })
       .catch((e) => (loadError = e.message))
@@ -55,17 +59,21 @@
   }
 
   function resetForm() {
-    form = { tmdb_id: title.tmdb_id ?? '', imdb_id: title.imdb_id ?? '' }
+    form = { tmdb_kind: title.tmdb_kind ?? (title.kind === 'tv_show' ? 'tv' : 'movie'), tmdb_id: title.tmdb_id ?? '', imdb_id: title.imdb_id ?? '', wikidata_id: '' }
   }
 
   function normalizeTmdb() {
-    form.tmdb_id = parseTmdbInput(form.tmdb_id).id
+    const parsed = parseTmdbInput(form.tmdb_id)
+    form.tmdb_id = parsed.id
+    if (parsed.kind) form.tmdb_kind = parsed.kind === 'tv_show' ? 'tv' : parsed.kind
   }
 
   async function save() {
     saving = true
     try {
-      apply(await patchNetflixTitle(title.id, { tmdb_id: form.tmdb_id.trim(), imdb_id: parseImdbId(form.imdb_id) }))
+      const body = { tmdb_kind: form.tmdb_kind, tmdb_id: form.tmdb_id.trim(), imdb_id: parseImdbId(form.imdb_id) }
+      if (form.wikidata_id) body.wikidata_id = parseWikidataId(form.wikidata_id)
+      apply(await patchNetflixTitle(title.id, body))
       seasonEdits = {}
       toast.success(`Saved mapping for "${title.show_title}"`)
     } catch (e) {
@@ -94,7 +102,7 @@
   async function findCandidates() {
     searching = true
     try {
-      candidates = await getNetflixTitleCandidates(id, { name: search.name, year: search.year })
+      candidates = await getNetflixTitleCandidates(id, { name: search.name, year: search.year, kind: search.kind })
     } catch (e) {
       toast.error(e.message)
     } finally {
@@ -103,7 +111,10 @@
   }
 
   function useCandidate(c) {
-    if (c.tmdb_id) form.tmdb_id = c.tmdb_id
+    if (c.tmdb_id) {
+      form.tmdb_id = c.tmdb_id
+      form.tmdb_kind = c.kind === 'tv_show' ? 'tv' : 'movie'
+    }
     if (c.imdb_id) form.imdb_id = c.imdb_id
     tab = 'mapping'
     toast.info(`Filled in from "${c.title}" — review and save`)
@@ -144,8 +155,10 @@
       <div class="row small muted" style="margin-top:4px;flex-wrap:wrap">
         <span>Netflix title #{title.id}</span>
         {#if title.last_week}·<span>last charted week ending {dateOnly(title.last_week)}</span>{/if}
-        {#if title.tmdb_id}·<a href={links.tmdb(title.kind, title.tmdb_id)} target="_blank" rel="noopener">TMDB <Icon name="external" size={11} /></a>{/if}
+        {#if title.tmdb_id}·<a href={links.tmdb(title.tmdb_kind ?? title.kind, title.tmdb_id)} target="_blank" rel="noopener">TMDB <Icon name="external" size={11} /></a>
+          <a href={href('/mapping', { open: `${title.tmdb_kind}:${title.tmdb_id}` })}>All IDs</a>{/if}
         {#if title.imdb_id}<a href={links.imdb(title.imdb_id)} target="_blank" rel="noopener">IMDb <Icon name="external" size={11} /></a>{/if}
+        {#if title.netflix_id}<a href={links.netflix(title.netflix_id)} target="_blank" rel="noopener" title="Netflix ID {title.netflix_id}">Netflix <Icon name="external" size={11} /></a>{/if}
       </div>
     {:else}
       <div class="drawer-title">{loadError ? 'Netflix title not found' : 'Loading…'}</div>
@@ -157,7 +170,7 @@
   {:else if title}
     <div class="tabs">
       <button class="tab" class:active={tab === 'mapping'} onclick={() => (tab = 'mapping')}>Mapping</button>
-      {#if title.kind === 'tv_show'}
+      {#if showSeasons}
         <button class="tab" class:active={tab === 'seasons'} onclick={() => (tab = 'seasons')}>
           Seasons {#if title.seasons_unmapped}<span class="badge badge-warning">{title.seasons_unmapped}</span>{/if}
         </button>
@@ -178,12 +191,20 @@
             {:else if title.match_source}via {title.match_source}{/if}
           </span>
         </dd>
-        {#if title.tmdb_title}<dt>TMDB title</dt><dd>{title.tmdb_title}{title.tmdb_year ? ` (${title.tmdb_year})` : ''}</dd>{/if}
-        {#if title.flixpatrol}
-          <dt>FlixPatrol title</dt>
-          <dd class="small"><a href={href('/titles', { q: title.flixpatrol.slug, open: title.flixpatrol.title_id })}>{title.flixpatrol.name}</a> <span class="muted mono">{title.flixpatrol.slug}</span>
-            {#if title.match_source === 'flixpatrol_title'}<div class="field-hint">Matched through it: fixing that title also fixes this one.</div>{/if}</dd>
-        {/if}
+        {#if title.tmdb_title}<dt>TMDB title</dt><dd>{title.tmdb_title}{title.tmdb_year ? ` (${title.tmdb_year})` : ''}
+          {#if title.tmdb_kind && title.tmdb_kind !== listTmdbKind}<span class="badge badge-info" title="Netflix lists it as {title.kind === 'tv_show' ? 'TV' : 'a film'}">TMDB {title.tmdb_kind === 'tv' ? 'TV show' : 'movie'}</span>{/if}</dd>{/if}
+        <dt>FlixPatrol</dt>
+        <dd class="small">
+          {#each title.linked_titles as l (l.title_id)}
+            <div><a href={href('/titles', { q: l.slug, open: l.title_id })}>{l.name}</a> <span class="muted mono">{l.slug}</span>
+              <span class="badge {MATCH_BADGE[l.match_status] ?? ''}">{l.match_status}</span>
+              {#if l.tmdb_id && (l.tmdb_id !== title.tmdb_id || (l.kind === 'tv_show' ? 'tv' : 'movie') !== title.tmdb_kind)}<span class="badge badge-warning" title="Mapped to TMDB {l.kind === 'tv_show' ? 'tv' : 'movie'} {l.tmdb_id}">differs</span>{/if}
+            </div>
+          {:else}<span class="muted">No linked FlixPatrol title (none with this name on Netflix's charts in the same weeks)</span>{/each}
+          {#if title.linked_titles.length}<div class="field-hint">Linked titles share one mapping: a title fixed by hand wins, then a Netflix ID match, then FlixPatrol's match, then Netflix's.</div>{/if}
+        </dd>
+        <dt>Netflix ID</dt>
+        <dd class="small">{#if title.netflix_id}<span class="mono">{title.netflix_id}</span>{#if title.match_source === 'netflix_id'} <span class="muted">— mapped by it (exact)</span>{/if}{:else}<span class="muted">not found on Tudum's Top 10 search yet</span>{/if}</dd>
         <dt>Global Top 10</dt>
         <dd class="small">{title.weeks_in_global_top10} week(s){title.best_global_rank ? `, best #${title.best_global_rank}` : ''}{title.countries.length ? ` · ${title.countries.length} countr${title.countries.length === 1 ? 'y' : 'ies'}` : ''}</dd>
       </dl>
@@ -195,16 +216,29 @@
 
       <div class="section-title">External IDs</div>
       <div class="field-row">
+        <div class="field">
+          <span class="field-label">TMDB kind</span>
+          <div class="segmented" role="group" aria-label="TMDB kind">
+            <button class:active={form.tmdb_kind === 'movie'} onclick={() => (form.tmdb_kind = 'movie')}>Movie</button>
+            <button class:active={form.tmdb_kind === 'tv'} onclick={() => (form.tmdb_kind = 'tv')}>TV show</button>
+          </div>
+        </div>
         <label class="field">
-          <span class="field-label">TMDB ID ({title.kind === 'tv_show' ? 'TV' : 'movie'})</span>
+          <span class="field-label">TMDB ID</span>
           <input class="input mono" bind:value={form.tmdb_id} onblur={normalizeTmdb} placeholder="e.g. 119051 or TMDB URL" />
         </label>
+      </div>
+      <div class="field-row">
         <label class="field">
           <span class="field-label">IMDb ID</span>
           <input class="input mono" bind:value={form.imdb_id} onblur={() => (form.imdb_id = parseImdbId(form.imdb_id))} placeholder="tt1234567 or IMDb URL" />
         </label>
+        <label class="field">
+          <span class="field-label">Wikidata ID</span>
+          <input class="input mono" bind:value={form.wikidata_id} onblur={() => (form.wikidata_id = parseWikidataId(form.wikidata_id))} placeholder="Q141461750 or Wikidata URL" />
+        </label>
       </div>
-      <p class="field-hint" style="margin-top:-6px">Paste IDs or URLs. The TMDB namespace follows Netflix's list ({title.kind === 'tv_show' ? 'TV' : 'Films'}). Saving also fetches TMDB's season list and remaps seasons.</p>
+      <p class="field-hint" style="margin-top:-6px">Paste IDs or URLs. Netflix lists this under {title.kind === 'tv_show' ? 'TV' : 'Films'}; pick the TMDB kind it really is. Leave the TMDB ID empty to find it from the IMDb or Wikidata ID. Saving also updates linked FlixPatrol titles, fetches TMDB's season list and remaps seasons.</p>
       <div class="row" style="margin-top:12px">
         <button class="btn btn-primary" onclick={save} disabled={!dirty || saving}>{saving ? 'Saving…' : 'Save mapping'}</button>
         <button class="btn" onclick={resetForm} disabled={!dirty}>Discard changes</button>
@@ -213,6 +247,10 @@
 
       <div class="section-title" style="margin-top:24px">Find matches</div>
       <div class="row" style="flex-wrap:wrap">
+        <div class="segmented" role="group" aria-label="Search kind">
+          <button class:active={search.kind === 'movie'} onclick={() => (search.kind = 'movie')}>Movies</button>
+          <button class:active={search.kind === 'tv_show'} onclick={() => (search.kind = 'tv_show')}>TV</button>
+        </div>
         <input class="input grow" bind:value={search.name} placeholder="Title" aria-label="Search title" onkeydown={(e) => e.key === 'Enter' && findCandidates()} />
         <input class="input" style="width:80px" bind:value={search.year} placeholder="Year" aria-label="Year" inputmode="numeric" title="Optional; needed for the Rotten Tomatoes search" />
         <button class="btn" onclick={findCandidates} disabled={searching || !search.name}>
@@ -250,6 +288,7 @@
                 <td>
                   <div class="cell-title">{s.season_title}</div>
                   {#if s.season_number !== null && tmdbSeasonName(s.season_number)}<div class="cell-sub">TMDB: {tmdbSeasonName(s.season_number)}</div>{/if}
+                  {#if s.netflix_id}<div class="cell-sub mono"><a href={links.netflix(s.netflix_id)} target="_blank" rel="noopener">Netflix {s.netflix_id}</a></div>{/if}
                 </td>
                 <td class="nowrap">
                   {#if title.tmdb_seasons.length}
@@ -295,14 +334,14 @@
       <div class="section-title" style="margin-top:0">Global weekly Top 10</div>
       <div class="card table-wrap">
         <table class="table">
-          <thead><tr><th>Week ending</th><th>List</th><th class="right">#</th>{#if title.kind === 'tv_show'}<th>Season</th>{/if}<th class="right">Views</th><th class="right">Hours</th><th class="right">Weeks in</th></tr></thead>
+          <thead><tr><th>Week ending</th><th>List</th><th class="right">#</th>{#if showSeasons}<th>Season</th>{/if}<th class="right">Views</th><th class="right">Hours</th><th class="right">Weeks in</th></tr></thead>
           <tbody>
             {#each title.global_weeks as w (w.week + w.category + w.rank)}
               <tr>
                 <td class="nowrap">{dateOnly(w.week)}</td>
                 <td class="small nowrap">{w.category}</td>
                 <td class="right mono">{w.rank}</td>
-                {#if title.kind === 'tv_show'}<td class="small">{#if w.season_number !== null}<span class="badge">{seasonLabel(w.season_number)}</span> {/if}<span class="muted">{w.season_title ?? ''}</span></td>{/if}
+                {#if showSeasons}<td class="small">{#if w.season_number !== null}<span class="badge">{seasonLabel(w.season_number)}</span> {/if}<span class="muted">{w.season_title ?? ''}</span></td>{/if}
                 <td class="right">{number(w.views)}</td>
                 <td class="right">{number(w.hours_viewed)}</td>
                 <td class="right">{w.cumulative_weeks ?? ''}</td>

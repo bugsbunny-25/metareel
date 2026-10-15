@@ -57,7 +57,8 @@ LIMIT sqlc.arg(limit);
 
 -- name: SaveNetflixTitleMatch :exec
 UPDATE netflix_titles
-SET tmdb_id        = COALESCE(sqlc.narg(tmdb_id), tmdb_id),
+SET tmdb_kind      = COALESCE(sqlc.narg(tmdb_kind), tmdb_kind),
+    tmdb_id        = COALESCE(sqlc.narg(tmdb_id), tmdb_id),
     imdb_id        = COALESCE(sqlc.narg(imdb_id), imdb_id),
     title_id       = COALESCE(sqlc.narg(title_id), title_id),
     match_status   = sqlc.arg(match_status),
@@ -69,13 +70,14 @@ SET tmdb_id        = COALESCE(sqlc.narg(tmdb_id), tmdb_id),
 WHERE id = sqlc.arg(id) AND match_status <> 'manual';
 
 -- name: FindFlixPatrolTitlesByName :many
--- FlixPatrol titles of a kind with this exact name (case-insensitive) that
--- charted on Netflix, to match Netflix titles without another lookup.
+-- Matched FlixPatrol titles with this exact name (case-insensitive) that
+-- charted in the same Netflix list (category movies | tv_shows), to match
+-- Netflix titles without another lookup. t.kind (the TMDB namespace) can
+-- differ from the list.
 SELECT DISTINCT t.*
 FROM titles t
-JOIN rankings r ON r.title_id = t.id AND r.streaming_provider = 'netflix'
-WHERE t.kind = sqlc.arg(kind)
-  AND COALESCE(t.tmdb_id, '') <> ''
+JOIN rankings r ON r.title_id = t.id AND r.streaming_provider = 'netflix' AND r.category = sqlc.arg(category)
+WHERE COALESCE(t.tmdb_id, '') <> ''
   AND (lower(t.name) = lower(sqlc.arg(name)) OR lower(COALESCE(t.fp_name, '')) = lower(sqlc.arg(name)));
 
 -- name: CountNetflixTitlesByMatchStatus :many

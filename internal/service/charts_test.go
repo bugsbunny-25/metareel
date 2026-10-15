@@ -134,14 +134,14 @@ func TestTitleStatsAndLookup(t *testing.T) {
 	if len(st.Spread) != 2 || st.Spread[1].Country != "IN" || st.Spread[1].DaysAfter != 2 {
 		t.Fatalf("spread = %+v", st.Spread)
 	}
-	res, err := overview.Lookup(ctx, "tt0000001", "", "")
+	res, err := overview.Lookup(ctx, "tt0000001", "", "", "")
 	if err != nil || len(res.Refs) != 1 || res.Refs[0].TmdbID != "1" {
 		t.Fatalf("lookup = %+v err=%v", res, err)
 	}
-	if _, err := overview.Lookup(ctx, "", "", "nope"); err != ErrTitleNotFound {
+	if _, err := overview.Lookup(ctx, "", "", "nope", ""); err != ErrTitleNotFound {
 		t.Fatalf("unknown slug err = %v", err)
 	}
-	if _, err := overview.Lookup(ctx, "tt1", "movie:1", ""); err == nil {
+	if _, err := overview.Lookup(ctx, "tt1", "movie:1", "", ""); err == nil {
 		t.Fatal("two ids accepted")
 	}
 }

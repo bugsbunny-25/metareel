@@ -227,8 +227,9 @@ func TestNetflixAdminMapping(t *testing.T) {
 	meta := repository.NewMetadataRepository(db)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	seasons := NewSeasonMapper(log, imports)
-	n := NewNetflixImporter(log, nil, imports, flix, repository.NewTaskScheduleRepository(db), nil, nil, seasons, nil)
-	admin := NewNetflixAdminService(log, imports, meta, nil, seasons, nil)
+	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), meta, nil, seasons)
+	n := NewNetflixImporter(log, nil, imports, flix, repository.NewTaskScheduleRepository(db), nil, nil, seasons, nil).WithMapping(mapping)
+	admin := NewNetflixAdminService(log, imports, meta, nil, seasons, nil).WithMapping(mapping)
 
 	seed(t, flix, []seedTitle{{Slug: "unabomber", Name: "UNABOMBER", Kind: "movie", TmdbID: "999"}},
 		[]seedRanking{{"unabomber", "2026-10-01", "US", "netflix", "movies", 1}})
@@ -293,9 +294,8 @@ func TestNetflixAdminMapping(t *testing.T) {
 		t.Fatalf("unknown title: %v", err)
 	}
 
-	// Fixing the FlixPatrol title by hand moves the Netflix title matched
-	// through it.
-	titles := NewTitleAdminService(flix).WithNetflixSync(imports, seasons)
+	// Fixing the FlixPatrol title by hand moves the Netflix title linked to it.
+	titles := NewTitleAdminService(flix).WithMapping(mapping)
 	fp, err := flix.GetTitleBySlug(ctx, "unabomber")
 	if err != nil {
 		t.Fatal(err)

@@ -12,18 +12,17 @@ import (
 
 type TitleAdminService struct {
 	repo    *repository.FlixPatrolRepository
-	imports *repository.ImportsRepository // optional: Netflix titles matched through a title follow its fixes
-	seasons *SeasonMapper
+	mapping *TitleMappingService // optional: linked Netflix titles follow manual fixes
 }
 
 func NewTitleAdminService(repo *repository.FlixPatrolRepository) *TitleAdminService {
 	return &TitleAdminService{repo: repo}
 }
 
-// WithNetflixSync makes manual fixes also update the Netflix titles that were
-// matched through the FlixPatrol title (and remap their seasons).
-func (s *TitleAdminService) WithNetflixSync(imports *repository.ImportsRepository, seasons *SeasonMapper) *TitleAdminService {
-	s.imports, s.seasons = imports, seasons
+// WithMapping makes manual fixes also update the Netflix titles linked to the
+// FlixPatrol title (and remap their seasons).
+func (s *TitleAdminService) WithMapping(mapping *TitleMappingService) *TitleAdminService {
+	s.mapping = mapping
 	return s
 }
 
@@ -61,6 +60,19 @@ type TitleResponse struct {
 	// Set on list responses only.
 	LastRankedOn  *string `json:"last_ranked_on,omitempty"`
 	RankingsCount *int64  `json:"rankings_count,omitempty"`
+	// Netflix official Top 10 titles linked to this one (they share its
+	// TMDB mapping); set on single-title responses only.
+	NetflixLinks []TitleNetflixLink `json:"netflix_links,omitempty"`
+}
+
+// TitleNetflixLink is a Netflix title linked to a FlixPatrol title.
+type TitleNetflixLink struct {
+	NetflixTitleID int64   `json:"netflix_title_id"`
+	ShowTitle      string  `json:"show_title"`
+	List           string  `json:"list"` // Netflix's list: movie | tv_show
+	TmdbKind       *string `json:"tmdb_kind"`
+	TmdbID         *string `json:"tmdb_id"`
+	MatchStatus    string  `json:"match_status"`
 }
 
 // FlixPatrolTitleDetails is what the FlixPatrol title page said.
@@ -149,7 +161,20 @@ func (s *TitleAdminService) GetTitle(ctx context.Context, id int64) (*TitleRespo
 	if err != nil {
 		return nil, err
 	}
-	return titleToResponse(*t), nil
+	resp := titleToResponse(*t)
+	if s.mapping != nil {
+		links, err := s.mapping.repo.NetflixLinksOf(ctx, []int64{id})
+		if err != nil {
+			return nil, err
+		}
+		for _, l := range links {
+			resp.NetflixLinks = append(resp.NetflixLinks, TitleNetflixLink{
+				NetflixTitleID: l.NetflixTitleID, ShowTitle: l.ShowTitle, List: l.Kind,
+				TmdbKind: emptyToNil(l.TmdbKind), TmdbID: emptyToNil(l.TmdbID), MatchStatus: l.MatchStatus,
+			})
+		}
+	}
+	return resp, nil
 }
 
 // PatchTitleIDs applies a partial update to a title's external IDs.
@@ -187,21 +212,10 @@ func (s *TitleAdminService) PatchTitleIDs(ctx context.Context, titleID int64, in
 	if err != nil {
 		return nil, err
 	}
-	if s.imports != nil {
-		ids, err := s.imports.SyncNetflixFromFlixPatrolTitle(ctx, titleID, updated.Kind, updated.TmdbID.String, updated.ImdbID.String)
-		if err != nil {
-			return nil, err
-		}
-		for _, id := range ids {
-			if s.seasons == nil {
-				break
-			}
-			if err := s.seasons.RefreshTitle(ctx, id); err != nil {
-				return nil, err
-			}
-		}
+	if _, err := s.mapping.Sync(ctx, false, nil); err != nil {
+		return nil, err
 	}
-	return titleToResponse(updated), nil
+	return s.GetTitle(ctx, updated.ID)
 }
 
 func titleToResponse(t sqlc.Title) *TitleResponse {
@@ -264,6 +278,11 @@ func (s *TitleAdminService) Rematch(ctx context.Context, titleID int64, clear bo
 	}
 	if err != nil {
 		return nil, err
+	}
+	if clear {
+		if err := s.mapping.ForgetShared(ctx, titleID, 0); err != nil {
+			return nil, err
+		}
 	}
 	return titleToResponse(t), nil
 }

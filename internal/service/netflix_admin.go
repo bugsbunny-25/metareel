@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bugsbunny-25/metareel/internal/client"
 	"github.com/bugsbunny-25/metareel/internal/repository"
+	"github.com/bugsbunny-25/metareel/internal/scraper/flixpatrol"
 )
 
 // NetflixAdminService reviews and fixes how Netflix's official Top 10
@@ -23,10 +25,17 @@ type NetflixAdminService struct {
 	metadata   *TitleMetadataService // optional: fetches TMDB details (seasons) after a manual fix
 	seasons    *SeasonMapper
 	candidates *TitleCandidatesService
+	mapping    *TitleMappingService // optional: shares fixes with linked FlixPatrol titles
 }
 
 func NewNetflixAdminService(log *slog.Logger, repo *repository.ImportsRepository, meta *repository.MetadataRepository, metadata *TitleMetadataService, seasons *SeasonMapper, candidates *TitleCandidatesService) *NetflixAdminService {
 	return &NetflixAdminService{log: log, repo: repo, meta: meta, metadata: metadata, seasons: seasons, candidates: candidates}
+}
+
+// WithMapping shares manual fixes with linked FlixPatrol titles.
+func (s *NetflixAdminService) WithMapping(mapping *TitleMappingService) *NetflixAdminService {
+	s.mapping = mapping
+	return s
 }
 
 // ErrNetflixTitleNotFound / ErrNetflixSeasonNotFound map to 404.
@@ -39,9 +48,11 @@ var (
 type NetflixTitleResponse struct {
 	ID            int64      `json:"id"`
 	ShowTitle     string     `json:"show_title"`
-	Kind          string     `json:"kind"` // movie | tv_show (from Netflix's category; the TMDB namespace of tmdb_id)
+	Kind          string     `json:"kind"`      // Netflix's list: movie (Films) | tv_show (TV)
+	TmdbKind      *string    `json:"tmdb_kind"` // movie | tv: TMDB namespace of tmdb_id (can differ from the list)
 	TmdbID        *string    `json:"tmdb_id"`
 	ImdbID        *string    `json:"imdb_id"`
+	NetflixID     *string    `json:"netflix_id"`   // Netflix's title ID (netflix.com/title/<id>), from Tudum's Top 10 search
 	MatchStatus   string     `json:"match_status"` // pending | matched | unmatched | manual
 	MatchSource   *string    `json:"match_source,omitempty"`
 	MatchAttempts int64      `json:"match_attempts"`
@@ -52,6 +63,8 @@ type NetflixTitleResponse struct {
 	TmdbYear  *int    `json:"tmdb_year,omitempty"`
 	// FlixPatrol title it was matched through, if any.
 	FlixPatrol *NetflixFlixPatrolLink `json:"flixpatrol,omitempty"`
+	// FlixPatrol titles linked to it (same title; they share one mapping).
+	FlixPatrolLinks int64 `json:"flixpatrol_links"`
 	// Stats.
 	LastWeek        *string `json:"last_week"`
 	WeeksGlobal     int64   `json:"weeks_in_global_top10"`
@@ -69,10 +82,21 @@ type NetflixFlixPatrolLink struct {
 // NetflixTitleDetail adds seasons, TMDB's season list and chart history.
 type NetflixTitleDetail struct {
 	NetflixTitleResponse
+	Links       []NetflixLinkedTitle             `json:"linked_titles"`
 	Seasons     []repository.NetflixSeasonStats  `json:"season_titles"`
 	TmdbSeasons []repository.TmdbSeason          `json:"tmdb_seasons"`
 	GlobalWeeks []repository.NetflixTitleWeek    `json:"global_weeks"`
 	Countries   []repository.NetflixTitleCountry `json:"countries"`
+}
+
+// NetflixLinkedTitle is a FlixPatrol title linked to a Netflix title.
+type NetflixLinkedTitle struct {
+	TitleID     int64   `json:"title_id"`
+	Slug        string  `json:"slug"`
+	Name        string  `json:"name"`
+	Kind        string  `json:"kind"` // movie | tv_show (TMDB namespace)
+	TmdbID      *string `json:"tmdb_id"`
+	MatchStatus string  `json:"match_status"`
 }
 
 type NetflixTitlesPage struct {
@@ -88,6 +112,7 @@ type NetflixTitlesQuery struct {
 	Search      string // show title substring, or a TMDB ID
 	MatchStatus string // "" | pending | matched | unmatched | manual
 	Missing     string // "" | tmdb | season
+	Flag        string // "" | cross_kind | linked
 	Sort        string
 }
 
@@ -117,10 +142,15 @@ func (s *NetflixAdminService) List(ctx context.Context, q NetflixTitlesQuery, li
 	default:
 		return nil, &ValidationError{Message: "invalid missing, expected tmdb or season"}
 	}
+	switch q.Flag {
+	case "", "cross_kind", "linked":
+	default:
+		return nil, &ValidationError{Message: "invalid flag, expected cross_kind or linked"}
+	}
 	if !netflixTitleSorts[q.Sort] {
 		return nil, &ValidationError{Message: "invalid sort"}
 	}
-	f := repository.NetflixTitleFilter{Kind: q.Kind, Search: strings.TrimSpace(q.Search), MatchStatus: q.MatchStatus, Missing: q.Missing, Sort: q.Sort}
+	f := repository.NetflixTitleFilter{Kind: q.Kind, Search: strings.TrimSpace(q.Search), MatchStatus: q.MatchStatus, Missing: q.Missing, Flag: q.Flag, Sort: q.Sort}
 	rows, err := s.repo.ListNetflixTitles(ctx, f, limit, offset)
 	if err != nil {
 		return nil, err
@@ -145,14 +175,23 @@ func (s *NetflixAdminService) Get(ctx context.Context, id int64) (*NetflixTitleD
 	if err != nil {
 		return nil, err
 	}
-	out := &NetflixTitleDetail{NetflixTitleResponse: netflixTitleResponse(*row), TmdbSeasons: []repository.TmdbSeason{}}
+	out := &NetflixTitleDetail{NetflixTitleResponse: netflixTitleResponse(*row), TmdbSeasons: []repository.TmdbSeason{}, Links: []NetflixLinkedTitle{}}
+	if s.mapping != nil {
+		links, err := s.mapping.repo.FlixPatrolLinksOf(ctx, []int64{id})
+		if err != nil {
+			return nil, err
+		}
+		for _, l := range links {
+			out.Links = append(out.Links, NetflixLinkedTitle{TitleID: l.TitleID, Slug: l.Slug, Name: l.Name, Kind: l.Kind, TmdbID: emptyToNil(l.TmdbID), MatchStatus: l.MatchStatus})
+		}
+	}
 	if out.Seasons, err = s.repo.NetflixSeasonsForTitle(ctx, id); err != nil {
 		return nil, err
 	}
 	if out.GlobalWeeks, out.Countries, err = s.repo.NetflixWeeksForTitle(ctx, id); err != nil {
 		return nil, err
 	}
-	if row.Kind == "tv_show" && row.TmdbID.Valid {
+	if row.TmdbKind.String == "tv" && row.TmdbID.Valid {
 		m, err := s.meta.Get(ctx, repository.TmdbRef{Kind: "tv", ID: row.TmdbID.String})
 		if err != nil {
 			return nil, err
@@ -165,10 +204,14 @@ func (s *NetflixAdminService) Get(ctx context.Context, id int64) (*NetflixTitleD
 }
 
 // PatchNetflixTitleInput carries the patchable IDs: nil = unchanged, "" =
-// clear.
+// clear. TmdbKind (movie | tv) is the TMDB namespace of tmdb_id; it defaults
+// to the current one, else Netflix's list. Without a TMDB ID, an IMDb ID or
+// a Wikidata ID (Q…) is resolved to one through TMDB / Wikidata.
 type PatchNetflixTitleInput struct {
-	TmdbID *string `json:"tmdb_id"`
-	ImdbID *string `json:"imdb_id"`
+	TmdbKind   *string `json:"tmdb_kind"`
+	TmdbID     *string `json:"tmdb_id"`
+	ImdbID     *string `json:"imdb_id"`
+	WikidataID *string `json:"wikidata_id"`
 }
 
 var tmdbNumericRe = regexp.MustCompile(`^\d{1,10}$`)
@@ -184,7 +227,16 @@ func (s *NetflixAdminService) Patch(ctx context.Context, id int64, in PatchNetfl
 	if err != nil {
 		return nil, err
 	}
-	tmdbID, imdbID := row.TmdbID.String, row.ImdbID.String
+	tmdbKind, tmdbID, imdbID := row.TmdbKind.String, row.TmdbID.String, row.ImdbID.String
+	if in.TmdbKind != nil {
+		tmdbKind = strings.TrimSpace(*in.TmdbKind)
+		if tmdbKind != "movie" && tmdbKind != "tv" {
+			return nil, &ValidationError{Message: "tmdb_kind must be movie or tv"}
+		}
+	}
+	if tmdbKind == "" {
+		tmdbKind = tmdbKindOf(flixpatrol.TitleKind(row.Kind))
+	}
 	if in.TmdbID != nil {
 		tmdbID = strings.TrimSpace(*in.TmdbID)
 		if tmdbID != "" && !tmdbNumericRe.MatchString(tmdbID) {
@@ -197,19 +249,49 @@ func (s *NetflixAdminService) Patch(ctx context.Context, id int64, in PatchNetfl
 			return nil, &ValidationError{Message: "imdb_id must look like tt1234567"}
 		}
 	}
-	if err := s.repo.SetNetflixTitleIDs(ctx, id, tmdbID, imdbID); err != nil {
+	var wikidataID string
+	if in.WikidataID != nil {
+		wikidataID = strings.ToUpper(strings.TrimSpace(*in.WikidataID))
+		if wikidataID != "" && !client.WikidataQIDRe.MatchString(wikidataID) {
+			return nil, &ValidationError{Message: "wikidata_id must look like Q141461750"}
+		}
+	}
+	if tmdbID == "" && (imdbID != "" || wikidataID != "") {
+		if s.metadata == nil {
+			return nil, &ValidationError{Message: "tmdb_id is required (resolving IMDb / Wikidata IDs needs TMDB)"}
+		}
+		ext := wikidataID
+		if ext == "" {
+			ext = imdbID
+		}
+		hint := ""
+		if in.TmdbKind != nil {
+			hint = tmdbKind
+		}
+		r, err := s.metadata.ResolveExternalID(ctx, ext, hint)
+		if err != nil {
+			return nil, err
+		}
+		tmdbKind, tmdbID = r.Ref.Kind, r.Ref.ID
+	}
+	if err := s.repo.SetNetflixTitleIDs(ctx, id, tmdbKind, tmdbID, imdbID); err != nil {
 		return nil, err
 	}
-	if tmdbID != "" && tmdbID != row.TmdbID.String && s.metadata != nil {
-		ref := repository.TmdbRef{Kind: "movie", ID: tmdbID}
-		if row.Kind == "tv_show" {
-			ref.Kind = "tv"
-		}
+	if tmdbID != "" && (tmdbID != row.TmdbID.String || tmdbKind != row.TmdbKind.String) && s.metadata != nil {
+		ref := repository.TmdbRef{Kind: tmdbKind, ID: tmdbID}
 		if _, err := s.metadata.RefreshDetails(ctx, ref); err != nil {
 			s.log.Warn("tmdb details after netflix mapping fix failed", slog.Int64("netflix_title_id", id), slog.String("ref", ref.String()), slog.Any("err", err))
 		}
 	}
+	if tmdbID != "" && s.metadata != nil {
+		if err := s.metadata.SaveExternalIDs(ctx, repository.TmdbRef{Kind: tmdbKind, ID: tmdbID}, repository.TmdbExternalIDs{IMDbID: imdbID, WikidataID: wikidataID}); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.seasons.RefreshTitle(ctx, id); err != nil {
+		return nil, err
+	}
+	if _, err := s.mapping.Sync(ctx, false, nil); err != nil {
 		return nil, err
 	}
 	return s.Get(ctx, id)
@@ -225,6 +307,9 @@ func (s *NetflixAdminService) Rematch(ctx context.Context, id int64, clear bool)
 		return nil, err
 	}
 	if clear {
+		if err := s.mapping.ForgetShared(ctx, 0, id); err != nil {
+			return nil, err
+		}
 		if err := s.seasons.RefreshTitle(ctx, id); err != nil {
 			return nil, err
 		}
@@ -291,10 +376,10 @@ func (s *NetflixAdminService) PatchSeason(ctx context.Context, seasonID int64, i
 
 func netflixTitleResponse(r repository.NetflixTitleRow) NetflixTitleResponse {
 	out := NetflixTitleResponse{
-		ID: r.ID, ShowTitle: r.ShowTitle, Kind: r.Kind, TmdbID: nullStr(r.TmdbID), ImdbID: nullStr(r.ImdbID),
+		ID: r.ID, ShowTitle: r.ShowTitle, Kind: r.Kind, TmdbKind: nullStr(r.TmdbKind), TmdbID: nullStr(r.TmdbID), ImdbID: nullStr(r.ImdbID), NetflixID: nullStr(r.NetflixID),
 		MatchStatus: r.MatchStatus, MatchSource: nullStr(r.MatchSource), MatchAttempts: r.MatchAttempts, UpdatedAt: r.UpdatedAt.UTC(),
 		TmdbTitle: r.TmdbTitle, LastWeek: emptyToNil(r.LastWeek), WeeksGlobal: r.WeeksGlobal, BestGlobalRank: r.BestGlobalRank,
-		SeasonsTotal: r.SeasonsTotal, SeasonsUnmapped: r.SeasonsUnmapped,
+		SeasonsTotal: r.SeasonsTotal, SeasonsUnmapped: r.SeasonsUnmapped, FlixPatrolLinks: r.FlixPatrolLinks,
 	}
 	if r.NextMatchAt.Valid {
 		v := r.NextMatchAt.Time.UTC()

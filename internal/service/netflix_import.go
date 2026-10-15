@@ -35,6 +35,8 @@ type NetflixImporter struct {
 	matcher   *TitleMatcher
 	metadata  *TitleMetadataService
 	seasons   *SeasonMapper
+	mapping   *TitleMappingService // optional: links to FlixPatrol titles and shares mappings
+	search    NetflixSearcher      // optional: Netflix IDs from Tudum's Top 10 search
 	// Countries limits the per-country import: nil = the countries of the
 	// FlixPatrol schedules; ["all"] = every country.
 	Countries []string
@@ -44,11 +46,20 @@ func NewNetflixImporter(log *slog.Logger, dl *client.Downloader, repo *repositor
 	return &NetflixImporter{log: log, dl: dl, repo: repo, flixRepo: flixRepo, schedules: schedules, matcher: matcher, metadata: metadata, seasons: seasons, Countries: countries}
 }
 
+// WithMapping makes matching use and update the mapping shared with linked
+// FlixPatrol titles.
+func (n *NetflixImporter) WithMapping(mapping *TitleMappingService) *NetflixImporter {
+	n.mapping = mapping
+	return n
+}
+
 // ImportReport summarises a file import job.
 type ImportReport struct {
 	Files     []ImportFileResult `json:"files"`
 	Matched   int                `json:"matched,omitempty"`
 	Unmatched int                `json:"unmatched,omitempty"`
+	Mapping   *MappingSyncReport `json:"mapping,omitempty"`
+	NetflixID *NetflixIDReport   `json:"netflix_ids,omitempty"`
 	Seasons   *SeasonMapReport   `json:"seasons,omitempty"`
 }
 
@@ -391,10 +402,12 @@ const (
 
 // MatchReport summarises a netflix.titles.match run.
 type MatchReport struct {
-	Requested int              `json:"requested,omitempty"` // title_ids given
-	Matched   int              `json:"matched"`
-	Unmatched int              `json:"unmatched"`
-	Seasons   *SeasonMapReport `json:"seasons,omitempty"`
+	Requested int                `json:"requested,omitempty"` // title_ids given
+	Matched   int                `json:"matched"`
+	Unmatched int                `json:"unmatched"`
+	Mapping   *MappingSyncReport `json:"mapping,omitempty"`
+	NetflixID *NetflixIDReport   `json:"netflix_ids,omitempty"`
+	Seasons   *SeasonMapReport   `json:"seasons,omitempty"`
 }
 
 // RunMatch matches the given Netflix titles (ignoring their backoff; manual
@@ -407,10 +420,18 @@ func (n *NetflixImporter) RunMatch(ctx context.Context, ids []int64, runLog func
 		}
 	}
 	rep := &ImportReport{}
-	if err := n.matchTitles(ctx, ids, netflixMatchJobBatch, rep, logf); err != nil {
-		return &MatchReport{Requested: len(ids), Matched: rep.Matched, Unmatched: rep.Unmatched}, err
+	err := n.matchTitles(ctx, ids, netflixMatchJobBatch, rep, logf)
+	if err == nil && len(ids) == 0 {
+		// Backlog: Netflix IDs of titles matched earlier (fixing name matches).
+		var mapped map[int64]bool
+		if mapped, err = n.resolveNetflixIDs(ctx, nil, netflixIDBacklog, rep.NetflixID, logf); err == nil && len(mapped) > 0 {
+			_, err = n.mapping.Sync(ctx, false, func(level, msg string) { logf(level, "%s", msg) })
+		}
 	}
-	out := &MatchReport{Requested: len(ids), Matched: rep.Matched, Unmatched: rep.Unmatched}
+	out := &MatchReport{Requested: len(ids), Matched: rep.Matched, Unmatched: rep.Unmatched, Mapping: rep.Mapping, NetflixID: rep.NetflixID}
+	if err != nil {
+		return out, err
+	}
 	if n.seasons != nil {
 		sr, err := n.seasons.Refresh(ctx, time.Time{}, runLog)
 		out.Seasons = sr
@@ -422,10 +443,21 @@ func (n *NetflixImporter) RunMatch(ctx context.Context, ids []int64, runLog func
 }
 
 // matchTitles matches Netflix titles to TMDB (ids, or up to limit due
-// titles): first through a FlixPatrol title of the same name that charted on
-// Netflix, else a JustWatch search of Netflix's US catalogue (Netflix gives
-// no year, so only exact names on Netflix itself are accepted).
+// titles). Links to FlixPatrol titles are refreshed first, so titles linked
+// to a matched FlixPatrol title take its mapping (TMDB kind included);
+// the rest are matched through a matched FlixPatrol title of the same name
+// in the same Netflix list, else JustWatch's US Netflix catalogue (either
+// TMDB kind: Netflix lists specials as TV). New matches are then shared with
+// linked FlixPatrol titles.
 func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit int64, rep *ImportReport, logf func(level, format string, args ...any)) error {
+	runLog := func(level, msg string) { logf(level, "%s", msg) }
+	if n.mapping != nil {
+		mr, err := n.mapping.Sync(ctx, true, runLog)
+		rep.Mapping = mr
+		if err != nil {
+			return err
+		}
+	}
 	var (
 		due []repository.NetflixTitleDue
 		err error
@@ -441,11 +473,26 @@ func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit in
 	if len(due) > 0 {
 		logf("info", "Matching %d Netflix title(s)", len(due))
 	}
-	for i, nt := range due {
+	// Netflix IDs first: an exact key, where Tudum's search knows the title.
+	if rep.NetflixID == nil {
+		rep.NetflixID = &NetflixIDReport{}
+	}
+	dueIDs := make([]int64, 0, len(due))
+	for _, nt := range due {
+		dueIDs = append(dueIDs, nt.ID)
+	}
+	byNetflixID, err := n.resolveNetflixIDs(ctx, dueIDs, netflixIDDueLimit, rep.NetflixID, logf)
+	if err != nil {
+		return err
+	}
+	rep.Matched += len(byNetflixID)
+	wiki := n.wikidataNetflixHits(ctx, due, logf)
+	jwCalls := 0
+	for _, nt := range due {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if nt.MatchStatus == repository.MatchStatusManual {
+		if nt.MatchStatus == repository.MatchStatusManual || byNetflixID[nt.ID] {
 			continue
 		}
 		m := repository.NetflixMatch{RetryAfter: retryAfter(nt.MatchAttempts + 1)}
@@ -453,16 +500,22 @@ func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit in
 		if err != nil {
 			return err
 		}
-		if id, title, ok := singleTmdb(fp); ok {
-			m.TmdbID, m.ImdbID, m.TitleID, m.Source = id, title.ImdbID.String, title.ID, "flixpatrol_title"
+		var ids repository.TmdbExternalIDs
+		if ref, title, ok := singleTmdb(fp); ok {
+			m.TmdbKind, m.TmdbID, m.ImdbID, m.TitleID, m.Source = ref.Kind, ref.ID, title.ImdbID.String, title.ID, MatchSourceFlixPatrolTitle
+		} else if h, ok := pickWikidataNetflix(wiki[nt.ShowTitle], nt.Kind, weekYear(nt.FirstWeek)); ok {
+			m.TmdbKind, m.TmdbID, m.ImdbID, m.Source = h.TmdbKind, h.TmdbID, h.IMDbID, "wikidata_netflix"
+			ids.NetflixID, ids.WikidataID = h.NetflixID, h.WikidataID
 		} else if n.matcher != nil && n.matcher.justWatch != nil {
-			if i > 0 {
+			if jwCalls > 0 {
 				if err := sleepCtx(ctx, time.Second); err != nil {
 					return err
 				}
 			}
-			if c, ok := n.matchNetflixJustWatch(ctx, nt.ShowTitle, nt.Kind, weekYear(nt.FirstWeek)); ok {
-				m.TmdbID, m.ImdbID, m.Source = c.TmdbID, c.ImdbID, c.Source
+			jwCalls++
+			if c, kind, ok := n.matchNetflixJustWatch(ctx, nt.ShowTitle, nt.Kind, weekYear(nt.FirstWeek)); ok {
+				m.TmdbKind, m.TmdbID, m.ImdbID, m.Source = kind, c.TmdbID, c.ImdbID, c.Source
+				ids.JustWatchID = c.JustWatchID
 			}
 		}
 		if err := n.repo.SaveNetflixTitleMatch(ctx, nt.ID, m); err != nil {
@@ -473,20 +526,111 @@ func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit in
 			continue
 		}
 		rep.Matched++
+		if m.TmdbKind != tmdbKindOf(flixpatrol.TitleKind(nt.Kind)) {
+			logf("info", "%q (Netflix %s list) matched a TMDB %s: %s via %s", nt.ShowTitle, netflixListName(nt.Kind), m.TmdbKind, m.TmdbID, m.Source)
+		}
 		if n.metadata != nil {
-			kind := "movie"
-			if nt.Kind == "tv_show" {
-				kind = "tv"
-			}
-			if _, err := n.metadata.RefreshDetails(ctx, repository.TmdbRef{Kind: kind, ID: m.TmdbID}); err != nil {
+			ref := repository.TmdbRef{Kind: m.TmdbKind, ID: m.TmdbID}
+			if _, err := n.metadata.RefreshDetails(ctx, ref); err != nil {
 				n.log.Warn("tmdb details for netflix title failed", slog.String("show_title", nt.ShowTitle), slog.Any("err", err))
+			}
+			ids.IMDbID = m.ImdbID
+			if err := n.metadata.SaveExternalIDs(ctx, ref, ids); err != nil {
+				return err
 			}
 		}
 	}
 	if len(due) > 0 {
 		logf("info", "Netflix titles: %d matched, %d not matched (retried with backoff)", rep.Matched, rep.Unmatched)
 	}
+	if n.mapping != nil && rep.Matched > 0 {
+		mr, err := n.mapping.Sync(ctx, false, runLog)
+		if rep.Mapping != nil && mr != nil {
+			rep.Mapping.NetflixUpdated += mr.NetflixUpdated
+			rep.Mapping.FlixPatrolUpdated += mr.FlixPatrolUpdated
+			rep.Mapping.Conflicts = mr.Conflicts
+		}
+		if err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// wikidataNetflixHits looks the due titles' names up on Wikidata (items
+// with a Netflix ID) in batches; a failure only skips this source.
+func (n *NetflixImporter) wikidataNetflixHits(ctx context.Context, due []repository.NetflixTitleDue, logf func(level, format string, args ...any)) map[string][]client.WikidataNetflixHit {
+	if n.metadata == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, nt := range due {
+		if nt.MatchStatus != repository.MatchStatusManual && !seen[nt.ShowTitle] {
+			seen[nt.ShowTitle] = true
+			names = append(names, nt.ShowTitle)
+		}
+	}
+	hits, err := n.metadata.FindNetflixOnWikidata(ctx, names)
+	if err != nil {
+		n.log.Warn("wikidata netflix lookup failed", slog.Any("err", err))
+		logf("warn", "Wikidata lookup of Netflix titles failed (%s); matching without it", truncateErr(err, 200))
+	}
+	return hits
+}
+
+// pickWikidataNetflix picks a Wikidata hit for a Netflix title of listKind
+// (movie | tv_show) that first charted in chartYear: the only TMDB title of
+// the list's kind (or among several, the only recent release); else the
+// only one of the other kind if it is a recent release (a special in the TV
+// list), so a same-name older title of the other kind is not taken.
+func pickWikidataNetflix(hits []client.WikidataNetflixHit, listKind string, chartYear int) (client.WikidataNetflixHit, bool) {
+	want := tmdbKindOf(flixpatrol.TitleKind(listKind))
+	byRef := func(kind string) []client.WikidataNetflixHit {
+		seen := map[string]bool{}
+		var out []client.WikidataNetflixHit
+		for _, h := range hits {
+			if h.TmdbKind == kind && !seen[h.TmdbID] {
+				seen[h.TmdbID] = true
+				out = append(out, h)
+			}
+		}
+		return out
+	}
+	recent := func(hs []client.WikidataNetflixHit) []client.WikidataNetflixHit {
+		var out []client.WikidataNetflixHit
+		for _, h := range hs {
+			if chartYear > 0 && (h.Year == chartYear || h.Year == chartYear-1) {
+				out = append(out, h)
+			}
+		}
+		return out
+	}
+	same := byRef(want)
+	if len(same) == 1 {
+		return same[0], true
+	}
+	if len(same) > 1 {
+		if r := recent(same); len(r) == 1 {
+			return r[0], true
+		}
+		return client.WikidataNetflixHit{}, false
+	}
+	other := "movie"
+	if want == "movie" {
+		other = "tv"
+	}
+	if r := recent(byRef(other)); len(r) == 1 && len(byRef(other)) == 1 {
+		return r[0], true
+	}
+	return client.WikidataNetflixHit{}, false
+}
+
+func netflixListName(kind string) string {
+	if kind == "tv_show" {
+		return "TV"
+	}
+	return "Films"
 }
 
 type repositoryTitle = sqlc.Title
@@ -496,34 +640,39 @@ func flixpatrolCountryCode(slug string) (string, error) {
 	return string(code), err
 }
 
-// singleTmdb returns the TMDB ID shared by all titles, if there is exactly one.
-func singleTmdb(titles []repositoryTitle) (string, repositoryTitle, bool) {
-	var id string
+// singleTmdb returns the TMDB title (kind and ID) shared by all titles, if
+// there is exactly one.
+func singleTmdb(titles []repositoryTitle) (repository.TmdbRef, repositoryTitle, bool) {
+	var ref repository.TmdbRef
 	var first repositoryTitle
 	for i, t := range titles {
+		r := repository.TmdbRef{Kind: tmdbKindOf(flixpatrol.TitleKind(t.Kind)), ID: t.TmdbID.String}
 		if i == 0 {
-			id, first = t.TmdbID.String, t
+			ref, first = r, t
 			continue
 		}
-		if t.TmdbID.String != id {
-			return "", first, false
+		if r != ref {
+			return repository.TmdbRef{}, first, false
 		}
 	}
-	return id, first, id != ""
+	return ref, first, ref.ID != ""
 }
 
 // matchNetflixJustWatch searches JustWatch's US Netflix catalogue for an
-// exact name; failing that (licensed titles that are not on Netflix in the
-// US), the whole US catalogue. Netflix gives no year, so there a single
-// exact-name hit is accepted, or among several the only one released in the
-// year the title first charted or the year before (a new release).
-func (n *NetflixImporter) matchNetflixJustWatch(ctx context.Context, name, kind string, chartYear int) (titleCandidate, bool) {
-	objectType := client.ObjectTypeMovie
-	if kind == "tv_show" {
-		objectType = client.ObjectTypeTVShow
-	}
+// exact name, as the kind of Netflix's list and then the other kind (Netflix
+// lists stand-up specials and some documentaries as TV, TMDB as movies);
+// failing that (licensed titles that are not on Netflix in the US), the
+// whole US catalogue for the list's kind. Netflix gives no year, so there a
+// single exact-name hit is accepted, or among several the only one released
+// in the year the title first charted or the year before (a new release).
+// It returns the candidate and its TMDB kind (movie | tv).
+func (n *NetflixImporter) matchNetflixJustWatch(ctx context.Context, name, listKind string, chartYear int) (titleCandidate, string, bool) {
 	want := normalizeTitle(name)
-	exact := func(packages []client.Package, source string) []titleCandidate {
+	exact := func(kind string, packages []client.Package, source string) []titleCandidate {
+		objectType := client.ObjectTypeMovie
+		if kind == "tv" {
+			objectType = client.ObjectTypeTVShow
+		}
 		search, err := n.matcher.justWatch.GetTitlesByTopSearchPopular(ctx, name, 10, "US", "en", objectType, packages)
 		if err != nil {
 			n.log.Debug("justwatch netflix search failed", slog.String("name", name), slog.Any("err", err))
@@ -538,17 +687,29 @@ func (n *NetflixImporter) matchNetflixJustWatch(ctx context.Context, name, kind 
 		}
 		return out
 	}
-	if hits := exact(justWatchPackages["netflix"], "justwatch_netflix"); len(hits) > 0 {
-		return hits[0], true
+	listTmdbKind := tmdbKindOf(flixpatrol.TitleKind(listKind))
+	otherKind := "tv"
+	if listTmdbKind == "tv" {
+		otherKind = "movie"
+	}
+	if hits := exact(listTmdbKind, justWatchPackages["netflix"], "justwatch_netflix"); len(hits) > 0 {
+		return hits[0], listTmdbKind, true
 	}
 	if err := sleepCtx(ctx, time.Second); err != nil {
-		return titleCandidate{}, false
+		return titleCandidate{}, "", false
 	}
-	hits := exact(nil, "justwatch_unique_name")
+	if hits := exact(otherKind, justWatchPackages["netflix"], "justwatch_netflix_other_kind"); len(hits) == 1 {
+		return hits[0], otherKind, true
+	}
+	if err := sleepCtx(ctx, time.Second); err != nil {
+		return titleCandidate{}, "", false
+	}
+	hits := exact(listTmdbKind, nil, "justwatch_unique_name")
 	if len(hits) == 1 {
-		return hits[0], true
+		return hits[0], listTmdbKind, true
 	}
-	return pickRecentRelease(hits, chartYear)
+	c, ok := pickRecentRelease(hits, chartYear)
+	return c, listTmdbKind, ok
 }
 
 // pickRecentRelease returns the only candidate released in chartYear or the

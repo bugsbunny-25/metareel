@@ -23,6 +23,7 @@
   const q = $derived(route.query.q ?? '')
   const kind = $derived(route.query.kind ?? '')
   const missing = $derived(route.query.missing ?? '')
+  const flag = $derived(route.query.flag ?? '')
   const matchStatus = $derived(route.query.match ?? '')
   const sort = $derived(route.query.sort ?? '-last_week')
   const page = $derived(intParam(route.query.page, 1))
@@ -36,7 +37,7 @@
   let running = $state(false)
 
   $effect(() => {
-    const params = { q, kind, missing, match_status: matchStatus, sort: SERVER_SORT[sort] ?? '', limit: size, offset: (page - 1) * size }
+    const params = { q, kind, missing, flag, match_status: matchStatus, sort: SERVER_SORT[sort] ?? '', limit: size, offset: (page - 1) * size }
     loading = true
     let cancelled = false
     listNetflixTitles(params)
@@ -55,8 +56,9 @@
 
   const set = (patch) => setQuery({ ...patch, page: '' })
   const MISSING_LABEL = { tmdb: 'Missing TMDB ID', season: 'Season without a number' }
+  const FLAG_LABEL = { cross_kind: 'TMDB kind differs from list', linked: 'Linked to FlixPatrol' }
   const activeFilters = $derived(
-    [q && ['q', `Search: ${q}`], kind && ['kind', kind === 'movie' ? 'Films' : 'TV'], missing && ['missing', MISSING_LABEL[missing]], matchStatus && ['match', `Match: ${matchStatus}`]].filter(Boolean)
+    [q && ['q', `Search: ${q}`], kind && ['kind', kind === 'movie' ? 'Films' : 'TV'], missing && ['missing', MISSING_LABEL[missing]], flag && ['flag', FLAG_LABEL[flag]], matchStatus && ['match', `Match: ${matchStatus}`]].filter(Boolean)
   )
 
   function onkeydown(e) {
@@ -80,8 +82,8 @@
 
   function exportCSV() {
     downloadCSV('netflix-titles.csv', [
-      { key: 'id', label: 'id' }, { key: 'show_title', label: 'show_title' }, { key: 'kind', label: 'kind' },
-      { key: 'tmdb_id', label: 'tmdb_id' }, { key: 'imdb_id', label: 'imdb_id' }, { key: 'match_status', label: 'match_status' },
+      { key: 'id', label: 'id' }, { key: 'show_title', label: 'show_title' }, { key: 'kind', label: 'list' },
+      { key: 'tmdb_kind', label: 'tmdb_kind' }, { key: 'tmdb_id', label: 'tmdb_id' }, { key: 'imdb_id', label: 'imdb_id' }, { key: 'match_status', label: 'match_status' },
       { key: 'match_source', label: 'match_source' }, { key: 'seasons', label: 'season_titles' }, { key: 'seasons_unmapped', label: 'seasons_unmapped' },
       { key: 'weeks_in_global_top10', label: 'weeks_global' }, { key: 'best_global_rank', label: 'best_global_rank' }, { key: 'last_week', label: 'last_week' },
     ], data.items)
@@ -98,7 +100,7 @@
   <div class="page-header">
     <div>
       <h1 class="page-title">Netflix mapping</h1>
-      <p class="page-desc">Every title in Netflix's official Top 10 (netflix.com/tudum/top10), its TMDB / IMDb match and how its season titles map to season numbers. Click a row to review or fix it.</p>
+      <p class="page-desc">Every title in Netflix's official Top 10 (netflix.com/tudum/top10), its TMDB / IMDb match and how its season titles map to season numbers. Titles linked to a FlixPatrol title share one mapping (see <a href={href('/mapping')}>TMDB mapping</a>). Click a row to review or fix it.</p>
     </div>
     <div class="page-actions">
       <button class="btn" onclick={matchBacklog} disabled={running}><Icon name="play" />Match backlog now</button>
@@ -121,6 +123,11 @@
       <option value="tmdb">Missing TMDB ID</option>
       <option value="season">Season without a number</option>
     </select>
+    <select class="select" value={flag} onchange={(e) => set({ flag: e.currentTarget.value })} aria-label="Flag filter">
+      <option value="">Any link</option>
+      <option value="linked">Linked to FlixPatrol</option>
+      <option value="cross_kind">TMDB kind differs from list</option>
+    </select>
     <select class="select" value={matchStatus} onchange={(e) => set({ match: e.currentTarget.value })} aria-label="Match status">
       <option value="">Any match status</option>
       <option value="unmatched">Unmatched (review queue)</option>
@@ -137,7 +144,7 @@
       {#each activeFilters as [key, label] (key)}
         <span class="chip">{label}<button onclick={() => set({ [key]: '' })} aria-label="Remove filter"><Icon name="x" size={11} /></button></span>
       {/each}
-      <button class="btn btn-ghost btn-sm" onclick={() => set({ q: '', kind: '', missing: '', match: '' })}>Clear all</button>
+      <button class="btn btn-ghost btn-sm" onclick={() => set({ q: '', kind: '', missing: '', flag: '', match: '' })}>Clear all</button>
     </div>
   {/if}
 
@@ -149,7 +156,7 @@
         <thead>
           <tr>
             <SortTh label="Title" field="name" {sort} onsort={(s) => set({ sort: s })} />
-            <th>Kind</th>
+            <th title="Netflix's list (and the TMDB kind when it differs)">List</th>
             <th>Match</th>
             <th>TMDB</th>
             <th>IMDb</th>
@@ -167,12 +174,15 @@
                 <div class="cell-title">{t.show_title}</div>
                 {#if t.tmdb_title}<div class="cell-sub">TMDB: {t.tmdb_title}{t.tmdb_year ? ` (${t.tmdb_year})` : ''}</div>{/if}
               </td>
-              <td><KindBadge kind={t.kind} /></td>
+              <td class="nowrap">
+                <KindBadge kind={t.kind} />
+                {#if t.tmdb_kind && t.tmdb_kind !== (t.kind === 'tv_show' ? 'tv' : 'movie')}<span class="badge badge-info" title="Mapped to a TMDB {t.tmdb_kind}">→ TMDB {t.tmdb_kind === 'tv' ? 'TV' : 'movie'}</span>{/if}
+              </td>
               <td class="nowrap" title={t.next_match_at ? `Next attempt ${dateTime(t.next_match_at)}` : (t.match_source ?? '')}>
                 <span class="badge {MATCH_BADGE[t.match_status] ?? ''}">{t.match_status}</span>
                 {#if t.match_status === 'unmatched'}<span class="muted small"> ×{t.match_attempts}</span>{/if}
               </td>
-              <td><IdCell value={t.tmdb_id} url={links.tmdb(t.kind, t.tmdb_id)} /></td>
+              <td><IdCell value={t.tmdb_id} url={links.tmdb(t.tmdb_kind ?? t.kind, t.tmdb_id)} /></td>
               <td><IdCell value={t.imdb_id} url={links.imdb(t.imdb_id)} /></td>
               <td class="nowrap">
                 {#if t.kind !== 'tv_show' || !t.seasons}<span class="muted">—</span>
@@ -183,7 +193,9 @@
               <td class="right">{t.best_global_rank ? `#${t.best_global_rank}` : '—'}</td>
               <td class="nowrap">{t.last_week ? dateOnly(t.last_week) : '—'}</td>
               <td class="small">
-                {#if t.flixpatrol}<a href={href('/titles', { q: t.flixpatrol.slug, open: t.flixpatrol.title_id })} onclick={(e) => e.stopPropagation()} title="Matched through this FlixPatrol title">{t.flixpatrol.slug}</a>{:else}<span class="muted">—</span>{/if}
+                {#if t.flixpatrol}<a href={href('/titles', { q: t.flixpatrol.slug, open: t.flixpatrol.title_id })} onclick={(e) => e.stopPropagation()} title="Matched through this FlixPatrol title">{t.flixpatrol.slug}</a>{#if t.flixpatrol_links > 1} <span class="muted">+{t.flixpatrol_links - 1}</span>{/if}
+                {:else if t.flixpatrol_links}<span class="badge" title="Linked FlixPatrol titles">{t.flixpatrol_links} linked</span>
+                {:else}<span class="muted">—</span>{/if}
               </td>
             </tr>
           {:else}
@@ -198,7 +210,7 @@
     </div>
     <Pagination {page} {size} total={data.total} onchange={(p, s) => setQuery({ page: p === 1 ? '' : p, size: s === 50 ? '' : s })} />
   </div>
-  <p class="field-hint">Matching runs after each Netflix import and daily as "Netflix title matching"; unmatched titles are retried after 1, 3, 7, then every 30 days. Titles fixed by hand are never changed automatically.</p>
+  <p class="field-hint">Matching runs after each Netflix import and daily as "Netflix title matching": a linked FlixPatrol title's mapping first, then the title's Netflix ID (Tudum's Top 10 search → TMDB via Wikidata), then Wikidata by name (titles with a Netflix ID), then JustWatch's Netflix catalogue — as either TMDB kind, since Netflix lists specials as TV. Unmatched titles are retried after 1, 3, 7, then every 30 days. Titles fixed by hand are never changed automatically.</p>
 </div>
 
 {#if openId}

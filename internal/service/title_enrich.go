@@ -20,10 +20,19 @@ type TitleEnricher struct {
 	repo     *repository.FlixPatrolRepository
 	matcher  *TitleMatcher
 	metadata *TitleMetadataService // optional: TMDB details + Wikidata IDs
+	mapping  *TitleMappingService  // optional: shares mappings with linked Netflix titles
 }
 
 func NewTitleEnricher(log *slog.Logger, repo *repository.FlixPatrolRepository, matcher *TitleMatcher, metadata *TitleMetadataService) *TitleEnricher {
 	return &TitleEnricher{log: log, repo: repo, matcher: matcher, metadata: metadata}
+}
+
+// WithMapping links titles to Netflix's official Top 10 titles before
+// matching (a title linked to a matched Netflix title takes its mapping
+// without a lookup) and shares new matches with them afterwards.
+func (e *TitleEnricher) WithMapping(mapping *TitleMappingService) *TitleEnricher {
+	e.mapping = mapping
+	return e
 }
 
 // EnrichOptions controls an enrichment run.
@@ -52,6 +61,8 @@ type EnrichReport struct {
 	Failed    int `json:"failed"`
 	RTChecked int `json:"rt_checked"`
 	RTFound   int `json:"rt_found"`
+
+	Mapping *MappingSyncReport `json:"mapping,omitempty"`
 }
 
 // retryAfter is the matching / RT lookup backoff after n failed attempts.
@@ -77,6 +88,14 @@ func (e *TitleEnricher) Run(ctx context.Context, opts EnrichOptions) (*EnrichRep
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = defaultEnrichLimit
+	}
+
+	if e.mapping != nil && len(opts.TitleIDs) == 0 {
+		mr, err := e.mapping.Sync(ctx, true, opts.RunLog)
+		rep.Mapping = mr
+		if err != nil {
+			return rep, err
+		}
 	}
 
 	var toMatch, toRT []sqlc.Title
@@ -136,6 +155,20 @@ func (e *TitleEnricher) Run(ctx context.Context, opts EnrichOptions) (*EnrichRep
 	}
 	if err := e.findRT(ctx, toRT, opts, rep); err != nil {
 		return rep, err
+	}
+
+	if e.mapping != nil && (rep.Matched > 0 || len(opts.TitleIDs) > 0) {
+		mr, err := e.mapping.Sync(ctx, len(opts.TitleIDs) > 0, opts.RunLog)
+		if rep.Mapping == nil {
+			rep.Mapping = mr
+		} else if mr != nil {
+			rep.Mapping.NetflixUpdated += mr.NetflixUpdated
+			rep.Mapping.FlixPatrolUpdated += mr.FlixPatrolUpdated
+			rep.Mapping.Conflicts = mr.Conflicts
+		}
+		if err != nil {
+			return rep, err
+		}
 	}
 
 	opts.logf("info", "Done: %d matched, %d unmatched, %d failed; Rotten Tomatoes found for %d of %d",

@@ -99,6 +99,13 @@ export function parseTmdbInput(input) {
   return { id: raw.replace(/\D/g, ''), kind: null }
 }
 
+/** "https://www.wikidata.org/wiki/Q141461750" or "q141461750" → "Q141461750". */
+export function parseWikidataId(input) {
+  const raw = String(input ?? '').trim()
+  const m = raw.match(/\b[Qq](\d{1,12})\b/)
+  return m ? `Q${m[1]}` : raw
+}
+
 /** RT URL or slug → "m/<vanity>" / "tv/<vanity>". */
 export function parseRtSlug(input) {
   const raw = String(input ?? '').trim()
@@ -114,6 +121,8 @@ export const links = {
   imdb: (id) => (id ? `https://www.imdb.com/title/${id}/` : null),
   rt: (slug) => (slug ? `https://www.rottentomatoes.com/${slug}` : null),
   flixpatrol: (slug) => (slug ? `https://flixpatrol.com/title/${slug}/` : null),
+  wikidata: (id) => (id ? `https://www.wikidata.org/wiki/${id}` : null),
+  netflix: (id) => (id ? `https://www.netflix.com/title/${id}` : null),
 }
 
 /** How a season number was found, for badges and tooltips. */

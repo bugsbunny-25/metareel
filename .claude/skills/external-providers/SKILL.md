@@ -30,6 +30,7 @@ it, and again after — several fields and enums below were only discoverable th
 
 - Movie search results use `title`/`release_date`; **TV uses `name`/`first_air_date`**.
 - `/{movie|tv}/{id}/external_ids` gives `imdb_id`, `wikidata_id`. `/{movie|tv}/{id}` gives title + date.
+- `/find/{tt…|Q…}?external_source=imdb_id|wikidata_id` → `movie_results` / `tv_results` (used to resolve hand-entered IMDb / Wikidata IDs).
 - The key is in the URL → wrap transport errors with `redactErr`.
 
 ## Rotten Tomatoes (Algolia index used by rottentomatoes.com, as Seerr does)
@@ -52,7 +53,9 @@ it, and again after — several fields and enums below were only discoverable th
 
 ## Netflix Top 10 (`service/netflix_import.go`)
 
-- TSVs at `https://www.netflix.com/tudum/top10/data/{all-weeks-global,all-weeks-countries,most-popular}.tsv`. HEAD returns 403 and `If-Modified-Since` / `Range` are ignored, so `client.Downloader` GETs and closes the body when `Last-Modified` is unchanged. countries is ~32 MB / 500k rows (filtered by `NETFLIX_TOP10_COUNTRIES`). `week` is the Sunday ending a Monday–Sunday week; `N/A` means empty. No IDs or years: titles are matched via a same-name FlixPatrol title that charted on Netflix, else JustWatch's US Netflix catalogue, else a single exact-name hit in all of JustWatch US.
+- TSVs at `https://www.netflix.com/tudum/top10/data/{all-weeks-global,all-weeks-countries,most-popular}.tsv`. HEAD returns 403 and `If-Modified-Since` / `Range` are ignored, so `client.Downloader` GETs and closes the body when `Last-Modified` is unchanged. countries is ~32 MB / 500k rows (filtered by `NETFLIX_TOP10_COUNTRIES`). `week` is the Sunday ending a Monday–Sunday week; `N/A` means empty. No IDs or years in the files; matching order is in `docs/architecture.md` (TMDB mapping).
+- **Tudum Top 10 search** (`client/netflix_top10.go`): `POST https://www.netflix.com/graphql` `{"operationName":"Top10SearchQuery","variables":{"request":{"searchTerm":…,"language":"EN"}},"extensions":{"persistedQuery":{"id":"592260c9-…","version":102}}}` works anonymously (no cookies, plain UA). Arbitrary (non-persisted) queries get `QUERY_NOT_SAFELISTED`; a changed page → `PERSISTED_QUERY_NOT_FOUND` (update `NETFLIX_TOP10_SEARCH_QUERY_ID/VERSION`, found in `assets.nflxext.com/web/ffe/wp/ui/pulseClient.*.js` as `Top10SearchQueryDocument={__meta__:{q:…}}`). Items: `title` (same strings as the TSV `season_title` for TV, e.g. "Wednesday: Season 1"), `titleId` (the **season's** ID for TV), `category` FILMS | TV, global + per-country week `endDate`s. `GET https://www.netflix.com/title/<seasonId>` 301s to `/title/<showId>`; films answer 200. The Tudum page HTML itself only has the current week (`PulseTop10ItemEntity` → `top10Video {title, videoId, parentShow}`); curl gets redirected to `/unsupportedbrowser`.
+- Netflix ID → TMDB: Wikidata `P1874` (Netflix ID; show-level, e.g. Wednesday 81231974 → `P4983` 119051). Label search over items with P1874 finds many Netflix titles by name, but beware same-name items of the other kind (Netflix's TV "Raw" = WWE Raw; Wikidata's "Raw" with a Netflix ID is the 2016 film).
 - `season_title` formats seen (global file, Oct 2026): `Show: Season N` (~90%), `Show: Limited Series`, `Show: Part N` / `Volume N` / `Chapter N` / `Collection N`, `Show N` (Stranger Things 5), `Show: S3: City` (Love Is Blind), dated episodes (`Raw: September 28, 2026`), named arcs (`Demon Slayer: …: Hashira Training Arc`), localized (`시즌 1`), or N/A. Mapped by `ResolveNetflixSeason` (`service/seasons.go`); TMDB season names/air dates (`tmdb_titles.seasons`) resolve most of the rest. `justwatch_unique_name` can pick the wrong same-name show (e.g. 2008 Irish "Raw" for WWE Raw) — fix those in the Netflix mapping page.
 
 ## IMDb datasets

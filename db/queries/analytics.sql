@@ -63,7 +63,7 @@ SELECT * FROM titles WHERE imdb_id = ? ORDER BY id;
 SELECT tmdb_kind, tmdb_id FROM tmdb_titles WHERE imdb_id = ?;
 
 -- name: ListNetflixGlobalWeek :many
-SELECT g.*, n.tmdb_id, n.imdb_id, n.kind, s.season_number, s.season_source
+SELECT g.*, n.tmdb_id, n.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = g.netflix_title_id AND s.season_title = g.season_title
@@ -72,7 +72,7 @@ WHERE g.week = sqlc.arg(week)
 ORDER BY g.category, g.weekly_rank;
 
 -- name: ListNetflixCountryWeek :many
-SELECT c.*, n.tmdb_id, n.imdb_id, n.kind, s.season_number, s.season_source
+SELECT c.*, n.tmdb_id, n.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_top10_countries c
 JOIN netflix_titles n ON n.id = c.netflix_title_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = c.netflix_title_id AND s.season_title = c.season_title
@@ -87,7 +87,7 @@ SELECT CAST(COALESCE(MAX(week), '') AS TEXT) FROM netflix_top10_global;
 SELECT CAST(COALESCE(MAX(week), '') AS TEXT) FROM netflix_top10_countries WHERE country = ?;
 
 -- name: ListNetflixMostPopular :many
-SELECT p.*, n.tmdb_id, n.imdb_id, n.kind, s.season_number, s.season_source
+SELECT p.*, n.tmdb_id, n.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_most_popular p
 JOIN netflix_titles n ON n.id = p.netflix_title_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = p.netflix_title_id AND s.season_title = p.season_title
@@ -99,7 +99,7 @@ SELECT g.*, s.season_number, s.season_source
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = g.netflix_title_id AND s.season_title = g.season_title
-WHERE n.kind = sqlc.arg(kind) AND n.tmdb_id = sqlc.arg(tmdb_id)
+WHERE n.tmdb_kind = sqlc.arg(tmdb_kind) AND n.tmdb_id = sqlc.arg(tmdb_id)
 ORDER BY g.week, g.category;
 
 -- name: ListNetflixCountriesByTmdb :many
@@ -107,12 +107,13 @@ SELECT c.*, s.season_number, s.season_source
 FROM netflix_top10_countries c
 JOIN netflix_titles n ON n.id = c.netflix_title_id
 LEFT JOIN netflix_seasons s ON s.netflix_title_id = c.netflix_title_id AND s.season_title = c.season_title
-WHERE n.kind = sqlc.arg(kind) AND n.tmdb_id = sqlc.arg(tmdb_id)
+WHERE n.tmdb_kind = sqlc.arg(tmdb_kind) AND n.tmdb_id = sqlc.arg(tmdb_id)
 ORDER BY c.week, c.country;
 
 -- name: ListNetflixGlobalRange :many
 -- Global weekly rows with TMDB IDs in a week range, for calibration.
-SELECT g.week, g.category, g.weekly_rank, g.show_title, g.weekly_hours_viewed, g.weekly_views, n.tmdb_id, n.kind
+SELECT g.week, g.category, g.weekly_rank, g.show_title, g.weekly_hours_viewed, g.weekly_views, n.tmdb_id,
+       CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
 WHERE g.week >= CAST(sqlc.arg(from_week) AS TEXT) AND g.week <= CAST(sqlc.arg(to_week) AS TEXT)

@@ -247,14 +247,15 @@ func (r *AnalyticsRepository) NetflixMostPopular(ctx context.Context, category s
 }
 
 // NetflixForTitle returns a TMDB title's Netflix global and country weeks
-// (kind is movie | tv_show).
-func (r *AnalyticsRepository) NetflixForTitle(ctx context.Context, kind, tmdbID string) ([]NetflixWeekRow, []NetflixWeekRow, error) {
+// (tmdbKind is movie | tv).
+func (r *AnalyticsRepository) NetflixForTitle(ctx context.Context, tmdbKind, tmdbID string) ([]NetflixWeekRow, []NetflixWeekRow, error) {
 	id := sql.NullString{String: tmdbID, Valid: true}
-	g, err := r.q.ListNetflixGlobalByTmdb(ctx, sqlc.ListNetflixGlobalByTmdbParams{Kind: kind, TmdbID: id})
+	kind := sql.NullString{String: tmdbKind, Valid: true}
+	g, err := r.q.ListNetflixGlobalByTmdb(ctx, sqlc.ListNetflixGlobalByTmdbParams{TmdbKind: kind, TmdbID: id})
 	if err != nil {
 		return nil, nil, fmt.Errorf("list netflix global by tmdb: %w", err)
 	}
-	c, err := r.q.ListNetflixCountriesByTmdb(ctx, sqlc.ListNetflixCountriesByTmdbParams{Kind: kind, TmdbID: id})
+	c, err := r.q.ListNetflixCountriesByTmdb(ctx, sqlc.ListNetflixCountriesByTmdbParams{TmdbKind: kind, TmdbID: id})
 	if err != nil {
 		return nil, nil, fmt.Errorf("list netflix countries by tmdb: %w", err)
 	}
