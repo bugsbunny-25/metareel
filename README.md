@@ -238,7 +238,7 @@ TMDB namespace, so a stand-up special in Netflix's TV list can be a TMDB
 movie). Each TMDB title keeps every ID — IMDb, Wikidata, Rotten Tomatoes,
 Metacritic, Letterboxd, Netflix (Wikidata P1874 or Tudum's Top 10 search),
 JustWatch — and the FlixPatrol slugs and Netflix Top 10 names mapped to it
-(admin UI → TMDB mapping; public `ids` on `/titles/tmdb/:kind/:id`).
+(admin UI → Mapping → TMDB mappings; public `ids` on `/titles/tmdb/:kind/:id`).
 These IDs live only on the TMDB title, so every title mapped to it shows the
 same ones, and moving a title to another TMDB title shows that title's. Each
 ID records where it came from (`ids.sources`) and is only replaced by the
@@ -270,7 +270,7 @@ fixes return quickly.
   mapped by its Netflix ID, then FlixPatrol's match (made with the title
   page's year), then Netflix's. Linked titles that disagree at the deciding
   level (two hand fixes, or two same-name FlixPatrol titles such as a show and
-  its revival) are a conflict left for review (TMDB mapping → Conflicts). Links are refreshed by
+  its revival) are a conflict left for review (Mapping → TMDB mappings → Conflicts filter). Links are refreshed by
   `titles.enrich`, `netflix.top10.import` and `netflix.titles.match` (or
   "Sync links now").
 - **Netflix titles** are matched by: a linked or same-name FlixPatrol title;
@@ -284,7 +284,7 @@ fixes return quickly.
   either kind; a single exact name in all of JustWatch US.
 - **Fixing.** Fix a single title in its drawer (TMDB kind + ID, or an IMDb /
   Wikidata ID resolved through TMDB's `/find`, then Wikidata), or move
-  everything on a wrong TMDB title at once from TMDB mapping → Move all.
+  everything on a wrong TMDB title at once from Mapping → TMDB mappings → Move all.
 
 ### Seasons
 

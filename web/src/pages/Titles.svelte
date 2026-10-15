@@ -81,12 +81,9 @@
 
 <svelte:window {onkeydown} />
 
-<div class="page">
-  <div class="page-header">
-    <div>
-      <h1 class="page-title">Titles & mapping</h1>
-      <p class="page-desc">Every title seen in a FlixPatrol chart and its TMDB, IMDb and Rotten Tomatoes IDs. Click a row to review or fix its mapping.</p>
-    </div>
+<div>
+  <div class="subhead">
+    <p class="tab-hint">Every title FlixPatrol charts have shown and the IDs it maps to. A title without a TMDB ID gets no ratings, genres or release dates; click a row to review or fix it.</p>
     <div class="page-actions">
       <button class="btn" onclick={exportCSV} disabled={!data.items.length}><Icon name="download" />Export page</button>
     </div>

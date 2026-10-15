@@ -214,12 +214,34 @@ func TestTaskRunsFilterAndStats(t *testing.T) {
 	if out.Runs.Last24h["failed"] != 1 || out.Runs.Last24h["succeeded"] != 0 || out.Runs.Last7d["succeeded"] != 1 {
 		t.Fatalf("run counts 24h=%v 7d=%v", out.Runs.Last24h, out.Runs.Last7d)
 	}
+	if len(out.Runs.Daily) != runHistoryDays {
+		t.Fatalf("daily runs = %d days", len(out.Runs.Daily))
+	}
 	h := out.Health[0]
 	if h.NextRunAt == nil || !h.NextRunAt.Equal(time.Date(2026, 10, 8, 23, 0, 0, 0, time.UTC)) || h.LastRun.Status != "failed" || h.LastSuccessAt == nil {
 		t.Fatalf("health[0] = %+v", h)
 	}
 	if out.Health[1].NextRunAt != nil {
 		t.Fatalf("disabled schedule has next run %v", out.Health[1].NextRunAt)
+	}
+}
+
+func TestDailyRuns(t *testing.T) {
+	now := time.Date(2026, 10, 8, 20, 0, 0, 0, time.UTC)
+	got := dailyRuns(now, []repository.RunDayCount{
+		{Day: "2026-10-08", Status: "succeeded", Runs: 3},
+		{Day: "2026-10-08", Status: "failed", Runs: 1},
+		{Day: "2026-09-25", Status: "partial", Runs: 2},
+		{Day: "2026-09-24", Status: "failed", Runs: 9}, // before the window
+	})
+	if len(got) != runHistoryDays || got[0].Date != "2026-09-25" || got[len(got)-1].Date != "2026-10-08" {
+		t.Fatalf("window = %s..%s (%d days)", got[0].Date, got[len(got)-1].Date, len(got))
+	}
+	if last := got[len(got)-1]; last.Succeeded != 3 || last.Failed != 1 {
+		t.Fatalf("today = %+v", last)
+	}
+	if got[0].Partial != 2 || got[0].Failed != 0 || got[5].Succeeded != 0 {
+		t.Fatalf("first day = %+v, day 6 = %+v", got[0], got[5])
 	}
 }
 

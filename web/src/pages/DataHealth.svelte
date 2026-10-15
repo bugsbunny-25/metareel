@@ -5,6 +5,15 @@
   import { providerLabel, countryName } from '../lib/constants.js'
   import { toast } from '../lib/toast.svelte.js'
   import Icon from '../components/Icon.svelte'
+  import PageHeader from '../components/PageHeader.svelte'
+  import Kpi from '../components/Kpi.svelte'
+  import SegmentBar from '../components/SegmentBar.svelte'
+  import LineChart from '../components/LineChart.svelte'
+  import Legend from '../components/Legend.svelte'
+  import HBars from '../components/HBars.svelte'
+  import InfoTip from '../components/InfoTip.svelte'
+  import { define } from '../lib/glossary.js'
+  import { COVERAGE_SERIES, shortDay } from '../lib/charts.js'
 
   let report = $state(null)
   let taskTypes = $state([])
@@ -41,25 +50,32 @@
   }
 
   const total = (m) => Object.values(m ?? {}).reduce((a, b) => a + b, 0)
-  const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : '—')
   const IMPORT_LABEL = {
     'netflix.global': 'Netflix global weekly', 'netflix.countries': 'Netflix per country', 'netflix.most_popular': 'Netflix most popular', 'imdb.ratings': 'IMDb ratings',
   }
+
+  const share = (a, b) => (b ? Math.round((100 * a) / b) : null)
+  const matchSegments = (m, path) => [
+    { key: 'matched', label: 'Matched automatically', value: m?.matched ?? 0, color: 'var(--c-ok)', href: href(path, { match: 'matched' }) },
+    { key: 'manual', label: 'Fixed by hand', value: m?.manual ?? 0, color: 'var(--c1)', href: href(path, { match: 'manual' }) },
+    { key: 'pending', label: 'Not tried yet', value: m?.pending ?? 0, color: 'var(--c6)', href: href(path, { match: 'pending' }) },
+    { key: 'unmatched', label: 'No confident match', value: m?.unmatched ?? 0, color: 'var(--c-fail)', href: href(path, { match: 'unmatched' }) },
+  ]
 
   // What decided an IMDb-mismatch entry's mapping.
   const EVIDENCE_LABEL = { manual: 'fixed by hand', netflix_id: 'Netflix ID', match: 'automatic match' }
 </script>
 
 <div class="page">
-  <div class="page-header">
-    <div>
-      <h1 class="page-title">Data health</h1>
-      <p class="page-desc">How complete and fresh the data is: matching coverage, metadata, imports, stale charts and missing dates. Start a job here to fix gaps.</p>
-    </div>
-    <div class="page-actions">
+  <PageHeader
+    title="Data health"
+    desc="How complete and up to date the stored data is, and the jobs that fill the gaps."
+    info="Matching links titles to TMDB, metadata adds genres and release dates, imports load Netflix and IMDb files, and scrapes keep charts current. Each section shows what is missing and where to fix it."
+  >
+    {#snippet actions()}
       <button class="btn" onclick={load} disabled={loading}><Icon name="refresh" />Refresh</button>
-    </div>
-  </div>
+    {/snippet}
+  </PageHeader>
 
   {#if error}<div class="alert alert-error"><Icon name="alert" />{error}</div>{/if}
 
@@ -69,37 +85,41 @@
     {@const tm = report.title_match_status}
     {@const nm = report.netflix_title_match_status}
     {@const ns = report.netflix_season_mapping ?? {}}
+    {@const fpShare = share((tm.matched ?? 0) + (tm.manual ?? 0), total(tm))}
+    {@const nfShare = share((nm.matched ?? 0) + (nm.manual ?? 0), total(nm))}
+    {@const seasonShare = share(total(ns) - (ns.unmapped ?? 0), total(ns))}
     <div class="grid grid-stats">
-      <a class="card stat" href={href('/titles', { match: 'unmatched', sort: '-rankings' })}>
-        <div class="stat-label">FlixPatrol titles matched</div>
-        <div class="stat-value">{pct((tm.matched ?? 0) + (tm.manual ?? 0), total(tm))}</div>
-        <div class="stat-foot">{number(tm.unmatched ?? 0)} unmatched · {number(tm.pending ?? 0)} pending · {number(tm.manual ?? 0)} by hand</div>
-      </a>
-      <a class="card stat" href={href('/netflix', { match: 'unmatched' })}>
-        <div class="stat-label">Netflix titles matched</div>
-        <div class="stat-value">{pct((nm.matched ?? 0) + (nm.manual ?? 0), total(nm))}</div>
-        <div class="stat-foot">{number((nm.matched ?? 0) + (nm.manual ?? 0))} of {number(total(nm))} · {number(nm.unmatched ?? 0)} unmatched · {number(nm.pending ?? 0)} pending</div>
-      </a>
-      <a class="card stat" href={href('/netflix', { missing: 'season', kind: 'tv_show' })}>
-        <div class="stat-label">Netflix seasons numbered</div>
-        <div class="stat-value">{pct(total(ns) - (ns.unmapped ?? 0), total(ns))}</div>
-        <div class="stat-foot">{number(ns.unmapped ?? 0)} without a number · {number(ns.manual ?? 0)} by hand · {number((ns.tmdb_air_date ?? 0) + (ns.number ?? 0))} inferred</div>
-      </a>
-      <div class="card stat">
-        <div class="stat-label">TMDB metadata</div>
-        <div class="stat-value">{number(report.metadata.with_details)}</div>
-        <div class="stat-foot">{number(report.metadata.with_wikidata)} on Wikidata · {number(report.imdb_ratings)} IMDb ratings</div>
+      <Kpi label="FlixPatrol titles matched" value={fpShare ?? '—'} unit={fpShare === null ? '' : '%'} info={define('Match status')} href={href('/titles', { match: 'unmatched', sort: '-rankings' })} meter={fpShare} meterColor="var(--c1)" tone={fpShare !== null && fpShare < 60 ? 'warning' : ''}>
+        {#snippet foot()}{number(tm.unmatched ?? 0)} without a match · {number(tm.pending ?? 0)} waiting{/snippet}
+      </Kpi>
+      <Kpi label="Netflix titles matched" value={nfShare ?? '—'} unit={nfShare === null ? '' : '%'} info="Titles from Netflix's official Top 10 that have a TMDB ID." href={href('/netflix', { match: 'unmatched' })} meter={nfShare} meterColor="var(--c1)" tone={nfShare !== null && nfShare < 60 ? 'warning' : ''}>
+        {#snippet foot()}{number((nm.matched ?? 0) + (nm.manual ?? 0))} of {number(total(nm))} · {number(nm.unmatched ?? 0)} without a match{/snippet}
+      </Kpi>
+      <Kpi label="Netflix seasons numbered" value={seasonShare ?? '—'} unit={seasonShare === null ? '' : '%'} info={define('Season mapping')} href={href('/netflix', { missing: 'season', kind: 'tv_show' })} meter={seasonShare} meterColor="var(--c2)">
+        {#snippet foot()}{number(ns.unmapped ?? 0)} without a number · {number((ns.tmdb_air_date ?? 0) + (ns.number ?? 0))} inferred{/snippet}
+      </Kpi>
+      <Kpi label="TMDB titles with details" value={number(report.metadata.with_details)} info="TMDB titles whose genres, release date and poster have been fetched by the metadata job." meter={share(report.metadata.with_details, report.metadata.titles)} meterColor="var(--c4)">
+        {#snippet foot()}of {number(report.metadata.titles)} · {number(report.imdb_ratings)} IMDb ratings{/snippet}
+      </Kpi>
+      <Kpi label="Stale charts" value={report.stale_charts.length} info={define('Stale chart')} tone={report.stale_charts.length ? 'warning' : ''}>
+        {#snippet foot()}{report.chart_gaps.length} chart{report.chart_gaps.length === 1 ? '' : 's'} with missing days <InfoTip text={define('Chart gap')} />{/snippet}
+      </Kpi>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:16px">
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">FlixPatrol title matching</div><div class="card-sub">{number(total(tm))} titles by match status. Click a status to list them.</div></div></div>
+        <div class="card-body"><SegmentBar segments={matchSegments(tm, '/titles')} label="FlixPatrol titles by match status" /></div>
       </div>
-      <div class="card stat">
-        <div class="stat-label">Stale charts</div>
-        <div class="stat-value" style:color={report.stale_charts.length ? 'var(--warning)' : ''}>{report.stale_charts.length}</div>
-        <div class="stat-foot">{report.chart_gaps.length} chart(s) with missing dates</div>
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">Netflix title matching</div><div class="card-sub">{number(total(nm))} titles by match status. Click a status to list them.</div></div></div>
+        <div class="card-body"><SegmentBar segments={matchSegments(nm, '/netflix')} label="Netflix titles by match status" /></div>
       </div>
     </div>
 
     <div class="grid grid-2">
       <div class="card">
-        <div class="card-header"><div class="card-title">Jobs</div></div>
+        <div class="card-header"><div><div class="card-title">Jobs</div><div class="card-sub">Run a job now instead of waiting for its schedule</div></div></div>
         <div class="table-wrap">
           <table class="table">
             <tbody>
@@ -122,7 +142,7 @@
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">Imports</div></div>
+        <div class="card-header"><div><div class="card-title">Imports</div><div class="card-sub">Files loaded from Netflix and IMDb</div></div></div>
         <div class="table-wrap">
           <table class="table">
             <thead><tr><th>File</th><th class="right">Rows</th><th>Imported</th></tr></thead>
@@ -142,7 +162,7 @@
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">Charts</div></div>
+        <div class="card-header"><div><div class="card-title">Chart freshness</div><div class="card-sub">Each chart's latest date and missing days</div></div></div>
         <div class="table-wrap">
           <table class="table">
             <thead><tr><th>Chart</th><th>Latest date</th><th>Last scraped</th><th>Missing (last {report.gap_window_days} days)</th></tr></thead>
@@ -166,22 +186,30 @@
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">Matching coverage by week</div></div>
-        <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th>Week of</th><th class="right">Chart entries</th><th class="right">TMDB</th><th class="right">Rotten Tomatoes</th></tr></thead>
-            <tbody>
-              {#each [...report.weekly_coverage].reverse() as w (w.week)}
-                <tr><td>{dateOnly(w.first_date)}</td><td class="right">{number(w.entries)}</td><td class="right">{pct(w.mapped, w.entries)}</td><td class="right">{pct(w.with_rt, w.entries)}</td></tr>
-              {:else}
-                <tr><td colspan="4"><div class="empty small">No charts in the last 12 weeks.</div></td></tr>
-              {/each}
-            </tbody>
-          </table>
+        <div class="card-header">
+          <div>
+            <div class="card-title">Mapping coverage by week <InfoTip text={define('Coverage')} /></div>
+            <div class="card-sub">Share of each week's chart entries with an ID</div>
+          </div>
+          <Legend series={COVERAGE_SERIES} />
         </div>
-        {#if report.unmatched_by_country.length}
-          <p class="small muted" style="padding:0 16px 12px">Unmatched titles charting in the last {report.gap_window_days} days: {report.unmatched_by_country.map((c) => `${countryName(c.country)} ${c.titles}`).join(' · ')}</p>
-        {/if}
+        <div class="card-body" style="padding-top:12px">
+          {#if report.weekly_coverage.length > 1}
+            <LineChart
+              data={report.weekly_coverage.map((w) => ({ label: w.first_date, title: `Week of ${dateOnly(w.first_date)} · ${number(w.entries)} entries`, mapped: w.entries ? w.mapped / w.entries : null, rt: w.entries ? w.with_rt / w.entries : null }))}
+              series={COVERAGE_SERIES}
+              percent
+              height={190}
+              formatLabel={shortDay}
+              labelEvery={Math.max(1, Math.ceil(report.weekly_coverage.length / 6))}
+              ariaLabel="Weekly share of chart entries with a TMDB or Rotten Tomatoes ID"
+            />
+          {:else}<div class="empty small">Not enough weeks of charts yet.</div>{/if}
+          {#if report.unmatched_by_country.length}
+            <div class="section-title" style="margin-top:18px">Unmatched titles charting in the last {report.gap_window_days} days, by country</div>
+            <HBars color="var(--c-fail)" items={report.unmatched_by_country.slice(0, 8).map((c) => ({ key: c.country, label: countryName(c.country), value: c.titles }))} />
+          {/if}
+        </div>
       </div>
 
       <div class="card">

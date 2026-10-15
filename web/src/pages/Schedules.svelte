@@ -1,4 +1,6 @@
 <script>
+  import PageHeader from '../components/PageHeader.svelte'
+  import { define } from '../lib/glossary.js'
   import { listSchedules, getSchedule, updateSchedule, runScheduleNow, getStats, listTaskTypes } from '../lib/api.js'
   import { href } from '../lib/router.svelte.js'
   import { relativeTime, dateTime, dateTimeUTC, utcTimeToLocal } from '../lib/format.js'
@@ -75,16 +77,16 @@
 </script>
 
 <div class="page">
-  <div class="page-header">
-    <div>
-      <h1 class="page-title">Schedules</h1>
-      <p class="page-desc">When each job runs: FlixPatrol scrapes (and the countries and providers they cover), title matching, metadata, imports and maintenance. Times are UTC.</p>
-    </div>
-    <div class="page-actions">
+  <PageHeader
+    title="Schedules"
+    desc="When each job runs and what it covers. Times are UTC."
+    info={define('Schedule')}
+  >
+    {#snippet actions()}
       <button class="btn" onclick={load} disabled={loading}><Icon name="refresh" />Refresh</button>
       <button class="btn btn-primary" onclick={() => (editing = {})}><Icon name="plus" />New schedule</button>
-    </div>
-  </div>
+    {/snippet}
+  </PageHeader>
 
   {#if error}<div class="alert alert-error"><Icon name="alert" />{error}</div>{/if}
 

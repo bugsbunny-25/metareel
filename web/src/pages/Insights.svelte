@@ -5,13 +5,21 @@
   import { COUNTRIES, PROVIDERS, providerLabel, countryName } from '../lib/constants.js'
   import Icon from '../components/Icon.svelte'
   import KindBadge from '../components/KindBadge.svelte'
+  import PageHeader from '../components/PageHeader.svelte'
+  import PageTabs from '../components/PageTabs.svelte'
+  import InfoTip from '../components/InfoTip.svelte'
+  import HBars from '../components/HBars.svelte'
+  import LineChart from '../components/LineChart.svelte'
+  import Legend from '../components/Legend.svelte'
+  import { define } from '../lib/glossary.js'
 
   const TABS = [
-    ['leaderboard', 'Leaderboard'],
-    ['movers', 'Movers'],
-    ['netflix', 'Netflix official'],
-    ['analytics', 'Analytics'],
+    { key: 'leaderboard', label: 'Leaderboard', hint: 'The titles that scored the most points across all charts in the period. #1 on a chart earns 10 points a day, #10 earns 1.' },
+    { key: 'movers', label: 'Movers', hint: 'How one chart changed since the previous day: who climbed, fell, debuted, came back or dropped out.' },
+    { key: 'netflix', label: 'Netflix official', hint: "Netflix's own weekly Top 10 (Monday to Sunday). Global lists include views and hours viewed." },
+    { key: 'analytics', label: 'Analytics', hint: 'Patterns across all stored charts: which genres chart, how long after release titles chart, how fast they fade, and whether ratings track popularity.' },
   ]
+  const tabInfo = $derived(TABS.find((t) => t.key === tab))
   const tab = $derived(route.query.tab ?? 'leaderboard')
   const country = $derived(route.query.country ?? (tab === 'movers' ? 'US' : ''))
   const provider = $derived(route.query.provider ?? (tab === 'movers' ? 'netflix' : ''))
@@ -59,21 +67,19 @@
 
   const set = (patch) => setQuery(patch)
   const titleHref = (it) => href('/titles', { q: it.slug, open: it.title_id })
+  const maxPoints = $derived(data?.items?.[0]?.points ?? 1)
+  const DECAY_SERIES = [{ key: 'retention', label: 'Still charting', color: 'var(--c1)' }]
 </script>
 
 <div class="page">
-  <div class="page-header">
-    <div>
-      <h1 class="page-title">Insights</h1>
-      <p class="page-desc">Points leaderboards (#1 = 10 points … #10 = 1 per chart per day), daily movers, Netflix's official numbers and cross-chart analytics. The same data is on the public API.</p>
-    </div>
-  </div>
+  <PageHeader
+    title="Insights"
+    desc="What is popular, what is moving and what the charts say over time. The same numbers are on the public API."
+    info={define('Points')}
+  />
 
-  <div class="tabs" style="margin:0 0 16px;padding:0">
-    {#each TABS as [k, label] (k)}
-      <button class="tab" class:active={tab === k} onclick={() => setQuery({ tab: k === 'leaderboard' ? '' : k, country: '', provider: '', date: '', category: '' })}>{label}</button>
-    {/each}
-  </div>
+  <PageTabs tabs={TABS} active={tab} label="Insight views" onselect={(k) => setQuery({ tab: k === 'leaderboard' ? '' : k, country: '', provider: '', date: '', category: '' })} />
+  <p class="tab-hint">{tabInfo?.hint}</p>
 
   <div class="toolbar">
     {#if tab === 'leaderboard'}
@@ -125,14 +131,14 @@
     <div class="card">
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th class="right">#</th><th>Title</th><th>Kind</th><th class="right">Points</th><th class="right">Days</th><th class="right">Best</th><th>Countries</th><th>Providers</th></tr></thead>
+          <thead><tr><th class="right">#</th><th>Title</th><th>Kind</th><th class="right">Points <InfoTip text={define('Points')} /></th><th class="right">Days</th><th class="right">Best</th><th>Countries</th><th>Providers</th></tr></thead>
           <tbody>
             {#each data.items as it (it.position)}
               <tr>
                 <td class="right mono">{it.position}</td>
                 <td><a href={titleHref(it)} class="cell-title" style="color:inherit">{it.name}</a>{#if it.slugs.length > 1}<div class="cell-sub">{it.slugs.length} FlixPatrol titles</div>{/if}</td>
                 <td><KindBadge kind={it.kind} /></td>
-                <td class="right mono">{number(it.points)}</td>
+                <td class="right"><div class="cell-bar"><span class="hbar-track"><span class="hbar-fill" style="width:{(it.points / maxPoints) * 100}%"></span></span><span class="num" style="min-width:44px">{number(it.points)}</span></div></td>
                 <td class="right">{it.days_on_charts}</td>
                 <td class="right">#{it.best_rank}</td>
                 <td class="small">{it.countries.join(', ')}</td>
@@ -201,67 +207,94 @@
     {@const rvp = data.rvp}
     <div class="grid grid-2">
       <div class="card">
-        <div class="card-header"><div class="card-title">Genres by points</div><span class="muted small">{number(g.points_without_genres)} points without TMDB genres</span></div>
+        <div class="card-header">
+          <div>
+            <div class="card-title">Genres by points <InfoTip text="Each title's points split across its TMDB genres. A share is that genre's part of all points in the range." /></div>
+            <div class="card-sub">{number(g.points_without_genres)} points from titles without TMDB genres are left out</div>
+          </div>
+        </div>
         <div class="card-body">
-          {#each g.items.slice(0, 12) as it (it.genre)}
-            <div class="row small" style="margin:4px 0">
-              <span style="width:130px" class="truncate">{it.genre}</span>
-              <div class="grow" style="background:var(--surface-3);border-radius:3px;height:8px"><div style="width:{Math.round(it.share * 100)}%;background:var(--accent);height:8px;border-radius:3px"></div></div>
-              <span class="mono" style="width:44px;text-align:right">{Math.round(it.share * 100)}%</span>
-            </div>
-          {:else}<div class="empty small">No titles with TMDB genres yet.</div>{/each}
+          {#if g.items.length}
+            <HBars items={g.items.slice(0, 12).map((it) => ({ key: it.genre, label: it.genre, value: it.share * 100, display: `${Math.round(it.share * 100)}%` }))} />
+          {:else}<div class="empty small">No titles with TMDB genres yet.</div>{/if}
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">Release → first chart</div><span class="muted small">{lag.summary.titles} titles</span></div>
+        <div class="card-header">
+          <div>
+            <div class="card-title">Release to first chart <InfoTip text={define('Release lag')} /></div>
+            <div class="card-sub">{lag.summary.titles} titles with a TMDB release date</div>
+          </div>
+        </div>
         <div class="card-body">
           {#if lag.summary.median_days != null}
-            <p class="small">Median <strong>{lag.summary.median_days}</strong> days (middle half {lag.summary.p25_days}–{lag.summary.p75_days}).</p>
-            <dl class="kv small">
-              {#each Object.entries(lag.by_provider).sort((a, b) => a[1].median_days - b[1].median_days) as [p, s] (p)}<dt>{providerLabel(p)}</dt><dd>{s.median_days} days median · {s.titles} titles</dd>{/each}
-            </dl>
+            <div class="row" style="gap:24px;margin-bottom:16px;align-items:flex-end">
+              <div><div class="kpi-value" style="margin:0">{lag.summary.median_days}<span class="unit">days</span></div><div class="cell-sub">median</div></div>
+              <div><div class="num" style="font-size:15px;font-weight:600">{lag.summary.p25_days}–{lag.summary.p75_days} days</div><div class="cell-sub">middle half of titles</div></div>
+            </div>
+            <div class="section-title">Median by service</div>
+            <HBars color="var(--c2)" items={Object.entries(lag.by_provider).sort((a, b) => a[1].median_days - b[1].median_days).map(([p, st]) => ({ key: p, label: providerLabel(p), value: st.median_days, display: `${st.median_days}d`, sub: `${st.titles}` , title: `${st.titles} titles` }))} />
           {:else}<div class="empty small">Needs TMDB release dates (metadata job).</div>{/if}
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">After a debut</div><span class="muted small">{decay.debuts} debuts followed for 30 days</span></div>
-        <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th class="right">Day</th><th class="right">Still charting</th><th class="right">Avg rank</th><th class="right">Titles tracked</th></tr></thead>
-            <tbody>
-              {#each decay.curve.filter((p) => [0, 1, 2, 3, 5, 7, 10, 14, 21, 28].includes(p.day)) as p (p.day)}
-                <tr><td class="right">{p.day}</td><td class="right">{Math.round(p.retention * 100)}%</td><td class="right">{p.avg_rank ?? '—'}</td><td class="right muted">{p.titles}</td></tr>
-              {:else}<tr><td colspan="4"><div class="empty small">No debuts in this range.</div></td></tr>{/each}
-            </tbody>
-          </table>
+        <div class="card-header">
+          <div>
+            <div class="card-title">After a debut <InfoTip text={define('Decay')} /></div>
+            <div class="card-sub">{decay.debuts} debuts followed for 30 days</div>
+          </div>
+          <Legend series={DECAY_SERIES} />
+        </div>
+        <div class="card-body" style="padding-top:12px">
+          {#if decay.curve.length > 1}
+            <LineChart
+              data={decay.curve.map((p) => ({ label: p.day, title: `Day ${p.day} · avg rank ${p.avg_rank ?? '—'} · ${p.titles} tracked`, retention: p.retention }))}
+              series={DECAY_SERIES}
+              percent
+              height={190}
+              formatLabel={(d) => `day ${d}`}
+              labelEvery={7}
+              ariaLabel="Share of debuting titles still charting by day after debut"
+            />
+          {:else}<div class="empty small">No debuts in this range.</div>{/if}
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">Ratings vs popularity</div>
-          <span class="muted small">r = {rvp.correlation_points_imdb ?? '—'} (IMDb) · {rvp.with_imdb}/{rvp.titles} rated</span></div>
+        <div class="card-header">
+          <div>
+            <div class="card-title">Ratings vs popularity <InfoTip text={define('Correlation (r)')} /></div>
+            <div class="card-sub">r = {rvp.correlation_points_imdb ?? '—'} between IMDb rating and points · {rvp.with_imdb} of {rvp.titles} titles rated</div>
+          </div>
+        </div>
         <div class="card-body small">
           <div class="section-title" style="margin-top:0">Acclaimed, under-watched</div>
-          {#each rvp.acclaimed_underwatched.slice(0, 6) as it (it.title_id)}<div class="row"><a href={titleHref(it)} class="grow truncate" style="color:inherit">{it.name}</a><span class="mono">IMDb {it.imdb_rating}</span><span class="muted mono">{it.points} pts</span></div>{:else}<p class="muted">None.</p>{/each}
+          {#each rvp.acclaimed_underwatched.slice(0, 6) as it (it.title_id)}<div class="row rvp-row"><a href={titleHref(it)} class="grow truncate" style="color:inherit">{it.name}</a><span class="badge badge-success num">IMDb {it.imdb_rating}</span><span class="muted num" style="min-width:56px;text-align:right">{it.points} pts</span></div>{:else}<p class="muted">None.</p>{/each}
           <div class="section-title">Popular, poorly rated</div>
-          {#each rvp.popular_poorly_rated.slice(0, 6) as it (it.title_id)}<div class="row"><a href={titleHref(it)} class="grow truncate" style="color:inherit">{it.name}</a><span class="mono">IMDb {it.imdb_rating}</span><span class="muted mono">{it.points} pts</span></div>{:else}<p class="muted">None.</p>{/each}
+          {#each rvp.popular_poorly_rated.slice(0, 6) as it (it.title_id)}<div class="row rvp-row"><a href={titleHref(it)} class="grow truncate" style="color:inherit">{it.name}</a><span class="badge badge-danger num">IMDb {it.imdb_rating}</span><span class="muted num" style="min-width:56px;text-align:right">{it.points} pts</span></div>{:else}<p class="muted">None.</p>{/each}
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">Countries that watch alike</div><span class="muted small">overlap of charting titles</span></div>
-        <div class="table-wrap">
-          <table class="table">
-            <tbody>
-              {#each data.similarity.pairs.slice(0, 10) as p (p.a + p.b)}
-                <tr><td>{countryName(p.a)} · {countryName(p.b)}</td><td class="right mono">{Math.round(p.jaccard * 100)}%</td><td class="right muted small">{p.shared} shared</td></tr>
-              {:else}<tr><td><div class="empty small">Needs charts from two or more countries.</div></td></tr>{/each}
-            </tbody>
-          </table>
+        <div class="card-header">
+          <div>
+            <div class="card-title">Countries that watch alike <InfoTip text={define('Country similarity')} /></div>
+            <div class="card-sub">Overlap of charting titles, all services</div>
+          </div>
+        </div>
+        <div class="card-body">
+          {#if data.similarity.pairs.length}
+            <HBars color="var(--c4)" max={100} items={data.similarity.pairs.slice(0, 10).map((p) => ({ key: p.a + p.b, label: `${countryName(p.a)} · ${countryName(p.b)}`, value: p.jaccard * 100, display: `${Math.round(p.jaccard * 100)}%`, sub: `${p.shared}`, title: `${p.shared} shared titles` }))} />
+          {:else}<div class="empty small">Needs charts from two or more countries.</div>{/if}
         </div>
       </div>
     </div>
   {/if}
 </div>
+
+<style>
+  .rvp-row { padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .rvp-row:last-of-type { border-bottom: 0; }
+</style>

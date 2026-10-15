@@ -1,5 +1,10 @@
 <script>
-  import { listRuns, listSchedules, listTaskTypes } from '../lib/api.js'
+  import PageHeader from '../components/PageHeader.svelte'
+  import { define } from '../lib/glossary.js'
+  import { listRuns, listSchedules, listTaskTypes, getStats } from '../lib/api.js'
+  import { RUN_SERIES, shortDay, runRows } from '../lib/charts.js'
+  import ColumnChart from '../components/ColumnChart.svelte'
+  import Legend from '../components/Legend.svelte'
   import { route, setQuery, intParam } from '../lib/router.svelte.js'
   import { relativeTime, dateTime, dateTimeUTC, duration, shortError } from '../lib/format.js'
   import Icon from '../components/Icon.svelte'
@@ -39,6 +44,13 @@
     return () => { cancelled = true }
   })
 
+  // Daily outcomes for the chart; refreshed with the list.
+  let daily = $state([])
+  $effect(() => {
+    tick
+    getStats().then((st) => (daily = st.runs.daily ?? [])).catch(() => {})
+  })
+
   $effect(() => {
     if (!autoRefresh) return
     const t = setInterval(() => tick++, 10000)
@@ -51,16 +63,31 @@
 </script>
 
 <div class="page">
-  <div class="page-header">
-    <div>
-      <h1 class="page-title">Job runs</h1>
-      <p class="page-desc">Every job attempt with its outcome and logs. Retries of the same job are separate attempts; a partial scrape run failed some charts and is retried for those.</p>
-    </div>
-    <div class="page-actions">
+  <PageHeader
+    title="Job runs"
+    desc="Every job attempt with its outcome and logs. Click a run to see what happened."
+    info={`${define('Job run')} ${define('Partial run')}`}
+  >
+    {#snippet actions()}
       <label class="checkbox small"><input type="checkbox" bind:checked={autoRefresh} />Auto-refresh</label>
       <button class="btn" onclick={() => tick++} disabled={loading}><Icon name="refresh" />Refresh</button>
+    {/snippet}
+  </PageHeader>
+
+  {#if daily.length}
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header plain">
+        <div>
+          <div class="card-title">Runs per day</div>
+          <div class="card-sub">All jobs, last 14 days (UTC)</div>
+        </div>
+        <Legend series={RUN_SERIES} />
+      </div>
+      <div class="card-body" style="padding-top:8px">
+        <ColumnChart data={runRows(daily)} series={RUN_SERIES} height={130} formatLabel={shortDay} labelEvery={2} ariaLabel="Job runs per day by outcome, last 14 days" />
+      </div>
     </div>
-  </div>
+  {/if}
 
   <div class="toolbar">
     <div class="segmented" role="group" aria-label="Status">

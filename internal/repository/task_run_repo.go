@@ -172,6 +172,27 @@ func (r *TaskScheduleRepository) CountTaskRunsByStatusSince(ctx context.Context,
 	return out, nil
 }
 
+// RunDayCount is the number of runs started on one UTC day with one status.
+type RunDayCount struct {
+	Day    string // YYYY-MM-DD
+	Status string
+	Runs   int64
+}
+
+// CountTaskRunsByDaySince counts runs per UTC day and status; since is a
+// SQLite datetime modifier such as "-14 days".
+func (r *TaskScheduleRepository) CountTaskRunsByDaySince(ctx context.Context, since string) ([]RunDayCount, error) {
+	rows, err := r.q.CountTaskRunsByDaySince(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("count task runs by day: %w", err)
+	}
+	out := make([]RunDayCount, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, RunDayCount{Day: row.Day, Status: row.Status, Runs: row.Runs})
+	}
+	return out, nil
+}
+
 // ListLatestTaskRunPerSchedule returns each schedule's most recent run.
 func (r *TaskScheduleRepository) ListLatestTaskRunPerSchedule(ctx context.Context) ([]TaskRunRecord, error) {
 	rows, err := r.q.ListLatestTaskRunPerSchedule(ctx)

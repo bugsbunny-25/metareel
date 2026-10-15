@@ -241,7 +241,7 @@ the title. Without a queue (tests), the refresh runs inline.
    title mapped by its Netflix ID, else FlixPatrol's match, else Netflix's.
    A non-manual title takes the anchor's TMDB kind + ID (`match_source`
    `flixpatrol_title` / `netflix_title`). A set whose deciding tier disagrees
-   is a conflict (counted in the sync report and listed under TMDB mapping →
+   is a conflict (counted in the sync report and listed under Mapping → TMDB mappings →
    Conflicts): each title keeps its own evidence. Sync recomputes every
    linked title (and titles that lost a link) from evidence; a title that
    loses a mapping it had taken is recorded as `unshare` and falls back to its

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -38,7 +39,20 @@ type RunCounts struct {
 	Running int64            `json:"running"`  // runs currently in progress
 	Last24h map[string]int64 `json:"last_24h"` // by status
 	Last7d  map[string]int64 `json:"last_7d"`  // by status
+	Daily   []RunDay         `json:"daily"`    // last 14 UTC days, oldest first, zero-filled
 }
+
+// RunDay counts the runs started on one UTC day by status.
+type RunDay struct {
+	Date      string `json:"date"` // YYYY-MM-DD
+	Succeeded int64  `json:"succeeded"`
+	Partial   int64  `json:"partial"`
+	Failed    int64  `json:"failed"`
+	Started   int64  `json:"started"` // still running
+}
+
+// runHistoryDays is how many days of run outcomes the dashboard charts.
+const runHistoryDays = 14
 
 type ScheduleHealth struct {
 	ScheduleID    int64            `json:"schedule_id"`
@@ -76,6 +90,10 @@ func (s *AdminStatsService) GetStats(ctx context.Context) (*AdminStatsResponse, 
 	if err != nil {
 		return nil, err
 	}
+	byDay, err := s.tasks.CountTaskRunsByDaySince(ctx, fmt.Sprintf("-%d days", runHistoryDays))
+	if err != nil {
+		return nil, err
+	}
 	running, err := s.tasks.CountTaskRuns(ctx, repository.TaskRunFilter{Status: "started"})
 	if err != nil {
 		return nil, err
@@ -100,7 +118,7 @@ func (s *AdminStatsService) GetStats(ctx context.Context) (*AdminStatsResponse, 
 
 	out := &AdminStatsResponse{
 		GeneratedAt: now,
-		Runs:        RunCounts{Running: running, Last24h: last24h, Last7d: last7d},
+		Runs:        RunCounts{Running: running, Last24h: last24h, Last7d: last7d, Daily: dailyRuns(now, byDay)},
 		Health:      make([]ScheduleHealth, 0, len(schedules)),
 		Titles:      TitleCoverageCounts{Total: ts.Total, MissingTmdb: ts.MissingTmdb, MissingImdb: ts.MissingImdb, MissingRT: ts.MissingRT},
 		Rankings:    RankingCounts{Total: ts.Rankings},
@@ -146,4 +164,34 @@ func nextRunAt(now time.Time, runtimes []string) *time.Time {
 		}
 	}
 	return next
+}
+
+// dailyRuns lays run counts out on the last runHistoryDays UTC days (today
+// included), so days without runs show as zero instead of disappearing.
+func dailyRuns(now time.Time, counts []repository.RunDayCount) []RunDay {
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -(runHistoryDays - 1))
+	out := make([]RunDay, runHistoryDays)
+	index := make(map[string]int, runHistoryDays)
+	for i := range out {
+		d := start.AddDate(0, 0, i).Format("2006-01-02")
+		out[i].Date = d
+		index[d] = i
+	}
+	for _, c := range counts {
+		i, ok := index[c.Day]
+		if !ok {
+			continue
+		}
+		switch c.Status {
+		case "succeeded":
+			out[i].Succeeded += c.Runs
+		case "partial":
+			out[i].Partial += c.Runs
+		case "failed":
+			out[i].Failed += c.Runs
+		case "started":
+			out[i].Started += c.Runs
+		}
+	}
+	return out
 }

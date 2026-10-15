@@ -1,4 +1,6 @@
 <script>
+  import PageHeader from '../components/PageHeader.svelte'
+  import { define } from '../lib/glossary.js'
   import { getTop10 } from '../lib/api.js'
   import { route, setQuery } from '../lib/router.svelte.js'
   import { dateOnly, addDays, todayUTC, links, downloadCSV, seasonLabel, SEASON_SOURCES } from '../lib/format.js'
@@ -56,6 +58,10 @@
 
   const newEntries = $derived(data.items.filter((it) => !it.previous_rank).length)
   const unmapped = $derived(data.items.filter((it) => !it.tmdb_id).length)
+  const medianDays = $derived.by(() => {
+    const d = items.map((it) => it.days_in_top10).filter((v) => v != null).sort((a, b) => a - b)
+    return d.length ? d[Math.floor(d.length / 2)] : null
+  })
 
   function exportCSV() {
     downloadCSV(`top10-${country}-${provider || 'all'}-${category}-${shownDate}.csv`, [
@@ -68,15 +74,15 @@
 </script>
 
 <div class="page">
-  <div class="page-header">
-    <div>
-      <h1 class="page-title">Top 10 charts</h1>
-      <p class="page-desc">Daily FlixPatrol charts with rank movement and days on chart. Click a title to check or fix its mapping.</p>
-    </div>
-    <div class="page-actions">
+  <PageHeader
+    title="Top 10 charts"
+    desc="Each day's Top 10 for one service and country, with rank changes and days on chart. Click a title to check its mapping."
+    info={define('Top 10 chart')}
+  >
+    {#snippet actions()}
       <button class="btn" onclick={exportCSV} disabled={!items.length}><Icon name="download" />Export CSV</button>
-    </div>
-  </div>
+    {/snippet}
+  </PageHeader>
 
   <div class="toolbar">
     <select class="select" value={country} onchange={(e) => setQuery({ country: e.currentTarget.value })} aria-label="Country">
@@ -103,10 +109,15 @@
   {#if error}<div class="alert alert-error"><Icon name="alert" />{error}</div>{/if}
 
   {#if items.length}
-    <div class="row small muted" style="margin-bottom:10px;gap:14px">
-      <span>Chart date <strong style="color:var(--text)">{dateOnly(shownDate)}</strong>{date ? '' : ' (latest)'}</span>
-      <span>{newEntries} new {newEntries === 1 ? 'entry' : 'entries'}</span>
-      {#if unmapped}<a href="#/titles?missing=tmdb"><span class="badge badge-warning">{unmapped} not mapped to TMDB</span></a>{/if}
+    <div class="summary-strip">
+      <div><span class="summary-label">Chart date</span><span class="summary-value">{dateOnly(shownDate)}</span><span class="cell-sub">{date ? 'chosen date' : 'latest'}</span></div>
+      <div><span class="summary-label">New entries</span><span class="summary-value">{newEntries}</span><span class="cell-sub">not on the previous chart</span></div>
+      <div><span class="summary-label">Median days on chart</span><span class="summary-value">{medianDays ?? '—'}</span><span class="cell-sub">for titles shown</span></div>
+      <div>
+        <span class="summary-label">Not mapped to TMDB</span>
+        <span class="summary-value" style:color={unmapped ? 'var(--warning)' : ''}>{unmapped}</span>
+        {#if unmapped}<a class="cell-sub" href="#/titles?missing=tmdb">Review unmapped titles</a>{:else}<span class="cell-sub">every title mapped</span>{/if}
+      </div>
     </div>
   {/if}
 
