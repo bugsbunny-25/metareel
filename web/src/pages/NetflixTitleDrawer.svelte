@@ -1,14 +1,19 @@
 <script>
   import { getNetflixTitle, patchNetflixTitle, rematchNetflixTitle, getNetflixTitleCandidates, patchNetflixSeason } from '../lib/api.js'
   import { href } from '../lib/router.svelte.js'
-  import { links, parseImdbId, parseTmdbInput, parseWikidataId, dateOnly, relativeTime, dateTime, number, SEASON_SOURCES, seasonLabel } from '../lib/format.js'
-  import { countryName } from '../lib/constants.js'
+  import { links, parseImdbId, parseTmdbInput, parseWikidataId, dateOnly, relativeTime, dateTime, SEASON_SOURCES, seasonLabel } from '../lib/format.js'
   import { toast } from '../lib/toast.svelte.js'
   import { confirm } from '../lib/confirm.svelte.js'
   import Drawer from '../components/Drawer.svelte'
   import Icon from '../components/Icon.svelte'
   import KindBadge from '../components/KindBadge.svelte'
   import MappingHistory from '../components/MappingHistory.svelte'
+  import TitleIds from '../components/TitleIds.svelte'
+  import TitleLinks from '../components/TitleLinks.svelte'
+  import TitleDetailsTab from '../components/TitleDetailsTab.svelte'
+  import ChartHistoryTab from '../components/ChartHistoryTab.svelte'
+  import NetflixHistoryTab from '../components/NetflixHistoryTab.svelte'
+  import RatingsTab from '../components/RatingsTab.svelte'
 
   let { id, onclose, onsaved } = $props()
 
@@ -26,6 +31,9 @@
   const dirty = $derived(title && (form.tmdb_id !== (title.tmdb_id ?? '') || form.imdb_id !== (title.imdb_id ?? '') || form.wikidata_id !== '' ||
     (form.tmdb_id && form.tmdb_kind !== (title.tmdb_kind ?? listTmdbKind))))
   const showSeasons = $derived(title?.kind === 'tv_show' && title?.tmdb_kind !== 'movie')
+  const tmdbId = $derived(title?.tmdb_id ?? '')
+  const tmdbKind = $derived(title?.tmdb_kind ?? listTmdbKind)
+  const tabs = $derived([['mapping', 'Mapping'], ...(showSeasons ? [['seasons', 'Seasons']] : []), ['details', 'Details'], ['top10', 'Top 10 history'], ['netflix', 'Netflix history'], ['ratings', 'Ratings']])
 
   // Candidate search (Netflix gives no year; a year narrows Rotten Tomatoes only).
   let search = $state({ name: '', year: '', kind: 'movie' })
@@ -165,11 +173,8 @@
       </div>
       <div class="row small muted" style="margin-top:4px;flex-wrap:wrap">
         <span>Netflix title #{title.id}</span>
-        {#if title.last_week}·<span>last charted week ending {dateOnly(title.last_week)}</span>{/if}
-        {#if title.tmdb_id}·<a href={links.tmdb(title.tmdb_kind ?? title.kind, title.tmdb_id)} target="_blank" rel="noopener">TMDB <Icon name="external" size={11} /></a>
-          <a href={href('/mapping', { open: `${title.tmdb_kind}:${title.tmdb_id}` })}>All IDs</a>{/if}
-        {#if title.imdb_id}<a href={links.imdb(title.imdb_id)} target="_blank" rel="noopener">IMDb <Icon name="external" size={11} /></a>{/if}
-        {#if title.netflix_id}<a href={links.netflix(title.netflix_id)} target="_blank" rel="noopener" title="Netflix ID {title.netflix_id}">Netflix <Icon name="external" size={11} /></a>{/if}
+        {#if title.last_week}·<span>last charted week ending {dateOnly(title.last_week)}</span>{/if}·
+        <TitleLinks ids={title.ids} {tmdbKind} {tmdbId} netflixId={title.netflix_id ?? ''} />
       </div>
     {:else}
       <div class="drawer-title">{loadError ? 'Netflix title not found' : 'Loading…'}</div>
@@ -179,14 +184,12 @@
   {#if loadError}
     <div class="alert alert-error"><Icon name="alert" />{loadError}</div>
   {:else if title}
-    <div class="tabs">
-      <button class="tab" class:active={tab === 'mapping'} onclick={() => (tab = 'mapping')}>Mapping</button>
-      {#if showSeasons}
-        <button class="tab" class:active={tab === 'seasons'} onclick={() => (tab = 'seasons')}>
-          Seasons {#if title.seasons_unmapped}<span class="badge badge-warning">{title.seasons_unmapped}</span>{/if}
+    <div class="tabs" role="tablist">
+      {#each tabs as [key, label] (key)}
+        <button class="tab" role="tab" aria-selected={tab === key} class:active={tab === key} onclick={() => (tab = key)}>
+          {label}{#if key === 'seasons' && title.seasons_unmapped} <span class="badge badge-warning">{title.seasons_unmapped}</span>{/if}
         </button>
-      {/if}
-      <button class="tab" class:active={tab === 'weeks'} onclick={() => (tab = 'weeks')}>Top 10 history</button>
+      {/each}
     </div>
 
     {#if tab === 'mapping'}
@@ -215,7 +218,7 @@
           {#if title.linked_titles.length}<div class="field-hint">Linked titles share one mapping: a title fixed by hand wins, then a Netflix ID match, then FlixPatrol's match, then Netflix's.</div>{/if}
         </dd>
         <dt>Netflix ID</dt>
-        <dd class="small">{#if title.netflix_id}<span class="mono">{title.netflix_id}</span>{#if title.match_source === 'netflix_id'} <span class="muted">— mapped by it (exact)</span>{/if}{:else}<span class="muted">not found on Tudum's Top 10 search yet</span>{/if}</dd>
+        <dd class="small">{#if title.netflix_id}<span class="mono">{title.netflix_id}</span> <span class="muted">from Tudum's Top 10 search{#if title.match_source === 'netflix_id'}; mapped by it (exact){/if}</span>{:else}<span class="muted">not found on Tudum's Top 10 search yet</span>{/if}</dd>
         <dt>Global Top 10</dt>
         <dd class="small">{title.weeks_in_global_top10} week(s){title.best_global_rank ? `, best #${title.best_global_rank}` : ''}{title.countries.length ? ` · ${title.countries.length} countr${title.countries.length === 1 ? 'y' : 'ies'}` : ''}</dd>
       </dl>
@@ -225,7 +228,10 @@
         <span class="field-hint">Saving IDs below marks the title as fixed by hand.</span>
       </div>
 
-      <div class="section-title">External IDs</div>
+      <div class="section-title">IDs</div>
+      <TitleIds ids={title.ids} {tmdbKind} {tmdbId} ownNetflixId={title.netflix_id ?? ''} />
+
+      <div class="section-title">Fix the mapping</div>
       <div class="field-row">
         <div class="field">
           <span class="field-label">TMDB kind</span>
@@ -344,41 +350,14 @@
         </table>
       </div>
       <p class="field-hint">"from title", "TMDB name" and "only season" are reliable; "numbered" and "air date" are inferred — check them. A season saved here is "fixed by hand" and never changed automatically; "Auto" hands it back.</p>
+    {:else if tab === 'details'}
+      <TitleDetailsTab {tmdbKind} {tmdbId} />
+    {:else if tab === 'top10'}
+      <ChartHistoryTab {tmdbKind} {tmdbId} />
+    {:else if tab === 'netflix'}
+      <NetflixHistoryTab netflixTitle={title} />
     {:else}
-      <div class="section-title" style="margin-top:0">Global weekly Top 10</div>
-      <div class="card table-wrap">
-        <table class="table">
-          <thead><tr><th>Week ending</th><th>List</th><th class="right">#</th>{#if showSeasons}<th>Season</th>{/if}<th class="right">Views</th><th class="right">Hours</th><th class="right">Weeks in</th></tr></thead>
-          <tbody>
-            {#each title.global_weeks as w (w.week + w.category + w.rank)}
-              <tr>
-                <td class="nowrap">{dateOnly(w.week)}</td>
-                <td class="small nowrap">{w.category}</td>
-                <td class="right mono">{w.rank}</td>
-                {#if showSeasons}<td class="small">{#if w.season_number !== null}<span class="badge">{seasonLabel(w.season_number)}</span> {/if}<span class="muted">{w.season_title ?? ''}</span></td>{/if}
-                <td class="right">{number(w.views)}</td>
-                <td class="right">{number(w.hours_viewed)}</td>
-                <td class="right">{w.cumulative_weeks ?? ''}</td>
-              </tr>
-            {:else}
-              <tr><td colspan="7"><div class="empty small">Not in the global Top 10 (only in country lists or the most-popular list).</div></td></tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      <div class="section-title">Countries <span class="muted small">(imported countries only)</span></div>
-      <div class="card table-wrap">
-        <table class="table">
-          <thead><tr><th>Country</th><th class="right">Weeks</th><th class="right">Best</th><th>First</th><th>Last</th></tr></thead>
-          <tbody>
-            {#each title.countries as c (c.country)}
-              <tr><td>{countryName(c.country)}</td><td class="right">{c.weeks}</td><td class="right">#{c.best_rank}</td><td class="nowrap">{dateOnly(c.first_week)}</td><td class="nowrap">{dateOnly(c.last_week)}</td></tr>
-            {:else}
-              <tr><td colspan="5"><div class="empty small">No country weeks imported.</div></td></tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <RatingsTab {tmdbKind} {tmdbId} />
     {/if}
   {/if}
 </Drawer>

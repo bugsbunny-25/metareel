@@ -188,7 +188,7 @@ make reports-open
 | GET    | `/api/v1/leaderboards`                      | Titles by chart points (`period=day\|week\|month\|custom`, filters) |
 | GET    | `/api/v1/export/rankings`                   | Chart entries as CSV / NDJSON (≤ 366 days) |
 | GET    | `/api/v1/countries`, `/api/v1/providers`    | Supported countries; providers with stored charts |
-| GET    | `/api/v1/titles`, `/api/v1/titles/:id`      | Scraped titles (paged; `match_status` filter) |
+| GET    | `/api/v1/titles`, `/api/v1/titles/:id`      | Scraped titles (paged; `match_status` filter); a single mapped title carries its TMDB title's `ids` |
 | GET    | `/api/v1/titles/lookup?imdb=\|tmdb=\|slug=\|netflix=` | Find a title by any ID (`netflix` = the number in netflix.com/title/<id>) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id`             | Everything about a title: TMDB metadata, chart stats, current positions, ratings, where to watch, Netflix numbers (`include=`), and `ids` — every known ID (IMDb, Wikidata, Rotten Tomatoes, Netflix, JustWatch, FlixPatrol slugs, Netflix Top 10 names) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/stats`       | Chart performance: points, peak, days at #1, debut, streak, spread across countries |
@@ -206,6 +206,7 @@ make reports-open
 | GET/POST/PATCH/DELETE | `/api/v1/admin/...`           | Admin API: schedules, runs, stats, API keys, settings, title corrections (`PATCH /api/v1/admin/titles/:id`, `POST .../rematch`), `POST /jobs/:type/run`, `POST /backfill`, `GET /data-quality`, `GET /task-types`, and admin copies of the read routes above |
 | GET/PATCH/POST | `/api/v1/admin/netflix/titles[/:id[/rematch\|/candidates]]` | Netflix official Top 10 titles: list (`q`, `kind`, `match_status`, `missing=tmdb\|season`, `flag=cross_kind\|linked`, `sort`), detail with season titles, weeks and linked FlixPatrol titles, fix by hand (`tmdb_kind` + `tmdb_id`, or an IMDb / Wikidata ID resolved to TMDB), rematch, candidate search |
 | GET/POST | `/api/v1/admin/mappings[/sync\|/:kind/:id[/remap]]` | The TMDB-keyed mapping: every TMDB title with all its IDs and the FlixPatrol / Netflix titles mapped to it (`q`, `kind`, `flag=conflict\|cross_kind\|both\|netflix_only\|flixpatrol_only\|manual`); `sync` recomputes links now; `remap` moves everything on a TMDB title to another (by TMDB, IMDb or Wikidata ID) |
+| GET    | `/api/v1/admin/mapping-refs?tmdb_kind=movie\|tv&mapped=true` | The mapping reference (view `mapping_refs`): one row per chart title with its TMDB title and every ID (IMDb, Wikidata, RT, Metacritic, Letterboxd, JustWatch, Netflix), FlixPatrol slug / kind and Netflix title / kind |
 | GET    | `/api/v1/admin/mapping-events?subject=flixpatrol:12\|netflix:34&tmdb=movie:550&limit=` | History of mapping changes, newest first: action, TMDB title before / after, source and who made it (job, `mapping.sync`, `admin`) |
 | PATCH  | `/api/v1/admin/netflix/seasons/:id`         | Set a Netflix season title's season number by hand (`{"season_number": 2}`) or hand it back (`{"auto": true}`) |
 | GET    | `/` (and any unmatched path)                | Serves `web/dist/` SPA if present           |
@@ -238,15 +239,24 @@ TMDB namespace, so a stand-up special in Netflix's TV list can be a TMDB
 movie). Each TMDB title keeps every ID — IMDb, Wikidata, Rotten Tomatoes,
 Metacritic, Letterboxd, Netflix (Wikidata P1874 or Tudum's Top 10 search),
 JustWatch — and the FlixPatrol slugs and Netflix Top 10 names mapped to it
-(admin UI → Mapping → TMDB mappings; public `ids` on `/titles/tmdb/:kind/:id`).
-These IDs live only on the TMDB title, so every title mapped to it shows the
-same ones, and moving a title to another TMDB title shows that title's. Each
-ID records where it came from (`ids.sources`) and is only replaced by the
-same or a stronger source: entered by hand > TMDB > Wikidata > an automatic
-match. An IMDb, Wikidata or RT ID you enter on a title is stored as its TMDB
+(admin UI → Mapping → TMDB mappings; public `ids` on `/titles/tmdb/:kind/:id`
+and `/titles/:id`; `ids` on the admin Netflix title too). These IDs live only
+on the TMDB title, so every title mapped to it shows the same ones — the
+FlixPatrol, Netflix and TMDB mapping drawers show the same ID list and the
+same Details / Top 10 history / Netflix history / Ratings tabs — and moving a
+title to another TMDB title shows that title's. Each ID records where it came
+from (`ids.sources`) and is only replaced by the same or a stronger source:
+entered by hand > TMDB > Wikidata > an automatic match > a Netflix title
+mapped to it (its Tudum Netflix ID fills the TMDB title's while no other
+source has one). The whole mapping, one row per chart title with every ID,
+is the database view `mapping_refs` (`GET /api/v1/admin/mapping-refs`, or
+"Export reference" on the TMDB mappings tab). An IMDb, Wikidata or RT ID you enter on a title is stored as its TMDB
 title's, set by hand (clear it to hand it back). Data health lists titles
 whose deciding match or fix came with another IMDb ID than their TMDB
-title's.
+title's, and Netflix titles whose own Netflix ID (Tudum) differs from their
+TMDB title's — usually a match to another title of the same name ("check
+mapping"), unless it is a special or season of a show whose own Netflix title
+has that ID ("same show").
 
 A title's mapping is computed, never copied: matching, Netflix IDs and fixes
 by hand store **evidence** (what each source says the title is), and the
@@ -280,7 +290,9 @@ fixes return quickly.
   list and a charted week agree, then mapped to TMDB through
   `tmdb_titles.netflix_id` or Wikidata; Wikidata items with a Netflix ID whose
   English label is the name (the other TMDB kind only if released in the year
-  it first charted or the one before); JustWatch's US Netflix catalogue as
+  it first charted or the one before; never an item with a Netflix ID other
+  than the title's own — such earlier matches are redone by the next Netflix
+  matching run); JustWatch's US Netflix catalogue as
   either kind; a single exact name in all of JustWatch US.
 - **Fixing.** Fix a single title in its drawer (TMDB kind + ID, or an IMDb /
   Wikidata ID resolved through TMDB's `/find`, then Wikidata), or move

@@ -471,7 +471,7 @@ func (s *TitleOverviewService) Lookup(ctx context.Context, imdbID, tmdb, slug, n
 		if !tmdbNumericRe.MatchString(netflixID) {
 			return nil, &ValidationError{Message: "invalid netflix id, expected the number in netflix.com/title/<id>"}
 		}
-		refs, err := s.metadata.RefsByNetflixID(ctx, netflixID)
+		refs, err := s.metadata.RefsByNetflixID(ctx, netflixID, true)
 		if err != nil {
 			return nil, err
 		}

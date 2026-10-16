@@ -281,3 +281,55 @@ func titleKindOf(tmdbKind string) string {
 	}
 	return "movie"
 }
+
+// MappingRef is one row of the mapping reference (view mapping_refs): a
+// chart title (a FlixPatrol title, with the Netflix title linked to it when
+// both map to the same TMDB title, or a Netflix title on its own) with its
+// TMDB title and every external ID. TMDB fields are nil while unmapped.
+type MappingRef struct {
+	TmdbKind              *string `json:"tmdb_kind"` // movie | tv
+	TmdbID                *string `json:"tmdb_id"`
+	TmdbTitle             *string `json:"tmdb_title"`
+	IMDbID                *string `json:"imdb_id"`
+	WikidataID            *string `json:"wikidata_id"`
+	RTSlug                *string `json:"rt_slug"`         // m/<slug> | tv/<slug>
+	MetacriticSlug        *string `json:"metacritic_slug"` // movie/<slug> | tv/<slug>
+	LetterboxdSlug        *string `json:"letterboxd_slug"`
+	JustWatchID           *string `json:"justwatch_id"`
+	NetflixID             *string `json:"netflix_id"` // the TMDB title's, else the Netflix title's
+	FlixPatrolTitleID     *int64  `json:"flixpatrol_title_id"`
+	FlixPatrolSlug        *string `json:"flixpatrol_slug"`
+	FlixPatrolName        *string `json:"flixpatrol_name"`
+	FlixPatrolKind        *string `json:"flixpatrol_kind"` // movie | tv_show (FlixPatrol's title page, else its chart)
+	FlixPatrolMatchStatus *string `json:"flixpatrol_match_status"`
+	NetflixTitleID        *int64  `json:"netflix_title_id"`
+	NetflixTitle          *string `json:"netflix_title"`
+	NetflixKind           *string `json:"netflix_kind"` // Netflix's list: movie (Films) | tv_show (TV)
+	NetflixTitleNetflixID *string `json:"netflix_title_netflix_id"`
+	NetflixMatchStatus    *string `json:"netflix_match_status"`
+}
+
+// Refs lists the mapping reference (tmdbKind "" = both; mappedOnly leaves
+// out unmapped titles), mapped titles first by TMDB title.
+func (r *MappingRepository) Refs(ctx context.Context, tmdbKind string, mappedOnly bool) ([]MappingRef, error) {
+	rows, err := r.q.ListMappingRefs(ctx, sqlc.ListMappingRefsParams{TmdbKind: tmdbKind, Mapped: boolInt(mappedOnly)})
+	if err != nil {
+		return nil, fmt.Errorf("list mapping refs: %w", err)
+	}
+	out := make([]MappingRef, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, MappingRef{
+			TmdbKind: emptyNil(row.TmdbKind), TmdbID: emptyNil(row.TmdbID), TmdbTitle: nullStringPtr(row.TmdbTitle),
+			IMDbID: nullStringPtr(row.ImdbID), WikidataID: nullStringPtr(row.WikidataID), RTSlug: nullStringPtr(row.RtSlug),
+			MetacriticSlug: nullStringPtr(row.MetacriticSlug), LetterboxdSlug: nullStringPtr(row.LetterboxdSlug),
+			JustWatchID: nullStringPtr(row.JustwatchID), NetflixID: nullStringPtr(row.NetflixID),
+			FlixPatrolTitleID: nullInt64Ptr(row.FlixpatrolTitleID), FlixPatrolSlug: nullStringPtr(row.FlixpatrolSlug),
+			FlixPatrolName: nullStringPtr(row.FlixpatrolName), FlixPatrolKind: nullStringPtr(row.FlixpatrolKind),
+			FlixPatrolMatchStatus: nullStringPtr(row.FlixpatrolMatchStatus),
+			NetflixTitleID:        nullInt64Ptr(row.NetflixTitleID), NetflixTitle: nullStringPtr(row.NetflixTitle),
+			NetflixKind: nullStringPtr(row.NetflixKind), NetflixTitleNetflixID: nullStringPtr(row.NetflixTitleNetflixID),
+			NetflixMatchStatus: nullStringPtr(row.NetflixMatchStatus),
+		})
+	}
+	return out, nil
+}

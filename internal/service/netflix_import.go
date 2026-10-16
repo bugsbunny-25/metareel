@@ -63,6 +63,9 @@ type ImportReport struct {
 	Mapping   *MappingSyncReport `json:"mapping,omitempty"`
 	NetflixID *NetflixIDReport   `json:"netflix_ids,omitempty"`
 	Seasons   *SeasonMapReport   `json:"seasons,omitempty"`
+	// Wikidata label matches dropped because the title's own Netflix ID
+	// belongs to another title, and matched again.
+	Contradicted int `json:"contradicted_label_matches,omitempty"`
 }
 
 // ImportFileResult is one file of an import.
@@ -410,6 +413,8 @@ type MatchReport struct {
 	Mapping   *MappingSyncReport `json:"mapping,omitempty"`
 	NetflixID *NetflixIDReport   `json:"netflix_ids,omitempty"`
 	Seasons   *SeasonMapReport   `json:"seasons,omitempty"`
+	// Wikidata label matches the title's own Netflix ID contradicted, matched again.
+	Contradicted int `json:"contradicted_label_matches,omitempty"`
 }
 
 // RunMatch matches the given Netflix titles (ignoring their backoff; manual
@@ -429,7 +434,7 @@ func (n *NetflixImporter) RunMatch(ctx context.Context, ids []int64, runLog func
 		_, err = n.resolveNetflixIDs(ctx, session, nil, netflixIDBacklog, rep.NetflixID, logf)
 		session.Flush(ctx)
 	}
-	out := &MatchReport{Requested: len(ids), Matched: rep.Matched, Unmatched: rep.Unmatched, Mapping: rep.Mapping, NetflixID: rep.NetflixID}
+	out := &MatchReport{Requested: len(ids), Matched: rep.Matched, Unmatched: rep.Unmatched, Mapping: rep.Mapping, NetflixID: rep.NetflixID, Contradicted: rep.Contradicted}
 	if err != nil {
 		return out, err
 	}
@@ -459,6 +464,12 @@ func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit in
 			return err
 		}
 	}
+	session := n.writer.Session(tasks.TypeNetflixTitlesMatch)
+	defer session.Flush(ctx)
+	// Label matches the title's own Netflix ID contradicts are matched again.
+	if err := n.requeueContradicted(ctx, session, ids, rep, logf); err != nil {
+		return err
+	}
 	var (
 		due []repository.NetflixTitleDue
 		err error
@@ -482,13 +493,17 @@ func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit in
 	for _, nt := range due {
 		dueIDs = append(dueIDs, nt.ID)
 	}
-	session := n.writer.Session(tasks.TypeNetflixTitlesMatch)
-	defer session.Flush(ctx)
 	byNetflixID, err := n.resolveNetflixIDs(ctx, session, dueIDs, netflixIDDueLimit, rep.NetflixID, logf)
 	if err != nil {
 		return err
 	}
 	rep.Matched += len(byNetflixID)
+	// The pass may have found Netflix IDs: label matches must agree with them.
+	if len(dueIDs) > 0 {
+		if due, err = n.repo.NetflixTitlesForMatch(ctx, dueIDs); err != nil {
+			return err
+		}
+	}
 	wiki := n.wikidataNetflixHits(ctx, due, logf)
 	jwCalls := 0
 	for _, nt := range due {
@@ -506,7 +521,7 @@ func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit in
 		var ids repository.TmdbIDs
 		if ref, title, ok := singleTmdb(fp); ok {
 			m.TmdbKind, m.TmdbID, m.TitleID, m.Source = ref.Kind, ref.ID, title.ID, MatchSourceFlixPatrolTitle
-		} else if h, ok := pickWikidataNetflix(wiki[nt.ShowTitle], nt.Kind, weekYear(nt.FirstWeek)); ok {
+		} else if h, ok := pickWikidataNetflix(wiki[nt.ShowTitle], nt.Kind, weekYear(nt.FirstWeek), nt.NetflixID.String); ok {
 			m.TmdbKind, m.TmdbID, m.ImdbID, m.Source = h.TmdbKind, h.TmdbID, h.IMDbID, "wikidata_netflix"
 			ids.NetflixID, ids.WikidataID = h.NetflixID, h.WikidataID
 		} else if n.matcher != nil && n.matcher.justWatch != nil {
@@ -543,6 +558,39 @@ func (n *NetflixImporter) matchTitles(ctx context.Context, ids []int64, limit in
 	return nil
 }
 
+// contradictedLimit caps the contradicted label matches redone per run.
+const contradictedLimit = 200
+
+// requeueContradicted clears Wikidata label matches (wikidata_netflix) the
+// title's own Netflix ID contradicts, so they are matched again (ids: only
+// these titles; nil = any).
+func (n *NetflixImporter) requeueContradicted(ctx context.Context, session *MappingSession, ids []int64, rep *ImportReport, logf func(level, format string, args ...any)) error {
+	if n.mapping == nil {
+		return nil
+	}
+	found, err := n.mapping.repo.ContradictedNetflixLabelMatches(ctx, contradictedLimit)
+	if err != nil {
+		return err
+	}
+	only := map[int64]bool{}
+	for _, id := range ids {
+		only[id] = true
+	}
+	for _, id := range found {
+		if len(ids) > 0 && !only[id] {
+			continue
+		}
+		if err := session.RequeueNetflixTitle(ctx, id, true); err != nil {
+			return err
+		}
+		rep.Contradicted++
+	}
+	if rep.Contradicted > 0 {
+		logf("info", "%d Netflix title(s) matched by Wikidata label to a title with another Netflix ID: matching them again", rep.Contradicted)
+	}
+	return nil
+}
+
 // wikidataNetflixHits looks the due titles' names up on Wikidata (items
 // with a Netflix ID) in batches; a failure only skips this source.
 func (n *NetflixImporter) wikidataNetflixHits(ctx context.Context, due []repository.NetflixTitleDue, logf func(level, format string, args ...any)) map[string][]client.WikidataNetflixHit {
@@ -569,8 +617,20 @@ func (n *NetflixImporter) wikidataNetflixHits(ctx context.Context, due []reposit
 // (movie | tv_show) that first charted in chartYear: the only TMDB title of
 // the list's kind (or among several, the only recent release); else the
 // only one of the other kind if it is a recent release (a special in the TV
-// list), so a same-name older title of the other kind is not taken.
-func pickWikidataNetflix(hits []client.WikidataNetflixHit, listKind string, chartYear int) (client.WikidataNetflixHit, bool) {
+// list), so a same-name older title of the other kind is not taken. A title
+// with its own Netflix ID (ownNetflixID, from Tudum) only takes a hit with
+// that ID: a hit with another one is a different title of the same name
+// (e.g. the 2010 film for the 2025 remake).
+func pickWikidataNetflix(hits []client.WikidataNetflixHit, listKind string, chartYear int, ownNetflixID string) (client.WikidataNetflixHit, bool) {
+	if ownNetflixID != "" {
+		var agree []client.WikidataNetflixHit
+		for _, h := range hits {
+			if h.NetflixID == ownNetflixID {
+				agree = append(agree, h)
+			}
+		}
+		hits = agree
+	}
 	want := tmdbKindOf(flixpatrol.TitleKind(listKind))
 	byRef := func(kind string) []client.WikidataNetflixHit {
 		seen := map[string]bool{}

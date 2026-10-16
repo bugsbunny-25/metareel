@@ -209,3 +209,54 @@ WHERE COALESCE(e.imdb_id, '') <> '' AND COALESCE(m.imdb_id, '') <> '' AND e.imdb
         > (CASE e.kind WHEN 'manual' THEN 3 WHEN 'netflix_id' THEN 2 ELSE 1 END))
 ORDER BY 1, 3
 LIMIT sqlc.arg(limit);
+
+-- name: ListMappingRefs :many
+-- The mapping reference (view mapping_refs): one row per chart title with
+-- its TMDB title and every external ID. Mapped titles first.
+SELECT CAST(COALESCE(tmdb_kind, '') AS TEXT) AS tmdb_kind, CAST(COALESCE(tmdb_id, '') AS TEXT) AS tmdb_id,
+       tmdb_title, imdb_id, wikidata_id, rt_slug, metacritic_slug, letterboxd_slug, justwatch_id, netflix_id,
+       flixpatrol_title_id, flixpatrol_slug, flixpatrol_name, flixpatrol_kind, flixpatrol_match_status,
+       netflix_title_id, netflix_title, netflix_kind, netflix_title_netflix_id, netflix_match_status
+FROM mapping_refs
+WHERE (CAST(sqlc.arg(tmdb_kind) AS TEXT) = '' OR tmdb_kind = sqlc.arg(tmdb_kind))
+  AND (CAST(sqlc.arg(mapped) AS INTEGER) = 0 OR tmdb_id IS NOT NULL)
+ORDER BY tmdb_id IS NULL, tmdb_title COLLATE NOCASE, tmdb_kind, tmdb_id, flixpatrol_slug, netflix_title;
+
+-- name: ListNetflixIDMismatches :many
+-- Netflix titles whose own Netflix ID (Tudum) differs from their TMDB
+-- title's from a stronger source (manual, tmdb, wikidata, match): the
+-- mapping is likely wrong (a same-name title), unless the title is a special
+-- or part of a show another Netflix title on that TMDB title has the ID of
+-- (other_title_has_id). Titles fixed by hand and those come last.
+SELECT n.id, n.show_title, n.kind, CAST(n.tmdb_kind AS TEXT) AS tmdb_kind, CAST(n.tmdb_id AS TEXT) AS tmdb_id,
+       CAST(COALESCE(t.title, '') AS TEXT) AS tmdb_title, CAST(n.netflix_id AS TEXT) AS netflix_id,
+       CAST(t.netflix_id AS TEXT) AS tmdb_netflix_id, CAST(COALESCE(t.netflix_source, '') AS TEXT) AS tmdb_netflix_source,
+       n.match_status, CAST(COALESCE(n.match_source, '') AS TEXT) AS match_source,
+       CAST(EXISTS (
+           SELECT 1 FROM netflix_titles o
+           WHERE o.id <> n.id AND o.tmdb_kind = n.tmdb_kind AND o.tmdb_id = n.tmdb_id AND o.netflix_id = t.netflix_id
+       ) AS INTEGER) AS other_title_has_id
+FROM netflix_titles n
+JOIN tmdb_titles t ON t.tmdb_kind = n.tmdb_kind AND t.tmdb_id = n.tmdb_id
+WHERE COALESCE(n.netflix_id, '') <> '' AND COALESCE(t.netflix_id, '') <> '' AND n.netflix_id <> t.netflix_id
+  AND COALESCE(t.netflix_source, '') <> 'netflix'
+ORDER BY n.match_status = 'manual', other_title_has_id, n.id DESC
+LIMIT sqlc.arg(limit);
+
+-- name: ListContradictedNetflixLabelMatches :many
+-- Netflix titles mapped only by a Wikidata label match (source
+-- wikidata_netflix) to a TMDB title whose Netflix ID (not one copied from a
+-- Netflix title) differs from the title's own: the label matched another
+-- title of the same name. Titles with a fix by hand or a Netflix ID match are
+-- left alone.
+SELECT n.id FROM netflix_titles n
+JOIN mapping_evidence e ON e.subject_type = 'netflix' AND e.subject_id = n.id AND e.kind = 'match' AND e.source = 'wikidata_netflix'
+JOIN tmdb_titles t ON t.tmdb_kind = e.tmdb_kind AND t.tmdb_id = e.tmdb_id
+WHERE n.match_status <> 'manual'
+  AND COALESCE(n.netflix_id, '') <> '' AND COALESCE(t.netflix_id, '') <> '' AND t.netflix_id <> n.netflix_id
+  AND COALESCE(t.netflix_source, '') <> 'netflix'
+  AND NOT EXISTS (
+    SELECT 1 FROM mapping_evidence h
+    WHERE h.subject_type = 'netflix' AND h.subject_id = n.id AND h.kind IN ('manual', 'netflix_id'))
+ORDER BY n.id
+LIMIT sqlc.arg(limit);

@@ -82,6 +82,29 @@ type MappingEvidence struct {
 	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
+type MappingRef struct {
+	TmdbKind              string         `json:"tmdb_kind"`
+	TmdbID                interface{}    `json:"tmdb_id"`
+	TmdbTitle             sql.NullString `json:"tmdb_title"`
+	ImdbID                sql.NullString `json:"imdb_id"`
+	WikidataID            sql.NullString `json:"wikidata_id"`
+	RtSlug                sql.NullString `json:"rt_slug"`
+	MetacriticSlug        sql.NullString `json:"metacritic_slug"`
+	LetterboxdSlug        sql.NullString `json:"letterboxd_slug"`
+	JustwatchID           sql.NullString `json:"justwatch_id"`
+	NetflixID             sql.NullString `json:"netflix_id"`
+	FlixpatrolTitleID     sql.NullInt64  `json:"flixpatrol_title_id"`
+	FlixpatrolSlug        sql.NullString `json:"flixpatrol_slug"`
+	FlixpatrolName        sql.NullString `json:"flixpatrol_name"`
+	FlixpatrolKind        sql.NullString `json:"flixpatrol_kind"`
+	FlixpatrolMatchStatus sql.NullString `json:"flixpatrol_match_status"`
+	NetflixTitleID        sql.NullInt64  `json:"netflix_title_id"`
+	NetflixTitle          sql.NullString `json:"netflix_title"`
+	NetflixKind           sql.NullString `json:"netflix_kind"`
+	NetflixTitleNetflixID sql.NullString `json:"netflix_title_netflix_id"`
+	NetflixMatchStatus    sql.NullString `json:"netflix_match_status"`
+}
+
 type NetflixMostPopular struct {
 	Category       string          `json:"category"`
 	Rank           int64           `json:"rank"`

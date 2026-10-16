@@ -100,12 +100,46 @@ SELECT COUNT(*) AS titles,
 FROM tmdb_titles;
 
 -- name: FindTmdbRefsByNetflixID :many
-SELECT tmdb_kind, tmdb_id FROM tmdb_titles WHERE netflix_id = ?;
+-- any_source = 0 leaves out IDs copied from a Netflix title mapped here
+-- (source netflix): they only repeat that title's own mapping.
+SELECT tmdb_kind, tmdb_id FROM tmdb_titles
+WHERE netflix_id = sqlc.arg(netflix_id)
+  AND (CAST(sqlc.arg(any_source) AS INTEGER) = 1 OR COALESCE(netflix_source, '') <> 'netflix');
+
+-- name: FillTmdbNetflixIDsFromNetflix :execrows
+-- A TMDB title without a Netflix ID (or with one copied this way) takes the
+-- Netflix ID of a Netflix title mapped to it: one mapped by its Netflix ID
+-- first, then one fixed by hand, then one in the list of its TMDB kind.
+-- Source netflix ranks below every other source, which all replace it.
+UPDATE tmdb_titles SET
+    netflix_id = (
+        SELECT n.netflix_id FROM netflix_titles n
+        WHERE n.tmdb_kind = tmdb_titles.tmdb_kind AND n.tmdb_id = tmdb_titles.tmdb_id AND COALESCE(n.netflix_id, '') <> ''
+        ORDER BY n.match_source = 'netflix_id' DESC, n.match_status = 'manual' DESC,
+                 CASE n.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = n.tmdb_kind DESC, n.id
+        LIMIT 1),
+    netflix_source = 'netflix',
+    updated_at = CURRENT_TIMESTAMP
+WHERE (netflix_id IS NULL OR netflix_source = 'netflix')
+  AND COALESCE((
+        SELECT n.netflix_id FROM netflix_titles n
+        WHERE n.tmdb_kind = tmdb_titles.tmdb_kind AND n.tmdb_id = tmdb_titles.tmdb_id AND COALESCE(n.netflix_id, '') <> ''
+        ORDER BY n.match_source = 'netflix_id' DESC, n.match_status = 'manual' DESC,
+                 CASE n.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = n.tmdb_kind DESC, n.id
+        LIMIT 1), '') NOT IN ('', COALESCE(netflix_id, ''));
+
+-- name: ClearStaleTmdbNetflixIDs :execrows
+-- Netflix IDs copied from a Netflix title that is no longer mapped here.
+UPDATE tmdb_titles SET netflix_id = NULL, netflix_source = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE netflix_source = 'netflix' AND NOT EXISTS (
+    SELECT 1 FROM netflix_titles n
+    WHERE n.tmdb_kind = tmdb_titles.tmdb_kind AND n.tmdb_id = tmdb_titles.tmdb_id AND n.netflix_id = tmdb_titles.netflix_id);
 
 -- name: UpsertTmdbTitleIDs :exec
 -- Stores the IDs given (NULL = not given) from one source (manual | tmdb |
--- wikidata | match). An ID is only replaced by one from the same or a
--- higher-ranked source: manual > tmdb > wikidata > match.
+-- wikidata | match | netflix). An ID is only replaced by one from the same
+-- or a higher-ranked source: manual > tmdb > wikidata > match > netflix
+-- (netflix, like any unknown source, ranks 0).
 INSERT INTO tmdb_titles (tmdb_kind, tmdb_id,
     imdb_id, imdb_source, wikidata_id, wikidata_source, rt_id, rt_source, metacritic_id, metacritic_source,
     letterboxd_id, letterboxd_source, netflix_id, netflix_source, justwatch_id, justwatch_source)

@@ -60,6 +60,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.GET("/mappings/:kind/:id", h.GetMapping)
 	admin.POST("/mappings/:kind/:id/remap", h.RemapMapping)
 	admin.GET("/mapping-events", h.ListMappingEvents)
+	admin.GET("/mapping-refs", h.ListMappingRefs)
 	admin.GET("/task-schedules", h.GetTaskSchedules)
 	admin.PATCH("/task-schedules/:id", h.PatchTaskSchedule)
 	admin.GET("/task-schedules/:id", h.GetTaskScheduleByID)

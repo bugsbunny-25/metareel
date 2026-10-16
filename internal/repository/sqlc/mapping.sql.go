@@ -163,6 +163,48 @@ func (q *Queries) ListAllMappingEvidence(ctx context.Context) ([]MappingEvidence
 	return items, nil
 }
 
+const listContradictedNetflixLabelMatches = `-- name: ListContradictedNetflixLabelMatches :many
+SELECT n.id FROM netflix_titles n
+JOIN mapping_evidence e ON e.subject_type = 'netflix' AND e.subject_id = n.id AND e.kind = 'match' AND e.source = 'wikidata_netflix'
+JOIN tmdb_titles t ON t.tmdb_kind = e.tmdb_kind AND t.tmdb_id = e.tmdb_id
+WHERE n.match_status <> 'manual'
+  AND COALESCE(n.netflix_id, '') <> '' AND COALESCE(t.netflix_id, '') <> '' AND t.netflix_id <> n.netflix_id
+  AND COALESCE(t.netflix_source, '') <> 'netflix'
+  AND NOT EXISTS (
+    SELECT 1 FROM mapping_evidence h
+    WHERE h.subject_type = 'netflix' AND h.subject_id = n.id AND h.kind IN ('manual', 'netflix_id'))
+ORDER BY n.id
+LIMIT ?1
+`
+
+// Netflix titles mapped only by a Wikidata label match (source
+// wikidata_netflix) to a TMDB title whose Netflix ID (not one copied from a
+// Netflix title) differs from the title's own: the label matched another
+// title of the same name. Titles with a fix by hand or a Netflix ID match are
+// left alone.
+func (q *Queries) ListContradictedNetflixLabelMatches(ctx context.Context, limit int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listContradictedNetflixLabelMatches, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFlixPatrolNetflixWeeks = `-- name: ListFlixPatrolNetflixWeeks :many
 SELECT DISTINCT t.id, t.name, CAST(COALESCE(t.fp_name, '') AS TEXT) AS fp_name, r.category,
        CAST(date(r.ranked_on, 'weekday 0') AS TEXT) AS week
@@ -568,6 +610,164 @@ func (q *Queries) ListMappingEvidence(ctx context.Context, arg ListMappingEviden
 			&i.ViaTitleID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMappingRefs = `-- name: ListMappingRefs :many
+SELECT CAST(COALESCE(tmdb_kind, '') AS TEXT) AS tmdb_kind, CAST(COALESCE(tmdb_id, '') AS TEXT) AS tmdb_id,
+       tmdb_title, imdb_id, wikidata_id, rt_slug, metacritic_slug, letterboxd_slug, justwatch_id, netflix_id,
+       flixpatrol_title_id, flixpatrol_slug, flixpatrol_name, flixpatrol_kind, flixpatrol_match_status,
+       netflix_title_id, netflix_title, netflix_kind, netflix_title_netflix_id, netflix_match_status
+FROM mapping_refs
+WHERE (CAST(?1 AS TEXT) = '' OR tmdb_kind = ?1)
+  AND (CAST(?2 AS INTEGER) = 0 OR tmdb_id IS NOT NULL)
+ORDER BY tmdb_id IS NULL, tmdb_title COLLATE NOCASE, tmdb_kind, tmdb_id, flixpatrol_slug, netflix_title
+`
+
+type ListMappingRefsParams struct {
+	TmdbKind string `json:"tmdb_kind"`
+	Mapped   int64  `json:"mapped"`
+}
+
+type ListMappingRefsRow struct {
+	TmdbKind              string         `json:"tmdb_kind"`
+	TmdbID                string         `json:"tmdb_id"`
+	TmdbTitle             sql.NullString `json:"tmdb_title"`
+	ImdbID                sql.NullString `json:"imdb_id"`
+	WikidataID            sql.NullString `json:"wikidata_id"`
+	RtSlug                sql.NullString `json:"rt_slug"`
+	MetacriticSlug        sql.NullString `json:"metacritic_slug"`
+	LetterboxdSlug        sql.NullString `json:"letterboxd_slug"`
+	JustwatchID           sql.NullString `json:"justwatch_id"`
+	NetflixID             sql.NullString `json:"netflix_id"`
+	FlixpatrolTitleID     sql.NullInt64  `json:"flixpatrol_title_id"`
+	FlixpatrolSlug        sql.NullString `json:"flixpatrol_slug"`
+	FlixpatrolName        sql.NullString `json:"flixpatrol_name"`
+	FlixpatrolKind        sql.NullString `json:"flixpatrol_kind"`
+	FlixpatrolMatchStatus sql.NullString `json:"flixpatrol_match_status"`
+	NetflixTitleID        sql.NullInt64  `json:"netflix_title_id"`
+	NetflixTitle          sql.NullString `json:"netflix_title"`
+	NetflixKind           sql.NullString `json:"netflix_kind"`
+	NetflixTitleNetflixID sql.NullString `json:"netflix_title_netflix_id"`
+	NetflixMatchStatus    sql.NullString `json:"netflix_match_status"`
+}
+
+// The mapping reference (view mapping_refs): one row per chart title with
+// its TMDB title and every external ID. Mapped titles first.
+func (q *Queries) ListMappingRefs(ctx context.Context, arg ListMappingRefsParams) ([]ListMappingRefsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listMappingRefs, arg.TmdbKind, arg.Mapped)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMappingRefsRow{}
+	for rows.Next() {
+		var i ListMappingRefsRow
+		if err := rows.Scan(
+			&i.TmdbKind,
+			&i.TmdbID,
+			&i.TmdbTitle,
+			&i.ImdbID,
+			&i.WikidataID,
+			&i.RtSlug,
+			&i.MetacriticSlug,
+			&i.LetterboxdSlug,
+			&i.JustwatchID,
+			&i.NetflixID,
+			&i.FlixpatrolTitleID,
+			&i.FlixpatrolSlug,
+			&i.FlixpatrolName,
+			&i.FlixpatrolKind,
+			&i.FlixpatrolMatchStatus,
+			&i.NetflixTitleID,
+			&i.NetflixTitle,
+			&i.NetflixKind,
+			&i.NetflixTitleNetflixID,
+			&i.NetflixMatchStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNetflixIDMismatches = `-- name: ListNetflixIDMismatches :many
+SELECT n.id, n.show_title, n.kind, CAST(n.tmdb_kind AS TEXT) AS tmdb_kind, CAST(n.tmdb_id AS TEXT) AS tmdb_id,
+       CAST(COALESCE(t.title, '') AS TEXT) AS tmdb_title, CAST(n.netflix_id AS TEXT) AS netflix_id,
+       CAST(t.netflix_id AS TEXT) AS tmdb_netflix_id, CAST(COALESCE(t.netflix_source, '') AS TEXT) AS tmdb_netflix_source,
+       n.match_status, CAST(COALESCE(n.match_source, '') AS TEXT) AS match_source,
+       CAST(EXISTS (
+           SELECT 1 FROM netflix_titles o
+           WHERE o.id <> n.id AND o.tmdb_kind = n.tmdb_kind AND o.tmdb_id = n.tmdb_id AND o.netflix_id = t.netflix_id
+       ) AS INTEGER) AS other_title_has_id
+FROM netflix_titles n
+JOIN tmdb_titles t ON t.tmdb_kind = n.tmdb_kind AND t.tmdb_id = n.tmdb_id
+WHERE COALESCE(n.netflix_id, '') <> '' AND COALESCE(t.netflix_id, '') <> '' AND n.netflix_id <> t.netflix_id
+  AND COALESCE(t.netflix_source, '') <> 'netflix'
+ORDER BY n.match_status = 'manual', other_title_has_id, n.id DESC
+LIMIT ?1
+`
+
+type ListNetflixIDMismatchesRow struct {
+	ID                int64  `json:"id"`
+	ShowTitle         string `json:"show_title"`
+	Kind              string `json:"kind"`
+	TmdbKind          string `json:"tmdb_kind"`
+	TmdbID            string `json:"tmdb_id"`
+	TmdbTitle         string `json:"tmdb_title"`
+	NetflixID         string `json:"netflix_id"`
+	TmdbNetflixID     string `json:"tmdb_netflix_id"`
+	TmdbNetflixSource string `json:"tmdb_netflix_source"`
+	MatchStatus       string `json:"match_status"`
+	MatchSource       string `json:"match_source"`
+	OtherTitleHasID   int64  `json:"other_title_has_id"`
+}
+
+// Netflix titles whose own Netflix ID (Tudum) differs from their TMDB
+// title's from a stronger source (manual, tmdb, wikidata, match): the
+// mapping is likely wrong (a same-name title), unless the title is a special
+// or part of a show another Netflix title on that TMDB title has the ID of
+// (other_title_has_id). Titles fixed by hand and those come last.
+func (q *Queries) ListNetflixIDMismatches(ctx context.Context, limit int64) ([]ListNetflixIDMismatchesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listNetflixIDMismatches, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListNetflixIDMismatchesRow{}
+	for rows.Next() {
+		var i ListNetflixIDMismatchesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ShowTitle,
+			&i.Kind,
+			&i.TmdbKind,
+			&i.TmdbID,
+			&i.TmdbTitle,
+			&i.NetflixID,
+			&i.TmdbNetflixID,
+			&i.TmdbNetflixSource,
+			&i.MatchStatus,
+			&i.MatchSource,
+			&i.OtherTitleHasID,
 		); err != nil {
 			return nil, err
 		}

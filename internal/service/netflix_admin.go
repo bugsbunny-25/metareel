@@ -88,6 +88,9 @@ type NetflixTitleDetail struct {
 	TmdbSeasons []repository.TmdbSeason          `json:"tmdb_seasons"`
 	GlobalWeeks []repository.NetflixTitleWeek    `json:"global_weeks"`
 	Countries   []repository.NetflixTitleCountry `json:"countries"`
+	// Every ID of its TMDB title, with sources (the same as the TMDB
+	// mapping's); null while unmapped. netflix_id above is this title's own.
+	IDs *TitleExternalIDs `json:"ids"`
 }
 
 // NetflixLinkedTitle is a FlixPatrol title linked to a Netflix title.
@@ -178,6 +181,11 @@ func (s *NetflixAdminService) Get(ctx context.Context, id int64) (*NetflixTitleD
 	}
 	out := &NetflixTitleDetail{NetflixTitleResponse: netflixTitleResponse(*row), TmdbSeasons: []repository.TmdbSeason{}, Links: []NetflixLinkedTitle{}}
 	if s.mapping != nil {
+		if ref := repository.NetflixTitleRef(row.NetflixTitle); ref.ID != "" {
+			if out.IDs, err = s.mapping.ExternalIDs(ctx, ref); err != nil {
+				return nil, err
+			}
+		}
 		links, err := s.mapping.repo.FlixPatrolLinksOf(ctx, []int64{id})
 		if err != nil {
 			return nil, err

@@ -65,6 +65,22 @@ func (h *Handler) ListMappingEvents(c *echo.Context) error {
 	return writeData(c, out, err)
 }
 
+// ListMappingRefs returns the mapping reference: one row per chart title
+// with its TMDB title and every external ID:
+// GET /api/v1/admin/mapping-refs?tmdb_kind=movie|tv&mapped=true
+func (h *Handler) ListMappingRefs(c *echo.Context) error {
+	mapped := false
+	if v := c.QueryParam("mapped"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return badRequest(c, errors.New("mapped must be true or false"))
+		}
+		mapped = b
+	}
+	out, err := h.Mapping.Refs(c.Request().Context(), c.QueryParam("tmdb_kind"), mapped)
+	return writeData(c, out, err)
+}
+
 // SyncMappings recomputes the links between Netflix and FlixPatrol titles
 // and shares mappings over them now: POST /api/v1/admin/mappings/sync
 func (h *Handler) SyncMappings(c *echo.Context) error {

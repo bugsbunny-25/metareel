@@ -17,7 +17,7 @@ type DataQualityService struct {
 	metadata    *repository.MetadataRepository
 	schedules   *repository.TaskScheduleRepository
 	maintenance *MaintenanceService
-	mapping     *repository.MappingRepository // optional: IMDb mismatches
+	mapping     *repository.MappingRepository // optional: IMDb and Netflix ID mismatches
 	now         func() time.Time
 }
 
@@ -25,14 +25,14 @@ func NewDataQualityService(flix *repository.FlixPatrolRepository, ops *repositor
 	return &DataQualityService{flix: flix, ops: ops, imports: imports, metadata: metadata, schedules: schedules, maintenance: maintenance, now: time.Now}
 }
 
-// WithMapping also reports mapped titles whose IMDb ID disagrees with their
-// TMDB title's.
+// WithMapping also reports mapped titles whose IMDb ID, or Netflix titles
+// whose Netflix ID, disagrees with their TMDB title's.
 func (s *DataQualityService) WithMapping(mapping *repository.MappingRepository) *DataQualityService {
 	s.mapping = mapping
 	return s
 }
 
-// imdbMismatchLimit caps the IMDb mismatches listed in the report.
+// imdbMismatchLimit caps the IMDb (and Netflix ID) mismatches listed in the report.
 const imdbMismatchLimit = 200
 
 // DataQualityReport is GET /api/v1/admin/data-quality.
@@ -53,6 +53,10 @@ type DataQualityReport struct {
 	// Mapped titles whose own IMDb ID differs from their TMDB title's: one of
 	// the two is wrong (fix the title, or set the TMDB title's by hand).
 	IMDbMismatches []repository.IMDbMismatch `json:"imdb_mismatches"`
+	// Netflix titles whose own Netflix ID (Tudum) differs from their TMDB
+	// title's: usually a match to a same-name title, unless another Netflix
+	// title on that TMDB title has its ID (a special or part of the show).
+	NetflixIDMismatches []repository.NetflixIDMismatch `json:"netflix_id_mismatches"`
 }
 
 // ChartGap lists dates missing for a scheduled chart within the gap window.
@@ -120,8 +124,12 @@ func (s *DataQualityService) Report(ctx context.Context) (*DataQualityReport, er
 		return nil, err
 	}
 	rep.IMDbMismatches = []repository.IMDbMismatch{}
+	rep.NetflixIDMismatches = []repository.NetflixIDMismatch{}
 	if s.mapping != nil {
 		if rep.IMDbMismatches, err = s.mapping.IMDbMismatches(ctx, imdbMismatchLimit); err != nil {
+			return nil, err
+		}
+		if rep.NetflixIDMismatches, err = s.mapping.NetflixIDMismatches(ctx, imdbMismatchLimit); err != nil {
 			return nil, err
 		}
 	}

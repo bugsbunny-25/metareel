@@ -136,6 +136,7 @@ type MappingRefreshReport struct {
 	WikidataChecked int                `json:"wikidata_checked"` // never looked up before
 	WikidataFound   int                `json:"wikidata_found"`
 	NetflixTitles   int                `json:"netflix_titles"` // whose seasons were remapped
+	NetflixIDs      int64              `json:"netflix_ids"`    // TMDB titles whose Netflix ID was copied from (or dropped with) a Netflix title
 	Sync            *MappingSyncReport `json:"sync,omitempty"` // run by hand: mappings recomputed
 }
 
@@ -175,6 +176,16 @@ func (s *TitleMappingService) Refresh(ctx context.Context, r MappingRefresh, run
 	refs := session.Take().Refs
 	netflixIDs := mergeIDs(r.NetflixIDs, shared.NetflixIDs)
 	rep.TmdbTitles = len(refs)
+
+	// Netflix IDs follow the Netflix titles' mappings (database only, all titles).
+	n, err := s.meta.SyncNetflixIDs(ctx)
+	if err != nil {
+		return rep, err
+	}
+	rep.NetflixIDs = n
+	if n > 0 {
+		logf("info", "Netflix IDs: %d TMDB title(s) took (or dropped) the Netflix ID of a Netflix title mapped to them", n)
+	}
 
 	if s.metadata != nil && len(refs) > 0 {
 		have, err := s.meta.GetMany(ctx, refs)
