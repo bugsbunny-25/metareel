@@ -1,7 +1,7 @@
 <script>
   import { getDataQuality, runJob, listTaskTypes } from '../lib/api.js'
   import { href } from '../lib/router.svelte.js'
-  import { relativeTime, dateTime, dateOnly, number } from '../lib/format.js'
+  import { relativeTime, dateTime, dateOnly, number, links, ID_SOURCES } from '../lib/format.js'
   import { providerLabel, countryName } from '../lib/constants.js'
   import { toast } from '../lib/toast.svelte.js'
   import Icon from '../components/Icon.svelte'
@@ -64,6 +64,9 @@
 
   // What decided an IMDb-mismatch entry's mapping.
   const EVIDENCE_LABEL = { manual: 'fixed by hand', netflix_id: 'Netflix ID', match: 'automatic match' }
+  // Netflix ID disagreements worth a look: not fixed by hand, and not a
+  // special / part of a show whose own Netflix title has the TMDB title's ID.
+  const suspectNetflixIDs = $derived((report?.netflix_id_mismatches ?? []).filter((m) => m.match_status !== 'manual' && !m.other_title_has_id))
 </script>
 
 <div class="page">
@@ -239,6 +242,45 @@
         </div>
         {#if (report.imdb_mismatches ?? []).length}
           <p class="field-hint" style="padding:0 16px 12px">The match or fix that decides the title's mapping came with another IMDb ID than its TMDB title has, so one of the two is wrong. A wrong mapping: fix it on the title. A wrong IMDb ID on the TMDB title: enter the right one on the title (it becomes the TMDB title's, set by hand). Saving the mapping by hand confirms it and clears the entry.</p>
+        {/if}
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Netflix IDs that disagree with TMDB</div>
+          <span class="badge {suspectNetflixIDs.length ? 'badge-warning' : 'badge-success'}" title="{suspectNetflixIDs.length} to check of {(report.netflix_id_mismatches ?? []).length}">{suspectNetflixIDs.length}</span>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Netflix title</th><th>TMDB title</th><th>Title's Netflix ID</th><th>TMDB title's Netflix ID</th><th></th></tr></thead>
+            <tbody>
+              {#each report.netflix_id_mismatches ?? [] as m (m.netflix_title_id)}
+                <tr>
+                  <td>
+                    <a href={href('/netflix', { open: m.netflix_title_id })}>{m.show_title}</a>
+                    <div class="cell-sub">{m.list === 'tv_show' ? 'TV' : 'Films'} list · {m.match_status === 'manual' ? 'fixed by hand' : `via ${m.match_source || m.match_status}`}</div>
+                  </td>
+                  <td>
+                    <a href={href('/mapping', { open: `${m.tmdb_kind}:${m.tmdb_id}` })}>{m.tmdb_title || `TMDB ${m.tmdb_id}`}</a>
+                    <div class="cell-sub mono">{m.tmdb_kind} {m.tmdb_id}</div>
+                  </td>
+                  <td class="mono"><a href={links.netflix(m.netflix_id)} target="_blank" rel="noopener">{m.netflix_id}</a></td>
+                  <td class="mono"><a href={links.netflix(m.tmdb_netflix_id)} target="_blank" rel="noopener">{m.tmdb_netflix_id}</a>
+                    <div class="cell-sub" title={ID_SOURCES[m.tmdb_netflix_source]?.hint ?? ''}>{ID_SOURCES[m.tmdb_netflix_source]?.label ?? m.tmdb_netflix_source}</div></td>
+                  <td class="nowrap">
+                    {#if m.other_title_has_id}<span class="badge badge-info" title="Another Netflix title mapped here has the TMDB title's Netflix ID: likely a special or part of that show">same show</span>
+                    {:else if m.match_status === 'manual'}<span class="badge badge-accent" title="Fixed by hand: confirmed">fixed by hand</span>
+                    {:else}<span class="badge badge-warning" title="Likely matched to a different title of the same name">check mapping</span>{/if}
+                  </td>
+                </tr>
+              {:else}
+                <tr><td colspan="5"><div class="empty small">Every Netflix title's Netflix ID matches its TMDB title's.</div></td></tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        {#if (report.netflix_id_mismatches ?? []).length}
+          <p class="field-hint" style="padding:0 16px 12px">The Netflix ID Netflix's own Top 10 search gives the title differs from the one its TMDB title has (from TMDB, Wikidata, a match or by hand). "Check mapping": usually a match to another title of the same name; open it and fix the mapping, then the entry goes. "Same show": a special or season mapped to its show, whose own Netflix title has that ID. Titles fixed by hand are listed last.</p>
         {/if}
       </div>
     </div>

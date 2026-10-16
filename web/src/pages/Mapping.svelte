@@ -1,5 +1,5 @@
 <script>
-  import { listMappings, syncMappings } from '../lib/api.js'
+  import { listMappings, syncMappings, listMappingRefs } from '../lib/api.js'
   import { route, setQuery, intParam } from '../lib/router.svelte.js'
   import { dateOnly, links, downloadCSV, ID_SOURCES } from '../lib/format.js'
   import { toast } from '../lib/toast.svelte.js'
@@ -77,6 +77,25 @@
     ], data.items.map((e) => ({ ...e, ...e.ids, flixpatrol_slugs: e.ids.flixpatrol_slugs.join('|'), netflix_top10_titles: e.ids.netflix_top10_titles.join('|') })))
   }
 
+  // The whole mapping reference (view mapping_refs): one row per chart
+  // title with its TMDB title and every ID, mapped or not.
+  let exporting = $state(false)
+  async function exportAll() {
+    exporting = true
+    try {
+      const rows = await listMappingRefs({ tmdb_kind: kind })
+      const cols = ['tmdb_kind', 'tmdb_id', 'tmdb_title', 'imdb_id', 'wikidata_id', 'rt_slug', 'netflix_id', 'justwatch_id', 'metacritic_slug', 'letterboxd_slug',
+        'flixpatrol_title_id', 'flixpatrol_slug', 'flixpatrol_name', 'flixpatrol_kind', 'flixpatrol_match_status',
+        'netflix_title_id', 'netflix_title', 'netflix_kind', 'netflix_title_netflix_id', 'netflix_match_status']
+      downloadCSV('mapping-reference.csv', cols.map((c) => ({ key: c, label: c })), rows)
+      toast.success(`Exported ${rows.length} titles`)
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      exporting = false
+    }
+  }
+
   // An ID badge's tooltip: the ID and where it came from.
   function idTitle(e, key, value) {
     const src = e.ids.sources?.[key]
@@ -90,6 +109,7 @@
     <div class="page-actions">
       <button class="btn" onclick={sync} disabled={syncing} title="Recompute links between Netflix and FlixPatrol titles and share mappings over them"><Icon name="refresh" />{syncing ? 'Syncing…' : 'Sync links now'}</button>
       <button class="btn" onclick={exportCSV} disabled={!data.items.length}><Icon name="download" />Export page</button>
+      <button class="btn" onclick={exportAll} disabled={exporting} title="Every chart title (mapped or not) with its TMDB title and every ID, one row each"><Icon name="download" />{exporting ? 'Exporting…' : 'Export reference'}</button>
     </div>
   </div>
 

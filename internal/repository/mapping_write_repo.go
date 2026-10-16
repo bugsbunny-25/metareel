@@ -575,3 +575,51 @@ func (r *MappingRepository) IMDbMismatches(ctx context.Context, limit int64) ([]
 	}
 	return out, nil
 }
+
+// NetflixIDMismatch is a Netflix title whose own Netflix ID (Tudum) differs
+// from its TMDB title's (from a stronger source than a copied one).
+type NetflixIDMismatch struct {
+	NetflixTitleID    int64  `json:"netflix_title_id"`
+	ShowTitle         string `json:"show_title"`
+	List              string `json:"list"` // Netflix's list: movie (Films) | tv_show (TV)
+	TmdbKind          string `json:"tmdb_kind"`
+	TmdbID            string `json:"tmdb_id"`
+	TmdbTitle         string `json:"tmdb_title"`
+	NetflixID         string `json:"netflix_id"`          // the Netflix title's own
+	TmdbNetflixID     string `json:"tmdb_netflix_id"`     // the TMDB title's
+	TmdbNetflixSource string `json:"tmdb_netflix_source"` // manual | tmdb | wikidata | match
+	MatchStatus       string `json:"match_status"`
+	MatchSource       string `json:"match_source"`
+	// Another Netflix title mapped to the same TMDB title has its Netflix ID:
+	// this one is likely a special or part of that show, not a wrong match.
+	OtherTitleHasID bool `json:"other_title_has_id"`
+}
+
+// NetflixIDMismatches lists up to limit Netflix titles whose Netflix ID
+// disagrees with their TMDB title's: likely wrong mappings first, titles
+// fixed by hand last.
+func (r *MappingRepository) NetflixIDMismatches(ctx context.Context, limit int64) ([]NetflixIDMismatch, error) {
+	rows, err := r.q.ListNetflixIDMismatches(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list netflix id mismatches: %w", err)
+	}
+	out := make([]NetflixIDMismatch, 0, len(rows))
+	for _, m := range rows {
+		out = append(out, NetflixIDMismatch{NetflixTitleID: m.ID, ShowTitle: m.ShowTitle, List: m.Kind, TmdbKind: m.TmdbKind,
+			TmdbID: m.TmdbID, TmdbTitle: m.TmdbTitle, NetflixID: m.NetflixID, TmdbNetflixID: m.TmdbNetflixID,
+			TmdbNetflixSource: m.TmdbNetflixSource, MatchStatus: m.MatchStatus, MatchSource: m.MatchSource,
+			OtherTitleHasID: m.OtherTitleHasID == 1})
+	}
+	return out, nil
+}
+
+// ContradictedNetflixLabelMatches lists up to limit Netflix titles mapped
+// only by a Wikidata label match whose own Netflix ID differs from their
+// TMDB title's (the label matched another title of the same name).
+func (r *MappingRepository) ContradictedNetflixLabelMatches(ctx context.Context, limit int64) ([]int64, error) {
+	ids, err := r.q.ListContradictedNetflixLabelMatches(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list contradicted netflix label matches: %w", err)
+	}
+	return ids, nil
+}

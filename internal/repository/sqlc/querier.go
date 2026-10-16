@@ -17,6 +17,8 @@ type Querier interface {
 	// title); status '' keeps the match status; status pending (a title that lost
 	// its mapping) makes it due for matching now.
 	ApplyTitleMapping(ctx context.Context, arg ApplyTitleMappingParams) (Title, error)
+	// Netflix IDs copied from a Netflix title that is no longer mapped here.
+	ClearStaleTmdbNetflixIDs(ctx context.Context) (int64, error)
 	// IDs cleared by hand (1 = clear): they are filled again from TMDB,
 	// Wikidata or matching.
 	ClearTmdbTitleIDs(ctx context.Context, arg ClearTmdbTitleIDsParams) error
@@ -68,6 +70,11 @@ type Querier interface {
 	// Runs still "started" long after the task timeout were interrupted (e.g. the
 	// server restarted mid-run); asynq retries the task as a new run.
 	FailStaleTaskRuns(ctx context.Context, olderThan string) (int64, error)
+	// A TMDB title without a Netflix ID (or with one copied this way) takes the
+	// Netflix ID of a Netflix title mapped to it: one mapped by its Netflix ID
+	// first, then one fixed by hand, then one in the list of its TMDB kind.
+	// Source netflix ranks below every other source, which all replace it.
+	FillTmdbNetflixIDsFromNetflix(ctx context.Context) (int64, error)
 	// Matched FlixPatrol titles with this exact name (case-insensitive) that
 	// charted in the same Netflix list (category movies | tv_shows), to match
 	// Netflix titles without another lookup. t.kind (the TMDB namespace) can
@@ -76,7 +83,9 @@ type Querier interface {
 	// FlixPatrol titles mapped to the TMDB titles with this IMDb ID.
 	FindTitlesByIMDb(ctx context.Context, imdbID sql.NullString) ([]Title, error)
 	FindTmdbRefsByIMDb(ctx context.Context, imdbID sql.NullString) ([]FindTmdbRefsByIMDbRow, error)
-	FindTmdbRefsByNetflixID(ctx context.Context, netflixID sql.NullString) ([]FindTmdbRefsByNetflixIDRow, error)
+	// any_source = 0 leaves out IDs copied from a Netflix title mapped here
+	// (source netflix): they only repeat that title's own mapping.
+	FindTmdbRefsByNetflixID(ctx context.Context, arg FindTmdbRefsByNetflixIDParams) ([]FindTmdbRefsByNetflixIDRow, error)
 	// Operations: settings lookups, chart freshness.
 	GetAppSetting(ctx context.Context, key string) (string, error)
 	// File imports: Netflix official Top 10 and IMDb ratings.
@@ -121,6 +130,12 @@ type Querier interface {
 	// Dates with both categories stored for a chart in [from, to].
 	ListChartSnapshotDates(ctx context.Context, arg ListChartSnapshotDatesParams) ([]string, error)
 	ListChartSnapshotsForDate(ctx context.Context, arg ListChartSnapshotsForDateParams) ([]ChartSnapshot, error)
+	// Netflix titles mapped only by a Wikidata label match (source
+	// wikidata_netflix) to a TMDB title whose Netflix ID (not one copied from a
+	// Netflix title) differs from the title's own: the label matched another
+	// title of the same name. Titles with a fix by hand or a Netflix ID match are
+	// left alone.
+	ListContradictedNetflixLabelMatches(ctx context.Context, limit int64) ([]int64, error)
 	ListDataImports(ctx context.Context) ([]DataImport, error)
 	ListEnabledTaskSchedules(ctx context.Context) ([]TaskSchedule, error)
 	// FlixPatrol titles on Netflix charts with the Netflix lists (movies |
@@ -145,6 +160,9 @@ type Querier interface {
 	// one TMDB title (as the old or the new mapping).
 	ListMappingEvents(ctx context.Context, arg ListMappingEventsParams) ([]ListMappingEventsRow, error)
 	ListMappingEvidence(ctx context.Context, arg ListMappingEvidenceParams) ([]MappingEvidence, error)
+	// The mapping reference (view mapping_refs): one row per chart title with
+	// its TMDB title and every external ID. Mapped titles first.
+	ListMappingRefs(ctx context.Context, arg ListMappingRefsParams) ([]ListMappingRefsRow, error)
 	ListNetflixCountriesByTmdb(ctx context.Context, arg ListNetflixCountriesByTmdbParams) ([]ListNetflixCountriesByTmdbRow, error)
 	ListNetflixCountrySeasonRanks(ctx context.Context, fromWeek string) ([]ListNetflixCountrySeasonRanksRow, error)
 	ListNetflixCountryWeek(ctx context.Context, arg ListNetflixCountryWeekParams) ([]ListNetflixCountryWeekRow, error)
@@ -159,6 +177,12 @@ type Querier interface {
 	ListNetflixGlobalWeek(ctx context.Context, arg ListNetflixGlobalWeekParams) ([]ListNetflixGlobalWeekRow, error)
 	// A Netflix title's global weeks (admin drawer), newest first.
 	ListNetflixGlobalWeeksForTitle(ctx context.Context, netflixTitleID int64) ([]ListNetflixGlobalWeeksForTitleRow, error)
+	// Netflix titles whose own Netflix ID (Tudum) differs from their TMDB
+	// title's from a stronger source (manual, tmdb, wikidata, match): the
+	// mapping is likely wrong (a same-name title), unless the title is a special
+	// or part of a show another Netflix title on that TMDB title has the ID of
+	// (other_title_has_id). Titles fixed by hand and those come last.
+	ListNetflixIDMismatches(ctx context.Context, limit int64) ([]ListNetflixIDMismatchesRow, error)
 	ListNetflixMostPopular(ctx context.Context, category string) ([]ListNetflixMostPopularRow, error)
 	ListNetflixSeasonTitles(ctx context.Context, netflixTitleID int64) ([]ListNetflixSeasonTitlesRow, error)
 	// Seasons not fixed by hand (of one title, or all when netflix_title_id is
@@ -306,8 +330,9 @@ type Querier interface {
 	// TMDB's own IDs are stored with UpsertTmdbTitleIDs (source tmdb).
 	UpsertTmdbTitleDetails(ctx context.Context, arg UpsertTmdbTitleDetailsParams) error
 	// Stores the IDs given (NULL = not given) from one source (manual | tmdb |
-	// wikidata | match). An ID is only replaced by one from the same or a
-	// higher-ranked source: manual > tmdb > wikidata > match.
+	// wikidata | match | netflix). An ID is only replaced by one from the same
+	// or a higher-ranked source: manual > tmdb > wikidata > match > netflix
+	// (netflix, like any unknown source, ranks 0).
 	UpsertTmdbTitleIDs(ctx context.Context, arg UpsertTmdbTitleIDsParams) error
 	// Share of chart entries whose title has a TMDB ID, per ISO week, from a date on.
 	WeeklyMappingCoverage(ctx context.Context, since string) ([]WeeklyMappingCoverageRow, error)

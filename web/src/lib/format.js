@@ -123,6 +123,8 @@ export const links = {
   flixpatrol: (slug) => (slug ? `https://flixpatrol.com/title/${slug}/` : null),
   wikidata: (id) => (id ? `https://www.wikidata.org/wiki/${id}` : null),
   netflix: (id) => (id ? `https://www.netflix.com/title/${id}` : null),
+  metacritic: (slug) => (slug ? `https://www.metacritic.com/${slug}` : null),
+  letterboxd: (slug) => (slug ? `https://letterboxd.com/film/${slug}/` : null),
 }
 
 /** How a season number was found, for badges and tooltips. */
@@ -133,6 +135,7 @@ export const ID_SOURCES = {
   tmdb: { label: 'TMDB', hint: "TMDB's external IDs" },
   wikidata: { label: 'Wikidata', hint: "Wikidata's statements for this TMDB ID" },
   match: { label: 'match', hint: 'Came with an automatic match (JustWatch); TMDB or Wikidata replace it' },
+  netflix: { label: 'Netflix title', hint: "The Netflix ID of a Netflix Top 10 title mapped here (Tudum's Top 10 search); any other source replaces it" },
 }
 
 export const SEASON_SOURCES = {

@@ -64,6 +64,9 @@ type TitleResponse struct {
 	// Netflix official Top 10 titles linked to this one (they share its
 	// TMDB mapping); set on single-title responses only.
 	NetflixLinks []TitleNetflixLink `json:"netflix_links,omitempty"`
+	// Every ID of its TMDB title, with sources (the same as the TMDB
+	// mapping's); single-title responses of mapped titles only.
+	IDs *TitleExternalIDs `json:"ids,omitempty"`
 }
 
 // TitleNetflixLink is a Netflix title linked to a FlixPatrol title.
@@ -164,6 +167,11 @@ func (s *TitleAdminService) GetTitle(ctx context.Context, id int64) (*TitleRespo
 	}
 	resp := titleToResponse(*t, s.mapping.TitleIDsOf(ctx, repository.TitleRef(*t)))
 	if s.mapping != nil {
+		if ref := repository.TitleRef(*t); ref.ID != "" {
+			if resp.IDs, err = s.mapping.ExternalIDs(ctx, ref); err != nil {
+				return nil, err
+			}
+		}
 		links, err := s.mapping.repo.NetflixLinksOf(ctx, []int64{id})
 		if err != nil {
 			return nil, err

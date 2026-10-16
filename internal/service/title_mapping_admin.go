@@ -26,7 +26,8 @@ type TitleExternalIDs struct {
 	FlixPatrolSlugs  []string `json:"flixpatrol_slugs"`
 	NetflixTop10     []string `json:"netflix_top10_titles"` // names in Netflix's official Top 10
 	// Where each ID came from: imdb, wikidata, rotten_tomatoes, metacritic,
-	// letterboxd, netflix, justwatch → manual | tmdb | wikidata | match.
+	// letterboxd, netflix, justwatch → manual | tmdb | wikidata | match |
+	// netflix (copied from a Netflix title mapped here).
 	Sources map[string]string `json:"sources"`
 }
 
@@ -470,6 +471,18 @@ func (s *TitleMappingService) Events(ctx context.Context, q MappingEventsQuery) 
 		events = []repository.MappingEvent{}
 	}
 	return events, err
+}
+
+// Refs lists the mapping reference: every chart title with its TMDB title
+// and every external ID (kind "" | movie | tv; mappedOnly leaves out
+// unmapped titles).
+func (s *TitleMappingService) Refs(ctx context.Context, kind string, mappedOnly bool) ([]repository.MappingRef, error) {
+	switch kind {
+	case "", "movie", "tv":
+	default:
+		return nil, &ValidationError{Message: "invalid tmdb_kind, expected movie or tv"}
+	}
+	return s.repo.Refs(ctx, kind, mappedOnly)
 }
 
 // TitleIDsOf returns the IMDb, RT, Wikidata and JustWatch IDs of a TMDB

@@ -1718,8 +1718,10 @@ components:
       type: object
       description: >
         Every known ID of a TMDB title, each from the strongest source that
-        has one (manual > tmdb > wikidata > match; see sources), plus the
-        FlixPatrol slugs and Netflix Top 10 names mapped to it.
+        has one (manual > tmdb > wikidata > match > netflix; see sources),
+        plus the FlixPatrol slugs and Netflix Top 10 names mapped to it.
+        netflix = the Netflix ID of a Netflix Top 10 title mapped to it
+        (Tudum's Top 10 search), used only while no other source has one.
       properties:
         imdb_id: { type: string, nullable: true, example: tt13443470 }
         wikidata_id: { type: string, nullable: true, example: Q105553568 }
@@ -1733,7 +1735,7 @@ components:
         sources:
           type: object
           description: "Where each ID came from, keyed by imdb, wikidata, rotten_tomatoes, metacritic, letterboxd, netflix, justwatch (IDs with a recorded source)"
-          additionalProperties: { type: string, enum: [manual, tmdb, wikidata, match] }
+          additionalProperties: { type: string, enum: [manual, tmdb, wikidata, match, netflix] }
           example: { imdb: tmdb, wikidata: wikidata, netflix: wikidata }
 
     NetflixWeekRow:
@@ -1875,6 +1877,9 @@ components:
         rankings_count:
           type: integer
           description: List responses only
+        ids:
+          $ref: "#/components/schemas/TitleExternalIDs"
+          description: Every ID of its TMDB title, with sources (the same for every title mapped to it); single-title responses of mapped titles only
         netflix_links:
           type: array
           description: Netflix official Top 10 titles linked to it (they share its TMDB mapping); single-title responses only

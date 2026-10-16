@@ -244,12 +244,22 @@ func (s *TitleMetadataService) FindNetflixIDsOnWikidata(ctx context.Context, net
 	return s.wikidata.LookupByNetflixIDs(ctx, netflixIDs)
 }
 
-// RefsByNetflixID returns the TMDB titles already holding a Netflix ID.
-func (s *TitleMetadataService) RefsByNetflixID(ctx context.Context, netflixID string) ([]repository.TmdbRef, error) {
+// RefsByNetflixID returns the TMDB titles already holding a Netflix ID
+// (copied: also IDs copied from a Netflix title mapped to them).
+func (s *TitleMetadataService) RefsByNetflixID(ctx context.Context, netflixID string, copied bool) ([]repository.TmdbRef, error) {
 	if s == nil {
 		return nil, nil
 	}
-	return s.repo.RefsByNetflixID(ctx, netflixID)
+	return s.repo.RefsByNetflixID(ctx, netflixID, copied)
+}
+
+// SyncNetflixIDs copies Netflix titles' Netflix IDs onto the TMDB titles
+// they map to that have none (see MetadataRepository.SyncNetflixIDs).
+func (s *TitleMetadataService) SyncNetflixIDs(ctx context.Context) (int64, error) {
+	if s == nil {
+		return 0, nil
+	}
+	return s.repo.SyncNetflixIDs(ctx)
 }
 
 // RefsDueForRT lists TMDB titles to look up on Rotten Tomatoes (only = one

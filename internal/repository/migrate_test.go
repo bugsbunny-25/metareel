@@ -104,3 +104,61 @@ func TestMigration5KeepsRunsAndLogs(t *testing.T) {
 		t.Fatalf("run logs after down = %d", n)
 	}
 }
+
+// TestMigration15NetflixIDsAndRefs checks 000015 copies Netflix titles'
+// Netflix IDs onto TMDB titles without one (never over another source),
+// creates the mapping_refs view, and goes down and up again.
+func TestMigration15NetflixIDsAndRefs(t *testing.T) {
+	db, err := Open("file:" + filepath.Join(t.TempDir(), "m.db") + "?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	goose.SetLogger(goose.NopLogger())
+	const dir = "../../db/migrations"
+	if err := goose.UpTo(db, dir, 14); err != nil {
+		t.Fatalf("migrate to 14: %v", err)
+	}
+	for _, stmt := range []string{
+		`INSERT INTO tmdb_titles (tmdb_kind, tmdb_id) VALUES ('movie', '1')`,
+		`INSERT INTO tmdb_titles (tmdb_kind, tmdb_id, netflix_id, netflix_source) VALUES ('movie', '2', '700', 'wikidata')`,
+		`INSERT INTO netflix_titles (id, show_title, kind, tmdb_kind, tmdb_id, netflix_id, match_status) VALUES
+			(1, 'One', 'movie', 'movie', '1', '801', 'matched'),
+			(2, 'Two', 'movie', 'movie', '2', '802', 'matched')`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed %q: %v", stmt, err)
+		}
+	}
+	if err := goose.UpTo(db, dir, 15); err != nil {
+		t.Fatalf("migrate to 15: %v", err)
+	}
+	check := func(id, want string) {
+		t.Helper()
+		var got string
+		if err := db.QueryRow(`SELECT COALESCE(netflix_id, '') || '/' || COALESCE(netflix_source, '') FROM tmdb_titles WHERE tmdb_id = ?`, id).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("tmdb %s netflix id = %s, want %s", id, got, want)
+		}
+	}
+	check("1", "801/netflix")
+	check("2", "700/wikidata")
+	var rows int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM mapping_refs WHERE netflix_title_id IS NOT NULL`).Scan(&rows); err != nil || rows != 2 {
+		t.Fatalf("mapping_refs rows = %d %v", rows, err)
+	}
+	if err := goose.Down(db, dir); err != nil {
+		t.Fatalf("migrate down: %v", err)
+	}
+	check("1", "/")
+	check("2", "700/wikidata")
+	if err := goose.Up(db, dir); err != nil {
+		t.Fatalf("migrate up again: %v", err)
+	}
+	check("1", "801/netflix")
+}

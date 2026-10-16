@@ -88,6 +88,9 @@ const (
 	IDSourceTMDB     = "tmdb"
 	IDSourceWikidata = "wikidata"
 	IDSourceMatch    = "match"
+	// IDSourceNetflix: the Netflix ID of a Netflix title mapped to the TMDB
+	// title (Tudum's Top 10 search), copied by SyncNetflixIDs. Weakest.
+	IDSourceNetflix = "netflix"
 )
 
 // TmdbIDs are external IDs of a TMDB title ("" = not given).
@@ -201,8 +204,10 @@ func (r *MetadataRepository) RecordRTAttempt(ctx context.Context, ref TmdbRef, s
 }
 
 // RefsByNetflixID returns the TMDB titles with this Netflix title ID.
-func (r *MetadataRepository) RefsByNetflixID(ctx context.Context, netflixID string) ([]TmdbRef, error) {
-	rows, err := r.q.FindTmdbRefsByNetflixID(ctx, sql.NullString{String: netflixID, Valid: true})
+// copied also counts IDs copied from a Netflix title mapped to them (source
+// netflix); matching leaves them out, as they only repeat that mapping.
+func (r *MetadataRepository) RefsByNetflixID(ctx context.Context, netflixID string, copied bool) ([]TmdbRef, error) {
+	rows, err := r.q.FindTmdbRefsByNetflixID(ctx, sqlc.FindTmdbRefsByNetflixIDParams{NetflixID: sql.NullString{String: netflixID, Valid: true}, AnySource: boolInt(copied)})
 	if err != nil {
 		return nil, fmt.Errorf("find tmdb refs by netflix id: %w", err)
 	}
@@ -211,6 +216,21 @@ func (r *MetadataRepository) RefsByNetflixID(ctx context.Context, netflixID stri
 		out = append(out, TmdbRef{Kind: row.TmdbKind, ID: row.TmdbID})
 	}
 	return out, nil
+}
+
+// SyncNetflixIDs gives TMDB titles without a Netflix ID the one of a
+// Netflix title mapped to them (source netflix), and drops IDs copied that
+// way whose Netflix title moved away. It returns the TMDB titles changed.
+func (r *MetadataRepository) SyncNetflixIDs(ctx context.Context) (int64, error) {
+	cleared, err := r.q.ClearStaleTmdbNetflixIDs(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("clear stale netflix ids: %w", err)
+	}
+	filled, err := r.q.FillTmdbNetflixIDsFromNetflix(ctx)
+	if err != nil {
+		return cleared, fmt.Errorf("fill netflix ids: %w", err)
+	}
+	return cleared + filled, nil
 }
 
 // TmdbMetadata is stored TMDB metadata, decoded.
@@ -248,7 +268,7 @@ type TmdbMetadata struct {
 	DetailsFetchedAt    *time.Time        `json:"details_fetched_at"`
 	WikidataLookedUp    bool              `json:"-"` // looked up on Wikidata at least once
 	// IDSources says where each ID came from (imdb, wikidata, rotten_tomatoes,
-	// metacritic, letterboxd, netflix, justwatch → manual | tmdb | wikidata | match).
+	// metacritic, letterboxd, netflix, justwatch → manual | tmdb | wikidata | match | netflix).
 	IDSources map[string]string `json:"-"`
 }
 

@@ -135,6 +135,10 @@ func (n *NetflixImporter) resolveNetflixIDs(ctx context.Context, session *Mappin
 		}
 	}
 	logf("info", "Netflix IDs: %d looked up on Tudum, %d found, %d title(s) mapped by Netflix ID", rep.Searched, rep.Found, rep.Mapped)
+	// Titles mapped by name keep their mapping; their TMDB titles still take the ID.
+	if _, err := n.metadata.SyncNetflixIDs(ctx); err != nil {
+		return mapped, err
+	}
 	return mapped, nil
 }
 
@@ -219,7 +223,7 @@ func (n *NetflixImporter) tmdbForNetflixIDs(ctx context.Context, byTitle map[int
 		if _, done := out[nfID]; done {
 			continue
 		}
-		refs, err := n.metadata.RefsByNetflixID(ctx, nfID)
+		refs, err := n.metadata.RefsByNetflixID(ctx, nfID, false)
 		if err != nil {
 			return out, err
 		}

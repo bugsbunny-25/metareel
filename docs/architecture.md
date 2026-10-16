@@ -183,7 +183,7 @@ title is the only home of external IDs: IMDb, Wikidata, RT, Metacritic,
 Letterboxd, `netflix_id` (Wikidata P1874 / Tudum) and `justwatch_id`; titles
 and Netflix titles read them through their mapping (the old per-title
 columns are kept as `legacy_*` for one release, unread). Each ID has a
-`*_source` column (`manual` > `tmdb` > `wikidata` > `match`), and every write
+`*_source` column (`manual` > `tmdb` > `wikidata` > `match` > `netflix`), and every write
 goes through one query (`saveTmdbIDs` → `SaveTmdbIDs`) that only replaces an
 ID from the same or a weaker source: TMDB details, Wikidata, matching
 (IDs a JustWatch match came with) and ratings (IDs found while fetching).
@@ -192,9 +192,19 @@ remap by IMDb or Wikidata ID) go to `TitleMappingService.SetManualIDs` as
 `manual`; `""` clears one and hands it back to the next refresh. The RT
 lookup (`titles.enrich`) works per TMDB title (`tmdb_titles.rt_attempts`,
 `next_rt_at`), so manual titles get slugs too.
+A Netflix title's own Netflix ID (Tudum) also becomes its TMDB title's while
+that has none (source `netflix`, the weakest: any other source replaces it).
+`MetadataRepository.SyncNetflixIDs` keeps these copies in step with the
+Netflix titles' mappings (dropping a copy whose Netflix title moved away); it
+runs in every `mapping.refresh` and after each Netflix ID pass. Netflix-ID
+matching ignores copied IDs (they only repeat the title's own mapping);
+`GET /titles/lookup?netflix=` finds them.
 `GET /admin/data-quality` lists mapped titles whose deciding evidence came
 with an IMDb ID other than their TMDB title's (`imdb_mismatches`, with the
-evidence kind and source).
+evidence kind and source), and Netflix titles whose own Netflix ID differs
+from their TMDB title's when that came from a stronger source than a copy
+(`netflix_id_mismatches`; `other_title_has_id` marks a special or season of a
+show whose own Netflix title has the ID; titles fixed by hand last).
 
 **Evidence.** A title's mapping is computed, never copied
 (`service/mapping_compute.go`). Writers store `mapping_evidence` — one row
@@ -254,9 +264,15 @@ item whose name — a season title for TV — list and a charted week agree;
 season IDs → show ID through the public title page's redirect; Netflix ID →
 TMDB via `tmdb_titles.netflix_id`, else Wikidata P1874) → a same-name
 FlixPatrol title in the same list → Wikidata items with a Netflix ID by
-English label (`pickWikidataNetflix`) → JustWatch's US Netflix catalogue (the
+English label (`pickWikidataNetflix`; a title with its own Netflix ID only
+takes an item with that ID, so the 2010 film is not taken for the 2025
+remake) → JustWatch's US Netflix catalogue (the
 list's kind, then the other) → a unique exact name in JustWatch US → mapping
-sync. IMDb / Wikidata IDs given by hand resolve to TMDB through TMDB's
+sync. Before that, label matches (`wikidata_netflix`) that the title's own
+Netflix ID contradicts (its TMDB title has another, non-copied Netflix ID)
+are cleared through the mapping writer (`clear` event) and matched again
+(`requeueContradicted`, `contradicted_label_matches` in the run summary).
+IMDb / Wikidata IDs given by hand resolve to TMDB through TMDB's
 `/find`, then Wikidata (`TitleMetadataService.ResolveExternalID`).
 
 ## Scrape Job Flow
@@ -441,7 +457,8 @@ Added since the diagram below:
 |---|---|
 | `chart_snapshots` | One row per stored chart (date × country × provider × category): entry count, content `signature`, `scraped_at`, `changed_at` |
 | `titles` (new columns) | `match_status` (pending / matched / unmatched / manual), `match_source`, `matched_name/year`, `match_attempts`, `next_match_at`, `fp_*` (FlixPatrol title page); `legacy_*` = its former ID / RT backoff columns (unread, dropped next release) |
-| `tmdb_titles` | TMDB metadata per TMDB title + every external ID (IMDb, Wikidata, RT, Metacritic, Letterboxd, `netflix_id`, `justwatch_id`), each with a `*_source` (manual / tmdb / wikidata / match); RT search backoff (`rt_attempts`, `next_rt_at`) |
+| `tmdb_titles` | TMDB metadata per TMDB title + every external ID (IMDb, Wikidata, RT, Metacritic, Letterboxd, `netflix_id`, `justwatch_id`), each with a `*_source` (manual / tmdb / wikidata / match / netflix); RT search backoff (`rt_attempts`, `next_rt_at`) |
+| `mapping_refs` (view) | The mapping reference: one row per chart title (a FlixPatrol title paired with its linked Netflix title when both map to the same TMDB title, or a Netflix title on its own; unmapped ones too) with TMDB kind / ID / title, IMDb, Wikidata, RT slug, Metacritic and Letterboxd slugs, JustWatch ID, Netflix ID, FlixPatrol slug / kind and Netflix title / kind. Derived, never written (`GET /admin/mapping-refs`, "Export reference" in the UI) |
 | `title_links` | Netflix title ↔ FlixPatrol title that are the same title; linked titles share one TMDB mapping |
 | `mapping_events` | History of every mapping change (subject, action, TMDB title before / after, source, actor), written with the change |
 | `mapping_evidence` | What each source says a title is (subject, kind manual / netflix_id / match, TMDB title, source, IMDb ID it came with); mappings are computed from it |

@@ -44,6 +44,8 @@ export const getTitle = (id) => req(`/titles/${id}`)
 export const patchTitle = (id, body) => req(`/titles/${id}`, { method: 'PATCH', body })
 export const getTitleRankings = (id, q) => req(`/titles/${id}/rankings`, { query: q })
 export const getTitleCandidates = (id, q) => req(`/titles/${id}/candidates`, { query: q })
+export const getTmdbRankings = (kind, tmdbId, q) => req(`/titles/tmdb/${kind}/${tmdbId}/rankings`, { query: q })
+export const getTmdbNetflix = (kind, tmdbId) => req(`/titles/tmdb/${kind}/${tmdbId}/netflix`)
 export const getRatings = (kind, tmdbId, refresh = false) =>
   req(`/titles/tmdb/${kind}/${tmdbId}/ratings`, { query: { refresh: refresh || '' } })
 
@@ -61,6 +63,7 @@ export const getMapping = (kind, tmdbId) => req(`/mappings/${kind}/${tmdbId}`)
 export const remapMapping = (kind, tmdbId, body) => req(`/mappings/${kind}/${tmdbId}/remap`, { method: 'POST', body })
 export const syncMappings = () => req('/mappings/sync', { method: 'POST' })
 export const listMappingEvents = (q) => req('/mapping-events', { query: q })
+export const listMappingRefs = (q) => req('/mapping-refs', { query: q })
 
 // ── Top 10 ──────────────────────────────────────────────────────────
 export function getTop10({ country, provider, category, date }) {

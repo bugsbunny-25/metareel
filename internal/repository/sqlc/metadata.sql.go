@@ -11,6 +11,22 @@ import (
 	"strings"
 )
 
+const clearStaleTmdbNetflixIDs = `-- name: ClearStaleTmdbNetflixIDs :execrows
+UPDATE tmdb_titles SET netflix_id = NULL, netflix_source = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE netflix_source = 'netflix' AND NOT EXISTS (
+    SELECT 1 FROM netflix_titles n
+    WHERE n.tmdb_kind = tmdb_titles.tmdb_kind AND n.tmdb_id = tmdb_titles.tmdb_id AND n.netflix_id = tmdb_titles.netflix_id)
+`
+
+// Netflix IDs copied from a Netflix title that is no longer mapped here.
+func (q *Queries) ClearStaleTmdbNetflixIDs(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, clearStaleTmdbNetflixIDs)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const clearTmdbTitleIDs = `-- name: ClearTmdbTitleIDs :exec
 UPDATE tmdb_titles
 SET imdb_id         = CASE WHEN CAST(?1 AS INTEGER) = 1 THEN NULL ELSE imdb_id END,
@@ -97,17 +113,57 @@ func (q *Queries) EnsureTmdbTitle(ctx context.Context, arg EnsureTmdbTitleParams
 	return err
 }
 
-const findTmdbRefsByNetflixID = `-- name: FindTmdbRefsByNetflixID :many
-SELECT tmdb_kind, tmdb_id FROM tmdb_titles WHERE netflix_id = ?
+const fillTmdbNetflixIDsFromNetflix = `-- name: FillTmdbNetflixIDsFromNetflix :execrows
+UPDATE tmdb_titles SET
+    netflix_id = (
+        SELECT n.netflix_id FROM netflix_titles n
+        WHERE n.tmdb_kind = tmdb_titles.tmdb_kind AND n.tmdb_id = tmdb_titles.tmdb_id AND COALESCE(n.netflix_id, '') <> ''
+        ORDER BY n.match_source = 'netflix_id' DESC, n.match_status = 'manual' DESC,
+                 CASE n.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = n.tmdb_kind DESC, n.id
+        LIMIT 1),
+    netflix_source = 'netflix',
+    updated_at = CURRENT_TIMESTAMP
+WHERE (netflix_id IS NULL OR netflix_source = 'netflix')
+  AND COALESCE((
+        SELECT n.netflix_id FROM netflix_titles n
+        WHERE n.tmdb_kind = tmdb_titles.tmdb_kind AND n.tmdb_id = tmdb_titles.tmdb_id AND COALESCE(n.netflix_id, '') <> ''
+        ORDER BY n.match_source = 'netflix_id' DESC, n.match_status = 'manual' DESC,
+                 CASE n.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END = n.tmdb_kind DESC, n.id
+        LIMIT 1), '') NOT IN ('', COALESCE(netflix_id, ''))
 `
+
+// A TMDB title without a Netflix ID (or with one copied this way) takes the
+// Netflix ID of a Netflix title mapped to it: one mapped by its Netflix ID
+// first, then one fixed by hand, then one in the list of its TMDB kind.
+// Source netflix ranks below every other source, which all replace it.
+func (q *Queries) FillTmdbNetflixIDsFromNetflix(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, fillTmdbNetflixIDsFromNetflix)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const findTmdbRefsByNetflixID = `-- name: FindTmdbRefsByNetflixID :many
+SELECT tmdb_kind, tmdb_id FROM tmdb_titles
+WHERE netflix_id = ?1
+  AND (CAST(?2 AS INTEGER) = 1 OR COALESCE(netflix_source, '') <> 'netflix')
+`
+
+type FindTmdbRefsByNetflixIDParams struct {
+	NetflixID sql.NullString `json:"netflix_id"`
+	AnySource int64          `json:"any_source"`
+}
 
 type FindTmdbRefsByNetflixIDRow struct {
 	TmdbKind string `json:"tmdb_kind"`
 	TmdbID   string `json:"tmdb_id"`
 }
 
-func (q *Queries) FindTmdbRefsByNetflixID(ctx context.Context, netflixID sql.NullString) ([]FindTmdbRefsByNetflixIDRow, error) {
-	rows, err := q.db.QueryContext(ctx, findTmdbRefsByNetflixID, netflixID)
+// any_source = 0 leaves out IDs copied from a Netflix title mapped here
+// (source netflix): they only repeat that title's own mapping.
+func (q *Queries) FindTmdbRefsByNetflixID(ctx context.Context, arg FindTmdbRefsByNetflixIDParams) ([]FindTmdbRefsByNetflixIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, findTmdbRefsByNetflixID, arg.NetflixID, arg.AnySource)
 	if err != nil {
 		return nil, err
 	}
@@ -717,8 +773,9 @@ type UpsertTmdbTitleIDsParams struct {
 }
 
 // Stores the IDs given (NULL = not given) from one source (manual | tmdb |
-// wikidata | match). An ID is only replaced by one from the same or a
-// higher-ranked source: manual > tmdb > wikidata > match.
+// wikidata | match | netflix). An ID is only replaced by one from the same
+// or a higher-ranked source: manual > tmdb > wikidata > match > netflix
+// (netflix, like any unknown source, ranks 0).
 func (q *Queries) UpsertTmdbTitleIDs(ctx context.Context, arg UpsertTmdbTitleIDsParams) error {
 	_, err := q.db.ExecContext(ctx, upsertTmdbTitleIDs,
 		arg.TmdbKind,
