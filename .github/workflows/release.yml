@@ -1,0 +1,148 @@
+name: release
+
+# Creates a GitHub release (pre-releases included) after CI and the container
+# image for that exact commit succeed. Two ways in:
+#   - Actions → release → Run workflow: creates the tag and the release.
+#   - Pushing a v* tag (or creating a release in the UI, which pushes the tag):
+#     builds the image and creates the release if it doesn't exist yet.
+# Tags created here use GITHUB_TOKEN, which never triggers other workflows, so
+# CI and the image build are called directly instead of relying on tag events.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag to release, e.g. v0.2.0 or v0.2.0-alpha"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark as a pre-release (a version with a -suffix always is one)"
+        required: false
+        type: boolean
+        default: true
+      ref:
+        description: "Branch or commit to release"
+        required: false
+        type: string
+        default: main
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      sha: ${{ steps.resolve.outputs.sha }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Resolve version and commit
+        id: resolve
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version || github.ref_name }}
+          PRERELEASE_INPUT: ${{ inputs.prerelease }}
+        run: |
+          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'${VERSION}' is not a version tag like v1.2.3 or v1.2.3-alpha"
+            exit 1
+          fi
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]] \
+            && git ls-remote --exit-code --tags origin "refs/tags/${VERSION}" >/dev/null; then
+            echo "::error::Tag ${VERSION} already exists; push a new version or rerun the existing tag's run"
+            exit 1
+          fi
+
+          if [[ "${VERSION}" == *-* ]]; then
+            PRERELEASE=true
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            PRERELEASE="${PRERELEASE_INPUT}"
+          else
+            PRERELEASE=false
+          fi
+
+          SHA="$(git rev-parse HEAD)"
+          {
+            echo "version=${VERSION}"
+            echo "sha=${SHA}"
+            echo "prerelease=${PRERELEASE}"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## Release ${VERSION}"
+            echo ""
+            echo "- Commit: \`${SHA}\`"
+            echo "- Pre-release: ${PRERELEASE}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ci:
+    name: ci
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+      artifacts: true
+
+  image:
+    name: image
+    needs: [prepare, ci]
+    uses: ./.github/workflows/container.yml
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+      version: ${{ needs.prepare.outputs.version }}
+
+  publish:
+    name: publish
+    needs: [prepare, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SHA: ${{ needs.prepare.outputs.sha }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+      IMAGE_NAME: ${{ needs.image.outputs.image_name }}
+      IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
+    steps:
+      - name: Download SBOM
+        uses: actions/download-artifact@v7
+        with:
+          name: sbom-cyclonedx
+
+      - name: Create GitHub release
+        shell: bash
+        run: |
+          SBOM="metareel-${VERSION}.sbom.cdx.json"
+          mv sbom.cdx.json "${SBOM}"
+          if gh release view "${VERSION}" >/dev/null 2>&1; then
+            echo "Release ${VERSION} already exists; attaching the SBOM only."
+            gh release upload "${VERSION}" "${SBOM}" --clobber \
+              || echo "::warning::Could not attach the SBOM to the existing release ${VERSION}"
+            exit 0
+          fi
+          args=(--target "${SHA}" --title "${VERSION}" --generate-notes
+            --notes "Container image: \`${IMAGE_NAME}:${VERSION}\` (\`${IMAGE_DIGEST}\`)")
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "${VERSION}" "${SBOM}" "${args[@]}"

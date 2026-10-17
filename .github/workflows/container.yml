@@ -5,21 +5,48 @@ on:
     branches: [main]
   push:
     branches: [main]
-    tags:
-      - "v*"
+  # Release images are built through release.yml.
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit to build"
+        required: true
+        type: string
+      version:
+        description: "Release tag to publish the image as (e.g. v0.2.0-alpha)"
+        required: true
+        type: string
+    outputs:
+      image_name:
+        description: "Image repository the build was pushed to"
+        value: ${{ jobs.build-scan-publish.outputs.image_name }}
+      digest:
+        description: "Digest of the pushed image"
+        value: ${{ jobs.build-scan-publish.outputs.digest }}
 
 permissions:
   contents: read
   packages: write
   security-events: write
 
+# Main builds queue instead of overlapping, so an older build never finishes
+# (and cleans up) after a newer one. PR builds are superseded by new pushes.
+concurrency:
+  group: container-${{ inputs.version || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-scan-publish:
     name: build-scan-publish
     runs-on: ubuntu-latest
+    outputs:
+      image_name: ${{ steps.meta.outputs.image_name }}
+      digest: ${{ steps.build_push.outputs.digest }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Set image metadata
         id: meta
@@ -38,21 +65,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Releases are tagged with their version only; main builds get `main` and
+      # `sha-<commit>`, which is what cleanup-main-images keys on.
       - name: Compute publish tags
         if: github.event_name != 'pull_request'
         id: tags
         shell: bash
+        env:
+          IMAGE_NAME: ${{ steps.meta.outputs.image_name }}
+          VERSION: ${{ inputs.version }}
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            VERSION_TAG="${GITHUB_REF_NAME}"
+          if [[ -n "${VERSION}" ]]; then
+            echo "tags=${IMAGE_NAME}:${VERSION}" >> "$GITHUB_OUTPUT"
+          else
+            SHA="$(git rev-parse HEAD)"
             {
               echo "tags<<EOF"
-              echo "${{ steps.meta.outputs.image_name }}:${VERSION_TAG}"
-              echo "${{ steps.meta.outputs.image_name }}:sha-${GITHUB_SHA}"
+              echo "${IMAGE_NAME}:main"
+              echo "${IMAGE_NAME}:sha-${SHA}"
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
-          else
-            echo "tags=${{ steps.meta.outputs.image_name }}:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build image for PR
@@ -125,3 +157,33 @@ jobs:
           name: sbom-cyclonedx
           path: sbom.cdx.json
           if-no-files-found: error
+
+  # Runs only once the main image built, passed Trivy and got its SBOM, then
+  # deletes every older main image so GHCR keeps a single one for main.
+  # Release images (v* tags) are never touched.
+  cleanup-main-images:
+    name: cleanup-main-images
+    needs: build-scan-publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete previous main images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: metareel
+          KEEP_DIGEST: ${{ needs.build-scan-publish.outputs.digest }}
+        run: .github/scripts/cleanup-main-images.sh
