@@ -304,7 +304,7 @@ func TestNetflixIDMatching(t *testing.T) {
 	meta := repository.NewMetadataRepository(db)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	seasons := NewSeasonMapper(log, imports)
-	metadata := NewTitleMetadataService(log, meta, nil, nil)
+	metadata := NewTitleMetadataService(log, meta, nil, nil, nil)
 	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), testWriter(db), meta, nil, seasons)
 	search := &fakeNetflixSearch{
 		items: map[string][]client.NetflixSearchItem{
@@ -687,7 +687,7 @@ func TestNetflixIDCopiedToTmdbTitle(t *testing.T) {
 	meta := repository.NewMetadataRepository(db)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	seasons := NewSeasonMapper(log, imports)
-	metadata := NewTitleMetadataService(log, meta, nil, nil)
+	metadata := NewTitleMetadataService(log, meta, nil, nil, nil)
 	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), testWriter(db), meta, nil, seasons)
 	search := &fakeNetflixSearch{items: map[string][]client.NetflixSearchItem{
 		"The Gambler": {{NetflixID: "80000111", Title: "The Gambler", Category: "FILMS", GlobalWeeks: []string{"2026-10-04"}}},
@@ -882,7 +882,7 @@ func TestContradictedLabelMatchIsRedone(t *testing.T) {
 	meta := repository.NewMetadataRepository(db)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	seasons := NewSeasonMapper(log, imports)
-	metadata := NewTitleMetadataService(log, meta, nil, nil)
+	metadata := NewTitleMetadataService(log, meta, nil, nil, nil)
 	mapping := NewTitleMappingService(log, repository.NewMappingRepository(db), testWriter(db), meta, nil, seasons)
 	n := NewNetflixImporter(log, nil, imports, testWriter(db), flix, repository.NewTaskScheduleRepository(db), nil, metadata, seasons, nil).
 		WithMapping(mapping).WithNetflixSearch(&fakeNetflixSearch{})

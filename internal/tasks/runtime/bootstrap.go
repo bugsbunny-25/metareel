@@ -71,7 +71,7 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 	rtClient := client.NewRottenTomatoes(cfg.HTTP.Timeout)
 	matcher := service.NewTitleMatcher(log, fetcher, tmdbClient, justWatchClient, rtClient)
 	metadataRepo := repository.NewMetadataRepository(db)
-	metadata := service.NewTitleMetadataService(log, metadataRepo, tmdbClient, client.NewWikidataSPARQL(cfg.HTTP.Timeout))
+	metadata := service.NewTitleMetadataService(log, metadataRepo, tmdbClient, client.NewWikidataSPARQL(cfg.HTTP.Timeout), justWatchClient)
 	downloader := client.NewDownloader(cfg.Imports.DownloadTimeout, "")
 	alerts := service.NewAlertService(log, opsRepo, cfg.Alerts.WebhookURL, cfg.Alerts.Format, cfg.Alerts.Cooldown)
 	maintenance := service.NewMaintenanceService(log, opsRepo, taskScheduleRepo, alerts, cfg.Maintenance.RunRetentionDays, cfg.Alerts.StaleChartHours)

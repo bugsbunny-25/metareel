@@ -31,9 +31,12 @@ ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
 DELETE FROM tmdb_watch_providers WHERE tmdb_kind = ? AND tmdb_id = ?;
 
 -- name: InsertTmdbWatchProvider :exec
-INSERT INTO tmdb_watch_providers (tmdb_kind, tmdb_id, country, monetization, provider_id, provider_name, logo_path, display_priority, link)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tmdb_watch_providers (tmdb_kind, tmdb_id, country, monetization, provider_id, provider_name, logo_path, display_priority, link, url)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(tmdb_kind, tmdb_id, country, monetization, provider_id) DO NOTHING;
+
+-- name: MarkTmdbOffersFetched :exec
+UPDATE tmdb_titles SET offers_fetched_at = CURRENT_TIMESTAMP WHERE tmdb_kind = ? AND tmdb_id = ?;
 
 -- name: GetTmdbTitle :one
 SELECT * FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?;
@@ -54,7 +57,8 @@ ORDER BY country, CASE monetization WHEN 'flatrate' THEN 0 WHEN 'free' THEN 1 WH
 -- missing or older than the refresh window. Recently charting titles use the
 -- short window (watch providers change), the rest the long one.
 -- Windows are SQLite datetime modifiers, e.g. '-3 days' and '-30 days'.
--- TV shows stored before seasons were kept are due once.
+-- TV shows stored before seasons were kept are due once, and so are titles
+-- with watch providers whose JustWatch offer URLs were never looked up.
 SELECT k.tmdb_kind, k.tmdb_id
 FROM (
     SELECT u.tmdb_kind, u.tmdb_id, MAX(u.last_seen) AS last_seen
@@ -74,6 +78,8 @@ FROM (
 LEFT JOIN tmdb_titles m ON m.tmdb_kind = k.tmdb_kind AND m.tmdb_id = k.tmdb_id
 WHERE m.details_fetched_at IS NULL
    OR (k.tmdb_kind = 'tv' AND m.seasons IS NULL)
+   OR (m.offers_fetched_at IS NULL AND EXISTS (
+        SELECT 1 FROM tmdb_watch_providers w WHERE w.tmdb_kind = m.tmdb_kind AND w.tmdb_id = m.tmdb_id))
    OR (k.last_seen >= date('now', '-30 days') AND m.details_fetched_at < datetime('now', CAST(sqlc.arg(recent_window) AS TEXT)))
    OR m.details_fetched_at < datetime('now', CAST(sqlc.arg(stale_window) AS TEXT))
 ORDER BY m.details_fetched_at IS NOT NULL, k.last_seen DESC

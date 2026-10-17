@@ -11,18 +11,24 @@ import (
 	"github.com/bugsbunny-25/metareel/internal/repository"
 )
 
-// TitleMetadataService keeps TMDB metadata + watch providers and Wikidata
-// IDs of matched titles up to date (the titles.metadata job), and fetches
-// them for a title right after it is matched.
+// TitleMetadataService keeps TMDB metadata + watch providers (with each
+// provider's page from JustWatch) and Wikidata IDs of matched titles up to
+// date (the titles.metadata job), and fetches them for a title right after it
+// is matched.
 type TitleMetadataService struct {
-	log      *slog.Logger
-	repo     *repository.MetadataRepository
-	tmdb     *client.TMDBClient
-	wikidata *client.WikidataSPARQL
+	log       *slog.Logger
+	repo      *repository.MetadataRepository
+	tmdb      *client.TMDBClient
+	wikidata  *client.WikidataSPARQL
+	justWatch justWatchOffers // nil = no offer URLs
 }
 
-func NewTitleMetadataService(log *slog.Logger, repo *repository.MetadataRepository, tmdbClient *client.TMDBClient, wikidata *client.WikidataSPARQL) *TitleMetadataService {
-	return &TitleMetadataService{log: log, repo: repo, tmdb: tmdbClient, wikidata: wikidata}
+func NewTitleMetadataService(log *slog.Logger, repo *repository.MetadataRepository, tmdbClient *client.TMDBClient, wikidata *client.WikidataSPARQL, jw *client.JustWatchClient) *TitleMetadataService {
+	s := &TitleMetadataService{log: log, repo: repo, tmdb: tmdbClient, wikidata: wikidata}
+	if jw != nil {
+		s.justWatch = jw
+	}
+	return s
 }
 
 const (
@@ -36,8 +42,8 @@ const (
 )
 
 // RefreshDetails fetches and stores one title's TMDB details and watch
-// providers. It returns nil, nil when TMDB is not configured or has no such
-// title.
+// providers, each with its page on the service when JustWatch has it. It
+// returns nil, nil when TMDB is not configured or has no such title.
 func (s *TitleMetadataService) RefreshDetails(ctx context.Context, ref repository.TmdbRef) (*client.TMDBFullDetails, error) {
 	if !s.tmdb.Enabled() {
 		return nil, nil
@@ -46,10 +52,21 @@ func (s *TitleMetadataService) RefreshDetails(ctx context.Context, ref repositor
 	if err != nil || d == nil {
 		return nil, err
 	}
-	if err := s.repo.SaveDetails(ctx, d); err != nil {
-		return nil, err
+	return d, s.saveDetails(ctx, ref, d)
+}
+
+// saveDetails adds offer URLs to d's watch providers and stores it.
+func (s *TitleMetadataService) saveDetails(ctx context.Context, ref repository.TmdbRef, d *client.TMDBFullDetails) error {
+	checked, searchedID := s.addOfferURLs(ctx, ref, d)
+	if err := s.repo.SaveDetails(ctx, d, checked); err != nil {
+		return err
 	}
-	return d, nil
+	if searchedID != "" {
+		if err := s.repo.SaveIDs(ctx, ref, repository.TmdbIDs{JustWatchID: searchedID}, repository.IDSourceMatch); err != nil {
+			s.log.Warn("save justwatch id failed", slog.String("ref", ref.String()), slog.Any("err", err))
+		}
+	}
+	return nil
 }
 
 // LookupWikidata batch-fetches Wikidata IDs for refs, stores them (also

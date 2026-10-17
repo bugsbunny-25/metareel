@@ -186,7 +186,7 @@ func (q *Queries) FindTmdbRefsByNetflixID(ctx context.Context, arg FindTmdbRefsB
 }
 
 const getTmdbTitle = `-- name: GetTmdbTitle :one
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
 `
 
 type GetTmdbTitleParams struct {
@@ -241,13 +241,14 @@ func (q *Queries) GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (Tmd
 		&i.JustwatchSource,
 		&i.RtAttempts,
 		&i.NextRtAt,
+		&i.OffersFetchedAt,
 	)
 	return i, err
 }
 
 const insertTmdbWatchProvider = `-- name: InsertTmdbWatchProvider :exec
-INSERT INTO tmdb_watch_providers (tmdb_kind, tmdb_id, country, monetization, provider_id, provider_name, logo_path, display_priority, link)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tmdb_watch_providers (tmdb_kind, tmdb_id, country, monetization, provider_id, provider_name, logo_path, display_priority, link, url)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(tmdb_kind, tmdb_id, country, monetization, provider_id) DO NOTHING
 `
 
@@ -261,6 +262,7 @@ type InsertTmdbWatchProviderParams struct {
 	LogoPath        sql.NullString `json:"logo_path"`
 	DisplayPriority sql.NullInt64  `json:"display_priority"`
 	Link            sql.NullString `json:"link"`
+	Url             sql.NullString `json:"url"`
 }
 
 func (q *Queries) InsertTmdbWatchProvider(ctx context.Context, arg InsertTmdbWatchProviderParams) error {
@@ -274,6 +276,7 @@ func (q *Queries) InsertTmdbWatchProvider(ctx context.Context, arg InsertTmdbWat
 		arg.LogoPath,
 		arg.DisplayPriority,
 		arg.Link,
+		arg.Url,
 	)
 	return err
 }
@@ -298,6 +301,8 @@ FROM (
 LEFT JOIN tmdb_titles m ON m.tmdb_kind = k.tmdb_kind AND m.tmdb_id = k.tmdb_id
 WHERE m.details_fetched_at IS NULL
    OR (k.tmdb_kind = 'tv' AND m.seasons IS NULL)
+   OR (m.offers_fetched_at IS NULL AND EXISTS (
+        SELECT 1 FROM tmdb_watch_providers w WHERE w.tmdb_kind = m.tmdb_kind AND w.tmdb_id = m.tmdb_id))
    OR (k.last_seen >= date('now', '-30 days') AND m.details_fetched_at < datetime('now', CAST(?1 AS TEXT)))
    OR m.details_fetched_at < datetime('now', CAST(?2 AS TEXT))
 ORDER BY m.details_fetched_at IS NOT NULL, k.last_seen DESC
@@ -319,7 +324,8 @@ type ListTmdbRefsDueForDetailsRow struct {
 // missing or older than the refresh window. Recently charting titles use the
 // short window (watch providers change), the rest the long one.
 // Windows are SQLite datetime modifiers, e.g. '-3 days' and '-30 days'.
-// TV shows stored before seasons were kept are due once.
+// TV shows stored before seasons were kept are due once, and so are titles
+// with watch providers whose JustWatch offer URLs were never looked up.
 func (q *Queries) ListTmdbRefsDueForDetails(ctx context.Context, arg ListTmdbRefsDueForDetailsParams) ([]ListTmdbRefsDueForDetailsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTmdbRefsDueForDetails, arg.RecentWindow, arg.StaleWindow, arg.Limit)
 	if err != nil {
@@ -463,7 +469,7 @@ func (q *Queries) ListTmdbRefsDueForWikidata(ctx context.Context, arg ListTmdbRe
 }
 
 const listTmdbTitlesByIDs = `-- name: ListTmdbTitlesByIDs :many
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
 `
 
 // Callers filter by kind (TMDB movie and TV IDs overlap).
@@ -530,6 +536,7 @@ func (q *Queries) ListTmdbTitlesByIDs(ctx context.Context, ids []string) ([]Tmdb
 			&i.JustwatchSource,
 			&i.RtAttempts,
 			&i.NextRtAt,
+			&i.OffersFetchedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -545,7 +552,7 @@ func (q *Queries) ListTmdbTitlesByIDs(ctx context.Context, ids []string) ([]Tmdb
 }
 
 const listTmdbWatchProviders = `-- name: ListTmdbWatchProviders :many
-SELECT tmdb_kind, tmdb_id, country, monetization, provider_id, provider_name, logo_path, display_priority, link, fetched_at FROM tmdb_watch_providers
+SELECT tmdb_kind, tmdb_id, country, monetization, provider_id, provider_name, logo_path, display_priority, link, fetched_at, url FROM tmdb_watch_providers
 WHERE tmdb_kind = ?1 AND tmdb_id = ?2
   AND (CAST(?3 AS TEXT) = '' OR country = ?3)
 ORDER BY country, CASE monetization WHEN 'flatrate' THEN 0 WHEN 'free' THEN 1 WHEN 'ads' THEN 2 WHEN 'rent' THEN 3 ELSE 4 END,
@@ -578,6 +585,7 @@ func (q *Queries) ListTmdbWatchProviders(ctx context.Context, arg ListTmdbWatchP
 			&i.DisplayPriority,
 			&i.Link,
 			&i.FetchedAt,
+			&i.Url,
 		); err != nil {
 			return nil, err
 		}
@@ -590,6 +598,20 @@ func (q *Queries) ListTmdbWatchProviders(ctx context.Context, arg ListTmdbWatchP
 		return nil, err
 	}
 	return items, nil
+}
+
+const markTmdbOffersFetched = `-- name: MarkTmdbOffersFetched :exec
+UPDATE tmdb_titles SET offers_fetched_at = CURRENT_TIMESTAMP WHERE tmdb_kind = ? AND tmdb_id = ?
+`
+
+type MarkTmdbOffersFetchedParams struct {
+	TmdbKind string `json:"tmdb_kind"`
+	TmdbID   string `json:"tmdb_id"`
+}
+
+func (q *Queries) MarkTmdbOffersFetched(ctx context.Context, arg MarkTmdbOffersFetchedParams) error {
+	_, err := q.db.ExecContext(ctx, markTmdbOffersFetched, arg.TmdbKind, arg.TmdbID)
+	return err
 }
 
 const markTmdbTitleWikidataFetched = `-- name: MarkTmdbTitleWikidataFetched :exec

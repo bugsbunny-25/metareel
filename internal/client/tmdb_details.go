@@ -55,7 +55,8 @@ type TMDBWatchProvider struct {
 	ProviderName    string
 	LogoPath        string
 	DisplayPriority int
-	Link            string
+	Link            string // TMDB's watch page for the country
+	URL             string // the service's page for the title (from JustWatch; "" = unknown)
 }
 
 type tmdbNamed struct {

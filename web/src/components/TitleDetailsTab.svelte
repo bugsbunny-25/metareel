@@ -82,7 +82,7 @@
     {@const offers = overview.availability.countries[country]}
     <dl class="kv">
       {#each [['flatrate', 'Stream'], ['free', 'Free'], ['ads', 'With ads'], ['rent', 'Rent'], ['buy', 'Buy']] as [k, label] (k)}
-        {#if offers[k].length}<dt>{label}</dt><dd class="small">{offers[k].map((p) => p.provider_name).join(', ')}</dd>{/if}
+        {#if offers[k].length}<dt>{label}</dt><dd class="small">{#each offers[k] as p, i (p.provider_id)}{#if i}, {/if}{#if p.url}<a href={p.url} target="_blank" rel="noopener noreferrer">{p.provider_name}</a>{:else}{p.provider_name}{/if}{/each}</dd>{/if}
       {/each}
     </dl>
     <p class="field-hint">{overview.availability.attribution}{#if offers.link} · <a href={offers.link} target="_blank" rel="noopener">TMDB watch page</a>{/if}</p>
