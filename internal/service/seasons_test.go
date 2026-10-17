@@ -118,7 +118,7 @@ func TestSeasonMappingFlow(t *testing.T) {
 			{"the-gentlemen", "2024-03-10", "US", "netflix", "tv_shows", 1}, // before season 2 aired
 		})
 	if err := meta.SaveDetails(ctx, &client.TMDBFullDetails{Kind: "tv", ID: "236235", Title: "The Gentlemen",
-		Seasons: []client.TMDBSeason{{Number: 1, Name: "Season 1", AirDate: "2024-03-07"}, {Number: 2, Name: "Season 2", AirDate: "2026-09-25"}}}); err != nil {
+		Seasons: []client.TMDBSeason{{Number: 1, Name: "Season 1", AirDate: "2024-03-07"}, {Number: 2, Name: "Season 2", AirDate: "2026-09-25"}}}, false); err != nil {
 		t.Fatal(err)
 	}
 

@@ -340,6 +340,7 @@ type TmdbTitle struct {
 	JustwatchSource     sql.NullString  `json:"justwatch_source"`
 	RtAttempts          int64           `json:"rt_attempts"`
 	NextRtAt            sql.NullTime    `json:"next_rt_at"`
+	OffersFetchedAt     sql.NullTime    `json:"offers_fetched_at"`
 }
 
 type TmdbWatchProvider struct {
@@ -353,4 +354,5 @@ type TmdbWatchProvider struct {
 	DisplayPriority sql.NullInt64  `json:"display_priority"`
 	Link            sql.NullString `json:"link"`
 	FetchedAt       time.Time      `json:"fetched_at"`
+	Url             sql.NullString `json:"url"`
 }

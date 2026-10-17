@@ -263,7 +263,8 @@ type Querier interface {
 	// missing or older than the refresh window. Recently charting titles use the
 	// short window (watch providers change), the rest the long one.
 	// Windows are SQLite datetime modifiers, e.g. '-3 days' and '-30 days'.
-	// TV shows stored before seasons were kept are due once.
+	// TV shows stored before seasons were kept are due once, and so are titles
+	// with watch providers whose JustWatch offer URLs were never looked up.
 	ListTmdbRefsDueForDetails(ctx context.Context, arg ListTmdbRefsDueForDetailsParams) ([]ListTmdbRefsDueForDetailsRow, error)
 	// TMDB titles FlixPatrol titles are mapped to, without a Rotten Tomatoes
 	// slug, whose RT search backoff has expired; most recently charting first,
@@ -285,6 +286,7 @@ type Querier interface {
 	// NULL means the title was not on that chart. days_in_top10 counts every
 	// date the title has been on the chart up to and including ranked_on.
 	ListTop10ByProvider(ctx context.Context, arg ListTop10ByProviderParams) ([]ListTop10ByProviderRow, error)
+	MarkTmdbOffersFetched(ctx context.Context, arg MarkTmdbOffersFetchedParams) error
 	// Records a Wikidata lookup (found or not), creating the row if needed.
 	MarkTmdbTitleWikidataFetched(ctx context.Context, arg MarkTmdbTitleWikidataFetchedParams) error
 	RankingStats(ctx context.Context) (RankingStatsRow, error)

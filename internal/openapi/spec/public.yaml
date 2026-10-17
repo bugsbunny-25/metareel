@@ -1035,6 +1035,11 @@ paths:
     get:
       operationId: getTitleAvailability
       summary: Where a title can be watched, per country (TMDB, data by JustWatch)
+      description: >-
+        Watch providers per country, grouped by monetization. Each provider has
+        `url`, the title's page on that service (e.g. https://www.netflix.com/title/81231974),
+        when JustWatch lists it; `link` per country is TMDB's watch page for the
+        title. Stored by the titles.metadata job, refreshed with the providers.
       parameters:
         - $ref: "#/components/parameters/TmdbKindParam"
         - $ref: "#/components/parameters/TmdbIDParam"
@@ -1622,6 +1627,12 @@ components:
         provider_name: { type: string }
         logo_path: { type: string, nullable: true, description: "TMDB image path (https://image.tmdb.org/t/p/w92{logo_path})" }
         display_priority: { type: integer, nullable: true }
+        url:
+          type: string
+          nullable: true
+          description: "The title's page on this service (JustWatch's link; may carry JustWatch's affiliate tag). Null when JustWatch has no matching offer."
+          example: https://www.netflix.com/title/81231974
+        link: { type: string, nullable: true, description: "Always null here; see the country's link" }
         fetched_at: { type: string, format: date-time }
 
     AvailabilityResponse:
@@ -1637,7 +1648,7 @@ components:
           additionalProperties:
             type: object
             properties:
-              link: { type: string, nullable: true }
+              link: { type: string, nullable: true, description: "TMDB's watch page for the title in this country" }
               flatrate: { type: array, items: { $ref: "#/components/schemas/WatchProvider" } }
               free: { type: array, items: { $ref: "#/components/schemas/WatchProvider" } }
               ads: { type: array, items: { $ref: "#/components/schemas/WatchProvider" } }

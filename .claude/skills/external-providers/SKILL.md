@@ -24,6 +24,7 @@ it, and again after — several fields and enums below were only discoverable th
 - `content.scoring`: `imdbScore, imdbVotes, tmdbScore, tmdbPopularity, jwRating, tomatoMeter, certifiedFresh` — no RT audience score.
 - Seasons: `externalIds.tmdbId` is `"<showId>:<season>"`; use `show.content.externalIds`. Season descriptions are often empty → fall back to the show.
 - `newTitles`: NEW is per day (one call per date); UPCOMING ignores `date`. The `objectTypes` filter is ignored here — filter movie/TV in Go. The service-specific release date is in `upcomingReleases[]` (prefer `DIGITAL` for the requested package; ignore other packages like `tmd`/theatrical).
+- Offers: `offers(country: XX, platform: WEB) { monetizationType standardWebURL package { packageId } }` on a node; alias one field per country (`US: offers(country: US …) IN: offers(…)`) to get all ~130 countries in one request (~36 KB). `packageId` equals TMDB's watch `provider_id`, so offers attach to TMDB providers (`service/title_offers.go`). Amazon URLs carry JustWatch's affiliate tag. Only ~13% of TMDB titles have a stored `justwatch_id`; the rest are found by name search with a TMDB ID check.
 - **Package codes vary by country**: Prime Video `amp` (US/GB/DE/JP) vs `prv` (IN/BR); Paramount+ `pmp` vs `ppp` (US Premium) / `ppe`; HBO Max `mxx` vs `mxu` (JP); Apple TV+ is `atp` (not `apt`). Map FlixPatrol providers through `justWatchPackages` (ordered candidates) and resolve against `/api/v1/services/{country}`.
 
 ## TMDB (`TMDB_API_KEY`, v3, key in query string)

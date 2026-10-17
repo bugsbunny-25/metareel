@@ -148,7 +148,7 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 |---|---|---|
 | `flixpatrol.top10.scrape` | `FlixPatrolJob` | Charts only; tags the new TV rankings with seasons, enqueues `titles.enrich` for new titles and hourly re-checks for unpublished charts |
 | `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Mapping sync (linked Netflix titles' mappings first), matching with backoff, RT via Wikidata then search (per TMDB title, backoff in `tmdb_titles.next_rt_at`), mapping sync; then seasons |
-| `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists) + watch providers, Wikidata IDs; then seasons |
+| `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists) + watch providers with each offer's URL from JustWatch (`title_offers.go`), Wikidata IDs; then seasons |
 | `ratings.prewarm` | `RatingsService.Prewarm` | Charting titles' expired ratings |
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
@@ -330,6 +330,7 @@ sequenceDiagram
         E->>DB: SaveTitleMatch (matched, or unmatched with retry +1/+3/+7/+30 days)
         opt matched
             E->>TMDB: details + external IDs + watch providers (tmdb_titles, tmdb_watch_providers)
+            E->>JW: offers of the title in every provider country (one aliased query) -> each provider's url
         end
     end
     E->>WD: one batch: RT / Metacritic / Letterboxd / IMDb IDs by TMDB ID
@@ -462,7 +463,7 @@ Added since the diagram below:
 | `title_links` | Netflix title ↔ FlixPatrol title that are the same title; linked titles share one TMDB mapping |
 | `mapping_events` | History of every mapping change (subject, action, TMDB title before / after, source, actor), written with the change |
 | `mapping_evidence` | What each source says a title is (subject, kind manual / netflix_id / match, TMDB title, source, IMDb ID it came with); mappings are computed from it |
-| `tmdb_watch_providers` | Watch providers per title × country × monetization |
+| `tmdb_watch_providers` | Watch providers per title × country × monetization; `link` = TMDB's watch page, `url` = the title on the service (JustWatch offer, matched by package ID = TMDB provider ID). `tmdb_titles.offers_fetched_at` = last JustWatch offers lookup |
 | `netflix_titles`, `netflix_top10_global`, `netflix_top10_countries`, `netflix_most_popular` | Netflix's official Top 10 and their TMDB matches (`kind` = Netflix's list, `tmdb_kind` = TMDB namespace, `netflix_id` + `netflix_id_checked_at` from Tudum's search) |
 | `netflix_seasons` | One row per Netflix season title: `season_number`, `season_source` (parsed / tmdb_name / number / tmdb_air_date / tmdb_single / manual), the season's own `netflix_id` |
 | `tmdb_titles.seasons`, `rankings.season_source` | TMDB season list (JSON) of TV shows; where a ranking's season came from (chart / netflix / tmdb_air_date) |
@@ -678,6 +679,7 @@ metareel/
 │   │   ├── tmdb.go               # TMDB REST client (search + external IDs)
 │   │   ├── tmdb_details.go       # TMDB details + external IDs + watch providers (one call)
 │   │   ├── justwatch.go          # JustWatch GraphQL client (title ID lookup)
+│   │   ├── justwatch_offers.go   # a title's offers (service URLs) in many countries per request
 │   │   ├── wikidata_sparql.go    # Wikidata SPARQL: IDs by TMDB ID, items by Netflix ID / label / QID
 │   │   ├── netflix_top10.go      # Tudum Top 10 search (Netflix IDs) + season → show ID
 │   │   └── download.go           # Netflix / IMDb file downloads, skipped when unchanged
@@ -726,6 +728,7 @@ metareel/
 │   │   ├── imdb_import.go         # IMDb ratings dataset import
 │   │   ├── charts.go              # catalog, history, movers, leaderboards, changes, export
 │   │   ├── title_overview.go      # title overview, stats, availability, lookup
+│   │   ├── title_offers.go        # watch provider URLs from JustWatch offers (metadata refresh)
 │   │   ├── analytics.go           # decay, similarity, release lag, ratings vs popularity, genres, Netflix calibration
 │   │   ├── data_quality.go        # admin data-quality report
 │   │   ├── maintenance.go, alerts.go, health.go

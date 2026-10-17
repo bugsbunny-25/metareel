@@ -32,7 +32,9 @@ type TmdbRef struct {
 func (r TmdbRef) String() string { return r.Kind + ":" + r.ID }
 
 // SaveDetails stores a title's TMDB details and replaces its watch providers.
-func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFullDetails) error {
+// offersChecked records that the providers' JustWatch offer URLs were looked
+// up (found or not).
+func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFullDetails, offersChecked bool) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -74,8 +76,14 @@ func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFull
 			TmdbKind: d.Kind, TmdbID: d.ID, Country: p.Country, Monetization: p.Monetization,
 			ProviderID: int64(p.ProviderID), ProviderName: p.ProviderName, LogoPath: nullIfEmpty(p.LogoPath),
 			DisplayPriority: sql.NullInt64{Int64: int64(p.DisplayPriority), Valid: true}, Link: nullIfEmpty(p.Link),
+			Url: nullIfEmpty(p.URL),
 		}); err != nil {
 			return fmt.Errorf("insert watch provider: %w", err)
+		}
+	}
+	if offersChecked {
+		if err := q.MarkTmdbOffersFetched(ctx, sqlc.MarkTmdbOffersFetchedParams{TmdbKind: d.Kind, TmdbID: d.ID}); err != nil {
+			return fmt.Errorf("mark offers fetched: %w", err)
 		}
 	}
 	return tx.Commit()
@@ -353,7 +361,8 @@ type WatchProvider struct {
 	ProviderName    string    `json:"provider_name"`
 	LogoPath        *string   `json:"logo_path"`
 	DisplayPriority *int64    `json:"display_priority"`
-	Link            *string   `json:"link"`
+	Link            *string   `json:"link"` // TMDB's watch page for the country
+	URL             *string   `json:"url"`  // the service's page for the title (JustWatch)
 	FetchedAt       time.Time `json:"fetched_at"`
 }
 
@@ -368,7 +377,7 @@ func (r *MetadataRepository) WatchProviders(ctx context.Context, ref TmdbRef, co
 		out = append(out, WatchProvider{
 			Country: row.Country, Monetization: row.Monetization, ProviderID: row.ProviderID, ProviderName: row.ProviderName,
 			LogoPath: nullStringPtr(row.LogoPath), DisplayPriority: nullInt64Ptr(row.DisplayPriority), Link: nullStringPtr(row.Link),
-			FetchedAt: row.FetchedAt.UTC(),
+			URL: nullStringPtr(row.Url), FetchedAt: row.FetchedAt.UTC(),
 		})
 	}
 	return out, nil
