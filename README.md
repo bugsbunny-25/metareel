@@ -120,7 +120,16 @@ make down
   - CodeQL analysis for Go on PRs, `main`, and weekly schedule
 - `container.yml`
   - PR: Docker build + Trivy scan + SBOM artifact
-  - `main`/tags: Docker build + push to GHCR + Trivy scan + SBOM artifact
+  - `main`: Docker build + push to GHCR as `main` and `sha-<commit>` + Trivy scan + SBOM artifact,
+    then `cleanup-main-images` deletes every older main image (only once the whole build passed),
+    so GHCR holds a single main image. Release images are never touched.
+- `release.yml`
+  - Creates a GitHub release, pre-releases included: runs `ci.yml`, builds and pushes the image
+    tagged with the version via `container.yml`, then creates the tag and release (generated
+    notes, image digest, SBOM attached). Nothing is tagged if CI or the image fails.
+  - Start it from Actions → release → Run workflow (`version`, `prerelease`, `ref`), or push a
+    `v*` tag / create a release in the UI. A version with a `-suffix` (e.g. `v0.2.0-alpha`) is
+    always a pre-release.
 - `staging-deploy.yml`
   - Manual (`workflow_dispatch`) deploy scaffold with smoke-test contract (`/healthz`, `/api/v1/test`)
 
@@ -160,7 +169,11 @@ make reports-open
 ### Operational notes
 
 - Container images are built from `Dockerfile` and use `linux/amd64`.
-- Published images use immutable SHA-based tags; tag pushes also publish version tags (`v*`).
+- Main images are tagged `main` + `sha-<commit>` and only the latest survives; release images are
+  tagged with their version (`v*`) and kept. Cleanup uses the workflow's `GITHUB_TOKEN`, so the
+  package's *Manage Actions access* must give this repository the Admin role.
+- Tags and releases created by `release.yml` don't trigger other workflows (a `GITHUB_TOKEN`
+  limit), which is why it calls `ci.yml` and `container.yml` itself.
 - Trivy fails the workflow on `HIGH`/`CRITICAL` vulnerabilities.
 
 ## Endpoints
