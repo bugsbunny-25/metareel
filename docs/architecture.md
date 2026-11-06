@@ -268,7 +268,12 @@ FlixPatrol title in the same list → Wikidata items with a Netflix ID by
 English label (`pickWikidataNetflix`; a title with its own Netflix ID only
 takes an item with that ID, so the 2010 film is not taken for the 2025
 remake) → JustWatch's US Netflix catalogue (the
-list's kind, then the other) → a unique exact name in JustWatch US → mapping
+list's kind, then the other) → TMDB (`netflix_tmdb.go`: search the list's
+kind, then the other; hits whose title or original title is the name, else
+an alternative title of the top hits, released no later than the year it
+first charted; the only one TMDB shows streaming on Netflix in any country,
+or among several the only recent release: `tmdb_netflix`,
+`tmdb_netflix_alt_title`) → a unique exact name in JustWatch US → mapping
 sync. Before that, label matches (`wikidata_netflix`) that the title's own
 Netflix ID contradicts (its TMDB title has another, non-copied Netflix ID)
 are cleared through the mapping writer (`clear` event) and matched again
@@ -342,6 +347,24 @@ sequenceDiagram
 `manual` titles (fixed in the admin UI) are never changed by automation.
 `POST /api/v1/admin/titles/:id/rematch` clears the backoff (and with
 `clear: true`, the IDs) and queues the title.
+
+## Mapping review queue (`service/mapping_review.go`)
+
+`GET /admin/mappings/review` (Mapping → Review queue) scores every automatic
+mapping (FlixPatrol and Netflix titles not fixed by hand) 0–100 by how
+likely it is wrong and lists the riskiest first (default `min_risk=25`;
+`subject`, `reason` filters). Signals add up: the match source's base risk
+(`sourceRisk`: 0 for a FlixPatrol title page path or a Netflix ID, up to 35
+for a unique-name fallback; ≥ 20 shows as `weak_source`), `not_on_provider`
+(+35: TMDB lists no offer of the service it charted on, in any country and
+form — only checked when it charted there within 60 days before the offers
+were fetched, since titles leave services; `providerOffers` maps FlixPatrol
+providers to TMDB provider IDs), `released_later` (+40: TMDB release year
+after it first charted), `imdb_mismatch` (+30: the match came with another
+IMDb ID), `year_mismatch` (+25: films whose FlixPatrol premiere year is more
+than a year off), `no_offers` (+15), `name_differs` (+15: the chart name,
+without season suffixes, neither is nor contains TMDB's title), `no_details`
+(+5). Computed on request; nothing is stored.
 
 ## Title origins (`service/origins.go`)
 

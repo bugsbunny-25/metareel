@@ -169,6 +169,12 @@ type Querier interface {
 	// The mapping reference (view mapping_refs): one row per chart title with
 	// its TMDB title and every external ID. Mapped titles first.
 	ListMappingRefs(ctx context.Context, arg ListMappingRefsParams) ([]ListMappingRefsRow, error)
+	// Automatically mapped FlixPatrol titles with what the review queue scores:
+	// how they matched, the TMDB title, when / where they charted, and the IMDb
+	// ID the match came with.
+	ListMappingReviewFlixPatrol(ctx context.Context) ([]ListMappingReviewFlixPatrolRow, error)
+	// The same for Netflix Top 10 titles (points = weeks in the global Top 10).
+	ListMappingReviewNetflix(ctx context.Context) ([]ListMappingReviewNetflixRow, error)
 	ListNetflixCountriesByTmdb(ctx context.Context, arg ListNetflixCountriesByTmdbParams) ([]ListNetflixCountriesByTmdbRow, error)
 	ListNetflixCountrySeasonRanks(ctx context.Context, fromWeek string) ([]ListNetflixCountrySeasonRanksRow, error)
 	ListNetflixCountryWeek(ctx context.Context, arg ListNetflixCountryWeekParams) ([]ListNetflixCountryWeekRow, error)
@@ -301,6 +307,8 @@ type Querier interface {
 	// Changes across titles since a time (observed_at >= since, a
 	// 'YYYY-MM-DD HH:MM:SS' UTC string), newest first, with the TMDB title.
 	ListWatchProviderEvents(ctx context.Context, arg ListWatchProviderEventsParams) ([]ListWatchProviderEventsRow, error)
+	// Every provider a TMDB title is offered by, in any country and form.
+	ListWatchProviderIDs(ctx context.Context) ([]ListWatchProviderIDsRow, error)
 	MarkTmdbOffersFetched(ctx context.Context, arg MarkTmdbOffersFetchedParams) error
 	// Records a Wikidata lookup (found or not), creating the row if needed.
 	MarkTmdbTitleWikidataFetched(ctx context.Context, arg MarkTmdbTitleWikidataFetchedParams) error

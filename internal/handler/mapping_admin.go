@@ -23,6 +23,24 @@ func (h *Handler) ListMappings(c *echo.Context) error {
 	return writeData(c, out, err)
 }
 
+// ReviewMappings: GET /api/v1/admin/mappings/review[?subject=&reason=&min_risk=&limit=&offset=]
+func (h *Handler) ReviewMappings(c *echo.Context) error {
+	limit, offset, err := parsePagination(c.QueryParam("limit"), c.QueryParam("offset"))
+	if err != nil {
+		return badRequest(c, err)
+	}
+	q := service.MappingReviewQuery{Subject: c.QueryParam("subject"), Reason: c.QueryParam("reason")}
+	if raw := c.QueryParam("min_risk"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			return badRequest(c, errors.New("invalid min_risk, expected an integer 0-100"))
+		}
+		q.MinRisk, q.MinGiven = v, true
+	}
+	out, err := h.Mapping.Review(c.Request().Context(), q, int(limit), int(offset))
+	return writeData(c, out, err)
+}
+
 // GetMapping: GET /api/v1/admin/mappings/{kind}/{id}
 func (h *Handler) GetMapping(c *echo.Context) error {
 	ref, err := h.parseRef(c)

@@ -57,6 +57,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.PATCH("/netflix/seasons/:id", h.PatchNetflixSeason)
 	admin.GET("/mappings", h.ListMappings)
 	admin.POST("/mappings/sync", h.SyncMappings)
+	admin.GET("/mappings/review", h.ReviewMappings)
 	admin.GET("/mappings/:kind/:id", h.GetMapping)
 	admin.POST("/mappings/:kind/:id/remap", h.RemapMapping)
 	admin.GET("/mapping-events", h.ListMappingEvents)

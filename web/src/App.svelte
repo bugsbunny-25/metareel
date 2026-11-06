@@ -24,7 +24,7 @@
     { path: '/insights', label: 'Insights', icon: 'sparkles', page: Insights },
     { path: '/releases', label: 'New & upcoming', icon: 'calendar', page: Releases },
     { section: 'Data' },
-    { path: '/titles', paths: ['/titles', '/netflix', '/mapping'], label: 'Mapping', icon: 'link', page: MappingHub, badge: 'missing' },
+    { path: '/titles', paths: ['/titles', '/netflix', '/mapping', '/review'], label: 'Mapping', icon: 'link', page: MappingHub, badge: 'missing' },
     { path: '/data-health', label: 'Data health', icon: 'activity', page: DataHealth },
     { section: 'Operations' },
     { path: '/schedules', label: 'Schedules', icon: 'clock', page: Schedules },

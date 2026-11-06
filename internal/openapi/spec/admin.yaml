@@ -884,6 +884,80 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/admin/mappings/review:
+    get:
+      operationId: reviewMappings
+      summary: Automatic mappings scored by how likely they are wrong
+      description: >-
+        Scores every automatic mapping (FlixPatrol and Netflix titles not
+        fixed by hand) 0-100 and lists those at or above min_risk, riskiest
+        (then most charted) first. Reasons and their points: weak_source
+        (the match rule, up to 35), not_on_provider (35; TMDB shows no offer
+        of the service it charted on in any country, checked when it charted
+        there within 60 days of the offers being fetched), released_later
+        (40), imdb_mismatch (30), year_mismatch (25, films), no_offers (15),
+        name_differs (15), no_details (5). `reasons` counts mappings per
+        reason before the reason filter.
+      parameters:
+        - name: subject
+          in: query
+          schema: { type: string, enum: [flixpatrol, netflix] }
+        - name: reason
+          in: query
+          schema: { type: string, enum: [weak_source, not_on_provider, no_offers, released_later, year_mismatch, name_differs, imdb_mismatch, no_details] }
+        - name: min_risk
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 100, default: 25 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: The queue
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checked: { type: integer, description: Automatic mappings scored }
+                  total: { type: integer }
+                  reasons: { type: object, additionalProperties: { type: integer } }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        subject: { type: string, enum: [flixpatrol, netflix] }
+                        id: { type: integer }
+                        name: { type: string }
+                        kind: { type: string }
+                        tmdb_kind: { type: string }
+                        tmdb_id: { type: string }
+                        tmdb_title: { type: string }
+                        tmdb_year: { type: integer }
+                        match_source: { type: string }
+                        providers: { type: array, items: { type: string } }
+                        first_charted: { type: string, format: date }
+                        points: { type: integer, description: "chart points (FlixPatrol) or weeks in the global Top 10 (Netflix)" }
+                        risk: { type: integer }
+                        reasons:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              code: { type: string }
+                              text: { type: string }
+                              points: { type: integer }
+        "400":
+          description: Invalid filter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/v1/admin/mappings/sync:
     post:
       operationId: syncMappings
@@ -1291,7 +1365,7 @@ components:
         tmdb_id: { type: string, nullable: true }
         imdb_id: { type: string, nullable: true }
         match_status: { type: string, enum: [pending, matched, unmatched, manual] }
-        match_source: { type: string, nullable: true, description: "e.g. flixpatrol_title, netflix_title, wikidata_netflix, justwatch_netflix, justwatch_netflix_other_kind, justwatch_unique_name, manual" }
+        match_source: { type: string, nullable: true, description: "e.g. flixpatrol_title, netflix_title, wikidata_netflix, justwatch_netflix, justwatch_netflix_other_kind, tmdb_netflix, tmdb_netflix_alt_title, justwatch_unique_name, manual" }
         match_attempts: { type: integer }
         next_match_at: { type: string, format: date-time, nullable: true }
         updated_at: { type: string, format: date-time }

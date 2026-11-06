@@ -260,3 +260,58 @@ WHERE n.match_status <> 'manual'
     WHERE h.subject_type = 'netflix' AND h.subject_id = n.id AND h.kind IN ('manual', 'netflix_id'))
 ORDER BY n.id
 LIMIT sqlc.arg(limit);
+
+-- name: ListMappingReviewFlixPatrol :many
+-- Automatically mapped FlixPatrol titles with what the review queue scores:
+-- how they matched, the TMDB title, when / where they charted, and the IMDb
+-- ID the match came with.
+SELECT t.id, t.name, t.kind,
+       CAST(COALESCE(t.fp_premiere_date, '') AS TEXT) AS fp_premiere_date,
+       CAST(COALESCE(t.match_source, '') AS TEXT) AS match_source,
+       CAST(t.tmdb_id AS TEXT) AS tmdb_id,
+       CAST(COALESCE(m.title, '') AS TEXT) AS tmdb_title,
+       CAST(COALESCE(m.original_title, '') AS TEXT) AS tmdb_original_title,
+       CAST(COALESCE(m.release_date, '') AS TEXT) AS tmdb_release_date,
+       CAST(m.details_fetched_at IS NOT NULL AS INTEGER) AS has_details,
+       CAST(COALESCE(m.details_fetched_at, '') AS TEXT) AS details_fetched_at,
+       CAST(COALESCE(m.imdb_id, '') AS TEXT) AS tmdb_imdb_id,
+       CAST(COALESCE((SELECT e.imdb_id FROM mapping_evidence e
+                      WHERE e.subject_type = 'flixpatrol' AND e.subject_id = t.id AND e.kind = 'match'), '') AS TEXT) AS evidence_imdb_id,
+       CAST(COALESCE((SELECT MIN(r.ranked_on) FROM rankings r WHERE r.title_id = t.id), '') AS TEXT) AS first_charted,
+       -- provider@last date charted there, comma-separated
+       CAST(COALESCE((SELECT GROUP_CONCAT(p.provider || '@' || p.last_date) FROM (
+           SELECT r.streaming_provider AS provider, CAST(MAX(r.ranked_on) AS TEXT) AS last_date
+           FROM rankings r WHERE r.title_id = t.id GROUP BY r.streaming_provider) p), '') AS TEXT) AS providers,
+       CAST(COALESCE((SELECT SUM(11 - r.rank) FROM rankings r WHERE r.title_id = t.id), 0) AS INTEGER) AS points
+FROM titles t
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
+WHERE COALESCE(t.tmdb_id, '') <> '' AND t.match_status <> 'manual';
+
+-- name: ListMappingReviewNetflix :many
+-- The same for Netflix Top 10 titles (points = weeks in the global Top 10).
+SELECT n.id, n.show_title AS name, n.kind,
+       CAST(COALESCE(n.match_source, '') AS TEXT) AS match_source,
+       CAST(n.tmdb_kind AS TEXT) AS tmdb_kind,
+       CAST(n.tmdb_id AS TEXT) AS tmdb_id,
+       CAST(COALESCE(m.title, '') AS TEXT) AS tmdb_title,
+       CAST(COALESCE(m.original_title, '') AS TEXT) AS tmdb_original_title,
+       CAST(COALESCE(m.release_date, '') AS TEXT) AS tmdb_release_date,
+       CAST(m.details_fetched_at IS NOT NULL AS INTEGER) AS has_details,
+       CAST(COALESCE(m.details_fetched_at, '') AS TEXT) AS details_fetched_at,
+       CAST(COALESCE(m.imdb_id, '') AS TEXT) AS tmdb_imdb_id,
+       CAST(COALESCE((SELECT e.imdb_id FROM mapping_evidence e
+                      WHERE e.subject_type = 'netflix' AND e.subject_id = n.id AND e.kind = 'match'), '') AS TEXT) AS evidence_imdb_id,
+       CAST(COALESCE((SELECT MIN(w) FROM (
+           SELECT MIN(g.week) AS w FROM netflix_top10_global g WHERE g.netflix_title_id = n.id
+           UNION ALL SELECT MIN(c.week) FROM netflix_top10_countries c WHERE c.netflix_title_id = n.id)), '') AS TEXT) AS first_charted,
+       CAST(COALESCE((SELECT MAX(w) FROM (
+           SELECT MAX(g.week) AS w FROM netflix_top10_global g WHERE g.netflix_title_id = n.id
+           UNION ALL SELECT MAX(c.week) FROM netflix_top10_countries c WHERE c.netflix_title_id = n.id)), '') AS TEXT) AS last_charted,
+       CAST(COALESCE((SELECT COUNT(DISTINCT g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id), 0) AS INTEGER) AS points
+FROM netflix_titles n
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = n.tmdb_kind AND m.tmdb_id = n.tmdb_id
+WHERE COALESCE(n.tmdb_id, '') <> '' AND n.tmdb_kind IS NOT NULL AND n.match_status <> 'manual';
+
+-- name: ListWatchProviderIDs :many
+-- Every provider a TMDB title is offered by, in any country and form.
+SELECT DISTINCT tmdb_kind, tmdb_id, provider_id FROM tmdb_watch_providers;

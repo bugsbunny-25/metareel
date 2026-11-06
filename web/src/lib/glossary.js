@@ -22,6 +22,7 @@ export const GLOSSARY = [
       ['Coverage', 'The share of titles, or of chart entries, that have a TMDB ID. Higher is better; gaps show up as missing ratings and metadata downstream.'],
       ['Season mapping', 'Which TMDB season a Netflix season title (“Season 2”, “Part 3”) refers to, so rankings can be shown per season.'],
       ['Mapping history', 'A log of every change to a mapping and the evidence behind it, so a wrong match can be traced and undone.'],
+      ['Mapping risk', 'How likely an automatic mapping is wrong, 0–100: points for a weak matching rule, a title TMDB shows on no offer of the service it charted on, a TMDB release after it first charted, a different name or year, or an IMDb ID that disagrees.'],
     ],
   },
   {

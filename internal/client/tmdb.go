@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -230,3 +231,104 @@ func (c *TMDBClient) FindByExternalID(ctx context.Context, id string) ([]TMDBFou
 }
 
 var imdbTitleRe = regexp.MustCompile(`^tt\d{5,10}$`)
+
+// TMDB watch provider IDs of Netflix (the standard plan and "Netflix basic
+// with Ads"), as in watch/providers and JustWatch package IDs.
+var TMDBNetflixProviderIDs = []int{8, 1796}
+
+// WatchProviderCountries returns the countries where any of providerIDs
+// streams a title (flatrate, free or ads), from TMDB's watch providers
+// (data by JustWatch). Nil when TMDB has no such title.
+func (c *TMDBClient) WatchProviderCountries(ctx context.Context, kind, tmdbID string, providerIDs []int) ([]string, error) {
+	if !c.Enabled() {
+		return nil, nil
+	}
+	if kind != "movie" && kind != "tv" {
+		return nil, fmt.Errorf("invalid tmdb kind %q", kind)
+	}
+	type offer struct {
+		ProviderID int `json:"provider_id"`
+	}
+	var out struct {
+		Results map[string]struct {
+			Flatrate []offer `json:"flatrate"`
+			Free     []offer `json:"free"`
+			Ads      []offer `json:"ads"`
+		} `json:"results"`
+	}
+	resp, err := c.http.R().
+		SetContext(ctx).
+		SetQueryParams(map[string]string{"api_key": c.apiKey}).
+		SetResult(&out).
+		Get(fmt.Sprintf("https://api.themoviedb.org/3/%s/%s/watch/providers", kind, tmdbID))
+	if err != nil {
+		return nil, fmt.Errorf("tmdb %s watch providers: %w", kind, redactErr(err))
+	}
+	if resp.StatusCode() == 404 {
+		return nil, nil
+	}
+	if resp.IsError() {
+		return nil, fmt.Errorf("tmdb %s watch providers status %d", kind, resp.StatusCode())
+	}
+	want := map[int]bool{}
+	for _, id := range providerIDs {
+		want[id] = true
+	}
+	var countries []string
+	for country, r := range out.Results {
+		for _, list := range [][]offer{r.Flatrate, r.Free, r.Ads} {
+			found := false
+			for _, o := range list {
+				if want[o.ProviderID] {
+					found = true
+					break
+				}
+			}
+			if found {
+				countries = append(countries, country)
+				break
+			}
+		}
+	}
+	sort.Strings(countries)
+	return countries, nil
+}
+
+// AlternativeTitles returns a title's alternative titles on TMDB (other
+// countries' and languages' names). Nil when TMDB has no such title.
+func (c *TMDBClient) AlternativeTitles(ctx context.Context, kind, tmdbID string) ([]string, error) {
+	if !c.Enabled() {
+		return nil, nil
+	}
+	if kind != "movie" && kind != "tv" {
+		return nil, fmt.Errorf("invalid tmdb kind %q", kind)
+	}
+	type alt struct {
+		Title string `json:"title"`
+	}
+	var out struct {
+		Titles  []alt `json:"titles"`  // movies
+		Results []alt `json:"results"` // tv
+	}
+	resp, err := c.http.R().
+		SetContext(ctx).
+		SetQueryParams(map[string]string{"api_key": c.apiKey}).
+		SetResult(&out).
+		Get(fmt.Sprintf("https://api.themoviedb.org/3/%s/%s/alternative_titles", kind, tmdbID))
+	if err != nil {
+		return nil, fmt.Errorf("tmdb %s alternative titles: %w", kind, redactErr(err))
+	}
+	if resp.StatusCode() == 404 {
+		return nil, nil
+	}
+	if resp.IsError() {
+		return nil, fmt.Errorf("tmdb %s alternative titles status %d", kind, resp.StatusCode())
+	}
+	var titles []string
+	for _, a := range append(out.Titles, out.Results...) {
+		if t := strings.TrimSpace(a.Title); t != "" {
+			titles = append(titles, t)
+		}
+	}
+	return titles, nil
+}

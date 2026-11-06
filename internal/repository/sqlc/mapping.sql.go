@@ -709,6 +709,177 @@ func (q *Queries) ListMappingRefs(ctx context.Context, arg ListMappingRefsParams
 	return items, nil
 }
 
+const listMappingReviewFlixPatrol = `-- name: ListMappingReviewFlixPatrol :many
+SELECT t.id, t.name, t.kind,
+       CAST(COALESCE(t.fp_premiere_date, '') AS TEXT) AS fp_premiere_date,
+       CAST(COALESCE(t.match_source, '') AS TEXT) AS match_source,
+       CAST(t.tmdb_id AS TEXT) AS tmdb_id,
+       CAST(COALESCE(m.title, '') AS TEXT) AS tmdb_title,
+       CAST(COALESCE(m.original_title, '') AS TEXT) AS tmdb_original_title,
+       CAST(COALESCE(m.release_date, '') AS TEXT) AS tmdb_release_date,
+       CAST(m.details_fetched_at IS NOT NULL AS INTEGER) AS has_details,
+       CAST(COALESCE(m.details_fetched_at, '') AS TEXT) AS details_fetched_at,
+       CAST(COALESCE(m.imdb_id, '') AS TEXT) AS tmdb_imdb_id,
+       CAST(COALESCE((SELECT e.imdb_id FROM mapping_evidence e
+                      WHERE e.subject_type = 'flixpatrol' AND e.subject_id = t.id AND e.kind = 'match'), '') AS TEXT) AS evidence_imdb_id,
+       CAST(COALESCE((SELECT MIN(r.ranked_on) FROM rankings r WHERE r.title_id = t.id), '') AS TEXT) AS first_charted,
+       -- provider@last date charted there, comma-separated
+       CAST(COALESCE((SELECT GROUP_CONCAT(p.provider || '@' || p.last_date) FROM (
+           SELECT r.streaming_provider AS provider, CAST(MAX(r.ranked_on) AS TEXT) AS last_date
+           FROM rankings r WHERE r.title_id = t.id GROUP BY r.streaming_provider) p), '') AS TEXT) AS providers,
+       CAST(COALESCE((SELECT SUM(11 - r.rank) FROM rankings r WHERE r.title_id = t.id), 0) AS INTEGER) AS points
+FROM titles t
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
+WHERE COALESCE(t.tmdb_id, '') <> '' AND t.match_status <> 'manual'
+`
+
+type ListMappingReviewFlixPatrolRow struct {
+	ID                int64  `json:"id"`
+	Name              string `json:"name"`
+	Kind              string `json:"kind"`
+	FpPremiereDate    string `json:"fp_premiere_date"`
+	MatchSource       string `json:"match_source"`
+	TmdbID            string `json:"tmdb_id"`
+	TmdbTitle         string `json:"tmdb_title"`
+	TmdbOriginalTitle string `json:"tmdb_original_title"`
+	TmdbReleaseDate   string `json:"tmdb_release_date"`
+	HasDetails        int64  `json:"has_details"`
+	DetailsFetchedAt  string `json:"details_fetched_at"`
+	TmdbImdbID        string `json:"tmdb_imdb_id"`
+	EvidenceImdbID    string `json:"evidence_imdb_id"`
+	FirstCharted      string `json:"first_charted"`
+	Providers         string `json:"providers"`
+	Points            int64  `json:"points"`
+}
+
+// Automatically mapped FlixPatrol titles with what the review queue scores:
+// how they matched, the TMDB title, when / where they charted, and the IMDb
+// ID the match came with.
+func (q *Queries) ListMappingReviewFlixPatrol(ctx context.Context) ([]ListMappingReviewFlixPatrolRow, error) {
+	rows, err := q.db.QueryContext(ctx, listMappingReviewFlixPatrol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMappingReviewFlixPatrolRow{}
+	for rows.Next() {
+		var i ListMappingReviewFlixPatrolRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Kind,
+			&i.FpPremiereDate,
+			&i.MatchSource,
+			&i.TmdbID,
+			&i.TmdbTitle,
+			&i.TmdbOriginalTitle,
+			&i.TmdbReleaseDate,
+			&i.HasDetails,
+			&i.DetailsFetchedAt,
+			&i.TmdbImdbID,
+			&i.EvidenceImdbID,
+			&i.FirstCharted,
+			&i.Providers,
+			&i.Points,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMappingReviewNetflix = `-- name: ListMappingReviewNetflix :many
+SELECT n.id, n.show_title AS name, n.kind,
+       CAST(COALESCE(n.match_source, '') AS TEXT) AS match_source,
+       CAST(n.tmdb_kind AS TEXT) AS tmdb_kind,
+       CAST(n.tmdb_id AS TEXT) AS tmdb_id,
+       CAST(COALESCE(m.title, '') AS TEXT) AS tmdb_title,
+       CAST(COALESCE(m.original_title, '') AS TEXT) AS tmdb_original_title,
+       CAST(COALESCE(m.release_date, '') AS TEXT) AS tmdb_release_date,
+       CAST(m.details_fetched_at IS NOT NULL AS INTEGER) AS has_details,
+       CAST(COALESCE(m.details_fetched_at, '') AS TEXT) AS details_fetched_at,
+       CAST(COALESCE(m.imdb_id, '') AS TEXT) AS tmdb_imdb_id,
+       CAST(COALESCE((SELECT e.imdb_id FROM mapping_evidence e
+                      WHERE e.subject_type = 'netflix' AND e.subject_id = n.id AND e.kind = 'match'), '') AS TEXT) AS evidence_imdb_id,
+       CAST(COALESCE((SELECT MIN(w) FROM (
+           SELECT MIN(g.week) AS w FROM netflix_top10_global g WHERE g.netflix_title_id = n.id
+           UNION ALL SELECT MIN(c.week) FROM netflix_top10_countries c WHERE c.netflix_title_id = n.id)), '') AS TEXT) AS first_charted,
+       CAST(COALESCE((SELECT MAX(w) FROM (
+           SELECT MAX(g.week) AS w FROM netflix_top10_global g WHERE g.netflix_title_id = n.id
+           UNION ALL SELECT MAX(c.week) FROM netflix_top10_countries c WHERE c.netflix_title_id = n.id)), '') AS TEXT) AS last_charted,
+       CAST(COALESCE((SELECT COUNT(DISTINCT g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id), 0) AS INTEGER) AS points
+FROM netflix_titles n
+LEFT JOIN tmdb_titles m ON m.tmdb_kind = n.tmdb_kind AND m.tmdb_id = n.tmdb_id
+WHERE COALESCE(n.tmdb_id, '') <> '' AND n.tmdb_kind IS NOT NULL AND n.match_status <> 'manual'
+`
+
+type ListMappingReviewNetflixRow struct {
+	ID                int64  `json:"id"`
+	Name              string `json:"name"`
+	Kind              string `json:"kind"`
+	MatchSource       string `json:"match_source"`
+	TmdbKind          string `json:"tmdb_kind"`
+	TmdbID            string `json:"tmdb_id"`
+	TmdbTitle         string `json:"tmdb_title"`
+	TmdbOriginalTitle string `json:"tmdb_original_title"`
+	TmdbReleaseDate   string `json:"tmdb_release_date"`
+	HasDetails        int64  `json:"has_details"`
+	DetailsFetchedAt  string `json:"details_fetched_at"`
+	TmdbImdbID        string `json:"tmdb_imdb_id"`
+	EvidenceImdbID    string `json:"evidence_imdb_id"`
+	FirstCharted      string `json:"first_charted"`
+	LastCharted       string `json:"last_charted"`
+	Points            int64  `json:"points"`
+}
+
+// The same for Netflix Top 10 titles (points = weeks in the global Top 10).
+func (q *Queries) ListMappingReviewNetflix(ctx context.Context) ([]ListMappingReviewNetflixRow, error) {
+	rows, err := q.db.QueryContext(ctx, listMappingReviewNetflix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMappingReviewNetflixRow{}
+	for rows.Next() {
+		var i ListMappingReviewNetflixRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Kind,
+			&i.MatchSource,
+			&i.TmdbKind,
+			&i.TmdbID,
+			&i.TmdbTitle,
+			&i.TmdbOriginalTitle,
+			&i.TmdbReleaseDate,
+			&i.HasDetails,
+			&i.DetailsFetchedAt,
+			&i.TmdbImdbID,
+			&i.EvidenceImdbID,
+			&i.FirstCharted,
+			&i.LastCharted,
+			&i.Points,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNetflixIDMismatches = `-- name: ListNetflixIDMismatches :many
 SELECT n.id, n.show_title, n.kind, CAST(n.tmdb_kind AS TEXT) AS tmdb_kind, CAST(n.tmdb_id AS TEXT) AS tmdb_id,
        CAST(COALESCE(t.title, '') AS TEXT) AS tmdb_title, CAST(n.netflix_id AS TEXT) AS netflix_id,
@@ -1197,6 +1368,40 @@ func (q *Queries) ListTmdbMappings(ctx context.Context, arg ListTmdbMappingsPara
 			&i.PosterPath,
 			&i.ImdbID,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWatchProviderIDs = `-- name: ListWatchProviderIDs :many
+SELECT DISTINCT tmdb_kind, tmdb_id, provider_id FROM tmdb_watch_providers
+`
+
+type ListWatchProviderIDsRow struct {
+	TmdbKind   string `json:"tmdb_kind"`
+	TmdbID     string `json:"tmdb_id"`
+	ProviderID int64  `json:"provider_id"`
+}
+
+// Every provider a TMDB title is offered by, in any country and form.
+func (q *Queries) ListWatchProviderIDs(ctx context.Context) ([]ListWatchProviderIDsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listWatchProviderIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWatchProviderIDsRow{}
+	for rows.Next() {
+		var i ListWatchProviderIDsRow
+		if err := rows.Scan(&i.TmdbKind, &i.TmdbID, &i.ProviderID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
