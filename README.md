@@ -202,6 +202,7 @@ make reports-open
 | GET    | `/api/v1/export/rankings`                   | Chart entries as CSV / NDJSON (≤ 366 days) |
 | GET    | `/api/v1/countries`, `/api/v1/providers`    | Supported countries; providers with stored charts |
 | GET    | `/api/v1/titles`, `/api/v1/titles/:id`      | Scraped titles (paged; `match_status` filter); a single mapped title carries its TMDB title's `ids` |
+| GET    | `/api/v1/search?q=&kind=movie\|tv&limit=` | Find titles by any name (TMDB title / original title, FlixPatrol and Netflix names); accent- and punctuation-insensitive, word prefixes ("strang thin"), best match then most recently charted first |
 | GET    | `/api/v1/titles/lookup?imdb=\|tmdb=\|slug=\|netflix=` | Find a title by any ID (`netflix` = the number in netflix.com/title/<id>) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id`             | Everything about a title: TMDB metadata, chart stats, current positions, ratings, where to watch, Netflix numbers (`include=`), and `ids` — every known ID (IMDb, Wikidata, Rotten Tomatoes, Netflix, JustWatch, FlixPatrol slugs, Netflix Top 10 names) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/stats`       | Chart performance: points, peak, days at #1, debut, streak, spread across countries |
@@ -227,6 +228,7 @@ make reports-open
 | GET    | `/api/v1/admin/mapping-refs?tmdb_kind=movie\|tv&mapped=true` | The mapping reference (view `mapping_refs`): one row per chart title with its TMDB title and every ID (IMDb, Wikidata, RT, Metacritic, Letterboxd, JustWatch, Netflix), FlixPatrol slug / kind and Netflix title / kind |
 | GET    | `/api/v1/admin/mapping-events?subject=flixpatrol:12\|netflix:34&tmdb=movie:550&limit=` | History of mapping changes, newest first: action, TMDB title before / after, source and who made it (job, `mapping.sync`, `admin`) |
 | PATCH  | `/api/v1/admin/netflix/seasons/:id`         | Set a Netflix season title's season number by hand (`{"season_number": 2}`) or hand it back (`{"auto": true}`) |
+| GET/POST/PATCH/DELETE | `/api/v1/admin/webhooks[/:id[/test\|/rotate-secret\|/deliveries]]`, `/api/v1/admin/webhook-deliveries/:id[/retry]` | Outbound webhooks (see [Webhooks](#webhooks)) |
 | GET    | `/` (and any unmatched path)                | Serves `web/dist/` SPA if present           |
 
 GET responses under `/api/v1` carry an `ETag`; send it back as
@@ -371,6 +373,44 @@ Every `/api/v1` route outside `/api/v1/admin` needs an API key, sent as
 ```bash
 curl -H "X-API-Key: mr_..." http://localhost:8080/api/v1/top10/movies/US
 ```
+
+## Webhooks
+
+Instead of polling `/api/v1/changes`, a client can register a URL (admin UI
+→ Settings → Webhooks, or `POST /api/v1/admin/webhooks`
+`{"name","url","events":["*"]}`) and get a signed POST per event:
+
+| Event | When | `data` |
+|---|---|---|
+| `chart.updated` | A chart was stored or its content changed | country, provider, category, date, `entries` (as in `/top10`, with `origin`) |
+| `title.entered` | A title is on a chart that it was not on at the chart's previous date (`first_time`: never before) | `chart`, `entry` |
+| `title.number_one` | A new #1 on a chart | `chart`, `entry` |
+| `availability.added` / `availability.removed` | A title arrived on / left a service in a country (between two TMDB refreshes) | as in `/availability/changes` |
+
+The body is `{"id","type","created_at","data"}`. Verify
+`X-Metareel-Signature: t=<unix>,v1=<hex>`, the HMAC-SHA256 of `<t>.<raw
+body>` keyed with the webhook's secret (shown once when created or rotated),
+reject old timestamps, and use `X-Metareel-Event-Id` to ignore repeats. Any
+2xx answer counts as delivered; anything else (including redirects) is
+retried after 1, 5, 30 minutes, 2 and 12 hours before the delivery fails.
+The admin UI shows each webhook's delivery log, its bodies, and can send a
+test ping or a delivery again. Events from before the server first ran with
+webhooks are not sent. Compare signatures in constant time and reject
+timestamps older than a few minutes.
+
+Receivers may be on your LAN; deliveries never go to link-local addresses
+(169.254.0.0/16 incl. cloud metadata, fe80::/10), multicast or unspecified
+ones, nor to loopback unless `WEBHOOK_ALLOW_LOOPBACK=true` (for a receiver on
+the same host outside Docker; inside a container loopback is metareel
+itself). Proxies from the environment are not used. Signing secrets are
+stored in the database (they are needed to sign), so copies and backups of
+`data/metareel.db` carry them: rotate a webhook's secret if a copy leaks.
+
+The admin API (and so webhook configuration) is not authenticated: keep it
+on your LAN. It sends no CORS headers (only the public API does), and it
+refuses requests that change data when a browser marks them as coming from
+another site (`Sec-Fetch-Site` / `Origin`), so a web page a LAN user opens
+can't drive it; curl and scripts are unaffected.
 
 ## Adding a future UI
 

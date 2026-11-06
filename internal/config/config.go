@@ -26,6 +26,7 @@ type Config struct {
 	MDBList      MDBList
 	Imports      Imports
 	Alerts       Alerts
+	Webhooks     Webhooks
 	Maintenance  Maintenance
 }
 
@@ -144,6 +145,13 @@ type Imports struct {
 
 // Alerts sends problems (failed runs, stale charts, FlareSolverr down) to a
 // webhook. Disabled when URL is empty.
+// Webhooks configures outbound webhooks.
+type Webhooks struct {
+	// AllowLoopback lets webhook URLs resolve to loopback (a receiver on the
+	// same host, outside Docker).
+	AllowLoopback bool `env:"WEBHOOK_ALLOW_LOOPBACK" envDefault:"false"`
+}
+
 type Alerts struct {
 	WebhookURL string `env:"ALERT_WEBHOOK_URL" envDefault:""`
 	// Format of the webhook body: json | slack | discord | ntfy.

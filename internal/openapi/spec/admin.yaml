@@ -1185,6 +1185,154 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/admin/webhooks:
+    get:
+      operationId: listWebhooks
+      summary: Webhooks with delivery counts, and the event types
+      description: >-
+        Webhooks receive a signed POST per event: chart.updated (a chart
+        stored or changed, with its entries), title.entered (a title not on
+        the chart's previous date; `first_time` when never on it before),
+        title.number_one (a new #1), availability.added / availability.removed
+        (a title arrived on / left a service in a country). Body: {id, type,
+        created_at, data}. Headers: X-Metareel-Event, X-Metareel-Event-Id
+        (stable; use it to ignore repeats), X-Metareel-Delivery and
+        X-Metareel-Signature "t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>">".
+        Any 2xx is success; redirects and other answers are retried after 1,
+        5 and 30 minutes, 2 and 12 hours, then the delivery fails. Events
+        from before metareel started following (first start with this
+        version) are not sent.
+      responses:
+        "200":
+          description: Webhooks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_types: { type: array, items: { type: string } }
+                  items: { type: array, items: { $ref: "#/components/schemas/Webhook" } }
+    post:
+      operationId: createWebhook
+      summary: Add a webhook (returns its signing secret once)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookInput" }
+      responses:
+        "201":
+          description: Created, with `secret`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookWithSecret" }
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/admin/webhooks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    patch:
+      operationId: updateWebhook
+      summary: Change a webhook's name, URL, events or enabled flag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        "400": { description: Invalid input, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: No such webhook, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    delete:
+      operationId: deleteWebhook
+      summary: Delete a webhook and its delivery log
+      responses:
+        "204": { description: Deleted }
+        "404": { description: No such webhook, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/admin/webhooks/{id}/rotate-secret:
+    post:
+      operationId: rotateWebhookSecret
+      summary: Replace a webhook's signing secret (returned once)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: New secret
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookWithSecret" }
+        "404": { description: No such webhook, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/admin/webhooks/{id}/test:
+    post:
+      operationId: testWebhook
+      summary: Send a ping event now and record it
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Outcome (delivery.status delivered or failed)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivery: { $ref: "#/components/schemas/WebhookDelivery" }
+                  status_code: { type: integer }
+                  error: { type: string }
+                  duration_ms: { type: integer }
+        "404": { description: No such webhook, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/admin/webhooks/{id}/deliveries:
+    get:
+      operationId: listWebhookDeliveries
+      summary: A webhook's latest deliveries, newest first
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Deliveries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/WebhookDelivery" } }
+        "404": { description: No such webhook, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/admin/webhook-deliveries/{id}:
+    get:
+      operationId: getWebhookDelivery
+      summary: The JSON body a delivery sends
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The event body, content: { application/json: { schema: { type: object } } } }
+        "404": { description: No such delivery, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/admin/webhook-deliveries/{id}/retry:
+    post:
+      operationId: retryWebhookDelivery
+      summary: Send a delivered or failed delivery again (within 30 seconds)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Queued }
+        "400": { description: No finished delivery with that id, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
   /api/v1/admin/api-keys:
     get:
       operationId: listApiKeys
@@ -1536,6 +1684,47 @@ components:
                   first_week: { type: string, format: date }
                   last_week: { type: string, format: date }
 
+    Webhook:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        url: { type: string }
+        events: { type: array, items: { type: string }, description: 'Event types, or ["*"] for all' }
+        enabled: { type: boolean }
+        last_delivery_at: { type: string, format: date-time, nullable: true }
+        last_status: { type: string, enum: [delivered, failed], nullable: true }
+        last_error: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deliveries: { type: object, additionalProperties: { type: integer }, description: "Deliveries per status (list only)" }
+    WebhookWithSecret:
+      allOf:
+        - $ref: "#/components/schemas/Webhook"
+        - type: object
+          properties:
+            secret: { type: string, description: "whsec_…; shown only here" }
+    WebhookInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        url: { type: string, description: An http(s) URL }
+        events: { type: array, items: { type: string } }
+        enabled: { type: boolean }
+    WebhookDelivery:
+      type: object
+      properties:
+        id: { type: integer }
+        webhook_id: { type: integer }
+        event_id: { type: string }
+        event_type: { type: string }
+        status: { type: string, enum: [pending, delivered, failed] }
+        attempts: { type: integer }
+        next_attempt_at: { type: string, description: "UTC YYYY-MM-DD HH:MM:SS (pending only)" }
+        last_status_code: { type: integer, nullable: true }
+        last_error: { type: string, nullable: true }
+        created_at: { type: string }
+        delivered_at: { type: string }
     ErrorResponse:
       type: object
       additionalProperties: false

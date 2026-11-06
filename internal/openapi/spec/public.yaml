@@ -955,6 +955,56 @@ paths:
                     slug: { type: string, example: netflix }
                     countries: { type: array, items: { type: string } }
 
+  /api/v1/search:
+    get:
+      operationId: searchTitles
+      summary: Find titles by name
+      description: >-
+        Searches every title metareel has chart data for (one result per TMDB
+        title) by any name it goes by: TMDB's title and original title, and
+        the FlixPatrol and Netflix Top 10 names mapped to it. Case, accents
+        and punctuation are ignored and words may be prefixes ("strang thin"
+        finds Stranger Things). Results are ordered by match quality (`score`:
+        100 the whole name, 85 the name starts with the query, 70 / 60 every
+        word starts a word of the name in / out of order, 40 the query inside
+        the name), then by when the title last charted.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 200 }
+        - name: kind
+          in: query
+          schema: { type: string, enum: [movie, tv] }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        "200":
+          description: Matching titles, best first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query: { type: string }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: { type: string, enum: [movie, tv] }
+                        tmdb_id: { type: string }
+                        title: { type: string }
+                        original_title: { type: string }
+                        year: { type: integer }
+                        poster_path: { type: string }
+                        matched: { type: string, description: The name that matched }
+                        sources: { type: array, items: { type: string, enum: [flixpatrol, netflix] } }
+                        last_charted: { type: string, format: date }
+                        score: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/v1/titles/lookup:
     get:
       operationId: lookupTitle

@@ -32,6 +32,8 @@ type Handler struct {
 	Analytics   *service.AnalyticsService
 	DataQuality *service.DataQualityService
 	History     *service.HistoryService
+	Search      *service.SearchService
+	Webhooks    *service.WebhookService
 }
 
 // Live is a lightweight liveness endpoint.

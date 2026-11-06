@@ -395,3 +395,32 @@ type WatchProviderEvent struct {
 	PreviousCheckAt sql.NullTime `json:"previous_check_at"`
 	ObservedAt      time.Time    `json:"observed_at"`
 }
+
+type Webhook struct {
+	ID             int64          `json:"id"`
+	Name           string         `json:"name"`
+	Url            string         `json:"url"`
+	Secret         string         `json:"secret"`
+	Events         string         `json:"events"`
+	Enabled        bool           `json:"enabled"`
+	LastDeliveryAt sql.NullTime   `json:"last_delivery_at"`
+	LastStatus     sql.NullString `json:"last_status"`
+	LastError      sql.NullString `json:"last_error"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+}
+
+type WebhookDelivery struct {
+	ID             int64          `json:"id"`
+	WebhookID      int64          `json:"webhook_id"`
+	EventID        string         `json:"event_id"`
+	EventType      string         `json:"event_type"`
+	Payload        string         `json:"payload"`
+	Status         string         `json:"status"`
+	Attempts       int64          `json:"attempts"`
+	NextAttemptAt  time.Time      `json:"next_attempt_at"`
+	LastStatusCode sql.NullInt64  `json:"last_status_code"`
+	LastError      sql.NullString `json:"last_error"`
+	CreatedAt      time.Time      `json:"created_at"`
+	DeliveredAt    sql.NullTime   `json:"delivered_at"`
+}

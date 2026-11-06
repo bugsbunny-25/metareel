@@ -28,7 +28,7 @@ func writeData(c *echo.Context, out any, err error) error {
 		return c.JSON(http.StatusConflict, map[string]any{"error": conflictErr.Error()})
 	case errors.Is(err, service.ErrTitleNotFound), errors.Is(err, service.ErrTop10NotFound),
 		errors.Is(err, service.ErrNoMetadata), errors.Is(err, service.ErrNetflixTitleNotFound),
-		errors.Is(err, service.ErrNetflixSeasonNotFound):
+		errors.Is(err, service.ErrNetflixSeasonNotFound), errors.Is(err, service.ErrWebhookNotFound):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": err.Error()})
 	case errors.Is(err, sql.ErrNoRows):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": "not found"})
@@ -267,6 +267,16 @@ func (h *Handler) GetTitleAvailability(c *echo.Context) error {
 		return writeData(c, nil, err)
 	}
 	out, err := h.Overview.Availability(c.Request().Context(), ref, c.QueryParam("country"))
+	return writeData(c, out, err)
+}
+
+// SearchTitles: GET /api/v1/search?q=&kind=movie|tv&limit=
+func (h *Handler) SearchTitles(c *echo.Context) error {
+	limit, err := parseIntParam(c, "limit", 0)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Search.Search(c.Request().Context(), service.SearchQuery{Q: c.QueryParam("q"), Kind: c.QueryParam("kind"), Limit: limit})
 	return writeData(c, out, err)
 }
 

@@ -37,12 +37,14 @@ type Querier interface {
 	CountTitles(ctx context.Context, arg CountTitlesParams) (int64, error)
 	CountTitlesByMatchStatus(ctx context.Context) ([]CountTitlesByMatchStatusRow, error)
 	CountTmdbTitles(ctx context.Context) (CountTmdbTitlesRow, error)
+	CountWebhookDeliveriesByStatus(ctx context.Context) ([]CountWebhookDeliveriesByStatusRow, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskRunLog(ctx context.Context, arg CreateTaskRunLogParams) error
 	CreateTaskSchedule(ctx context.Context, arg CreateTaskScheduleParams) (TaskSchedule, error)
 	CreateTaskScheduleRunTime(ctx context.Context, arg CreateTaskScheduleRunTimeParams) error
 	CreateTaskScheduleTarget(ctx context.Context, arg CreateTaskScheduleTargetParams) error
+	CreateWebhook(ctx context.Context, arg CreateWebhookParams) (Webhook, error)
 	DeleteAPIKey(ctx context.Context, id int64) (int64, error)
 	DeleteChartRankings(ctx context.Context, arg DeleteChartRankingsParams) error
 	// One kind of a title's evidence, or all of it (kind '').
@@ -58,6 +60,7 @@ type Querier interface {
 	DeleteTitleLink(ctx context.Context, arg DeleteTitleLinkParams) error
 	DeleteTitleRatingSourcesByProvider(ctx context.Context, arg DeleteTitleRatingSourcesByProviderParams) error
 	DeleteTmdbWatchProviders(ctx context.Context, arg DeleteTmdbWatchProvidersParams) error
+	DeleteWebhook(ctx context.Context, id int64) (int64, error)
 	// One netflix_seasons row per season title a TV title charted with.
 	EnsureNetflixSeasons(ctx context.Context) error
 	EnsureNetflixTitle(ctx context.Context, arg EnsureNetflixTitleParams) (NetflixTitle, error)
@@ -105,6 +108,8 @@ type Querier interface {
 	// On-demand ratings cache, keyed by TMDB namespace ('movie' | 'tv') + ID.
 	GetTitleRatings(ctx context.Context, arg GetTitleRatingsParams) (TitleRating, error)
 	GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (TmdbTitle, error)
+	GetWebhook(ctx context.Context, id int64) (Webhook, error)
+	GetWebhookDeliveryPayload(ctx context.Context, id int64) (string, error)
 	InsertMappingEvent(ctx context.Context, arg InsertMappingEventParams) error
 	InsertNetflixMostPopular(ctx context.Context, arg InsertNetflixMostPopularParams) error
 	InsertRanking(ctx context.Context, arg InsertRankingParams) error
@@ -112,6 +117,8 @@ type Querier interface {
 	InsertTitleRatingSource(ctx context.Context, arg InsertTitleRatingSourceParams) error
 	InsertTmdbWatchProvider(ctx context.Context, arg InsertTmdbWatchProviderParams) error
 	InsertWatchProviderEvent(ctx context.Context, arg InsertWatchProviderEventParams) error
+	// A delivery recorded as it happens (test pings).
+	InsertWebhookDelivery(ctx context.Context, arg InsertWebhookDeliveryParams) (WebhookDelivery, error)
 	LatestNetflixCountryWeek(ctx context.Context, country string) (string, error)
 	LatestNetflixGlobalWeek(ctx context.Context) (string, error)
 	// API keys for the public API, and admin-editable settings.
@@ -131,6 +138,9 @@ type Querier interface {
 	// Dates with both categories stored for a chart in [from, to].
 	ListChartSnapshotDates(ctx context.Context, arg ListChartSnapshotDatesParams) ([]string, error)
 	ListChartSnapshotsForDate(ctx context.Context, arg ListChartSnapshotsForDateParams) ([]ChartSnapshot, error)
+	// Charts stored or changed at or after a time ('YYYY-MM-DD HH:MM:SS' UTC),
+	// oldest first.
+	ListChartsChangedSince(ctx context.Context, arg ListChartsChangedSinceParams) ([]ListChartsChangedSinceRow, error)
 	// Netflix titles mapped only by a Wikidata label match (source
 	// wikidata_netflix) to a TMDB title whose Netflix ID (not one copied from a
 	// Netflix title) differs from the title's own: the label matched another
@@ -138,7 +148,10 @@ type Querier interface {
 	// left alone.
 	ListContradictedNetflixLabelMatches(ctx context.Context, limit int64) ([]int64, error)
 	ListDataImports(ctx context.Context) ([]DataImport, error)
+	// Pending deliveries whose next attempt is due, of enabled webhooks.
+	ListDueWebhookDeliveries(ctx context.Context, limit int64) ([]ListDueWebhookDeliveriesRow, error)
 	ListEnabledTaskSchedules(ctx context.Context) ([]TaskSchedule, error)
+	ListEnabledWebhooks(ctx context.Context) ([]Webhook, error)
 	// FlixPatrol titles on Netflix charts with the Netflix lists (movies |
 	// tv_shows) and Netflix weeks (ending on Sunday) they charted in.
 	ListFlixPatrolNetflixWeeks(ctx context.Context) ([]ListFlixPatrolNetflixWeeksRow, error)
@@ -231,9 +244,19 @@ type Querier interface {
 	ListNetflixTitlesForNetflixID(ctx context.Context, arg ListNetflixTitlesForNetflixIDParams) ([]ListNetflixTitlesForNetflixIDRow, error)
 	// These titles, with their Netflix ID if already known.
 	ListNetflixTitlesForNetflixIDByIDs(ctx context.Context, ids []int64) ([]ListNetflixTitlesForNetflixIDByIDsRow, error)
+	// Watch provider events after an id, oldest first, with the TMDB title.
+	ListOfferEventsAfter(ctx context.Context, arg ListOfferEventsAfterParams) ([]ListOfferEventsAfterRow, error)
 	// The slice must stay last: sqlc numbers the named params ?1..?3 and SQLite
 	// numbers the expanded "?" list after them.
 	ListRankingsByTitleIDs(ctx context.Context, arg ListRankingsByTitleIDsParams) ([]ListRankingsByTitleIDsRow, error)
+	// Title search (GET /search): every name a mapped TMDB title goes by, built
+	// into an in-memory index (service/search.go).
+	// One row per (TMDB title, name): TMDB's title and original title, the
+	// FlixPatrol chart / page names and Netflix Top 10 names mapped to it.
+	ListSearchNames(ctx context.Context) ([]ListSearchNamesRow, error)
+	// The TMDB titles chart titles are mapped to, with what a result shows:
+	// TMDB metadata and when it last charted (FlixPatrol date / Netflix week).
+	ListSearchTitles(ctx context.Context) ([]ListSearchTitlesRow, error)
 	// Season numbers of FlixPatrol TV rankings.
 	// TV rankings whose season was not given by the chart itself, from a date.
 	ListTVRankingsForSeasons(ctx context.Context, fromDate string) ([]ListTVRankingsForSeasonsRow, error)
@@ -309,9 +332,23 @@ type Querier interface {
 	ListWatchProviderEvents(ctx context.Context, arg ListWatchProviderEventsParams) ([]ListWatchProviderEventsRow, error)
 	// Every provider a TMDB title is offered by, in any country and form.
 	ListWatchProviderIDs(ctx context.Context) ([]ListWatchProviderIDsRow, error)
+	ListWebhookDeliveries(ctx context.Context, arg ListWebhookDeliveriesParams) ([]ListWebhookDeliveriesRow, error)
+	// Outbound webhooks: subscriptions, the event sources they follow and the
+	// delivery queue.
+	ListWebhooks(ctx context.Context) ([]Webhook, error)
 	MarkTmdbOffersFetched(ctx context.Context, arg MarkTmdbOffersFetchedParams) error
 	// Records a Wikidata lookup (found or not), creating the row if needed.
 	MarkTmdbTitleWikidataFetched(ctx context.Context, arg MarkTmdbTitleWikidataFetchedParams) error
+	// A failed attempt: retried after the backoff (a datetime modifier such as
+	// '+5 minutes'), or failed for good when final = 1.
+	MarkWebhookAttemptFailed(ctx context.Context, arg MarkWebhookAttemptFailedParams) error
+	MarkWebhookDelivered(ctx context.Context, arg MarkWebhookDeliveredParams) error
+	MaxChartChangedAt(ctx context.Context) (MaxChartChangedAtRow, error)
+	MaxOfferEventID(ctx context.Context) (int64, error)
+	// Deletes finished deliveries older than a window ('-30 days').
+	PruneWebhookDeliveries(ctx context.Context, window string) (int64, error)
+	// Queues an event for a webhook once (a repeated event_id is ignored).
+	QueueWebhookDelivery(ctx context.Context, arg QueueWebhookDeliveryParams) (int64, error)
 	RankingStats(ctx context.Context) (RankingStatsRow, error)
 	// History of ratings, TMDB popularity and watch providers (migration 000017).
 	// Rating rows are written only when the value changed since the previous row.
@@ -328,21 +365,27 @@ type Querier interface {
 	// One Rotten Tomatoes search for a TMDB title; retry after retry_after (a
 	// SQLite datetime modifier). A slug found is stored with UpsertTmdbTitleIDs.
 	RecordTmdbRTAttempt(ctx context.Context, arg RecordTmdbRTAttemptParams) error
+	RecordWebhookResult(ctx context.Context, arg RecordWebhookResultParams) error
 	RenameAPIKey(ctx context.Context, arg RenameAPIKeyParams) (ApiKey, error)
 	RequeueNetflixTitleMatch(ctx context.Context, arg RequeueNetflixTitleMatchParams) error
 	// Due for matching now; clear also forgets the attempts and matched name.
 	RequeueTitleMatch(ctx context.Context, arg RequeueTitleMatchParams) error
 	// Hands a season back to automatic mapping.
 	ResetNetflixSeason(ctx context.Context, id int64) (NetflixSeason, error)
+	RetryWebhookDelivery(ctx context.Context, id int64) (int64, error)
 	RotateAPIKey(ctx context.Context, arg RotateAPIKeyParams) (ApiKey, error)
 	SaveDataImport(ctx context.Context, arg SaveDataImportParams) error
 	SaveFlixPatrolDetails(ctx context.Context, arg SaveFlixPatrolDetailsParams) error
 	// distributors is a JSON list (NULL when Wikidata has none).
 	SaveTmdbDistributors(ctx context.Context, arg SaveTmdbDistributorsParams) error
+	// Changes whenever a name, a mapping or a chart changes, so the index is
+	// rebuilt only then.
+	SearchIndexStamp(ctx context.Context) (string, error)
 	SetAppSetting(ctx context.Context, arg SetAppSettingParams) error
 	SetNetflixSeasonManual(ctx context.Context, arg SetNetflixSeasonManualParams) (NetflixSeason, error)
 	SetNetflixSeasonNetflixID(ctx context.Context, arg SetNetflixSeasonNetflixIDParams) error
 	SetNetflixTitleNetflixID(ctx context.Context, arg SetNetflixTitleNetflixIDParams) error
+	SetWebhookSecret(ctx context.Context, arg SetWebhookSecretParams) (Webhook, error)
 	TitleMappingStats(ctx context.Context) (TitleMappingStatsRow, error)
 	TouchAPIKey(ctx context.Context, id int64) error
 	// Unmatched titles per country they charted in, from a date on.
@@ -350,6 +393,7 @@ type Querier interface {
 	UpdateNetflixSeasonMapping(ctx context.Context, arg UpdateNetflixSeasonMappingParams) error
 	UpdateRankingSeason(ctx context.Context, arg UpdateRankingSeasonParams) error
 	UpdateTaskSchedule(ctx context.Context, arg UpdateTaskScheduleParams) (TaskSchedule, error)
+	UpdateWebhook(ctx context.Context, arg UpdateWebhookParams) (Webhook, error)
 	UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) error
 	UpsertChartSnapshot(ctx context.Context, arg UpsertChartSnapshotParams) error
 	UpsertIMDbRating(ctx context.Context, arg UpsertIMDbRatingParams) error

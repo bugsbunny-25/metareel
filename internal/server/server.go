@@ -138,6 +138,23 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if settings.RequireAPIKey && len(keyCount) == 0 {
 		log.Warn("public api requires an API key but none exist yet; create one in the admin UI (Settings)")
 	}
+	// Outbound webhooks: follows charts and watch provider changes, delivers
+	// signed events to subscribed URLs (stopped before the database closes).
+	webhooks := service.NewWebhookService(log, repository.NewWebhookRepository(db), repository.NewOpsRepository(db), top10Read,
+		service.WebhookOptions{AllowLoopback: cfg.Webhooks.AllowLoopback})
+	webhookCtx, stopWebhooks := context.WithCancel(ctx)
+	webhooksDone := make(chan struct{})
+	go func() {
+		webhooks.Run(webhookCtx)
+		close(webhooksDone)
+	}()
+	// On every return (before the deferred database close): stop the loop
+	// and wait for its pass to finish.
+	defer func() {
+		stopWebhooks()
+		<-webhooksDone
+	}()
+
 	h := &handler.Handler{
 		Top10:      top10Read,
 		AdminTasks: taskScheduleAdmin,
@@ -155,6 +172,8 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Overview:  service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping),
 		Analytics: service.NewAnalyticsService(analyticsRepo, readMetadataRepo, repository.NewImportsRepository(readDB), repository.NewRatingsRepository(readDB)),
 		History:   service.NewHistoryService(repository.NewHistoryRepository(readDB), readMetadataRepo),
+		Search:    service.NewSearchService(repository.NewSearchRepository(readDB)),
+		Webhooks:  webhooks,
 		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,
 			taskScheduleRepo, taskBootstrap.Maintenance).WithMapping(repository.NewMappingRepository(db)),
 	}

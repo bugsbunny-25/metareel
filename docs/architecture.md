@@ -348,6 +348,60 @@ sequenceDiagram
 `POST /api/v1/admin/titles/:id/rematch` clears the backoff (and with
 `clear: true`, the IDs) and queues the title.
 
+## Webhooks (`service/webhooks.go`)
+
+A loop in the server process (`WebhookService.Run`, every 30 s, stopped
+before the database closes) follows two sources with cursors in
+`app_settings`:
+
+- `webhooks.cursor.charts`: `chart_snapshots.changed_at` (set when a chart is
+  stored or its content changes). Each pass re-reads charts changed up to 2
+  minutes before the cursor (a re-scraped chart keeps its row id and gets its
+  new `changed_at` when its transaction commits, possibly behind a cursor a
+  concurrent pass already moved); repeats are dropped by event id
+  (`UNIQUE(webhook_id, event_id)`). Charts at or before
+  `webhooks.cursor.charts_floor` (where following started: time and highest
+  row id) are never sent, so a first start doesn't replay history. Each chart
+  is read through `Top10ReadService` and yields `chart.updated` plus
+  `title.entered` (no `previous_rank`) and `title.number_one` (rank 1, not 1
+  before); title events are keyed by chart and title, so a re-scrape doesn't
+  repeat them.
+- `webhooks.cursor.offers`: `watch_provider_events.id` →
+  `availability.added` / `availability.removed`.
+
+Events are queued in `webhook_deliveries` for each enabled webhook
+subscribed to the type, then POSTed (10 s timeout, no redirects, no proxy,
+response read up to 300 bytes for the error) with an HMAC-SHA256 signature.
+The dialer checks every resolved address (`webhookDialControl`, so DNS
+rebinding is covered): no link-local, multicast, unspecified or broadcast
+addresses, loopback only with `WEBHOOK_ALLOW_LOOPBACK`. A receiver that
+can't be reached is skipped for the rest of the pass. Failures
+back off 1 m, 5 m, 30 m, 2 h, 12 h, then fail; finished deliveries older
+than 30 days are pruned hourly. Errors never include the URL (it may carry
+tokens) or the secret, which is stored in `webhooks.secret` (it is needed to
+sign) and only returned when created or rotated.
+
+CORS headers are only sent for the public API (the `Skipper` in
+`router.Register`); the admin group runs `handler.SameOriginWrites`, which
+refuses non-GET requests a browser marks as cross-site (`Sec-Fetch-Site`
+other than same-origin / none, or an `Origin` whose host is not the request's
+`Host` / `X-Forwarded-Host`), so pages on other sites can't drive the
+unauthenticated admin API; clients without those headers (curl) pass.
+
+## Title search (`service/search.go`)
+
+`GET /search` matches the names of every mapped TMDB title (TMDB title and
+original title, FlixPatrol chart / page names, Netflix Top 10 names) from an
+in-memory index: names folded (lowercase, accents removed, `&` → and,
+punctuation → spaces) and split into words. The index is rebuilt when
+`SearchIndexStamp` (counts and latest updates of `tmdb_titles`, `titles`,
+`netflix_titles`, the newest chart and Netflix week) changes, checked at most
+every 30 s; the rebuild is not cancelled with the triggering request and a
+failed rebuild keeps the old index. Queries are capped at 200 bytes and 8
+words, and scoring stops when the request is cancelled. Scores: whole name 100, prefix 85, all query words starting words
+in order 70 / any order 60, substring 40; ties go to the most recently
+charted title.
+
 ## Mapping review queue (`service/mapping_review.go`)
 
 `GET /admin/mappings/review` (Mapping → Review queue) scores every automatic
@@ -687,6 +741,7 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `DATABASE_URL` | `file:./data/metareel.db?...` | SQLite DSN (WAL + busy timeout + FK enforcement) |
 | `DATABASE_MIGRATIONS_DIR` | `db/migrations` | Goose migrations directory |
+| `WEBHOOK_ALLOW_LOOPBACK` | `false` | Let webhook URLs resolve to loopback (a receiver on the same host outside Docker); link-local, multicast and unspecified addresses are always refused |
 | `DATABASE_READ_CONNS` | `4` | Read-only connections (`query_only`) serving charts, analytics and title overviews next to the single writer; `0` serves them from the writer |
 | `REDIS_ADDR` | `localhost:6379` | Redis address |
 | `REDIS_PASSWORD` | _(empty)_ | Redis auth password |

@@ -6,6 +6,7 @@
   import { confirm } from '../lib/confirm.svelte.js'
   import Icon from '../components/Icon.svelte'
   import Modal from '../components/Modal.svelte'
+  import WebhooksCard from '../components/WebhooksCard.svelte'
 
   let settings = $state(null)
   let rateLimit = $state(0)
@@ -125,7 +126,7 @@
 <div class="page">
   <PageHeader
     title="Settings & API keys"
-    desc="Who can use the public API (/api/v1, everything except /api/v1/admin)."
+    desc="Who can use the public API (/api/v1, everything except /api/v1/admin), and where metareel sends webhook events."
   />
 
   {#if error}<div class="alert alert-error"><Icon name="alert" />{error}</div>{/if}
@@ -203,6 +204,8 @@
         </table>
       </div>
     </div>
+
+    <WebhooksCard />
   {/if}
 </div>
 

@@ -102,6 +102,17 @@ export const renameApiKey = (id, name) => req(`/api-keys/${id}`, { method: 'PATC
 export const rotateApiKey = (id) => req(`/api-keys/${id}/rotate`, { method: 'POST' })
 export const deleteApiKey = (id) => req(`/api-keys/${id}`, { method: 'DELETE' })
 
+// ── Webhooks ────────────────────────────────────────────────────────
+export const listWebhooks = () => req('/webhooks')
+export const createWebhook = (body) => req('/webhooks', { method: 'POST', body })
+export const updateWebhook = (id, body) => req(`/webhooks/${id}`, { method: 'PATCH', body })
+export const deleteWebhook = (id) => req(`/webhooks/${id}`, { method: 'DELETE' })
+export const rotateWebhookSecret = (id) => req(`/webhooks/${id}/rotate-secret`, { method: 'POST' })
+export const testWebhook = (id) => req(`/webhooks/${id}/test`, { method: 'POST' })
+export const listWebhookDeliveries = (id, q) => req(`/webhooks/${id}/deliveries`, { query: q })
+export const getWebhookDelivery = (id) => req(`/webhook-deliveries/${id}`)
+export const retryWebhookDelivery = (id) => req(`/webhook-deliveries/${id}/retry`, { method: 'POST' })
+
 // ── Jobs ────────────────────────────────────────────────────────────
 export const listTaskTypes = () => req('/task-types')
 export const runJob = (type, body = {}) => req(`/jobs/${type}/run`, { method: 'POST', body })

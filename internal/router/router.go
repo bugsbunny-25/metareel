@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/labstack/echo/v5"
 	emw "github.com/labstack/echo/v5/middleware"
@@ -13,13 +14,20 @@ import (
 	"github.com/bugsbunny-25/metareel/internal/openapi"
 )
 
+func isAdminPath(p string) bool {
+	return p == "/api/v1/admin" || strings.HasPrefix(p, "/api/v1/admin/")
+}
+
 // Register wires all routes and middleware onto the given Echo instance.
 func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	e.Use(emw.Recover())
 	e.Use(emw.RequestID())
 	e.Use(emw.RequestLogger())
 	e.Use(emw.Gzip())
+	// CORS for the public API only: the admin UI is same-origin, and other
+	// websites a LAN user opens must not be able to drive /api/v1/admin.
 	e.Use(emw.CORSWithConfig(emw.CORSConfig{
+		Skipper:      func(c *echo.Context) bool { return isAdminPath(c.Request().URL.Path) },
 		AllowOrigins: []string{"*"},
 		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 	}))
@@ -39,7 +47,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	// copies of the public routes, so it needs no API key. The admin API is
 	// not authenticated: keep it off the public internet (e.g. expose only
 	// /api/v1 except /api/v1/admin through your reverse proxy).
-	admin := e.Group("/api/v1/admin", handler.ETag)
+	admin := e.Group("/api/v1/admin", handler.SameOriginWrites, handler.ETag)
 	registerReadRoutes(admin, h)
 	admin.GET("/stats", h.GetAdminStats)
 	admin.PATCH("/titles/:id", h.PatchTitle)
@@ -77,6 +85,15 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.PATCH("/api-keys/:id", h.RenameAPIKey)
 	admin.POST("/api-keys/:id/rotate", h.RotateAPIKey)
 	admin.DELETE("/api-keys/:id", h.DeleteAPIKey)
+	admin.GET("/webhooks", h.ListWebhooks)
+	admin.POST("/webhooks", h.CreateWebhook)
+	admin.PATCH("/webhooks/:id", h.UpdateWebhook)
+	admin.DELETE("/webhooks/:id", h.DeleteWebhook)
+	admin.POST("/webhooks/:id/rotate-secret", h.RotateWebhookSecret)
+	admin.POST("/webhooks/:id/test", h.TestWebhook)
+	admin.GET("/webhooks/:id/deliveries", h.ListWebhookDeliveries)
+	admin.GET("/webhook-deliveries/:id", h.GetWebhookDelivery)
+	admin.POST("/webhook-deliveries/:id/retry", h.RetryWebhookDelivery)
 	admin.GET("/settings", h.GetSettings)
 	admin.PATCH("/settings", h.PatchSettings)
 
@@ -93,6 +110,7 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/titles/:id", h.GetTitle)
 	g.GET("/titles/:id/rankings", h.GetTitleRankingsByID)
 	g.GET("/titles/lookup", h.LookupTitle)
+	g.GET("/search", h.SearchTitles)
 	g.GET("/titles/tmdb/rankings", h.GetTitleRankingsBatch)
 	g.GET("/titles/tmdb/ratings", h.GetTitleRatingsBatch)
 	g.GET("/titles/tmdb/:kind/:id", h.GetTitleOverview)
