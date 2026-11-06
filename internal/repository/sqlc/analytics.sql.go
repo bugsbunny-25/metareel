@@ -11,6 +11,35 @@ import (
 	"time"
 )
 
+const countChartSnapshotsBetween = `-- name: CountChartSnapshotsBetween :one
+SELECT COUNT(*) FROM chart_snapshots
+WHERE country = ?1 AND streaming_provider = ?2 AND category = ?3
+  AND ranked_on > CAST(?4 AS TEXT) AND ranked_on < CAST(?5 AS TEXT)
+`
+
+type CountChartSnapshotsBetweenParams struct {
+	Country    string `json:"country"`
+	Provider   string `json:"provider"`
+	Category   string `json:"category"`
+	AfterDate  string `json:"after_date"`
+	BeforeDate string `json:"before_date"`
+}
+
+// Stored dates of one chart strictly between two dates (YYYY-MM-DD): tells a
+// title that left a chart apart from a chart that was not scraped.
+func (q *Queries) CountChartSnapshotsBetween(ctx context.Context, arg CountChartSnapshotsBetweenParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countChartSnapshotsBetween,
+		arg.Country,
+		arg.Provider,
+		arg.Category,
+		arg.AfterDate,
+		arg.BeforeDate,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const findTitlesByIMDb = `-- name: FindTitlesByIMDb :many
 SELECT t.id, t.slug, t.name, t.kind, t.tmdb_id, t.legacy_imdb_id, t.legacy_rt_url, t.created_at, t.updated_at, t.match_status, t.match_source, t.matched_name, t.matched_year, t.match_attempts, t.match_attempted_at, t.next_match_at, t.legacy_rt_attempts, t.legacy_next_rt_at, t.legacy_justwatch_id, t.legacy_wikidata_id, t.fp_name, t.fp_kind, t.fp_premiere_date, t.fp_country, t.fp_fetched_at FROM titles t
 JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id

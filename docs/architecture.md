@@ -499,6 +499,16 @@ batch `GET /api/v1/titles/tmdb/rankings?ids=movie:425,tv:154385`) looks up
 every title row with that TMDB ID and kind, then returns its chart
 appearances and a per-chart summary.
 
+The title timeline (`GET /api/v1/titles/tmdb/{movie|tv}/{id}/timeline`,
+`TimelineService`) derives dated events at request time from data already
+stored, nothing new is written: chart debuts / peaks / #1 runs / re-entries
+from the title's rankings (a re-entry needs a 7+ day gap and a stored
+`chart_snapshots` date of that chart in between, so scrape gaps don't count),
+`watch_provider_events` grouped per day, provider and offer type, value
+changes of the rating history tables (displayed precision; one provider per
+source), Wikipedia pageview spikes (3x the 28-day median, 1,000+ views),
+Netflix Top 10 weeks and engagement rows, and TMDB release / season dates.
+
 ---
 
 ## Ratings Flow
@@ -860,6 +870,7 @@ metareel/
 │   │   ├── imdb_import.go         # IMDb ratings dataset import
 │   │   ├── charts.go              # catalog, history, movers, leaderboards, changes, export
 │   │   ├── title_overview.go      # title overview, stats, availability, lookup
+│   │   ├── timeline.go            # title timeline: events from charts, availability, ratings, pageviews, Netflix, TMDB dates
 │   │   ├── title_offers.go        # watch provider URLs from JustWatch offers (metadata refresh)
 │   │   ├── analytics.go           # decay, similarity, release lag, ratings vs popularity, genres, Netflix calibration
 │   │   ├── data_quality.go        # admin data-quality report

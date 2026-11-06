@@ -157,6 +157,8 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		<-webhooksDone
 	}()
 
+	historyRepo := repository.NewHistoryRepository(readDB)
+	engagementRepo := repository.NewEngagementRepository(readDB)
 	h := &handler.Handler{
 		Top10:      top10Read,
 		AdminTasks: taskScheduleAdmin,
@@ -172,9 +174,10 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 
 		Charts: service.NewChartsService(analyticsRepo),
 		Overview: service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping).
-			WithEngagement(repository.NewEngagementRepository(readDB)),
+			WithEngagement(engagementRepo),
 		Analytics: service.NewAnalyticsService(analyticsRepo, readMetadataRepo, repository.NewImportsRepository(readDB), repository.NewRatingsRepository(readDB)),
-		History:   service.NewHistoryService(repository.NewHistoryRepository(readDB), readMetadataRepo),
+		History:   service.NewHistoryService(historyRepo, readMetadataRepo),
+		Timeline:  service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),
 		Search:    service.NewSearchService(repository.NewSearchRepository(readDB)),
 		Webhooks:  webhooks,
 		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,

@@ -125,3 +125,10 @@ FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
 WHERE g.week >= CAST(sqlc.arg(from_week) AS TEXT) AND g.week <= CAST(sqlc.arg(to_week) AS TEXT)
 ORDER BY g.week, g.category, g.weekly_rank;
+
+-- name: CountChartSnapshotsBetween :one
+-- Stored dates of one chart strictly between two dates (YYYY-MM-DD): tells a
+-- title that left a chart apart from a chart that was not scraped.
+SELECT COUNT(*) FROM chart_snapshots
+WHERE country = sqlc.arg(country) AND streaming_provider = sqlc.arg(provider) AND category = sqlc.arg(category)
+  AND ranked_on > CAST(sqlc.arg(after_date) AS TEXT) AND ranked_on < CAST(sqlc.arg(before_date) AS TEXT);

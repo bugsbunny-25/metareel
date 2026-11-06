@@ -120,6 +120,7 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/titles/tmdb/:kind/:id/availability", h.GetTitleAvailability)
 	g.GET("/titles/tmdb/:kind/:id/availability/history", h.GetTitleAvailabilityHistory)
 	g.GET("/titles/tmdb/:kind/:id/history", h.GetTitleHistory)
+	g.GET("/titles/tmdb/:kind/:id/timeline", h.GetTitleTimeline)
 	g.GET("/availability/changes", h.GetAvailabilityChanges)
 	g.GET("/titles/tmdb/:kind/:id/netflix", h.GetTitleNetflix)
 	g.GET("/titles/new/:country/:service", h.GetNewTitles)

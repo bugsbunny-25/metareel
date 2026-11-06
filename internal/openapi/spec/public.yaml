@@ -1227,6 +1227,68 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/titles/tmdb/{kind}/{id}/timeline:
+    get:
+      operationId: getTitleTimeline
+      summary: A title's dated events from every source, newest first
+      description: >-
+        One feed of what happened to a title. Chart events per chart (country
+        x provider x category): `chart_debut`, `chart_peak` (first day at its
+        best rank, when after the debut; `days` = days after the debut),
+        `chart_number_one` (a run of days at #1; `days` = length) and
+        `chart_reentry` (back after at least 7 days away, only when the chart
+        was stored without the title in between; `days` = days away).
+        `availability_added` / `availability_removed`: watch provider changes,
+        one event per day, provider and offer type with every country.
+        `rating_changed`: a rating source's displayed value changed (one
+        decimal on 0-10 scales, whole numbers on 0-100; the first value is the
+        baseline; IMDb from IMDb's dataset when known, other sources from
+        Rotten Tomatoes, then MDBList, then JustWatch).
+        `pageview_spike`: days in a row with at least 1,000 English Wikipedia
+        views and 3x the median of the previous 28 days.
+        `netflix_top10_week`: a week (and season) in Netflix's global or
+        country Top 10s. `netflix_engagement`: a "What We Watched" report row.
+        `season_premiere` (may be upcoming), `release` (movie release / TV
+        first air date) and `netflix_premiere` (Netflix originals) from TMDB
+        and Netflix's reports. Spans (`end_date`) are kept when they overlap
+        `from`..`to`. `country` limits charts, availability and Netflix weeks
+        (adding `country_rank`); the other events are worldwide and always
+        kept. Exactly one detail object is set per event, by type group.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+        - name: types
+          in: query
+          description: Comma-separated event types (default all)
+          schema: { type: string, example: "chart_debut,chart_number_one,availability_added" }
+        - name: country
+          in: query
+          schema: { type: string, example: US }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: limit
+          in: query
+          description: Newest events to return (default 200, also used for 0; at most 1000); `total` counts all matches
+          schema: { type: integer, minimum: 0, maximum: 1000 }
+      responses:
+        "200":
+          description: Timeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleTimelineResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404":
+          description: Unknown TMDB title (no metadata and no chart entries)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/v1/titles/tmdb/{kind}/{id}/netflix:
     get:
       operationId: getTitleNetflix
@@ -1949,6 +2011,103 @@ components:
         date: { type: string, format: date }
         value: { type: number }
         votes: { type: integer, nullable: true }
+    TitleTimelineResponse:
+      type: object
+      properties:
+        kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        title: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        from: { type: string, format: date, nullable: true }
+        to: { type: string, format: date, nullable: true }
+        total: { type: integer, description: Matching events before the limit }
+        counts:
+          type: object
+          description: Matching events per type
+          additionalProperties: { type: integer }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/TimelineEvent" }
+    TimelineEvent:
+      type: object
+      required: [type, date, summary]
+      properties:
+        type:
+          type: string
+          enum: [chart_debut, chart_peak, chart_number_one, chart_reentry, availability_added, availability_removed,
+            rating_changed, pageview_spike, netflix_top10_week, netflix_engagement, season_premiere, release, netflix_premiere]
+        date: { type: string, format: date, description: "UTC; a span's first day" }
+        end_date: { type: string, format: date, description: "A span's last day (#1 runs, spikes, Netflix weeks, report periods)" }
+        summary: { type: string, example: "Debuted at #3 on netflix TV shows (US)" }
+        chart:
+          type: object
+          description: chart_* events
+          properties:
+            country: { type: string }
+            provider: { type: string }
+            category: { type: string, enum: [movies, tv_shows] }
+            rank: { type: integer }
+            season_number: { type: integer }
+            days: { type: integer, description: "chart_number_one: days at #1; chart_peak: days after the debut; chart_reentry: days away" }
+        availability:
+          type: object
+          description: availability_* events
+          properties:
+            provider_id: { type: integer }
+            provider_name: { type: string }
+            monetization: { type: string, enum: [flatrate, free, ads, rent, buy] }
+            countries: { type: array, items: { type: string } }
+        rating:
+          type: object
+          description: rating_changed
+          properties:
+            provider: { type: string, example: imdb_dataset }
+            source: { type: string, example: imdb }
+            value: { type: number }
+            previous_value: { type: number, description: The previous displayed (rounded) value }
+            votes: { type: integer }
+        pageviews:
+          type: object
+          description: pageview_spike
+          properties:
+            peak_day: { type: string, format: date }
+            peak_views: { type: integer }
+            baseline_views: { type: integer, description: Median daily views of the 28 days before the spike }
+            ratio: { type: number }
+            days: { type: integer }
+        netflix:
+          type: object
+          description: netflix_top10_week (date = Monday, end_date = week = Sunday)
+          properties:
+            week: { type: string, format: date }
+            category: { type: string }
+            global_rank: { type: integer, nullable: true, description: null when only in country lists that week }
+            season_title: { type: string }
+            season_number: { type: integer }
+            hours_viewed: { type: integer }
+            views: { type: integer }
+            cumulative_weeks: { type: integer }
+            countries: { type: integer, description: Country Top 10s it was in that week }
+            country_rank: { type: integer, description: Rank in the requested country }
+        engagement:
+          type: object
+          description: netflix_engagement
+          properties:
+            period_start: { type: string, format: date }
+            period_end: { type: string, format: date }
+            title: { type: string }
+            hours_viewed: { type: integer, nullable: true }
+            views: { type: integer, nullable: true }
+            runtime_minutes: { type: integer, nullable: true }
+            season_number: { type: integer }
+            available_globally: { type: boolean, nullable: true }
+        season:
+          type: object
+          description: season_premiere
+          properties:
+            season_number: { type: integer }
+            name: { type: string }
+            episode_count: { type: integer }
     TitleHistoryResponse:
       type: object
       properties:

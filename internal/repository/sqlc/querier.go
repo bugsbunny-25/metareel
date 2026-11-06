@@ -24,6 +24,9 @@ type Querier interface {
 	// Wikidata or matching.
 	ClearTmdbTitleIDs(ctx context.Context, arg ClearTmdbTitleIDsParams) error
 	CompleteTaskRun(ctx context.Context, arg CompleteTaskRunParams) error
+	// Stored dates of one chart strictly between two dates (YYYY-MM-DD): tells a
+	// title that left a chart apart from a chart that was not scraped.
+	CountChartSnapshotsBetween(ctx context.Context, arg CountChartSnapshotsBetweenParams) (int64, error)
 	CountIMDbRatings(ctx context.Context) (int64, error)
 	CountNetflixEngagement(ctx context.Context) ([]CountNetflixEngagementRow, error)
 	CountNetflixSeasonsBySource(ctx context.Context) ([]CountNetflixSeasonsBySourceRow, error)

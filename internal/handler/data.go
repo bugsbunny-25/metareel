@@ -294,6 +294,26 @@ func (h *Handler) GetTitleHistory(c *echo.Context) error {
 	return writeData(c, out, err)
 }
 
+// GetTitleTimeline: GET /api/v1/titles/tmdb/{kind}/{id}/timeline[?types=&country=&from=&to=&limit=]
+func (h *Handler) GetTitleTimeline(c *echo.Context) error {
+	ref, err := h.parseRef(c)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	from, to, err := parseRange(c)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	limit, err := parseIntParam(c, "limit", 0)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Timeline.Timeline(c.Request().Context(), ref, service.TimelineQuery{
+		Types: c.QueryParam("types"), Country: c.QueryParam("country"), From: from, To: to, Limit: limit,
+	})
+	return writeData(c, out, err)
+}
+
 // GetTitleAvailabilityHistory: GET /api/v1/titles/tmdb/{kind}/{id}/availability/history[?country=]
 func (h *Handler) GetTitleAvailabilityHistory(c *echo.Context) error {
 	ref, err := h.parseRef(c)
