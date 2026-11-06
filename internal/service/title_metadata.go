@@ -111,6 +111,10 @@ type MetadataReport struct {
 	// telling originals from licensed films).
 	DistributorsChecked int `json:"distributors_checked"`
 	DistributorsFound   int `json:"distributors_found"`
+	// Titles whose English Wikipedia article was looked up / found (for
+	// pageviews).
+	WikipediaChecked int `json:"wikipedia_checked"`
+	WikipediaFound   int `json:"wikipedia_found"`
 }
 
 // Run refreshes stale TMDB details (charting titles every few days, the rest
@@ -174,6 +178,13 @@ func (s *TitleMetadataService) Run(ctx context.Context, runLog func(level, msg s
 	if rep.DistributorsChecked > 0 {
 		logf("info", "Wikidata distributors: %d movies checked, %d with distributors", rep.DistributorsChecked, rep.DistributorsFound)
 	}
+	if err := s.refreshEnwiki(ctx, rep); err != nil {
+		logf("error", "Wikipedia article lookup failed: %v", err)
+		return rep, err
+	}
+	if rep.WikipediaChecked > 0 {
+		logf("info", "Wikipedia articles: %d titles checked, %d with an English article", rep.WikipediaChecked, rep.WikipediaFound)
+	}
 	if rep.DetailsFailed > 0 && rep.DetailsRefreshed == 0 {
 		return rep, fmt.Errorf("every TMDB details request failed (%d)", rep.DetailsFailed)
 	}
@@ -201,6 +212,36 @@ func (s *TitleMetadataService) refreshDistributors(ctx context.Context, rep *Met
 		rep.DistributorsChecked++
 		if len(found[id]) > 0 {
 			rep.DistributorsFound++
+		}
+	}
+	return nil
+}
+
+// refreshEnwiki looks up the English Wikipedia article (Wikidata sitelink)
+// of titles not checked within the Wikidata window (one batch per run).
+func (s *TitleMetadataService) refreshEnwiki(ctx context.Context, rep *MetadataReport) error {
+	if s.wikidata == nil {
+		return nil
+	}
+	due, err := s.repo.TitlesDueForEnwiki(ctx, wikidataWindow, wikidataBatch)
+	if err != nil || len(due) == 0 {
+		return err
+	}
+	qids := make([]string, 0, len(due))
+	for _, d := range due {
+		qids = append(qids, d.WikidataID)
+	}
+	found, err := s.wikidata.LookupEnwiki(ctx, qids)
+	if err != nil {
+		return err
+	}
+	for _, d := range due {
+		if err := s.repo.SaveEnwiki(ctx, d.Ref, found[d.WikidataID]); err != nil {
+			return err
+		}
+		rep.WikipediaChecked++
+		if found[d.WikidataID] != "" {
+			rep.WikipediaFound++
 		}
 	}
 	return nil

@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -225,5 +226,68 @@ func TestWikidataLookupDistributors(t *testing.T) {
 	}
 	if _, ok := got["1"]; ok {
 		t.Fatal("movie without distributors should be absent")
+	}
+}
+
+func TestWikimediaPageviews(t *testing.T) {
+	var path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.EscapedPath()
+		if ua := r.Header.Get("User-Agent"); !strings.HasPrefix(ua, "metareel/") {
+			t.Errorf("user agent = %q", ua)
+		}
+		if strings.Contains(path, "Missing") {
+			http.NotFound(w, r)
+			return
+		}
+		if strings.Contains(path, "Busy") {
+			w.Header().Set("Retry-After", "7")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = io.WriteString(w, `{"items":[{"timestamp":"2026110100","views":6108},{"timestamp":"2026110200","views":5294}]}`)
+	}))
+	defer srv.Close()
+	wm := NewWikimedia(time.Second)
+	wm.endpoint = srv.URL
+	from, to := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	got, err := wm.Pageviews(context.Background(), "en.wikipedia", "AC/DC (band)", from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/metrics/pageviews/per-article/en.wikipedia/all-access/user/AC%2FDC_%28band%29/daily/20261101/20261102" {
+		t.Fatalf("path = %s", path)
+	}
+	if len(got) != 2 || got[0].Day != "2026-11-01" || got[0].Views != 6108 {
+		t.Fatalf("views = %+v", got)
+	}
+	if got, err := wm.Pageviews(context.Background(), "en.wikipedia", "Missing article", from, to); got != nil || err != nil {
+		t.Fatalf("missing = %v, %v", got, err)
+	}
+	var rl *RateLimitedError
+	if _, err := wm.Pageviews(context.Background(), "en.wikipedia", "Busy", from, to); !errors.As(err, &rl) || rl.RetryAfter != 7*time.Second {
+		t.Fatalf("rate limited = %v", err)
+	}
+}
+
+func TestWikidataLookupEnwiki(t *testing.T) {
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		query = r.Form.Get("query")
+		_, _ = io.WriteString(w, `{"results":{"bindings":[{"item":{"value":"http://www.wikidata.org/entity/Q19865"},"name":{"value":"Stranger Things"}}]}}`)
+	}))
+	defer srv.Close()
+	c := NewWikidataSPARQL(time.Second)
+	c.endpoint = srv.URL
+	got, err := c.LookupEnwiki(context.Background(), []string{"Q19865", "Q2", "x } DROP", "Qabc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(query, "wd:Q19865 wd:Q2") || strings.Contains(query, "DROP") || strings.Contains(query, "Qabc") || !strings.Contains(query, "en.wikipedia.org") {
+		t.Fatalf("query = %s", query)
+	}
+	if got["Q19865"] != "Stranger Things" || len(got) != 1 {
+		t.Fatalf("got = %v", got)
 	}
 }

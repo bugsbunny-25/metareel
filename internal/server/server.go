@@ -168,8 +168,9 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		APIKeys:    apiKeys,
 		Health:     service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
 
-		Charts:    service.NewChartsService(analyticsRepo),
-		Overview:  service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping),
+		Charts: service.NewChartsService(analyticsRepo),
+		Overview: service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping).
+			WithEngagement(repository.NewEngagementRepository(readDB)),
 		Analytics: service.NewAnalyticsService(analyticsRepo, readMetadataRepo, repository.NewImportsRepository(readDB), repository.NewRatingsRepository(readDB)),
 		History:   service.NewHistoryService(repository.NewHistoryRepository(readDB), readMetadataRepo),
 		Search:    service.NewSearchService(repository.NewSearchRepository(readDB)),

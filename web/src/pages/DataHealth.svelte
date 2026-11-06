@@ -34,7 +34,7 @@
   }
   $effect(() => { load() })
 
-  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'netflix.titles.match', 'imdb.ratings.import', 'tmdb.popularity.import', 'ratings.prewarm', 'maintenance']
+  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'netflix.titles.match', 'imdb.ratings.import', 'tmdb.popularity.import', 'wikipedia.pageviews.import', 'netflix.engagement.import', 'ratings.prewarm', 'maintenance']
   const label = (t) => taskTypes.find((x) => x.type === t)?.label ?? t
 
   async function start(type, force = false) {
@@ -153,7 +153,7 @@
             <tbody>
               {#each report.imports as i (i.source)}
                 <tr>
-                  <td>{IMPORT_LABEL[i.source] ?? i.source}</td>
+                  <td>{IMPORT_LABEL[i.source] ?? (i.source.startsWith('netflix.engagement:') ? 'Netflix engagement report' : i.source)}</td>
                   <td class="right">{number(i.rows)}</td>
                   <td class="nowrap" title={dateTime(i.imported_at)}>{relativeTime(i.imported_at)}</td>
                 </tr>

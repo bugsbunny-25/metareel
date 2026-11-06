@@ -1200,8 +1200,9 @@ paths:
         from ratings refreshes) hold a point whenever a value changed, so each
         is a step function; the first point may be before `from` (the value in
         effect at `from`). `popularity` has a point per day of TMDB's daily
-        export (tmdb.popularity.import). History starts when this version was
-        deployed. Default range: the last 90 days; at most 366 days.
+        export (tmdb.popularity.import), `wikipedia` the English article's daily
+        views (wikipedia.pageviews.import, 90 days back on its first import).
+        History starts when this version was deployed. Default range: the last 90 days; at most 366 days.
       parameters:
         - $ref: "#/components/parameters/TmdbKindParam"
         - $ref: "#/components/parameters/TmdbIDParam"
@@ -1251,6 +1252,25 @@ paths:
                   seasons: { type: array, items: { $ref: "#/components/schemas/NetflixSeasonSummary" } }
                   global: { type: array, items: { $ref: "#/components/schemas/NetflixWeekRow" } }
                   country_weeks: { type: array, items: { $ref: "#/components/schemas/NetflixWeekRow" } }
+                  engagement:
+                    type: array
+                    description: >-
+                      The title's rows in Netflix's "What We Watched" engagement reports
+                      (every title watched 50k+ hours in a six-month period), newest
+                      period first; release_date is given for Netflix originals only.
+                    items:
+                      type: object
+                      properties:
+                        period_start: { type: string, format: date }
+                        period_end: { type: string, format: date }
+                        kind: { type: string, enum: [movie, tv_show] }
+                        title: { type: string }
+                        available_globally: { type: boolean, nullable: true }
+                        release_date: { type: string, format: date }
+                        hours_viewed: { type: integer, nullable: true }
+                        runtime_minutes: { type: integer, nullable: true }
+                        views: { type: integer, nullable: true }
+                        season_number: { type: integer }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -1961,6 +1981,20 @@ components:
             properties:
               date: { type: string, format: date }
               popularity: { type: number }
+        wikipedia:
+          type: object
+          nullable: true
+          description: Daily user views of the title's English Wikipedia article (null without one)
+          properties:
+            article: { type: string }
+            url: { type: string }
+            points:
+              type: array
+              items:
+                type: object
+                properties:
+                  date: { type: string, format: date }
+                  views: { type: integer }
     AvailabilityResponse:
       type: object
       properties:

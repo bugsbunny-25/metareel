@@ -153,6 +153,8 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
 | `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz`; known IDs also go to `imdb_rating_history` when changed |
+| `wikipedia.pageviews.import` | `PageviewsImporter` | English Wikipedia daily user views (Wikimedia REST, `client.Wikimedia`) of titles with `tmdb_titles.enwiki_title`, since the last stored day (90 days first); 350 ms apart (200 requests/minute limit), `Retry-After` honoured on 429 |
+| `netflix.engagement.import` | `NetflixEngagementImporter` | "What We Watched" `.xlsx` reports from `app_settings` `netflix.engagement.urls` (defaults in code; a run's `url` adds one), parsed by `internal/xlsx`; each period replaced in one transaction, rows linked by name to Netflix Top 10 titles / season titles |
 | `tmdb.popularity.import` | `TMDBPopularityImporter` | TMDB daily ID exports (`movie_ids_MM_DD_YYYY.json.gz`, `tv_series_ids_…`): popularity of known TMDB titles into `tmdb_popularity_history`; yesterday's file until today's is out |
 | `mapping.refresh` | `TitleMappingService.Refresh` | Queued by the mapping writer after mapping changes (payload: `tmdb_refs`, `netflix_title_ids`; not unique): TMDB details (skipped if fetched within 24 h and an IMDb ID is known) + Wikidata IDs (titles never looked up; the metadata job rechecks the rest) of the TMDB titles now mapped to, seasons of the Netflix titles that changed or sit on those TMDB titles, ranking season tags. Run by hand (empty payload) it first runs a mapping sync |
 | `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, `PRAGMA optimize` |
@@ -430,6 +432,14 @@ their own original brands, its other studios / channels, whether it is a
 theatrical major, and the year its streaming originals start. Brands match
 whole names ignoring case, or a prefix when they end in `*`.
 
+0. **original (Netflix)** — on Netflix charts, a title with
+   `tmdb_titles.netflix_premiere` (Netflix's engagement reports give a
+   release date for Netflix-branded titles only, including regional
+   exclusives such as some Korean dramas and WWE Raw); set by
+   `netflix.engagement.import` from report rows linked to Netflix Top 10
+   titles, or by a unique name of the right kind with a fitting year
+   (`markOriginals`). Elsewhere it makes Netflix the owner when nothing else
+   does.
 1. **original** — TV: one of the service's own networks (TMDB `networks`,
    e.g. HBO / Max on hbo-max); films (and shows without networks): the
    service's studio among the production companies (Amazon MGM Studios,
@@ -445,8 +455,9 @@ whole names ignoring case, or a prefix when they end in `*`.
    decisive source (no network for a show, no Wikidata distributors for a
    film): metareel does not guess "licensed".
 
-Known limits: non-English originals with no Wikidata distributors (many
-Netflix India films) come out unknown; co-productions take the first
+Known limits: non-Netflix originals with no Wikidata distributors come out
+unknown (Netflix's are covered by its engagement reports once a report
+lists them, up to six months after release); co-productions take the first
 recognised company (Spider-Man on Disney+ counts as Marvel's); regional
 "originals" licensed from a local network are licensed.
 
@@ -578,6 +589,9 @@ Added since the diagram below:
 | `imdb_ratings` | IMDb dataset ratings (known IMDb IDs by default) |
 | `imdb_rating_history`, `title_rating_history` | Rating history (migration 17): IMDb dataset rating + votes per day, and each provider's rating sources (from `SaveTitleRatings`), written only when the value changed since the previous row (step series; `/history` adds the point in effect at `from`) |
 | `tmdb_popularity_history` | TMDB popularity per title per day from the daily exports |
+| `tmdb_titles.enwiki_title`, `wikipedia_pageviews` | English Wikipedia article from Wikidata (sitelink, looked up monthly by `titles.metadata`, migration 20) and its daily user pageviews per project |
+| `tmdb_titles.netflix_premiere`, `netflix_premiere_source` | Earliest Netflix premiere of a Netflix-branded title per the engagement reports (`linked` through a Netflix Top 10 title, or `name`), migration 22; marks Netflix originals for the origin classifier |
+| `netflix_engagement` | Netflix engagement report rows per period × kind × title: hours viewed, runtime, views, available globally, premiere date (originals only), and the Netflix Top 10 title / season it is linked to (migration 21) |
 | `tmdb_titles.distributors` | A film's distributors on Wikidata (P750, English labels, JSON), `distributors_fetched_at` (migration 18); one of the origin signals |
 | `watch_provider_events` | Offers that appeared / disappeared between two TMDB refreshes of a title (`added` / `removed`, `previous_check_at` → `observed_at`), computed in `MetadataRepository.SaveDetails` by diffing the stored providers; a title's first refresh is the baseline (no events) |
 | `data_imports` | Last imported ETag / Last-Modified per file |

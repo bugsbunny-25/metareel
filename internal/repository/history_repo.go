@@ -280,3 +280,59 @@ func (r *HistoryRepository) OfferEvents(ctx context.Context, f OfferEventFilter)
 	}
 	return out, nil
 }
+
+// PageviewTarget is a title with a Wikipedia article and the last day of
+// views stored ("" = none yet).
+type PageviewTarget struct {
+	Ref     TmdbRef
+	Article string
+	LastDay string
+}
+
+// PageviewTargets lists every TMDB title with an English Wikipedia article.
+func (r *HistoryRepository) PageviewTargets(ctx context.Context) ([]PageviewTarget, error) {
+	rows, err := r.q.ListPageviewTargets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list pageview targets: %w", err)
+	}
+	out := make([]PageviewTarget, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, PageviewTarget{Ref: TmdbRef{Kind: row.TmdbKind, ID: row.TmdbID}, Article: row.Article, LastDay: row.LastDay})
+	}
+	return out, nil
+}
+
+// PageviewPoint is a day's views.
+type PageviewPoint struct {
+	Date  string `json:"date"`
+	Views int64  `json:"views"`
+}
+
+// SavePageviews stores a title's daily views on a project in one transaction.
+func (r *HistoryRepository) SavePageviews(ctx context.Context, ref TmdbRef, project string, points []PageviewPoint) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := r.q.WithTx(tx)
+	for _, p := range points {
+		if err := q.SavePageview(ctx, sqlc.SavePageviewParams{TmdbKind: ref.Kind, TmdbID: ref.ID, Project: project, Day: p.Date, Views: p.Views}); err != nil {
+			return fmt.Errorf("save pageviews of %s: %w", ref, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// Pageviews returns a title's daily views on a project between two days.
+func (r *HistoryRepository) Pageviews(ctx context.Context, ref TmdbRef, project, fromDate, toDate string) ([]PageviewPoint, error) {
+	rows, err := r.q.ListPageviews(ctx, sqlc.ListPageviewsParams{TmdbKind: ref.Kind, TmdbID: ref.ID, Project: project, FromDate: fromDate, ToDate: toDate})
+	if err != nil {
+		return nil, fmt.Errorf("list pageviews: %w", err)
+	}
+	out := make([]PageviewPoint, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, PageviewPoint{Date: row.Day, Views: row.Views})
+	}
+	return out, nil
+}

@@ -426,6 +426,7 @@ paths:
               properties:
                 title_ids: { type: array, items: { type: integer, format: int64 }, maxItems: 500 }
                 force: { type: boolean }
+                url: { type: string, description: "netflix.engagement.import only: an https report (.xlsx) to add to the list" }
       responses:
         "202":
           description: Enqueued

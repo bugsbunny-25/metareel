@@ -186,7 +186,7 @@ func (q *Queries) FindTmdbRefsByNetflixID(ctx context.Context, arg FindTmdbRefsB
 }
 
 const getTmdbTitle = `-- name: GetTmdbTitle :one
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at, enwiki_title, enwiki_fetched_at, netflix_premiere, netflix_premiere_source FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
 `
 
 type GetTmdbTitleParams struct {
@@ -244,6 +244,10 @@ func (q *Queries) GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (Tmd
 		&i.OffersFetchedAt,
 		&i.Distributors,
 		&i.DistributorsFetchedAt,
+		&i.EnwikiTitle,
+		&i.EnwikiFetchedAt,
+		&i.NetflixPremiere,
+		&i.NetflixPremiereSource,
 	)
 	return i, err
 }
@@ -509,7 +513,7 @@ func (q *Queries) ListTmdbRefsDueForWikidata(ctx context.Context, arg ListTmdbRe
 }
 
 const listTmdbTitlesByIDs = `-- name: ListTmdbTitlesByIDs :many
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at, enwiki_title, enwiki_fetched_at, netflix_premiere, netflix_premiere_source FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
 `
 
 // Callers filter by kind (TMDB movie and TV IDs overlap).
@@ -579,7 +583,55 @@ func (q *Queries) ListTmdbTitlesByIDs(ctx context.Context, ids []string) ([]Tmdb
 			&i.OffersFetchedAt,
 			&i.Distributors,
 			&i.DistributorsFetchedAt,
+			&i.EnwikiTitle,
+			&i.EnwikiFetchedAt,
+			&i.NetflixPremiere,
+			&i.NetflixPremiereSource,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTmdbTitlesDueForEnwiki = `-- name: ListTmdbTitlesDueForEnwiki :many
+SELECT tmdb_kind, tmdb_id, CAST(wikidata_id AS TEXT) AS wikidata_id FROM tmdb_titles
+WHERE COALESCE(wikidata_id, '') <> ''
+  AND (enwiki_fetched_at IS NULL OR enwiki_fetched_at < datetime('now', CAST(?1 AS TEXT)))
+ORDER BY enwiki_fetched_at IS NOT NULL, enwiki_fetched_at
+LIMIT ?2
+`
+
+type ListTmdbTitlesDueForEnwikiParams struct {
+	Window string `json:"window"`
+	Limit  int64  `json:"limit"`
+}
+
+type ListTmdbTitlesDueForEnwikiRow struct {
+	TmdbKind   string `json:"tmdb_kind"`
+	TmdbID     string `json:"tmdb_id"`
+	WikidataID string `json:"wikidata_id"`
+}
+
+// TMDB titles with a Wikidata ID whose English Wikipedia article was not
+// looked up within the window ('-30 days'), never-checked first.
+func (q *Queries) ListTmdbTitlesDueForEnwiki(ctx context.Context, arg ListTmdbTitlesDueForEnwikiParams) ([]ListTmdbTitlesDueForEnwikiRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTmdbTitlesDueForEnwiki, arg.Window, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTmdbTitlesDueForEnwikiRow{}
+	for rows.Next() {
+		var i ListTmdbTitlesDueForEnwikiRow
+		if err := rows.Scan(&i.TmdbKind, &i.TmdbID, &i.WikidataID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -707,6 +759,22 @@ type SaveTmdbDistributorsParams struct {
 // distributors is a JSON list (NULL when Wikidata has none).
 func (q *Queries) SaveTmdbDistributors(ctx context.Context, arg SaveTmdbDistributorsParams) error {
 	_, err := q.db.ExecContext(ctx, saveTmdbDistributors, arg.Distributors, arg.TmdbID)
+	return err
+}
+
+const saveTmdbEnwiki = `-- name: SaveTmdbEnwiki :exec
+UPDATE tmdb_titles SET enwiki_title = ?1, enwiki_fetched_at = CURRENT_TIMESTAMP
+WHERE tmdb_kind = ?2 AND tmdb_id = ?3
+`
+
+type SaveTmdbEnwikiParams struct {
+	EnwikiTitle sql.NullString `json:"enwiki_title"`
+	TmdbKind    string         `json:"tmdb_kind"`
+	TmdbID      string         `json:"tmdb_id"`
+}
+
+func (q *Queries) SaveTmdbEnwiki(ctx context.Context, arg SaveTmdbEnwikiParams) error {
+	_, err := q.db.ExecContext(ctx, saveTmdbEnwiki, arg.EnwikiTitle, arg.TmdbKind, arg.TmdbID)
 	return err
 }
 

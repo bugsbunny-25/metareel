@@ -76,6 +76,11 @@ func TestClassifyOrigin(t *testing.T) {
 		{"show without network or known studio", "disney", false, tv(nil, "Evermotion"), OriginUnknown, ""},
 		{"show without network, known studio", "disney", false, tv(nil, "Lucasfilm Animation"), OriginInHouse, "disney"},
 		{"film without distributors, known studio", "netflix", true, film("2025", []string{"Columbia Pictures"}, nil), OriginLicensed, "sony"},
+
+		// Netflix's engagement reports date the premiere of its originals.
+		{"Netflix original by report, no other data", "netflix", true, premiered(&repository.TmdbMetadata{}), OriginOriginal, "netflix"},
+		{"Netflix original by report beats a studio", "netflix", true, premiered(film("2025", []string{"Sony Pictures Animation"}, nil)), OriginOriginal, "netflix"},
+		{"Netflix original on another service", "amazon-prime", true, premiered(film("2024", []string{"Kampa Films"}, nil)), OriginLicensed, "netflix"},
 		{"Lionsgate film on Peacock", "peacock", true, film("2013", []string{"Summit Entertainment"}, []string{"Netflix", "Summit Entertainment"}), OriginLicensed, "lionsgate"},
 		// Owner by distributor skips streamers: Universal, not Netflix.
 		{"Universal film by distributor", "hbo-max", true, film("1999", []string{"Alphaville Films"}, []string{"Ivi.ru", "Netflix", "Universal Pictures"}), OriginLicensed, "nbcu"},
@@ -107,4 +112,10 @@ func TestBrandMatches(t *testing.T) {
 			t.Errorf("brandMatches(%q, %q) = %v", c.brand, c.name, got)
 		}
 	}
+}
+
+func premiered(m *repository.TmdbMetadata) *repository.TmdbMetadata {
+	d := "2026-01-08"
+	m.NetflixPremiere = &d
+	return m
 }

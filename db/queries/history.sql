@@ -93,3 +93,23 @@ WHERE e.observed_at >= CAST(sqlc.arg(since) AS TEXT)
   AND (CAST(sqlc.arg(provider_id) AS INTEGER) = 0 OR e.provider_id = sqlc.arg(provider_id))
 ORDER BY e.observed_at DESC, e.id DESC
 LIMIT sqlc.arg(limit);
+
+-- name: ListPageviewTargets :many
+-- TMDB titles with an English Wikipedia article and the last day stored.
+SELECT m.tmdb_kind, m.tmdb_id, CAST(m.enwiki_title AS TEXT) AS article,
+       CAST(COALESCE((SELECT MAX(p.day) FROM wikipedia_pageviews p
+                      WHERE p.tmdb_kind = m.tmdb_kind AND p.tmdb_id = m.tmdb_id AND p.project = 'en.wikipedia'), '') AS TEXT) AS last_day
+FROM tmdb_titles m
+WHERE COALESCE(m.enwiki_title, '') <> ''
+ORDER BY last_day, m.tmdb_kind, m.tmdb_id;
+
+-- name: SavePageview :exec
+INSERT INTO wikipedia_pageviews (tmdb_kind, tmdb_id, project, day, views)
+VALUES (sqlc.arg(tmdb_kind), sqlc.arg(tmdb_id), sqlc.arg(project), CAST(sqlc.arg(day) AS TEXT), sqlc.arg(views))
+ON CONFLICT(tmdb_kind, tmdb_id, project, day) DO UPDATE SET views = excluded.views;
+
+-- name: ListPageviews :many
+SELECT CAST(day AS TEXT) AS day, views FROM wikipedia_pageviews
+WHERE tmdb_kind = sqlc.arg(tmdb_kind) AND tmdb_id = sqlc.arg(tmdb_id) AND project = sqlc.arg(project)
+  AND day >= CAST(sqlc.arg(from_date) AS TEXT) AND day <= CAST(sqlc.arg(to_date) AS TEXT)
+ORDER BY day;

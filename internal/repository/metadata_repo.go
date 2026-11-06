@@ -193,6 +193,34 @@ func (r *MetadataRepository) SaveDistributors(ctx context.Context, tmdbMovieID s
 	return nil
 }
 
+// EnwikiDue is a TMDB title whose Wikipedia article is to be looked up.
+type EnwikiDue struct {
+	Ref        TmdbRef
+	WikidataID string
+}
+
+// TitlesDueForEnwiki lists TMDB titles with a Wikidata ID whose English
+// Wikipedia article was not looked up within window ('-30 days').
+func (r *MetadataRepository) TitlesDueForEnwiki(ctx context.Context, window string, limit int64) ([]EnwikiDue, error) {
+	rows, err := r.q.ListTmdbTitlesDueForEnwiki(ctx, sqlc.ListTmdbTitlesDueForEnwikiParams{Window: window, Limit: limit})
+	if err != nil {
+		return nil, fmt.Errorf("list titles due for wikipedia: %w", err)
+	}
+	out := make([]EnwikiDue, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, EnwikiDue{Ref: TmdbRef{Kind: row.TmdbKind, ID: row.TmdbID}, WikidataID: row.WikidataID})
+	}
+	return out, nil
+}
+
+// SaveEnwiki stores a title's English Wikipedia article ("" = none).
+func (r *MetadataRepository) SaveEnwiki(ctx context.Context, ref TmdbRef, title string) error {
+	if err := r.q.SaveTmdbEnwiki(ctx, sqlc.SaveTmdbEnwikiParams{TmdbKind: ref.Kind, TmdbID: ref.ID, EnwikiTitle: nullIfEmpty(title)}); err != nil {
+		return fmt.Errorf("save wikipedia article of %s: %w", ref, err)
+	}
+	return nil
+}
+
 // RTDue is a TMDB title to look up on Rotten Tomatoes, with names to search by.
 type RTDue struct {
 	Ref         TmdbRef
@@ -290,7 +318,12 @@ type TmdbMetadata struct {
 	ProductionCompanies []string `json:"production_companies"`
 	Networks            []string `json:"networks,omitempty"`
 	// Distributors are a movie's distributors on Wikidata (P750).
-	Distributors        []string          `json:"distributors,omitempty"`
+	Distributors []string `json:"distributors,omitempty"`
+	// EnwikiTitle is the title's English Wikipedia article (Wikidata sitelink).
+	EnwikiTitle *string `json:"enwiki_title,omitempty"`
+	// NetflixPremiere: the title premiered on Netflix as an original on this
+	// date, per Netflix's engagement reports.
+	NetflixPremiere     *string           `json:"netflix_premiere,omitempty"`
 	PosterPath          *string           `json:"poster_path"`
 	BackdropPath        *string           `json:"backdrop_path"`
 	Popularity          *float64          `json:"popularity"`
@@ -321,8 +354,8 @@ func toTmdbMetadata(t sqlc.TmdbTitle) *TmdbMetadata {
 		NumberOfSeasons: nullInt64Ptr(t.NumberOfSeasons), NumberOfEpisodes: nullInt64Ptr(t.NumberOfEpisodes),
 		Genres: decodeList(t.Genres), OriginCountries: decodeList(t.OriginCountries),
 		ProductionCompanies: decodeList(t.ProductionCompanies), Networks: decodeList(t.Networks),
-		Distributors: decodeList(t.Distributors),
-		PosterPath:   nullStringPtr(t.PosterPath), BackdropPath: nullStringPtr(t.BackdropPath),
+		Distributors: decodeList(t.Distributors), EnwikiTitle: nullStringPtr(t.EnwikiTitle), NetflixPremiere: nullStringPtr(t.NetflixPremiere),
+		PosterPath: nullStringPtr(t.PosterPath), BackdropPath: nullStringPtr(t.BackdropPath),
 		Popularity: nullFloatPtr(t.Popularity), VoteAverage: nullFloatPtr(t.VoteAverage), VoteCount: nullInt64Ptr(t.VoteCount),
 		IMDbID: nullStringPtr(t.ImdbID), WikidataID: nullStringPtr(t.WikidataID), RottenTomatoesID: nullStringPtr(t.RtID),
 		MetacriticID: nullStringPtr(t.MetacriticID), LetterboxdID: nullStringPtr(t.LetterboxdID),

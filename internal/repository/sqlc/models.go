@@ -112,6 +112,20 @@ type MappingRef struct {
 	NetflixMatchStatus    sql.NullString `json:"netflix_match_status"`
 }
 
+type NetflixEngagement struct {
+	PeriodStart       string         `json:"period_start"`
+	PeriodEnd         string         `json:"period_end"`
+	Kind              string         `json:"kind"`
+	Title             string         `json:"title"`
+	AvailableGlobally sql.NullBool   `json:"available_globally"`
+	ReleaseDate       sql.NullString `json:"release_date"`
+	HoursViewed       sql.NullInt64  `json:"hours_viewed"`
+	RuntimeMinutes    sql.NullInt64  `json:"runtime_minutes"`
+	Views             sql.NullInt64  `json:"views"`
+	NetflixTitleID    sql.NullInt64  `json:"netflix_title_id"`
+	SeasonNumber      sql.NullInt64  `json:"season_number"`
+}
+
 type NetflixMostPopular struct {
 	Category       string          `json:"category"`
 	Rank           int64           `json:"rank"`
@@ -367,6 +381,10 @@ type TmdbTitle struct {
 	OffersFetchedAt       sql.NullTime    `json:"offers_fetched_at"`
 	Distributors          sql.NullString  `json:"distributors"`
 	DistributorsFetchedAt sql.NullTime    `json:"distributors_fetched_at"`
+	EnwikiTitle           sql.NullString  `json:"enwiki_title"`
+	EnwikiFetchedAt       sql.NullTime    `json:"enwiki_fetched_at"`
+	NetflixPremiere       sql.NullString  `json:"netflix_premiere"`
+	NetflixPremiereSource sql.NullString  `json:"netflix_premiere_source"`
 }
 
 type TmdbWatchProvider struct {
@@ -423,4 +441,12 @@ type WebhookDelivery struct {
 	LastError      sql.NullString `json:"last_error"`
 	CreatedAt      time.Time      `json:"created_at"`
 	DeliveredAt    sql.NullTime   `json:"delivered_at"`
+}
+
+type WikipediaPageview struct {
+	TmdbKind string `json:"tmdb_kind"`
+	TmdbID   string `json:"tmdb_id"`
+	Project  string `json:"project"`
+	Day      string `json:"day"`
+	Views    int64  `json:"views"`
 }

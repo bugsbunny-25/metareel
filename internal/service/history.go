@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,16 @@ type TitleHistoryResponse struct {
 	IMDb       *IMDbHistory                 `json:"imdb"`
 	Ratings    []repository.RatingSeries    `json:"ratings"`
 	Popularity []repository.PopularityPoint `json:"popularity"`
+	// Wikipedia: daily user views of the English Wikipedia article (nil
+	// when the title has none).
+	Wikipedia *WikipediaHistory `json:"wikipedia"`
+}
+
+// WikipediaHistory is an article's daily pageviews.
+type WikipediaHistory struct {
+	Article string                     `json:"article"`
+	URL     string                     `json:"url"`
+	Points  []repository.PageviewPoint `json:"points"`
 }
 
 // IMDbHistory is the IMDb dataset's rating (value) and votes over time.
@@ -103,6 +114,15 @@ func (s *HistoryService) TitleHistory(ctx context.Context, ref TmdbRef, q TitleH
 	}
 	if out.Popularity, err = s.history.PopularityHistory(ctx, ref, from, to); err != nil {
 		return nil, err
+	}
+	if meta.EnwikiTitle != nil && *meta.EnwikiTitle != "" {
+		points, err := s.history.Pageviews(ctx, ref, pageviewsProject, from, to)
+		if err != nil {
+			return nil, err
+		}
+		article := *meta.EnwikiTitle
+		out.Wikipedia = &WikipediaHistory{Article: article, Points: points,
+			URL: "https://en.wikipedia.org/wiki/" + url.PathEscape(strings.ReplaceAll(article, " ", "_"))}
 	}
 	return out, nil
 }

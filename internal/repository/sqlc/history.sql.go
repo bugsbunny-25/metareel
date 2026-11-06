@@ -117,6 +117,100 @@ func (q *Queries) ListKnownTmdbRefs(ctx context.Context) ([]ListKnownTmdbRefsRow
 	return items, nil
 }
 
+const listPageviewTargets = `-- name: ListPageviewTargets :many
+SELECT m.tmdb_kind, m.tmdb_id, CAST(m.enwiki_title AS TEXT) AS article,
+       CAST(COALESCE((SELECT MAX(p.day) FROM wikipedia_pageviews p
+                      WHERE p.tmdb_kind = m.tmdb_kind AND p.tmdb_id = m.tmdb_id AND p.project = 'en.wikipedia'), '') AS TEXT) AS last_day
+FROM tmdb_titles m
+WHERE COALESCE(m.enwiki_title, '') <> ''
+ORDER BY last_day, m.tmdb_kind, m.tmdb_id
+`
+
+type ListPageviewTargetsRow struct {
+	TmdbKind string `json:"tmdb_kind"`
+	TmdbID   string `json:"tmdb_id"`
+	Article  string `json:"article"`
+	LastDay  string `json:"last_day"`
+}
+
+// TMDB titles with an English Wikipedia article and the last day stored.
+func (q *Queries) ListPageviewTargets(ctx context.Context) ([]ListPageviewTargetsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPageviewTargets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPageviewTargetsRow{}
+	for rows.Next() {
+		var i ListPageviewTargetsRow
+		if err := rows.Scan(
+			&i.TmdbKind,
+			&i.TmdbID,
+			&i.Article,
+			&i.LastDay,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPageviews = `-- name: ListPageviews :many
+SELECT CAST(day AS TEXT) AS day, views FROM wikipedia_pageviews
+WHERE tmdb_kind = ?1 AND tmdb_id = ?2 AND project = ?3
+  AND day >= CAST(?4 AS TEXT) AND day <= CAST(?5 AS TEXT)
+ORDER BY day
+`
+
+type ListPageviewsParams struct {
+	TmdbKind string `json:"tmdb_kind"`
+	TmdbID   string `json:"tmdb_id"`
+	Project  string `json:"project"`
+	FromDate string `json:"from_date"`
+	ToDate   string `json:"to_date"`
+}
+
+type ListPageviewsRow struct {
+	Day   string `json:"day"`
+	Views int64  `json:"views"`
+}
+
+func (q *Queries) ListPageviews(ctx context.Context, arg ListPageviewsParams) ([]ListPageviewsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPageviews,
+		arg.TmdbKind,
+		arg.TmdbID,
+		arg.Project,
+		arg.FromDate,
+		arg.ToDate,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPageviewsRow{}
+	for rows.Next() {
+		var i ListPageviewsRow
+		if err := rows.Scan(&i.Day, &i.Views); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTitleRatingHistory = `-- name: ListTitleRatingHistory :many
 SELECT provider, source, CAST(captured_on AS TEXT) AS captured_on, value, votes
 FROM title_rating_history
@@ -467,6 +561,31 @@ func (q *Queries) RecordTmdbPopularity(ctx context.Context, arg RecordTmdbPopula
 		arg.TmdbID,
 		arg.CapturedOn,
 		arg.Popularity,
+	)
+	return err
+}
+
+const savePageview = `-- name: SavePageview :exec
+INSERT INTO wikipedia_pageviews (tmdb_kind, tmdb_id, project, day, views)
+VALUES (?1, ?2, ?3, CAST(?4 AS TEXT), ?5)
+ON CONFLICT(tmdb_kind, tmdb_id, project, day) DO UPDATE SET views = excluded.views
+`
+
+type SavePageviewParams struct {
+	TmdbKind string `json:"tmdb_kind"`
+	TmdbID   string `json:"tmdb_id"`
+	Project  string `json:"project"`
+	Day      string `json:"day"`
+	Views    int64  `json:"views"`
+}
+
+func (q *Queries) SavePageview(ctx context.Context, arg SavePageviewParams) error {
+	_, err := q.db.ExecContext(ctx, savePageview,
+		arg.TmdbKind,
+		arg.TmdbID,
+		arg.Project,
+		arg.Day,
+		arg.Views,
 	)
 	return err
 }

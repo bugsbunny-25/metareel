@@ -115,6 +115,38 @@ func (c *WikidataSPARQL) lookupBatch(ctx context.Context, prop string, ids []str
 
 const wikidataEntityPrefix = "http://www.wikidata.org/entity/"
 
+// LookupEnwiki returns the English Wikipedia article title of Wikidata
+// items, keyed by QID (e.g. Q19865). Items without an article are absent.
+func (c *WikidataSPARQL) LookupEnwiki(ctx context.Context, qids []string) (map[string]string, error) {
+	out := map[string]string{}
+	for start := 0; start < len(qids); start += WikidataBatchSize {
+		end := min(start+WikidataBatchSize, len(qids))
+		var values strings.Builder
+		for _, q := range qids[start:end] {
+			if len(q) > 1 && (q[0] == 'Q' || q[0] == 'q') && isDigits(q[1:]) {
+				values.WriteString(" wd:Q" + q[1:])
+			}
+		}
+		if values.Len() == 0 {
+			continue
+		}
+		bindings, err := c.query(ctx, `SELECT ?item ?name WHERE {
+  VALUES ?item {`+values.String()+` }
+  ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> ; schema:name ?name .
+}`)
+		if err != nil {
+			return out, err
+		}
+		for _, b := range bindings {
+			qid := strings.TrimPrefix(b["item"], wikidataEntityPrefix)
+			if name := strings.TrimSpace(b["name"]); qid != "" && name != "" {
+				out[qid] = name
+			}
+		}
+	}
+	return out, nil
+}
+
 // LookupDistributors returns the English labels of the distributors (P750)
 // Wikidata lists for TMDB movies, keyed by TMDB movie ID (sorted, deduped).
 // Movies Wikidata doesn't know, or without distributors, are absent.

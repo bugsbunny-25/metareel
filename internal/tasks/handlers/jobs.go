@@ -132,6 +132,18 @@ func TMDBPopularityImportJob(i *service.TMDBPopularityImporter) JobFunc {
 	}
 }
 
+func PageviewsImportJob(p *service.PageviewsImporter) JobFunc {
+	return func(ctx context.Context, payload tasks.JobPayload, run *Run) (any, error) {
+		return p.Run(ctx, payload.Force, run.Log)
+	}
+}
+
+func NetflixEngagementJob(n *service.NetflixEngagementImporter) JobFunc {
+	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
+		return n.Run(ctx, p.Force, p.URL, run.Log)
+	}
+}
+
 // MappingRefreshJob follows up mapping changes (see TitleMappingService.Refresh).
 func MappingRefreshJob(m *service.TitleMappingService) JobFunc {
 	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {

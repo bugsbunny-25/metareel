@@ -38,6 +38,10 @@ var taskTypeInfo = map[string]TaskTypeInfo{
 		Description: "Imports IMDb's daily title.ratings dataset (personal, non-commercial use) for the IMDb IDs metareel knows; used as the headline IMDb rating."},
 	tasks.TypeTMDBPopularityImport: {Label: "TMDB popularity export",
 		Description: "Records the daily TMDB popularity of the TMDB titles metareel knows from TMDB's daily ID exports (no API key needed; skipped when unchanged), for popularity history."},
+	tasks.TypeWikipediaPageviews: {Label: "Wikipedia pageviews",
+		Description: "Stores the daily English Wikipedia pageviews of every title with an article (found on Wikidata by the metadata job), since the last stored day (90 days for a new title); Force refetches the last week."},
+	tasks.TypeNetflixEngagement: {Label: "Netflix engagement reports",
+		Description: "Imports Netflix's \"What We Watched\" reports (hours viewed and views of every title, twice a year) from the list of report URLs (skipped when unchanged) and links them to Netflix Top 10 titles. Run with a url to add a new report."},
 	tasks.TypeMappingRefresh: {Label: "Mapping refresh",
 		Description: "Follows up mapping changes (queued automatically): shares mappings over links, fetches TMDB details and Wikidata IDs of the TMDB titles now mapped to, fills mapped titles' missing IMDb / Wikidata IDs and remaps season numbers. Run by hand, it shares mappings and fills IDs."},
 	tasks.TypeMaintenance: {Label: "Maintenance",
@@ -59,6 +63,7 @@ func (s *TaskScheduleAdminService) TaskTypes() []TaskTypeInfo {
 type RunJobInput struct {
 	TitleIDs []int64 `json:"title_ids,omitempty"` // titles.enrich (FlixPatrol title IDs) or netflix.titles.match (Netflix title IDs)
 	Force    bool    `json:"force,omitempty"`     // imports: re-import unchanged files
+	URL      string  `json:"url,omitempty"`       // netflix.engagement.import: a report to add
 }
 
 // RunJob enqueues an ad-hoc run of a non-FlixPatrol job type.
@@ -69,10 +74,19 @@ func (s *TaskScheduleAdminService) RunJob(ctx context.Context, taskType string, 
 	if len(in.TitleIDs) > 0 && taskType != tasks.TypeTitlesEnrich && taskType != tasks.TypeNetflixTitlesMatch {
 		return nil, &ValidationError{Message: "title_ids only apply to titles.enrich and netflix.titles.match"}
 	}
+	if in.URL != "" {
+		if taskType != tasks.TypeNetflixEngagement {
+			return nil, &ValidationError{Message: "url only applies to netflix.engagement.import"}
+		}
+		var err error
+		if in.URL, err = ValidEngagementURL(in.URL); err != nil {
+			return nil, err
+		}
+	}
 	if len(in.TitleIDs) > 500 {
 		return nil, &ValidationError{Message: "at most 500 title_ids"}
 	}
-	task, err := tasks.NewJobTask(taskType, tasks.JobPayload{TitleIDs: in.TitleIDs, Force: in.Force, RequestDelaySeconds: 5, Reason: "started from the admin API"})
+	task, err := tasks.NewJobTask(taskType, tasks.JobPayload{TitleIDs: in.TitleIDs, Force: in.Force, URL: in.URL, RequestDelaySeconds: 5, Reason: "started from the admin API"})
 	if err != nil {
 		return nil, &ValidationError{Message: err.Error()}
 	}

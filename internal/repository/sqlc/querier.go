@@ -17,6 +17,7 @@ type Querier interface {
 	// title); status '' keeps the match status; status pending (a title that lost
 	// its mapping) makes it due for matching now.
 	ApplyTitleMapping(ctx context.Context, arg ApplyTitleMappingParams) (Title, error)
+	ClearNetflixPremieres(ctx context.Context) error
 	// Netflix IDs copied from a Netflix title that is no longer mapped here.
 	ClearStaleTmdbNetflixIDs(ctx context.Context) (int64, error)
 	// IDs cleared by hand (1 = clear): they are filled again from TMDB,
@@ -24,6 +25,7 @@ type Querier interface {
 	ClearTmdbTitleIDs(ctx context.Context, arg ClearTmdbTitleIDsParams) error
 	CompleteTaskRun(ctx context.Context, arg CompleteTaskRunParams) error
 	CountIMDbRatings(ctx context.Context) (int64, error)
+	CountNetflixEngagement(ctx context.Context) ([]CountNetflixEngagementRow, error)
 	CountNetflixSeasonsBySource(ctx context.Context) ([]CountNetflixSeasonsBySourceRow, error)
 	CountNetflixTitles(ctx context.Context, arg CountNetflixTitlesParams) (int64, error)
 	CountNetflixTitlesByMatchStatus(ctx context.Context) ([]CountNetflixTitlesByMatchStatusRow, error)
@@ -49,6 +51,8 @@ type Querier interface {
 	DeleteChartRankings(ctx context.Context, arg DeleteChartRankingsParams) error
 	// One kind of a title's evidence, or all of it (kind '').
 	DeleteMappingEvidence(ctx context.Context, arg DeleteMappingEvidenceParams) (int64, error)
+	// Netflix "What We Watched" engagement reports.
+	DeleteNetflixEngagementPeriod(ctx context.Context, periodStart string) error
 	// Netflix matches made through a FlixPatrol title (whose match was cleared).
 	DeleteNetflixEvidenceVia(ctx context.Context, titleID sql.NullInt64) ([]int64, error)
 	DeleteNetflixMostPopular(ctx context.Context) error
@@ -111,6 +115,7 @@ type Querier interface {
 	GetWebhook(ctx context.Context, id int64) (Webhook, error)
 	GetWebhookDeliveryPayload(ctx context.Context, id int64) (string, error)
 	InsertMappingEvent(ctx context.Context, arg InsertMappingEventParams) error
+	InsertNetflixEngagement(ctx context.Context, arg InsertNetflixEngagementParams) error
 	InsertNetflixMostPopular(ctx context.Context, arg InsertNetflixMostPopularParams) error
 	InsertRanking(ctx context.Context, arg InsertRankingParams) error
 	InsertTitleLink(ctx context.Context, arg InsertTitleLinkParams) error
@@ -194,6 +199,8 @@ type Querier interface {
 	ListNetflixCountryWeeksForTitle(ctx context.Context, netflixTitleID int64) ([]ListNetflixCountryWeeksForTitleRow, error)
 	// (country, week) pairs present in the per-country Top 10, from a week.
 	ListNetflixCountryWeeksImported(ctx context.Context, fromWeek string) ([]ListNetflixCountryWeeksImportedRow, error)
+	// Report rows of the Netflix titles mapped to a TMDB title, newest period first.
+	ListNetflixEngagementForTmdb(ctx context.Context, arg ListNetflixEngagementForTmdbParams) ([]ListNetflixEngagementForTmdbRow, error)
 	ListNetflixGlobalByTmdb(ctx context.Context, arg ListNetflixGlobalByTmdbParams) ([]ListNetflixGlobalByTmdbRow, error)
 	// Global weekly rows with TMDB IDs in a week range, for calibration.
 	ListNetflixGlobalRange(ctx context.Context, arg ListNetflixGlobalRangeParams) ([]ListNetflixGlobalRangeRow, error)
@@ -217,6 +224,8 @@ type Querier interface {
 	// A title's seasons with their global Top 10 stats.
 	ListNetflixSeasonsForTitle(ctx context.Context, netflixTitleID int64) ([]ListNetflixSeasonsForTitleRow, error)
 	ListNetflixTitleIDsOnRef(ctx context.Context, arg ListNetflixTitleIDsOnRefParams) ([]int64, error)
+	// Netflix Top 10 titles and season titles by name, for linking report rows.
+	ListNetflixTitleNames(ctx context.Context) ([]ListNetflixTitleNamesRow, error)
 	ListNetflixTitleRowsByIDs(ctx context.Context, ids []int64) ([]NetflixTitle, error)
 	// Every week a title charted (global or an imported country).
 	ListNetflixTitleWeeks(ctx context.Context, id int64) ([]string, error)
@@ -246,6 +255,9 @@ type Querier interface {
 	ListNetflixTitlesForNetflixIDByIDs(ctx context.Context, ids []int64) ([]ListNetflixTitlesForNetflixIDByIDsRow, error)
 	// Watch provider events after an id, oldest first, with the TMDB title.
 	ListOfferEventsAfter(ctx context.Context, arg ListOfferEventsAfterParams) ([]ListOfferEventsAfterRow, error)
+	// TMDB titles with an English Wikipedia article and the last day stored.
+	ListPageviewTargets(ctx context.Context) ([]ListPageviewTargetsRow, error)
+	ListPageviews(ctx context.Context, arg ListPageviewsParams) ([]ListPageviewsRow, error)
 	// The slice must stay last: sqlc numbers the named params ?1..?3 and SQLite
 	// numbers the expanded "?" list after them.
 	ListRankingsByTitleIDs(ctx context.Context, arg ListRankingsByTitleIDsParams) ([]ListRankingsByTitleIDsRow, error)
@@ -314,8 +326,13 @@ type Querier interface {
 	// Matched TMDB titles never looked up on Wikidata, or not in the window.
 	ListTmdbRefsDueForWikidata(ctx context.Context, arg ListTmdbRefsDueForWikidataParams) ([]ListTmdbRefsDueForWikidataRow, error)
 	ListTmdbTVSeasons(ctx context.Context) ([]ListTmdbTVSeasonsRow, error)
+	// Stored TMDB titles without a Netflix premiere yet, with names and year.
+	ListTmdbTitleNames(ctx context.Context) ([]ListTmdbTitleNamesRow, error)
 	// Callers filter by kind (TMDB movie and TV IDs overlap).
 	ListTmdbTitlesByIDs(ctx context.Context, ids []string) ([]TmdbTitle, error)
+	// TMDB titles with a Wikidata ID whose English Wikipedia article was not
+	// looked up within the window ('-30 days'), never-checked first.
+	ListTmdbTitlesDueForEnwiki(ctx context.Context, arg ListTmdbTitlesDueForEnwikiParams) ([]ListTmdbTitlesDueForEnwikiRow, error)
 	ListTmdbWatchProviders(ctx context.Context, arg ListTmdbWatchProvidersParams) ([]TmdbWatchProvider, error)
 	// With ranked_on NULL, each provider's own latest chart is returned, so
 	// providers scraped at different times of day are all present.
@@ -327,6 +344,8 @@ type Querier interface {
 	// NULL means the title was not on that chart. days_in_top10 counts every
 	// date the title has been on the chart up to and including ranked_on.
 	ListTop10ByProvider(ctx context.Context, arg ListTop10ByProviderParams) ([]ListTop10ByProviderRow, error)
+	// Report rows of Netflix originals not linked to a Netflix Top 10 title.
+	ListUnlinkedNetflixOriginals(ctx context.Context) ([]ListUnlinkedNetflixOriginalsRow, error)
 	// Changes across titles since a time (observed_at >= since, a
 	// 'YYYY-MM-DD HH:MM:SS' UTC string), newest first, with the TMDB title.
 	ListWatchProviderEvents(ctx context.Context, arg ListWatchProviderEventsParams) ([]ListWatchProviderEventsRow, error)
@@ -376,12 +395,17 @@ type Querier interface {
 	RotateAPIKey(ctx context.Context, arg RotateAPIKeyParams) (ApiKey, error)
 	SaveDataImport(ctx context.Context, arg SaveDataImportParams) error
 	SaveFlixPatrolDetails(ctx context.Context, arg SaveFlixPatrolDetailsParams) error
+	SavePageview(ctx context.Context, arg SavePageviewParams) error
 	// distributors is a JSON list (NULL when Wikidata has none).
 	SaveTmdbDistributors(ctx context.Context, arg SaveTmdbDistributorsParams) error
+	SaveTmdbEnwiki(ctx context.Context, arg SaveTmdbEnwikiParams) error
 	// Changes whenever a name, a mapping or a chart changes, so the index is
 	// rebuilt only then.
 	SearchIndexStamp(ctx context.Context) (string, error)
 	SetAppSetting(ctx context.Context, arg SetAppSettingParams) error
+	// From report rows linked to Netflix Top 10 titles mapped to the TMDB title.
+	SetLinkedNetflixPremieres(ctx context.Context) (int64, error)
+	SetNetflixPremiere(ctx context.Context, arg SetNetflixPremiereParams) error
 	SetNetflixSeasonManual(ctx context.Context, arg SetNetflixSeasonManualParams) (NetflixSeason, error)
 	SetNetflixSeasonNetflixID(ctx context.Context, arg SetNetflixSeasonNetflixIDParams) error
 	SetNetflixTitleNetflixID(ctx context.Context, arg SetNetflixTitleNetflixIDParams) error

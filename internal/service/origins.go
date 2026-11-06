@@ -162,10 +162,16 @@ func ownerOf(name string, streaming bool) *mediaGroup {
 // ClassifyOrigin tells where a title on a provider's chart comes from. m is
 // its TMDB metadata (nil = unknown); movie selects the rules for films.
 func ClassifyOrigin(provider string, movie bool, m *repository.TmdbMetadata) OriginInfo {
-	if m == nil || len(m.Networks)+len(m.ProductionCompanies)+len(m.Distributors) == 0 {
+	netflixOriginal := m != nil && m.NetflixPremiere != nil && *m.NetflixPremiere != ""
+	if m == nil || (len(m.Networks)+len(m.ProductionCompanies)+len(m.Distributors) == 0 && !netflixOriginal) {
 		return OriginInfo{Origin: OriginUnknown}
 	}
 	group, own := providerGroup(provider)
+
+	// Netflix's own engagement reports date the premiere of its originals.
+	if netflixOriginal && group != nil && group.key == "netflix" {
+		return OriginInfo{Origin: OriginOriginal, Owner: "netflix", Reason: "Netflix engagement report: premiered " + *m.NetflixPremiere}
+	}
 
 	if group != nil {
 		// Made for the service: its network (TV), else its studio.
@@ -195,6 +201,9 @@ func ClassifyOrigin(provider string, movie bool, m *repository.TmdbMetadata) Ori
 	}
 
 	owner, reason := titleOwner(movie, m)
+	if owner == nil && netflixOriginal {
+		owner, reason = netflixGroup(), "Netflix engagement report: premiered "+*m.NetflixPremiere
+	}
 	switch {
 	case owner == nil && !hasSource(movie, m):
 		// Nothing says who made or carries it (a film Wikidata has no
@@ -216,6 +225,15 @@ func hasSource(movie bool, m *repository.TmdbMetadata) bool {
 		return len(m.Distributors) > 0
 	}
 	return len(m.Networks) > 0
+}
+
+func netflixGroup() *mediaGroup {
+	for i := range mediaGroups {
+		if mediaGroups[i].key == "netflix" {
+			return &mediaGroups[i]
+		}
+	}
+	return nil
 }
 
 func ownerKey(g *mediaGroup) string {
