@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -179,14 +180,65 @@ func (s *TaskScheduleAdminService) Backfill(ctx context.Context, in BackfillInpu
 }
 
 func (s *TaskScheduleAdminService) enqueue(ctx context.Context, task *asynq.Task, opts []asynq.Option) error {
+	return s.enqueueUnique(ctx, task, opts, "the same job is already queued, running or retrying")
+}
+
+// archivedScanPages caps the archived tasks scanned for a failed duplicate
+// (100 per page).
+const archivedScanPages = 20
+
+// enqueueUnique enqueues a unique task. When an identical task holds the
+// lock only because it failed (archived), that task is deleted, which frees
+// the lock, and the task is enqueued again; one queued, running or retrying
+// is a conflict.
+func (s *TaskScheduleAdminService) enqueueUnique(ctx context.Context, task *asynq.Task, opts []asynq.Option, conflict string) error {
 	if s.asynq == nil {
 		return fmt.Errorf("asynq client not configured")
 	}
-	if _, err := s.asynq.EnqueueContext(ctx, task, opts...); err != nil {
+	_, err := s.asynq.EnqueueContext(ctx, task, opts...)
+	if errors.Is(err, asynq.ErrDuplicateTask) && s.archived != nil {
+		if freed, ferr := s.freeFailedDuplicate(task); ferr != nil {
+			return fmt.Errorf("free failed run: %w", ferr)
+		} else if freed {
+			_, err = s.asynq.EnqueueContext(ctx, task, opts...)
+		}
+	}
+	if err != nil {
 		if errors.Is(err, asynq.ErrDuplicateTask) {
-			return &ConflictError{Message: "the same job is already queued, running or retrying"}
+			return &ConflictError{Message: conflict}
 		}
 		return fmt.Errorf("enqueue task: %w", err)
 	}
 	return nil
+}
+
+// freeFailedDuplicate deletes archived (failed) tasks with the same type and
+// payload as task; it reports whether it deleted any.
+func (s *TaskScheduleAdminService) freeFailedDuplicate(task *asynq.Task) (bool, error) {
+	queue := s.queueName
+	if queue == "" {
+		queue = "default"
+	}
+	freed := false
+	for page := 1; page <= archivedScanPages; page++ {
+		infos, err := s.archived.ListArchivedTasks(queue, asynq.PageSize(100), asynq.Page(page))
+		if err != nil {
+			if errors.Is(err, asynq.ErrQueueNotFound) {
+				return false, nil
+			}
+			return freed, err
+		}
+		for _, info := range infos {
+			if info.Type == task.Type() && bytes.Equal(info.Payload, task.Payload()) {
+				if err := s.archived.DeleteTask(queue, info.ID); err != nil && !errors.Is(err, asynq.ErrTaskNotFound) {
+					return freed, err
+				}
+				freed = true
+			}
+		}
+		if len(infos) < 100 {
+			break
+		}
+	}
+	return freed, nil
 }

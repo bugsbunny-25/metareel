@@ -139,7 +139,11 @@ Every background job is an asynq task type run from a DB schedule
 (`task_schedules.task_type`) or on demand (`POST /api/v1/admin/jobs/:type/run`,
 `/backfill`, a schedule's run-now). `tasks.ForSchedule` builds the task and its
 options for both paths; every task is enqueued with `asynq.Unique`, so the same
-run can't be queued twice (409 from the API). `handlers.Runner` records each
+run can't be queued twice (409 from the API). asynq archives a task whose
+last attempt failed and keeps its lock until it expires (the job's timeout),
+so manual runs (`/jobs/:type/run`, a schedule's run-now, `/backfill`) first
+delete an identical archived task (`enqueueUnique`, through the inspector)
+and enqueue again; only a queued, running or retrying copy is a conflict. `handlers.Runner` records each
 attempt in `task_runs` (status `started | succeeded | partial | failed`,
 target counts, JSON `summary`) and `task_run_logs`, and posts an alert when the
 last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.

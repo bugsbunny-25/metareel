@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -25,18 +24,42 @@ func (e *ConflictError) Error() string { return e.Message }
 
 type TaskScheduleAdminService struct {
 	repo      *repository.TaskScheduleRepository
-	asynq     *asynq.Client
+	asynq     taskEnqueuer
+	archived  archivedTasks // optional: frees the lock of a failed identical run
 	queueName string
 	now       func() time.Time
 }
 
+// taskEnqueuer enqueues tasks (asynq.Client).
+type taskEnqueuer interface {
+	EnqueueContext(ctx context.Context, task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
+
+// archivedTasks lists and deletes archived tasks (asynq.Inspector).
+type archivedTasks interface {
+	ListArchivedTasks(queue string, opts ...asynq.ListOption) ([]*asynq.TaskInfo, error)
+	DeleteTask(queue, id string) error
+}
+
+// WithInspector lets manual runs replace a failed run of the same job: asynq
+// archives a task whose last attempt failed and keeps its uniqueness lock
+// until the lock expires (the job's timeout, up to 2 hours), so the same job
+// could not be run again by hand until then.
+func (s *TaskScheduleAdminService) WithInspector(i archivedTasks) *TaskScheduleAdminService {
+	s.archived = i
+	return s
+}
+
 func NewTaskScheduleAdminService(repo *repository.TaskScheduleRepository, asynqClient *asynq.Client, queueName string) *TaskScheduleAdminService {
-	return &TaskScheduleAdminService{
+	s := &TaskScheduleAdminService{
 		repo:      repo,
-		asynq:     asynqClient,
 		queueName: queueName,
 		now:       time.Now,
 	}
+	if asynqClient != nil { // a nil *asynq.Client must stay a nil interface
+		s.asynq = asynqClient
+	}
+	return s
 }
 
 type CreateTaskScheduleInput struct {
@@ -162,14 +185,8 @@ func (s *TaskScheduleAdminService) RunTaskScheduleNow(ctx context.Context, sched
 	if err != nil {
 		return nil, &ValidationError{Message: err.Error()}
 	}
-	if s.asynq == nil {
-		return nil, fmt.Errorf("asynq client not configured")
-	}
-	if _, err := s.asynq.EnqueueContext(ctx, task, opts...); err != nil {
-		if errors.Is(err, asynq.ErrDuplicateTask) {
-			return nil, &ConflictError{Message: "a run of this schedule is already queued, running or retrying"}
-		}
-		return nil, fmt.Errorf("enqueue task: %w", err)
+	if err := s.enqueueUnique(ctx, task, opts, "a run of this schedule is already queued, running or retrying"); err != nil {
+		return nil, err
 	}
 
 	return &RunTaskNowResponse{

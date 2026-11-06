@@ -90,7 +90,9 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	ratings := newRatingsService(log, cfg, db, flixRepo).WithIMDbDataset(importsRepo)
 	taskBootstrap := taskruntime.Build(log, cfg, db, taskruntime.Deps{Asynq: asynqClient, Ratings: ratings})
 
-	taskScheduleAdmin := service.NewTaskScheduleAdminService(taskScheduleRepo, asynqClient, cfg.Asynq.Queue)
+	inspector := asynq.NewInspector(redisOpt)
+	defer inspector.Close()
+	taskScheduleAdmin := service.NewTaskScheduleAdminService(taskScheduleRepo, asynqClient, cfg.Asynq.Queue).WithInspector(inspector)
 
 	worker := asynq.NewServer(redisOpt, asynq.Config{
 		Concurrency: cfg.Asynq.Concurrency,
