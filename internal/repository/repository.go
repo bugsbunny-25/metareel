@@ -13,6 +13,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/pressly/goose/v3"
 
@@ -36,6 +37,32 @@ func Open(dsn string) (*sql.DB, error) {
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping sqlite: %w", err)
+	}
+	return db, nil
+}
+
+// OpenReadOnly opens a pool of up to conns read-only connections to the same
+// database as dsn (every connection runs `PRAGMA query_only`). In WAL mode
+// these read alongside the single writer from Open, so API reads no longer
+// queue behind job writes or each other. It returns (nil, nil) when conns < 1
+// or dsn is an in-memory database (a second handle would see another DB).
+func OpenReadOnly(dsn string, conns int) (*sql.DB, error) {
+	if conns < 1 || strings.Contains(dsn, ":memory:") || strings.Contains(dsn, "mode=memory") {
+		return nil, nil
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	db, err := sql.Open("sqlite", dsn+sep+"_pragma=query_only(1)")
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite reader: %w", err)
+	}
+	db.SetMaxOpenConns(conns)
+	db.SetMaxIdleConns(conns)
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("ping sqlite reader: %w", err)
 	}
 	return db, nil
 }

@@ -53,6 +53,9 @@ type Log struct {
 type Database struct {
 	URL           string `env:"DATABASE_URL" envDefault:"file:./data/metareel.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"`
 	MigrationsDir string `env:"DATABASE_MIGRATIONS_DIR" envDefault:"db/migrations"`
+	// ReadConns sizes the read-only pool that serves the public read API
+	// next to the single writer connection; 0 serves reads from the writer.
+	ReadConns int `env:"DATABASE_READ_CONNS" envDefault:"4"`
 }
 
 type Redis struct {

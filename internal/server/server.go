@@ -52,12 +52,32 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	log.Info("database ready", slog.String("dsn", cfg.Database.URL))
 
+	// Read-only pool for the read API (charts, analytics, title overviews):
+	// WAL lets these read while the single writer connection is busy.
+	readDB, err := repository.OpenReadOnly(cfg.Database.URL, cfg.Database.ReadConns)
+	if err != nil {
+		return fmt.Errorf("open read db: %w", err)
+	}
+	if readDB != nil {
+		defer func() {
+			if err := readDB.Close(); err != nil {
+				log.Warn("sqlite reader close", slog.Any("err", err))
+			}
+		}()
+		log.Info("database read pool ready", slog.Int("conns", cfg.Database.ReadConns))
+	} else {
+		readDB = db
+	}
+
 	flixRepo := repository.NewFlixPatrolRepository(db)
 	taskScheduleRepo := repository.NewTaskScheduleRepository(db)
 	importsRepo := repository.NewImportsRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db)
-	analyticsRepo := repository.NewAnalyticsRepository(db)
-	top10Read := service.NewTop10ReadService(flixRepo)
+	// Repositories over the read pool, for services that only read.
+	readFlixRepo := repository.NewFlixPatrolRepository(readDB)
+	readMetadataRepo := repository.NewMetadataRepository(readDB)
+	analyticsRepo := repository.NewAnalyticsRepository(readDB)
+	top10Read := service.NewTop10ReadService(readFlixRepo)
 
 	redisOpt := asynq.RedisClientOpt{
 		Addr:     cfg.Redis.Addr,
@@ -132,8 +152,8 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Health:     service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
 
 		Charts:    service.NewChartsService(analyticsRepo),
-		Overview:  service.NewTitleOverviewService(analyticsRepo, flixRepo, metadataRepo, ratings).WithMapping(taskBootstrap.Mapping),
-		Analytics: service.NewAnalyticsService(analyticsRepo, metadataRepo, importsRepo, repository.NewRatingsRepository(db)),
+		Overview:  service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping),
+		Analytics: service.NewAnalyticsService(analyticsRepo, readMetadataRepo, repository.NewImportsRepository(readDB), repository.NewRatingsRepository(readDB)),
 		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,
 			taskScheduleRepo, taskBootstrap.Maintenance).WithMapping(repository.NewMappingRepository(db)),
 	}
