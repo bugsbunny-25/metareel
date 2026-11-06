@@ -790,6 +790,48 @@ paths:
                 $ref: "#/components/schemas/ChartChangesResponse"
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /api/v1/availability/changes:
+    get:
+      operationId: listAvailabilityChanges
+      summary: Titles that arrived on or left a service (across titles)
+      description: >-
+        Watch provider changes observed since `since` (default: 7 days ago),
+        newest first, with the TMDB title. See the per-title
+        `/availability/history` for how changes are detected.
+      parameters:
+        - name: since
+          in: query
+          schema: { type: string, format: date-time, example: "2026-11-01T00:00:00Z" }
+        - name: country
+          in: query
+          schema: { type: string, example: US }
+        - name: event
+          in: query
+          schema: { type: string, enum: [added, removed] }
+        - name: monetization
+          in: query
+          schema: { type: string, enum: [flatrate, free, ads, rent, buy] }
+        - name: provider_id
+          in: query
+          description: TMDB watch provider ID (e.g. 8 = Netflix)
+          schema: { type: integer }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+      responses:
+        "200":
+          description: Offer changes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  since: { type: string, format: date-time }
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/OfferEvent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/v1/movers:
     get:
       operationId: getMovers
@@ -1056,6 +1098,79 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404":
           description: TMDB metadata not fetched yet (needs TMDB_API_KEY and the metadata job)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/tmdb/{kind}/{id}/availability/history:
+    get:
+      operationId: getTitleAvailabilityHistory
+      summary: When a title arrived on or left each service, per country
+      description: >-
+        Watch provider offers that appeared (`added`) or disappeared
+        (`removed`) between two TMDB refreshes of the title (titles.metadata,
+        charting titles every 3 days). The change happened after
+        `previous_check_at` and by `observed_at` (UTC). A title's first
+        refresh is the baseline and records nothing. Newest first, up to 500.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+        - name: country
+          in: query
+          schema: { type: string, example: US }
+      responses:
+        "200":
+          description: Offer changes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kind: { type: string }
+                  tmdb_id: { type: string }
+                  country: { type: string, nullable: true }
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/OfferEvent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404":
+          description: Unknown TMDB title
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/tmdb/{kind}/{id}/history:
+    get:
+      operationId: getTitleHistory
+      summary: A title's ratings and TMDB popularity over time
+      description: >-
+        `imdb` (IMDb's daily dataset) and `ratings` (per provider and source,
+        from ratings refreshes) hold a point whenever a value changed, so each
+        is a step function; the first point may be before `from` (the value in
+        effect at `from`). `popularity` has a point per day of TMDB's daily
+        export (tmdb.popularity.import). History starts when this version was
+        deployed. Default range: the last 90 days; at most 366 days.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: History
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleHistoryResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404":
+          description: Unknown TMDB title
           content:
             application/json:
               schema:
@@ -1635,6 +1750,60 @@ components:
         link: { type: string, nullable: true, description: "Always null here; see the country's link" }
         fetched_at: { type: string, format: date-time }
 
+    OfferEvent:
+      type: object
+      properties:
+        id: { type: integer }
+        tmdb_kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        title: { type: string, description: "TMDB title (feed only)" }
+        release_date: { type: string, description: "feed only" }
+        poster_path: { type: string, description: "feed only" }
+        country: { type: string }
+        monetization: { type: string, enum: [flatrate, free, ads, rent, buy] }
+        provider_id: { type: integer }
+        provider_name: { type: string }
+        event: { type: string, enum: [added, removed] }
+        previous_check_at: { type: string, description: "UTC YYYY-MM-DD HH:MM:SS; the change happened after this" }
+        observed_at: { type: string, description: "UTC YYYY-MM-DD HH:MM:SS; the change was seen at this refresh" }
+    RatingPoint:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        value: { type: number }
+        votes: { type: integer, nullable: true }
+    TitleHistoryResponse:
+      type: object
+      properties:
+        kind: { type: string }
+        tmdb_id: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        imdb:
+          type: object
+          nullable: true
+          properties:
+            imdb_id: { type: string }
+            points:
+              type: array
+              items: { $ref: "#/components/schemas/RatingPoint" }
+        ratings:
+          type: array
+          items:
+            type: object
+            properties:
+              provider: { type: string, example: rottentomatoes }
+              source: { type: string, example: tomatoes }
+              points:
+                type: array
+                items: { $ref: "#/components/schemas/RatingPoint" }
+        popularity:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              popularity: { type: number }
     AvailabilityResponse:
       type: object
       properties:

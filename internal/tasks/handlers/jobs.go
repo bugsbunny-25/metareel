@@ -126,6 +126,12 @@ func IMDbImportJob(i *service.IMDbImporter) JobFunc {
 	}
 }
 
+func TMDBPopularityImportJob(i *service.TMDBPopularityImporter) JobFunc {
+	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
+		return i.Run(ctx, p.Force, run.Log)
+	}
+}
+
 // MappingRefreshJob follows up mapping changes (see TitleMappingService.Refresh).
 func MappingRefreshJob(m *service.TitleMappingService) JobFunc {
 	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {

@@ -154,6 +154,7 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Charts:    service.NewChartsService(analyticsRepo),
 		Overview:  service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping),
 		Analytics: service.NewAnalyticsService(analyticsRepo, readMetadataRepo, repository.NewImportsRepository(readDB), repository.NewRatingsRepository(readDB)),
+		History:   service.NewHistoryService(repository.NewHistoryRepository(readDB), readMetadataRepo),
 		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,
 			taskScheduleRepo, taskBootstrap.Maintenance).WithMapping(repository.NewMappingRepository(db)),
 	}

@@ -270,6 +270,52 @@ func (h *Handler) GetTitleAvailability(c *echo.Context) error {
 	return writeData(c, out, err)
 }
 
+// GetTitleHistory: GET /api/v1/titles/tmdb/{kind}/{id}/history[?from=&to=]
+func (h *Handler) GetTitleHistory(c *echo.Context) error {
+	ref, err := h.parseRef(c)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	from, to, err := parseRange(c)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.History.TitleHistory(c.Request().Context(), ref, service.TitleHistoryQuery{From: from, To: to})
+	return writeData(c, out, err)
+}
+
+// GetTitleAvailabilityHistory: GET /api/v1/titles/tmdb/{kind}/{id}/availability/history[?country=]
+func (h *Handler) GetTitleAvailabilityHistory(c *echo.Context) error {
+	ref, err := h.parseRef(c)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	out, err := h.History.TitleAvailabilityHistory(c.Request().Context(), ref, c.QueryParam("country"))
+	return writeData(c, out, err)
+}
+
+// GetAvailabilityChanges: GET /api/v1/availability/changes[?since=&country=&event=&monetization=&provider_id=&limit=]
+func (h *Handler) GetAvailabilityChanges(c *echo.Context) error {
+	q := service.AvailabilityChangesQuery{
+		Country: c.QueryParam("country"), Event: c.QueryParam("event"),
+		Monetization: c.QueryParam("monetization"), ProviderID: c.QueryParam("provider_id"),
+	}
+	if raw := c.QueryParam("since"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return badRequest(c, errors.New("invalid since, expected RFC 3339 (e.g. 2026-10-09T12:00:00Z)"))
+		}
+		q.Since = &t
+	}
+	limit, err := parseIntParam(c, "limit", 200)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	q.Limit = limit
+	out, err := h.History.AvailabilityChanges(c.Request().Context(), q)
+	return writeData(c, out, err)
+}
+
 // GetTitleNetflix: GET /api/v1/titles/tmdb/{kind}/{id}/netflix
 func (h *Handler) GetTitleNetflix(c *echo.Context) error {
 	ref, err := h.parseRef(c)

@@ -111,6 +111,7 @@ type Querier interface {
 	InsertTitleLink(ctx context.Context, arg InsertTitleLinkParams) error
 	InsertTitleRatingSource(ctx context.Context, arg InsertTitleRatingSourceParams) error
 	InsertTmdbWatchProvider(ctx context.Context, arg InsertTmdbWatchProviderParams) error
+	InsertWatchProviderEvent(ctx context.Context, arg InsertWatchProviderEventParams) error
 	LatestNetflixCountryWeek(ctx context.Context, country string) (string, error)
 	LatestNetflixGlobalWeek(ctx context.Context) (string, error)
 	// API keys for the public API, and admin-editable settings.
@@ -147,9 +148,14 @@ type Querier interface {
 	// Titles whose deciding evidence came with an IMDb ID other than their TMDB
 	// title's: the match or TMDB's IMDb ID is wrong.
 	ListIMDbMismatches(ctx context.Context, limit int64) ([]ListIMDbMismatchesRow, error)
+	// Points up to the end date; the caller keeps the last one before the start
+	// date as the series' starting value.
+	ListIMDbRatingHistory(ctx context.Context, arg ListIMDbRatingHistoryParams) ([]ListIMDbRatingHistoryRow, error)
 	ListIMDbRatings(ctx context.Context, ids []string) ([]ImdbRating, error)
 	// Every IMDb ID metareel knows, for filtering the IMDb ratings dataset.
 	ListKnownIMDbIDs(ctx context.Context) ([]sql.NullString, error)
+	// Every TMDB title metareel stores, for filtering TMDB's daily exports.
+	ListKnownTmdbRefs(ctx context.Context) ([]ListKnownTmdbRefsRow, error)
 	ListLastSuccessPerSchedule(ctx context.Context) ([]ListLastSuccessPerScheduleRow, error)
 	// Latest stored date and scrape time of each country and provider chart.
 	ListLatestChartDates(ctx context.Context) ([]ListLatestChartDatesRow, error)
@@ -236,7 +242,9 @@ type Querier interface {
 	ListTitleLinks(ctx context.Context) ([]ListTitleLinksRow, error)
 	ListTitleLinksForFlixPatrolIDs(ctx context.Context, ids []int64) ([]ListTitleLinksForFlixPatrolIDsRow, error)
 	ListTitleLinksForNetflixIDs(ctx context.Context, ids []int64) ([]ListTitleLinksForNetflixIDsRow, error)
+	ListTitleRatingHistory(ctx context.Context, arg ListTitleRatingHistoryParams) ([]ListTitleRatingHistoryRow, error)
 	ListTitleRatingSources(ctx context.Context, arg ListTitleRatingSourcesParams) ([]ListTitleRatingSourcesRow, error)
+	ListTitleWatchProviderEvents(ctx context.Context, arg ListTitleWatchProviderEventsParams) ([]ListTitleWatchProviderEventsRow, error)
 	// sort: name_asc | name_desc | updated_desc | updated_asc | last_ranked_desc |
 	// last_ranked_asc | rankings_desc | rankings_asc | id_asc; anything else is
 	// newest first.
@@ -257,6 +265,7 @@ type Querier interface {
 	// that differs) | both (titles from both sources) | netflix_only |
 	// flixpatrol_only | manual (a title fixed by hand). Newest activity first.
 	ListTmdbMappings(ctx context.Context, arg ListTmdbMappingsParams) ([]ListTmdbMappingsRow, error)
+	ListTmdbPopularityHistory(ctx context.Context, arg ListTmdbPopularityHistoryParams) ([]ListTmdbPopularityHistoryRow, error)
 	// Matched titles on any chart since a date (YYYY-MM-DD), most recent first.
 	ListTmdbRefsChartingSince(ctx context.Context, arg ListTmdbRefsChartingSinceParams) ([]ListTmdbRefsChartingSinceRow, error)
 	// Matched TMDB titles (from FlixPatrol or Netflix titles) whose details are
@@ -286,10 +295,16 @@ type Querier interface {
 	// NULL means the title was not on that chart. days_in_top10 counts every
 	// date the title has been on the chart up to and including ranked_on.
 	ListTop10ByProvider(ctx context.Context, arg ListTop10ByProviderParams) ([]ListTop10ByProviderRow, error)
+	// Changes across titles since a time (observed_at >= since, a
+	// 'YYYY-MM-DD HH:MM:SS' UTC string), newest first, with the TMDB title.
+	ListWatchProviderEvents(ctx context.Context, arg ListWatchProviderEventsParams) ([]ListWatchProviderEventsRow, error)
 	MarkTmdbOffersFetched(ctx context.Context, arg MarkTmdbOffersFetchedParams) error
 	// Records a Wikidata lookup (found or not), creating the row if needed.
 	MarkTmdbTitleWikidataFetched(ctx context.Context, arg MarkTmdbTitleWikidataFetchedParams) error
 	RankingStats(ctx context.Context) (RankingStatsRow, error)
+	// History of ratings, TMDB popularity and watch providers (migration 000017).
+	// Rating rows are written only when the value changed since the previous row.
+	RecordIMDbRating(ctx context.Context, arg RecordIMDbRatingParams) error
 	// One automatic matching attempt of a Netflix title (see
 	// RecordTitleMatchAttempt).
 	RecordNetflixMatchAttempt(ctx context.Context, arg RecordNetflixMatchAttemptParams) error
@@ -297,6 +312,8 @@ type Querier interface {
 	// title without a result is unmatched until retry_after (a SQLite datetime
 	// modifier). Never touches a title fixed by hand.
 	RecordTitleMatchAttempt(ctx context.Context, arg RecordTitleMatchAttemptParams) (Title, error)
+	RecordTitleRating(ctx context.Context, arg RecordTitleRatingParams) error
+	RecordTmdbPopularity(ctx context.Context, arg RecordTmdbPopularityParams) error
 	// One Rotten Tomatoes search for a TMDB title; retry after retry_after (a
 	// SQLite datetime modifier). A slug found is stored with UpsertTmdbTitleIDs.
 	RecordTmdbRTAttempt(ctx context.Context, arg RecordTmdbRTAttemptParams) error

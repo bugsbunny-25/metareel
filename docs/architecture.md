@@ -152,7 +152,8 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | `ratings.prewarm` | `RatingsService.Prewarm` | Charting titles' expired ratings |
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
-| `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz` |
+| `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz`; known IDs also go to `imdb_rating_history` when changed |
+| `tmdb.popularity.import` | `TMDBPopularityImporter` | TMDB daily ID exports (`movie_ids_MM_DD_YYYY.json.gz`, `tv_series_ids_…`): popularity of known TMDB titles into `tmdb_popularity_history`; yesterday's file until today's is out |
 | `mapping.refresh` | `TitleMappingService.Refresh` | Queued by the mapping writer after mapping changes (payload: `tmdb_refs`, `netflix_title_ids`; not unique): TMDB details (skipped if fetched within 24 h and an IMDb ID is known) + Wikidata IDs (titles never looked up; the metadata job rechecks the rest) of the TMDB titles now mapped to, seasons of the Netflix titles that changed or sit on those TMDB titles, ranking season tags. Run by hand (empty payload) it first runs a mapping sync |
 | `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, `PRAGMA optimize` |
 
@@ -468,6 +469,9 @@ Added since the diagram below:
 | `netflix_seasons` | One row per Netflix season title: `season_number`, `season_source` (parsed / tmdb_name / number / tmdb_air_date / tmdb_single / manual), the season's own `netflix_id` |
 | `tmdb_titles.seasons`, `rankings.season_source` | TMDB season list (JSON) of TV shows; where a ranking's season came from (chart / netflix / tmdb_air_date) |
 | `imdb_ratings` | IMDb dataset ratings (known IMDb IDs by default) |
+| `imdb_rating_history`, `title_rating_history` | Rating history (migration 17): IMDb dataset rating + votes per day, and each provider's rating sources (from `SaveTitleRatings`), written only when the value changed since the previous row (step series; `/history` adds the point in effect at `from`) |
+| `tmdb_popularity_history` | TMDB popularity per title per day from the daily exports |
+| `watch_provider_events` | Offers that appeared / disappeared between two TMDB refreshes of a title (`added` / `removed`, `previous_check_at` → `observed_at`), computed in `MetadataRepository.SaveDetails` by diffing the stored providers; a title's first refresh is the baseline (no events) |
 | `data_imports` | Last imported ETag / Last-Modified per file |
 | `task_schedules` (new columns) | `backfill_days`, `recheck_hours`; `task_type` validated in Go |
 | `task_runs` (new columns) | nullable `schedule_id`, `targets_*` counts, `summary` JSON; status adds `partial` |
@@ -771,7 +775,7 @@ metareel/
 No CGO dependency means the final Docker image is built on `scratch` and is fully static (~15–20 MB). The trade-off is that `modernc` is slightly slower than `mattn/go-sqlite3` for high-throughput write workloads — acceptable here since rankings are written by background jobs, not hot paths.
 
 **Single SQLite writer connection, separate read pool**
-`SetMaxOpenConns(1)` serializes all writes. Combined with WAL mode (reads don't block the writer), this eliminates `SQLITE_BUSY` under concurrent API + worker load without needing a mutex. Read-only services (charts, top 10, analytics, title overviews) use a second handle (`repository.OpenReadOnly`, `DATABASE_READ_CONNS` connections, each `PRAGMA query_only`) so API reads don't queue behind job writes or each other; services that also write (ratings, admin, jobs) stay on the writer. A write through the read pool fails with "readonly database".
+`SetMaxOpenConns(1)` serializes all writes. Combined with WAL mode (reads don't block the writer), this eliminates `SQLITE_BUSY` under concurrent API + worker load without needing a mutex. Read-only services (charts, top 10, analytics, title overviews, history) use a second handle (`repository.OpenReadOnly`, `DATABASE_READ_CONNS` connections, each `PRAGMA query_only`) so API reads don't queue behind job writes or each other; services that also write (ratings, admin, jobs) stay on the writer. A write through the read pool fails with "readonly database".
 
 **Asynq over a simpler cron package**
 Asynq gives persistent, Redis-backed job state, retries with backoff, task deduplication, and the `PeriodicTaskManager` which can reload schedules from the DB every minute — meaning schedule changes take effect without a restart.

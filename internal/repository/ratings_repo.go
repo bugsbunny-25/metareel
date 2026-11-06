@@ -104,6 +104,12 @@ func (r *RatingsRepository) SaveTitleRatings(ctx context.Context, in TitleRating
 			}); err != nil {
 				return nil, nil, fmt.Errorf("insert %s rating source %s: %w", provider, s.Source, err)
 			}
+			if err := q.RecordTitleRating(ctx, sqlc.RecordTitleRatingParams{
+				TmdbKind: in.TmdbKind, TmdbID: in.TmdbID, Provider: provider, Source: s.Source,
+				CapturedOn: FormatDate(s.FetchedAt), Value: s.Value, Votes: toNullInt64(s.Votes),
+			}); err != nil {
+				return nil, nil, fmt.Errorf("record %s rating history %s: %w", provider, s.Source, err)
+			}
 		}
 	}
 

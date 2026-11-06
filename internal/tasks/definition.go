@@ -17,6 +17,7 @@ const (
 	TypeNetflixTop10Import    = "netflix.top10.import"
 	TypeNetflixTitlesMatch    = "netflix.titles.match"
 	TypeIMDbRatingsImport     = "imdb.ratings.import"
+	TypeTMDBPopularityImport  = "tmdb.popularity.import"
 	TypeMaintenance           = "maintenance"
 	// TypeMappingRefresh follows mapping changes: TMDB details and IDs of
 	// the TMDB titles now mapped to, season numbers of Netflix titles that
@@ -33,6 +34,7 @@ var Types = []string{
 	TypeNetflixTop10Import,
 	TypeNetflixTitlesMatch,
 	TypeIMDbRatingsImport,
+	TypeTMDBPopularityImport,
 	TypeMappingRefresh,
 	TypeMaintenance,
 }
@@ -57,7 +59,7 @@ func Timeout(taskType string) time.Duration {
 	switch taskType {
 	case TypeFlixPatrolScheduleRun, TypeTitlesEnrich:
 		return FlixPatrolTop10Timeout
-	case TypeIMDbRatingsImport, TypeNetflixTop10Import, TypeNetflixTitlesMatch, TypeTitlesMetadata:
+	case TypeIMDbRatingsImport, TypeTMDBPopularityImport, TypeNetflixTop10Import, TypeNetflixTitlesMatch, TypeTitlesMetadata:
 		return time.Hour
 	default:
 		return 30 * time.Minute

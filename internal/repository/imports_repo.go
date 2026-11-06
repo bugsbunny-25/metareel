@@ -269,14 +269,28 @@ type IMDbRating struct {
 	Rating     float64   `json:"rating"`
 	Votes      int64     `json:"votes"`
 	ImportedAt time.Time `json:"imported_at"`
+	// History records the rating in imdb_rating_history too (titles
+	// metareel knows; the dataset can be imported whole).
+	History bool `json:"-"`
 }
 
 // SaveIMDbRatings upserts ratings in one transaction.
+// SaveIMDbRatings stores dataset ratings; rows with History set also go to
+// imdb_rating_history (dated today, UTC) when they changed.
 func (r *ImportsRepository) SaveIMDbRatings(ctx context.Context, rows []IMDbRating) error {
+	today := FormatDate(time.Now())
 	return r.inTx(ctx, func(q *sqlc.Queries) error {
 		for _, row := range rows {
 			if err := q.UpsertIMDbRating(ctx, sqlc.UpsertIMDbRatingParams{ImdbID: row.IMDbID, AverageRating: row.Rating, NumVotes: row.Votes}); err != nil {
 				return fmt.Errorf("upsert imdb rating %s: %w", row.IMDbID, err)
+			}
+			if !row.History {
+				continue
+			}
+			if err := q.RecordIMDbRating(ctx, sqlc.RecordIMDbRatingParams{
+				ImdbID: row.IMDbID, CapturedOn: today, AverageRating: row.Rating, NumVotes: row.Votes,
+			}); err != nil {
+				return fmt.Errorf("record imdb rating history %s: %w", row.IMDbID, err)
 			}
 		}
 		return nil

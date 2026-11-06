@@ -31,6 +31,7 @@ type Handler struct {
 	Overview    *service.TitleOverviewService
 	Analytics   *service.AnalyticsService
 	DataQuality *service.DataQualityService
+	History     *service.HistoryService
 }
 
 // Live is a lightweight liveness endpoint.

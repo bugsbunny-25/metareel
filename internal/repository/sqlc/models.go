@@ -55,6 +55,13 @@ type ImdbRating struct {
 	ImportedAt    time.Time `json:"imported_at"`
 }
 
+type ImdbRatingHistory struct {
+	ImdbID        string  `json:"imdb_id"`
+	CapturedOn    string  `json:"captured_on"`
+	AverageRating float64 `json:"average_rating"`
+	NumVotes      int64   `json:"num_votes"`
+}
+
 type MappingEvent struct {
 	ID           int64          `json:"id"`
 	SubjectType  string         `json:"subject_type"`
@@ -284,6 +291,16 @@ type TitleRating struct {
 	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
+type TitleRatingHistory struct {
+	TmdbKind   string        `json:"tmdb_kind"`
+	TmdbID     string        `json:"tmdb_id"`
+	Provider   string        `json:"provider"`
+	Source     string        `json:"source"`
+	CapturedOn string        `json:"captured_on"`
+	Value      float64       `json:"value"`
+	Votes      sql.NullInt64 `json:"votes"`
+}
+
 type TitleRatingSource struct {
 	ID        int64          `json:"id"`
 	TmdbKind  string         `json:"tmdb_kind"`
@@ -294,6 +311,13 @@ type TitleRatingSource struct {
 	Votes     sql.NullInt64  `json:"votes"`
 	Url       sql.NullString `json:"url"`
 	FetchedAt time.Time      `json:"fetched_at"`
+}
+
+type TmdbPopularityHistory struct {
+	TmdbKind   string  `json:"tmdb_kind"`
+	TmdbID     string  `json:"tmdb_id"`
+	CapturedOn string  `json:"captured_on"`
+	Popularity float64 `json:"popularity"`
 }
 
 type TmdbTitle struct {
@@ -355,4 +379,17 @@ type TmdbWatchProvider struct {
 	Link            sql.NullString `json:"link"`
 	FetchedAt       time.Time      `json:"fetched_at"`
 	Url             sql.NullString `json:"url"`
+}
+
+type WatchProviderEvent struct {
+	ID              int64        `json:"id"`
+	TmdbKind        string       `json:"tmdb_kind"`
+	TmdbID          string       `json:"tmdb_id"`
+	Country         string       `json:"country"`
+	Monetization    string       `json:"monetization"`
+	ProviderID      int64        `json:"provider_id"`
+	ProviderName    string       `json:"provider_name"`
+	Event           string       `json:"event"`
+	PreviousCheckAt sql.NullTime `json:"previous_check_at"`
+	ObservedAt      time.Time    `json:"observed_at"`
 }

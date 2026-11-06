@@ -40,12 +40,12 @@ func (i *IMDbImporter) Run(ctx context.Context, force bool, runLog func(level, m
 			runLog(level, fmt.Sprintf(format, args...))
 		}
 	}
-	var known map[string]bool
+	// Known IDs filter the dataset (unless All) and get rating history.
+	known, err := i.repo.KnownIMDbIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if !i.All {
-		var err error
-		if known, err = i.repo.KnownIMDbIDs(ctx); err != nil {
-			return nil, err
-		}
 		logf("info", "Keeping ratings for the %d IMDb IDs metareel knows", len(known))
 	}
 
@@ -91,7 +91,7 @@ func (i *IMDbImporter) parse(ctx context.Context, r io.Reader, known map[string]
 	}
 	for t.next() {
 		id := t.str("tconst")
-		if known != nil && !known[id] {
+		if !i.All && !known[id] {
 			continue
 		}
 		rating, err1 := strconv.ParseFloat(t.str("averageRating"), 64)
@@ -100,7 +100,7 @@ func (i *IMDbImporter) parse(ctx context.Context, r io.Reader, known map[string]
 			skipped++
 			continue
 		}
-		batch = append(batch, repository.IMDbRating{IMDbID: id, Rating: rating, Votes: votes})
+		batch = append(batch, repository.IMDbRating{IMDbID: id, Rating: rating, Votes: votes, History: known[id]})
 		if len(batch) >= imdbBatch {
 			if err := flush(); err != nil {
 				return rows, skipped, err

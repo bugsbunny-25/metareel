@@ -34,7 +34,7 @@
   }
   $effect(() => { load() })
 
-  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'netflix.titles.match', 'imdb.ratings.import', 'ratings.prewarm', 'maintenance']
+  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'netflix.titles.match', 'imdb.ratings.import', 'tmdb.popularity.import', 'ratings.prewarm', 'maintenance']
   const label = (t) => taskTypes.find((x) => x.type === t)?.label ?? t
 
   async function start(type, force = false) {
@@ -52,6 +52,7 @@
   const total = (m) => Object.values(m ?? {}).reduce((a, b) => a + b, 0)
   const IMPORT_LABEL = {
     'netflix.global': 'Netflix global weekly', 'netflix.countries': 'Netflix per country', 'netflix.most_popular': 'Netflix most popular', 'imdb.ratings': 'IMDb ratings',
+    'tmdb.popularity.movie': 'TMDB popularity (movies)', 'tmdb.popularity.tv': 'TMDB popularity (TV)',
   }
 
   const share = (a, b) => (b ? Math.round((100 * a) / b) : null)

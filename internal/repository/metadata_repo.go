@@ -50,6 +50,12 @@ func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFull
 	if d.Seasons != nil {
 		seasons = jsonString(d.Seasons) // "[]" for a show without seasons: fetched, nothing to map
 	}
+	// The stored providers before this refresh, to record what changed
+	// (nothing on the title's first refresh: that is the baseline).
+	prevOffers, prevCheck, err := storedOffers(ctx, q, TmdbRef{Kind: d.Kind, ID: d.ID})
+	if err != nil {
+		return err
+	}
 	if err := q.UpsertTmdbTitleDetails(ctx, sqlc.UpsertTmdbTitleDetailsParams{
 		TmdbKind: d.Kind, TmdbID: d.ID,
 		Title: nullIfEmpty(d.Title), OriginalTitle: nullIfEmpty(d.OriginalTitle), OriginalLanguage: nullIfEmpty(d.OriginalLanguage),
@@ -79,6 +85,11 @@ func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFull
 			Url: nullIfEmpty(p.URL),
 		}); err != nil {
 			return fmt.Errorf("insert watch provider: %w", err)
+		}
+	}
+	if prevCheck != nil {
+		if err := recordOfferChanges(ctx, q, TmdbRef{Kind: d.Kind, ID: d.ID}, prevOffers, d.WatchProviders, *prevCheck); err != nil {
+			return err
 		}
 	}
 	if offersChecked {
