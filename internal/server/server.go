@@ -77,7 +77,7 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	readFlixRepo := repository.NewFlixPatrolRepository(readDB)
 	readMetadataRepo := repository.NewMetadataRepository(readDB)
 	analyticsRepo := repository.NewAnalyticsRepository(readDB)
-	top10Read := service.NewTop10ReadService(readFlixRepo)
+	top10Read := service.NewTop10ReadService(readFlixRepo).WithMetadata(readMetadataRepo)
 
 	redisOpt := asynq.RedisClientOpt{
 		Addr:     cfg.Redis.Addr,

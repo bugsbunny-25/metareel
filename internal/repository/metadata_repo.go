@@ -174,6 +174,25 @@ func (r *MetadataRepository) SaveWikidata(ctx context.Context, ref TmdbRef, ids 
 	return nil
 }
 
+// MoviesDueForDistributors lists TMDB movie IDs (with details) whose
+// Wikidata distributors were not looked up within window ('-30 days').
+func (r *MetadataRepository) MoviesDueForDistributors(ctx context.Context, window string, limit int64) ([]string, error) {
+	ids, err := r.q.ListTmdbMoviesDueForDistributors(ctx, sqlc.ListTmdbMoviesDueForDistributorsParams{Window: window, Limit: limit})
+	if err != nil {
+		return nil, fmt.Errorf("list movies due for distributors: %w", err)
+	}
+	return ids, nil
+}
+
+// SaveDistributors stores a movie's Wikidata distributors (none = looked
+// up, nothing found).
+func (r *MetadataRepository) SaveDistributors(ctx context.Context, tmdbMovieID string, distributors []string) error {
+	if err := r.q.SaveTmdbDistributors(ctx, sqlc.SaveTmdbDistributorsParams{TmdbID: tmdbMovieID, Distributors: jsonList(distributors)}); err != nil {
+		return fmt.Errorf("save distributors of movie:%s: %w", tmdbMovieID, err)
+	}
+	return nil
+}
+
 // RTDue is a TMDB title to look up on Rotten Tomatoes, with names to search by.
 type RTDue struct {
 	Ref         TmdbRef
@@ -254,22 +273,24 @@ func (r *MetadataRepository) SyncNetflixIDs(ctx context.Context) (int64, error) 
 
 // TmdbMetadata is stored TMDB metadata, decoded.
 type TmdbMetadata struct {
-	Kind                string            `json:"tmdb_kind"`
-	ID                  string            `json:"tmdb_id"`
-	Title               *string           `json:"title"`
-	OriginalTitle       *string           `json:"original_title"`
-	OriginalLanguage    *string           `json:"original_language"`
-	Overview            *string           `json:"overview"`
-	Status              *string           `json:"status"`
-	ReleaseDate         *string           `json:"release_date"`
-	LastAirDate         *string           `json:"last_air_date,omitempty"`
-	Runtime             *int64            `json:"runtime"`
-	NumberOfSeasons     *int64            `json:"number_of_seasons,omitempty"`
-	NumberOfEpisodes    *int64            `json:"number_of_episodes,omitempty"`
-	Genres              []string          `json:"genres"`
-	OriginCountries     []string          `json:"origin_countries"`
-	ProductionCompanies []string          `json:"production_companies"`
-	Networks            []string          `json:"networks,omitempty"`
+	Kind                string   `json:"tmdb_kind"`
+	ID                  string   `json:"tmdb_id"`
+	Title               *string  `json:"title"`
+	OriginalTitle       *string  `json:"original_title"`
+	OriginalLanguage    *string  `json:"original_language"`
+	Overview            *string  `json:"overview"`
+	Status              *string  `json:"status"`
+	ReleaseDate         *string  `json:"release_date"`
+	LastAirDate         *string  `json:"last_air_date,omitempty"`
+	Runtime             *int64   `json:"runtime"`
+	NumberOfSeasons     *int64   `json:"number_of_seasons,omitempty"`
+	NumberOfEpisodes    *int64   `json:"number_of_episodes,omitempty"`
+	Genres              []string `json:"genres"`
+	OriginCountries     []string `json:"origin_countries"`
+	ProductionCompanies []string `json:"production_companies"`
+	Networks            []string `json:"networks,omitempty"`
+	// Distributors are a movie's distributors on Wikidata (P750).
+	Distributors        []string          `json:"distributors,omitempty"`
 	PosterPath          *string           `json:"poster_path"`
 	BackdropPath        *string           `json:"backdrop_path"`
 	Popularity          *float64          `json:"popularity"`
@@ -300,7 +321,8 @@ func toTmdbMetadata(t sqlc.TmdbTitle) *TmdbMetadata {
 		NumberOfSeasons: nullInt64Ptr(t.NumberOfSeasons), NumberOfEpisodes: nullInt64Ptr(t.NumberOfEpisodes),
 		Genres: decodeList(t.Genres), OriginCountries: decodeList(t.OriginCountries),
 		ProductionCompanies: decodeList(t.ProductionCompanies), Networks: decodeList(t.Networks),
-		PosterPath: nullStringPtr(t.PosterPath), BackdropPath: nullStringPtr(t.BackdropPath),
+		Distributors: decodeList(t.Distributors),
+		PosterPath:   nullStringPtr(t.PosterPath), BackdropPath: nullStringPtr(t.BackdropPath),
 		Popularity: nullFloatPtr(t.Popularity), VoteAverage: nullFloatPtr(t.VoteAverage), VoteCount: nullInt64Ptr(t.VoteCount),
 		IMDbID: nullStringPtr(t.ImdbID), WikidataID: nullStringPtr(t.WikidataID), RottenTomatoesID: nullStringPtr(t.RtID),
 		MetacriticID: nullStringPtr(t.MetacriticID), LetterboxdID: nullStringPtr(t.LetterboxdID),

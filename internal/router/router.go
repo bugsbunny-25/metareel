@@ -133,6 +133,7 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/analytics/release-lag", h.GetReleaseLag())
 	g.GET("/analytics/ratings-vs-popularity", h.GetRatingsVsPopularity())
 	g.GET("/analytics/genres", h.GetGenres())
+	g.GET("/analytics/origins", h.GetOrigins())
 	g.GET("/analytics/netflix-calibration", h.GetNetflixCalibration())
 }
 

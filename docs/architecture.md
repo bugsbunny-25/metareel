@@ -148,7 +148,7 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 |---|---|---|
 | `flixpatrol.top10.scrape` | `FlixPatrolJob` | Charts only; tags the new TV rankings with seasons, enqueues `titles.enrich` for new titles and hourly re-checks for unpublished charts |
 | `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Mapping sync (linked Netflix titles' mappings first), matching with backoff, RT via Wikidata then search (per TMDB title, backoff in `tmdb_titles.next_rt_at`), mapping sync; then seasons |
-| `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists) + watch providers with each offer's URL from JustWatch (`title_offers.go`), Wikidata IDs; then seasons |
+| `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists) + watch providers with each offer's URL from JustWatch (`title_offers.go`), Wikidata IDs, films' Wikidata distributors (P750, `tmdb_titles.distributors`, monthly); then seasons |
 | `ratings.prewarm` | `RatingsService.Prewarm` | Charting titles' expired ratings |
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
@@ -343,6 +343,36 @@ sequenceDiagram
 `POST /api/v1/admin/titles/:id/rematch` clears the backoff (and with
 `clear: true`, the IDs) and queues the title.
 
+## Title origins (`service/origins.go`)
+
+`ClassifyOrigin(provider, movie, metadata)` says where a title on a
+service's chart comes from; it runs at read time (chart entries' `origin`,
+`GET /analytics/origins`), so rule changes apply to every stored chart.
+`mediaGroups` lists each media group with the FlixPatrol providers it owns,
+their own original brands, its other studios / channels, whether it is a
+theatrical major, and the year its streaming originals start. Brands match
+whole names ignoring case, or a prefix when they end in `*`.
+
+1. **original** — TV: one of the service's own networks (TMDB `networks`,
+   e.g. HBO / Max on hbo-max); films (and shows without networks): the
+   service's studio among the production companies (Amazon MGM Studios,
+   Apple Studios); films: the service among the Wikidata distributors, no
+   other distributor a major studio or another streamer, released no
+   earlier than the group's originals (Wikidata also lists streamers that
+   carry licensed films, e.g. Netflix on Jumanji).
+2. Otherwise the **owner** is the first group matching the networks (TV),
+   then the production companies, then the distributors (studios only).
+   Same group as the provider → **in_house**; another or none →
+   **licensed**.
+3. **unknown** — no metadata, a provider without rules, or no owner and no
+   decisive source (no network for a show, no Wikidata distributors for a
+   film): metareel does not guess "licensed".
+
+Known limits: non-English originals with no Wikidata distributors (many
+Netflix India films) come out unknown; co-productions take the first
+recognised company (Spider-Man on Disney+ counts as Marvel's); regional
+"originals" licensed from a local network are licensed.
+
 ## Read API Flow
 
 ```mermaid
@@ -471,6 +501,7 @@ Added since the diagram below:
 | `imdb_ratings` | IMDb dataset ratings (known IMDb IDs by default) |
 | `imdb_rating_history`, `title_rating_history` | Rating history (migration 17): IMDb dataset rating + votes per day, and each provider's rating sources (from `SaveTitleRatings`), written only when the value changed since the previous row (step series; `/history` adds the point in effect at `from`) |
 | `tmdb_popularity_history` | TMDB popularity per title per day from the daily exports |
+| `tmdb_titles.distributors` | A film's distributors on Wikidata (P750, English labels, JSON), `distributors_fetched_at` (migration 18); one of the origin signals |
 | `watch_provider_events` | Offers that appeared / disappeared between two TMDB refreshes of a title (`added` / `removed`, `previous_check_at` → `observed_at`), computed in `MetadataRepository.SaveDetails` by diffing the stored providers; a title's first refresh is the baseline (no events) |
 | `data_imports` | Last imported ETag / Last-Modified per file |
 | `task_schedules` (new columns) | `backfill_days`, `recheck_hours`; `task_type` validated in Go |

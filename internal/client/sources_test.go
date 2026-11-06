@@ -193,3 +193,37 @@ func TestNetflixTop10Search(t *testing.T) {
 		t.Fatal("non-numeric id accepted")
 	}
 }
+
+func TestWikidataLookupDistributors(t *testing.T) {
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		query = r.Form.Get("query")
+		_, _ = io.WriteString(w, `{"results": {"bindings": [
+		  {"tmdb": {"value": "803796"}, "label": {"value": "Netflix"}},
+		  {"tmdb": {"value": "353081"}, "label": {"value": "Universal Pictures"}},
+		  {"tmdb": {"value": "353081"}, "label": {"value": "Netflix"}},
+		  {"tmdb": {"value": "353081"}, "label": {"value": "Netflix"}},
+		  {"tmdb": {"value": "353081"}, "label": {"value": " "}}]}}`)
+	}))
+	defer srv.Close()
+	c := NewWikidataSPARQL(time.Second)
+	c.endpoint = srv.URL
+
+	got, err := c.LookupDistributors(context.Background(), []string{"803796", "353081", "1", `2" } DROP`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(query, "wdt:P750") || !strings.Contains(query, `"803796"`) || strings.Contains(query, "DROP") {
+		t.Fatalf("query = %s", query)
+	}
+	if d := got["803796"]; len(d) != 1 || d[0] != "Netflix" {
+		t.Fatalf("803796 = %v", d)
+	}
+	if d := got["353081"]; len(d) != 2 || d[0] != "Netflix" || d[1] != "Universal Pictures" {
+		t.Fatalf("353081 = %v (want sorted, deduped)", d)
+	}
+	if _, ok := got["1"]; ok {
+		t.Fatal("movie without distributors should be absent")
+	}
+}

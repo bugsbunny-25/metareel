@@ -366,7 +366,7 @@ func (h *Handler) analytics(run func(c *echo.Context, q service.AnalyticsQuery) 
 			return badRequest(c, err)
 		}
 		q := service.AnalyticsQuery{From: from, To: to, Country: c.QueryParam("country"), Provider: c.QueryParam("provider"),
-			Category: c.QueryParam("category"), Kind: c.QueryParam("kind")}
+			Category: c.QueryParam("category"), Kind: c.QueryParam("kind"), Interval: c.QueryParam("interval")}
 		out, err := run(c, q)
 		return writeData(c, out, err)
 	}
@@ -399,6 +399,12 @@ func (h *Handler) GetRatingsVsPopularity() echo.HandlerFunc {
 func (h *Handler) GetGenres() echo.HandlerFunc {
 	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
 		return h.Analytics.Genres(c.Request().Context(), q)
+	})
+}
+
+func (h *Handler) GetOrigins() echo.HandlerFunc {
+	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
+		return h.Analytics.Origins(c.Request().Context(), q)
 	})
 }
 

@@ -31,6 +31,7 @@ type AnalyticsQuery struct {
 	From, To                    *time.Time
 	Country, Provider, Category string
 	Kind                        string
+	Interval                    string // origins: week | month
 }
 
 type analyticsFilter struct {

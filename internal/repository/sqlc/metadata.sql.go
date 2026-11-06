@@ -186,7 +186,7 @@ func (q *Queries) FindTmdbRefsByNetflixID(ctx context.Context, arg FindTmdbRefsB
 }
 
 const getTmdbTitle = `-- name: GetTmdbTitle :one
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
 `
 
 type GetTmdbTitleParams struct {
@@ -242,6 +242,8 @@ func (q *Queries) GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (Tmd
 		&i.RtAttempts,
 		&i.NextRtAt,
 		&i.OffersFetchedAt,
+		&i.Distributors,
+		&i.DistributorsFetchedAt,
 	)
 	return i, err
 }
@@ -279,6 +281,44 @@ func (q *Queries) InsertTmdbWatchProvider(ctx context.Context, arg InsertTmdbWat
 		arg.Url,
 	)
 	return err
+}
+
+const listTmdbMoviesDueForDistributors = `-- name: ListTmdbMoviesDueForDistributors :many
+SELECT tmdb_id FROM tmdb_titles
+WHERE tmdb_kind = 'movie' AND details_fetched_at IS NOT NULL
+  AND (distributors_fetched_at IS NULL OR distributors_fetched_at < datetime('now', CAST(?1 AS TEXT)))
+ORDER BY distributors_fetched_at IS NOT NULL, distributors_fetched_at
+LIMIT ?2
+`
+
+type ListTmdbMoviesDueForDistributorsParams struct {
+	Window string `json:"window"`
+	Limit  int64  `json:"limit"`
+}
+
+// TMDB movies with details whose Wikidata distributors were never looked up
+// or not within the window (a SQLite datetime modifier, e.g. '-30 days').
+func (q *Queries) ListTmdbMoviesDueForDistributors(ctx context.Context, arg ListTmdbMoviesDueForDistributorsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listTmdbMoviesDueForDistributors, arg.Window, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var tmdb_id string
+		if err := rows.Scan(&tmdb_id); err != nil {
+			return nil, err
+		}
+		items = append(items, tmdb_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTmdbRefsDueForDetails = `-- name: ListTmdbRefsDueForDetails :many
@@ -469,7 +509,7 @@ func (q *Queries) ListTmdbRefsDueForWikidata(ctx context.Context, arg ListTmdbRe
 }
 
 const listTmdbTitlesByIDs = `-- name: ListTmdbTitlesByIDs :many
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
 `
 
 // Callers filter by kind (TMDB movie and TV IDs overlap).
@@ -537,6 +577,8 @@ func (q *Queries) ListTmdbTitlesByIDs(ctx context.Context, ids []string) ([]Tmdb
 			&i.RtAttempts,
 			&i.NextRtAt,
 			&i.OffersFetchedAt,
+			&i.Distributors,
+			&i.DistributorsFetchedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -649,6 +691,22 @@ type RecordTmdbRTAttemptParams struct {
 // SQLite datetime modifier). A slug found is stored with UpsertTmdbTitleIDs.
 func (q *Queries) RecordTmdbRTAttempt(ctx context.Context, arg RecordTmdbRTAttemptParams) error {
 	_, err := q.db.ExecContext(ctx, recordTmdbRTAttempt, arg.RetryAfter, arg.TmdbKind, arg.TmdbID)
+	return err
+}
+
+const saveTmdbDistributors = `-- name: SaveTmdbDistributors :exec
+UPDATE tmdb_titles SET distributors = ?1, distributors_fetched_at = CURRENT_TIMESTAMP
+WHERE tmdb_kind = 'movie' AND tmdb_id = ?2
+`
+
+type SaveTmdbDistributorsParams struct {
+	Distributors sql.NullString `json:"distributors"`
+	TmdbID       string         `json:"tmdb_id"`
+}
+
+// distributors is a JSON list (NULL when Wikidata has none).
+func (q *Queries) SaveTmdbDistributors(ctx context.Context, arg SaveTmdbDistributorsParams) error {
+	_, err := q.db.ExecContext(ctx, saveTmdbDistributors, arg.Distributors, arg.TmdbID)
 	return err
 }
 

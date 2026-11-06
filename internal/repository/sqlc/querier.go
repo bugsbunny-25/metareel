@@ -265,6 +265,9 @@ type Querier interface {
 	// that differs) | both (titles from both sources) | netflix_only |
 	// flixpatrol_only | manual (a title fixed by hand). Newest activity first.
 	ListTmdbMappings(ctx context.Context, arg ListTmdbMappingsParams) ([]ListTmdbMappingsRow, error)
+	// TMDB movies with details whose Wikidata distributors were never looked up
+	// or not within the window (a SQLite datetime modifier, e.g. '-30 days').
+	ListTmdbMoviesDueForDistributors(ctx context.Context, arg ListTmdbMoviesDueForDistributorsParams) ([]string, error)
 	ListTmdbPopularityHistory(ctx context.Context, arg ListTmdbPopularityHistoryParams) ([]ListTmdbPopularityHistoryRow, error)
 	// Matched titles on any chart since a date (YYYY-MM-DD), most recent first.
 	ListTmdbRefsChartingSince(ctx context.Context, arg ListTmdbRefsChartingSinceParams) ([]ListTmdbRefsChartingSinceRow, error)
@@ -326,6 +329,8 @@ type Querier interface {
 	RotateAPIKey(ctx context.Context, arg RotateAPIKeyParams) (ApiKey, error)
 	SaveDataImport(ctx context.Context, arg SaveDataImportParams) error
 	SaveFlixPatrolDetails(ctx context.Context, arg SaveFlixPatrolDetailsParams) error
+	// distributors is a JSON list (NULL when Wikidata has none).
+	SaveTmdbDistributors(ctx context.Context, arg SaveTmdbDistributorsParams) error
 	SetAppSetting(ctx context.Context, arg SetAppSettingParams) error
 	SetNetflixSeasonManual(ctx context.Context, arg SetNetflixSeasonManualParams) (NetflixSeason, error)
 	SetNetflixSeasonNetflixID(ctx context.Context, arg SetNetflixSeasonNetflixIDParams) error

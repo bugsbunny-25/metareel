@@ -1401,6 +1401,42 @@ paths:
                 $ref: "#/components/schemas/AnalyticsResult"
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /api/v1/analytics/origins:
+    get:
+      operationId: getOrigins
+      summary: Each service's chart points by origin (original, in-house, licensed)
+      description: >-
+        Splits every provider's chart points (rank 1 = 10 … rank 10 = 1) by
+        where the titles come from: `original` (made for the service: its own
+        network, its studio, or a film it released with no theatrical studio
+        involved), `in_house` (the parent company's studios and channels,
+        e.g. a Marvel film on Disney+, a CBS show on Paramount+), `licensed`
+        (another company or an independent) and `unknown` (no TMDB metadata,
+        or nothing says who made it). Computed from TMDB networks and
+        production companies and Wikidata distributors, per week or month,
+        with the owners of licensed titles (`suppliers`) and the top titles of
+        each origin. Charts of different providers are separate, so compare
+        shares rather than points across providers. Default range: the last
+        90 days.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+        - name: interval
+          in: query
+          schema: { type: string, enum: [week, month], default: week }
+      responses:
+        "200":
+          description: Origin mix per provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OriginsResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/v1/analytics/netflix-calibration:
     get:
       operationId: getNetflixCalibration
@@ -1750,6 +1786,77 @@ components:
         link: { type: string, nullable: true, description: "Always null here; see the country's link" }
         fetched_at: { type: string, format: date-time }
 
+    OriginInfo:
+      type: object
+      description: >-
+        Where a title on this provider's chart comes from (see
+        /api/v1/analytics/origins). `owner` is the media group the title
+        belongs to (netflix, amazon, apple, disney, wbd, nbcu, paramount,
+        sony, lionsgate, a24; absent = independent or not recognised);
+        `reason` is the brand that decided it.
+      properties:
+        origin: { type: string, enum: [original, in_house, licensed, unknown] }
+        owner: { type: string, example: wbd }
+        reason: { type: string, example: "network: HBO" }
+    OriginsResponse:
+      type: object
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        country: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        kind: { type: string, nullable: true }
+        interval: { type: string, enum: [week, month] }
+        providers:
+          type: array
+          items:
+            type: object
+            properties:
+              provider: { type: string }
+              points: { type: integer }
+              origins:
+                type: object
+                description: original, in_house, licensed, unknown
+                additionalProperties:
+                  type: object
+                  properties:
+                    points: { type: integer }
+                    share: { type: number, description: "of the provider's points" }
+                    titles: { type: integer }
+              series:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    period: { type: string, format: date, description: "first day of the week (Monday) or month" }
+                    points: { type: integer }
+                    shares: { type: object, additionalProperties: { type: number } }
+              suppliers:
+                type: array
+                description: Owners of licensed titles by points
+                items:
+                  type: object
+                  properties:
+                    owner: { type: string, description: '"" = independent or not recognised' }
+                    name: { type: string }
+                    points: { type: integer }
+                    share: { type: number, description: "of the provider's licensed points" }
+                    titles: { type: integer }
+              top:
+                type: object
+                description: Up to 5 titles per origin
+                additionalProperties:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      kind: { type: string }
+                      tmdb_id: { type: string }
+                      points: { type: integer }
+                      owner: { type: string }
+                      reason: { type: string }
     OfferEvent:
       type: object
       properties:
@@ -2176,6 +2283,8 @@ components:
           description: TV only, when known
         season_source:
           $ref: "#/components/schemas/RankingSeasonSource"
+        origin:
+          $ref: "#/components/schemas/OriginInfo"
       required: [date, rank, previous_rank, days_in_top10, provider, slug, name, kind]
 
     Top10Response:

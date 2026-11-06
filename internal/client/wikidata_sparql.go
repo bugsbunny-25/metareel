@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -113,6 +114,46 @@ func (c *WikidataSPARQL) lookupBatch(ctx context.Context, prop string, ids []str
 }
 
 const wikidataEntityPrefix = "http://www.wikidata.org/entity/"
+
+// LookupDistributors returns the English labels of the distributors (P750)
+// Wikidata lists for TMDB movies, keyed by TMDB movie ID (sorted, deduped).
+// Movies Wikidata doesn't know, or without distributors, are absent.
+func (c *WikidataSPARQL) LookupDistributors(ctx context.Context, tmdbMovieIDs []string) (map[string][]string, error) {
+	out := map[string][]string{}
+	for start := 0; start < len(tmdbMovieIDs); start += WikidataBatchSize {
+		end := min(start+WikidataBatchSize, len(tmdbMovieIDs))
+		var values strings.Builder
+		for _, id := range tmdbMovieIDs[start:end] {
+			if isDigits(id) {
+				values.WriteString(` "` + id + `"`)
+			}
+		}
+		if values.Len() == 0 {
+			continue
+		}
+		bindings, err := c.query(ctx, `SELECT ?tmdb ?label WHERE {
+  VALUES ?tmdb {`+values.String()+` }
+  ?item wdt:P4947 ?tmdb ; wdt:P750 ?dist .
+  ?dist rdfs:label ?label FILTER(LANG(?label) = "en")
+}`)
+		if err != nil {
+			return out, err
+		}
+		seen := map[string]bool{}
+		for _, b := range bindings {
+			id, label := b["tmdb"], strings.TrimSpace(b["label"])
+			if id == "" || label == "" || seen[id+"\x00"+label] {
+				continue
+			}
+			seen[id+"\x00"+label] = true
+			out[id] = append(out[id], label)
+		}
+	}
+	for id := range out {
+		sort.Strings(out[id])
+	}
+	return out, nil
+}
 
 // WikidataNetflixHit is a Wikidata item with a Netflix ID whose English
 // label or alias is a searched name.

@@ -20,11 +20,18 @@ type ValidationError struct {
 func (e *ValidationError) Error() string { return e.Message }
 
 type Top10ReadService struct {
-	repo *repository.FlixPatrolRepository
+	repo     *repository.FlixPatrolRepository
+	metadata *repository.MetadataRepository // nil = no origin on entries
 }
 
 func NewTop10ReadService(repo *repository.FlixPatrolRepository) *Top10ReadService {
 	return &Top10ReadService{repo: repo}
+}
+
+// WithMetadata adds each entry's origin (original / in-house / licensed).
+func (s *Top10ReadService) WithMetadata(metadata *repository.MetadataRepository) *Top10ReadService {
+	s.metadata = metadata
+	return s
 }
 
 type Top10Query struct {
@@ -58,6 +65,9 @@ type Top10Result struct {
 	// (chart | netflix | tmdb_air_date).
 	SeasonNumber *int64  `json:"season_number,omitempty"`
 	SeasonSource *string `json:"season_source,omitempty"`
+	// Origin: the title is the provider's original, from its parent
+	// company (in_house), licensed, or unknown (no TMDB metadata yet).
+	Origin *OriginInfo `json:"origin,omitempty"`
 }
 
 func (s *Top10ReadService) GetMoviesByProvider(ctx context.Context, q Top10Query) (*Top10Response, error) {
@@ -90,7 +100,7 @@ func (s *Top10ReadService) getByProvider(ctx context.Context, q Top10Query, cate
 		return nil, ErrTop10NotFound
 	}
 
-	return buildResponse(q.Date, countryCode, category, q.Provider, items), nil
+	return s.withOrigins(ctx, buildResponse(q.Date, countryCode, category, q.Provider, items))
 }
 
 func (s *Top10ReadService) getAllProviders(ctx context.Context, q Top10Query, category string) (*Top10Response, error) {
@@ -107,7 +117,7 @@ func (s *Top10ReadService) getAllProviders(ctx context.Context, q Top10Query, ca
 		return nil, ErrTop10NotFound
 	}
 
-	return buildResponse(q.Date, countryCode, category, "", items), nil
+	return s.withOrigins(ctx, buildResponse(q.Date, countryCode, category, "", items))
 }
 
 func validateQuery(q Top10Query, providerRequired bool) (string, error) {
@@ -159,6 +169,33 @@ func buildResponse(date time.Time, countryCode string, category string, provider
 		})
 	}
 	return out
+}
+
+// withOrigins sets each entry's origin from its TMDB metadata.
+func (s *Top10ReadService) withOrigins(ctx context.Context, out *Top10Response) (*Top10Response, error) {
+	if s.metadata == nil {
+		return out, nil
+	}
+	var refs []repository.TmdbRef
+	for _, it := range out.Items {
+		if it.TMDBID != nil && *it.TMDBID != "" {
+			refs = append(refs, repository.TmdbRef{Kind: tmdbKindOfTitle(it.Kind), ID: *it.TMDBID})
+		}
+	}
+	meta, err := s.metadata.GetMany(ctx, refs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out.Items {
+		it := &out.Items[i]
+		var m *repository.TmdbMetadata
+		if it.TMDBID != nil {
+			m = meta[repository.TmdbRef{Kind: tmdbKindOfTitle(it.Kind), ID: *it.TMDBID}.String()]
+		}
+		info := ClassifyOrigin(it.Provider, it.Kind == "movie", m)
+		it.Origin = &info
+	}
+	return out, nil
 }
 
 // datePtr maps the zero date ("latest") to nil.
