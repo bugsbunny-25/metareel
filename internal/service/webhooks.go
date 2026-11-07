@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	"github.com/bugsbunny-25/metareel/internal/repository"
+	"github.com/bugsbunny-25/metareel/internal/scraper/flixpatrol"
 )
 
 // Outbound webhooks: consumers (tides) subscribe a URL to event types and
@@ -39,11 +41,12 @@ const (
 	EventTitleNumberOne      = "title.number_one"     // a new #1 on a chart
 	EventAvailabilityAdded   = "availability.added"   // a title arrived on a service in a country
 	EventAvailabilityRemoved = "availability.removed" // a title left a service in a country
+	EventTitleBreakout       = "title.breakout"       // a title started rising in several countries at once
 	EventPing                = "ping"                 // test delivery
 )
 
 // WebhookEventTypes lists the event types a webhook can subscribe to.
-var WebhookEventTypes = []string{EventChartUpdated, EventTitleEntered, EventTitleNumberOne, EventAvailabilityAdded, EventAvailabilityRemoved}
+var WebhookEventTypes = []string{EventChartUpdated, EventTitleEntered, EventTitleNumberOne, EventAvailabilityAdded, EventAvailabilityRemoved, EventTitleBreakout}
 
 var ErrWebhookNotFound = errors.New("webhook not found")
 
@@ -68,15 +71,21 @@ var webhookBackoff = []string{"+1 minutes", "+5 minutes", "+30 minutes", "+2 hou
 
 // WebhookService manages webhook subscriptions and runs the dispatcher.
 type WebhookService struct {
-	log   *slog.Logger
-	repo  *repository.WebhookRepository
-	ops   *repository.OpsRepository
-	top10 *Top10ReadService
-	http  *http.Client
-	now   func() time.Time
+	log       *slog.Logger
+	repo      *repository.WebhookRepository
+	ops       *repository.OpsRepository
+	top10     *Top10ReadService
+	breakouts *BreakoutService // optional: title.breakout events
+	http      *http.Client
+	now       func() time.Time
 
 	mu         sync.Mutex // one dispatcher pass at a time
 	lastPruned time.Time
+	// seenCharts: charts already turned into events (id -> changed_at) within
+	// the lookback, so re-reading it skips them. In memory only: after a
+	// restart the lookback is processed again (repeats are dropped by event
+	// id).
+	seenCharts map[int64]string
 }
 
 // WebhookOptions configures where deliveries may go.
@@ -107,6 +116,12 @@ func NewWebhookService(log *slog.Logger, repo *repository.WebhookRepository, ops
 			// and a redirect could point anywhere.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		}}
+}
+
+// WithBreakouts enables title.breakout events.
+func (s *WebhookService) WithBreakouts(b *BreakoutService) *WebhookService {
+	s.breakouts = b
+	return s
 }
 
 // errWebhookAddress: the receiver resolved to an address webhooks may not
@@ -544,24 +559,64 @@ func (s *WebhookService) produceCharts(ctx context.Context, hooks []repository.W
 	if err != nil {
 		return fmt.Errorf("bad chart cursor %q: %w", cursor, err)
 	}
-	charts, err := s.repo.ChartsChangedSince(ctx, c.Add(-webhookLookback).Format(sqliteTimeLayout), webhookSourceBatch)
-	if err != nil {
-		return err
+	since := c.Add(-webhookLookback).Format(sqliteTimeLayout)
+	if s.seenCharts == nil {
+		s.seenCharts = map[int64]string{}
 	}
+	// Read from the lookback onwards page by page (keyset on changed_at, id),
+	// skipping charts already handled, and turn at most webhookSourceBatch
+	// charts into events per pass. Paging matters: more charts than a page
+	// can share one changed_at (a backfill or bulk import), and a plain
+	// LIMIT would re-read the same page forever without moving the cursor.
 	newest := cursor
-	for _, ch := range charts {
-		if len(hooks) > 0 && !existedAtStart(ch) {
-			events, err := s.chartEvents(ctx, ch)
-			if err != nil {
-				return err
+	changedDates := map[string]bool{}
+	afterAt, afterID, processed := since, int64(0), 0
+pages:
+	for {
+		charts, err := s.repo.ChartsChangedAfter(ctx, afterAt, afterID, webhookSourceBatch)
+		if err != nil {
+			return err
+		}
+		for _, ch := range charts {
+			if s.seenCharts[ch.ID] == ch.ChangedAt {
+				afterAt, afterID = ch.ChangedAt, ch.ID
+				continue
 			}
-			if err := s.queue(ctx, hooks, events); err != nil {
-				return err
+			if len(hooks) > 0 && !existedAtStart(ch) {
+				if processed >= webhookSourceBatch {
+					break pages // the rest next pass; the cursor stays behind them
+				}
+				processed++
+				events, err := s.chartEvents(ctx, ch)
+				if err != nil {
+					return err
+				}
+				if err := s.queue(ctx, hooks, events); err != nil {
+					return err
+				}
+				changedDates[ch.Date] = true
+			}
+			s.seenCharts[ch.ID] = ch.ChangedAt
+			afterAt, afterID = ch.ChangedAt, ch.ID
+			if ch.ChangedAt > newest {
+				newest = ch.ChangedAt
 			}
 		}
-		if ch.ChangedAt > newest {
-			newest = ch.ChangedAt
+		if len(charts) < webhookSourceBatch {
+			break
 		}
+	}
+	// Forget charts that fall out of the next pass's lookback (the cursor
+	// never moves back).
+	for id, at := range s.seenCharts {
+		if at < since {
+			delete(s.seenCharts, id)
+		}
+	}
+	// Breakouts are derived and best effort: a failure costs at most one
+	// announcement and must not hold up the chart cursor or other events.
+	if err := s.produceBreakouts(ctx, hooks, changedDates); err != nil && ctx.Err() == nil {
+		s.log.Warn("webhooks: queueing breakout events failed", slog.Any("err", err))
 	}
 	if newest != cursor {
 		return s.ops.SetSetting(ctx, cursorCharts, newest)
@@ -607,7 +662,10 @@ func (s *WebhookService) chartEvents(ctx context.Context, ch repository.ChangedC
 	default:
 		return nil, nil
 	}
-	if errors.Is(err, ErrTop10NotFound) {
+	var invalid *ValidationError
+	if errors.Is(err, ErrTop10NotFound) || errors.As(err, &invalid) {
+		// No entries, or a chart the read API can't serve (e.g. an unknown
+		// country): nothing to send, and it must not block later charts.
 		return nil, nil
 	}
 	if err != nil {
@@ -631,6 +689,86 @@ func (s *WebhookService) chartEvents(ctx context.Context, ch repository.ChangedC
 		}
 	}
 	return events, nil
+}
+
+// BreakoutEventData is a title.breakout event: the title and how it rose
+// (see BreakoutService; default window, min_countries and min_climb).
+type BreakoutEventData struct {
+	Date         string `json:"date"`
+	Window       int    `json:"window"`
+	MinCountries int    `json:"min_countries"`
+	MinClimb     int    `json:"min_climb"`
+	Breakout
+}
+
+// breakoutEventDays: only charts of the current chart date and the two
+// before it raise title.breakout (a backfill of old dates doesn't).
+const breakoutEventDays = 2
+
+// produceBreakouts queues title.breakout for titles that are breakouts on a
+// date whose charts changed but were not on the day before. A title that
+// keeps rising is announced once; one that drops out and breaks out again
+// later is announced again.
+func (s *WebhookService) produceBreakouts(ctx context.Context, hooks []repository.Webhook, dates map[string]bool) error {
+	if s.breakouts == nil || len(dates) == 0 || !slices.ContainsFunc(hooks, func(w repository.Webhook) bool { return subscribed(w, EventTitleBreakout) }) {
+		return nil
+	}
+	today := flixpatrol.EffectiveTop10Date(s.now())
+	oldest := repository.FormatDate(today.AddDate(0, 0, -breakoutEventDays))
+	days := make([]string, 0, len(dates))
+	for d := range dates {
+		if d >= oldest && d <= repository.FormatDate(today) {
+			days = append(days, d)
+		}
+	}
+	sort.Strings(days)
+	// Adjacent dates share results (a date is the day before the next).
+	cache := map[string]*BreakoutsResponse{}
+	breakoutsOn := func(day time.Time) (*BreakoutsResponse, error) {
+		key := repository.FormatDate(day)
+		if r, ok := cache[key]; ok {
+			return r, nil
+		}
+		r, err := s.breakouts.all(ctx, BreakoutQuery{Date: &day})
+		if err != nil {
+			return nil, err
+		}
+		cache[key] = r
+		return r, nil
+	}
+	for _, d := range days {
+		day, err := time.Parse(repository.DateLayout, d)
+		if err != nil {
+			continue
+		}
+		cur, err := breakoutsOn(day)
+		if err != nil {
+			return err
+		}
+		if len(cur.Items) == 0 {
+			continue
+		}
+		prev, err := breakoutsOn(day.AddDate(0, 0, -1))
+		if err != nil {
+			return err
+		}
+		before := map[string]bool{}
+		for _, b := range prev.Items {
+			before[b.key] = true
+		}
+		var events []webhookEvent
+		for _, b := range cur.Items {
+			if before[b.key] {
+				continue
+			}
+			events = append(events, webhookEvent{ID: EventTitleBreakout + ":" + b.key + ":" + d, Type: EventTitleBreakout,
+				Data: BreakoutEventData{Date: d, Window: cur.Window, MinCountries: cur.MinCountries, MinClimb: cur.MinClimb, Breakout: b}})
+		}
+		if err := s.queue(ctx, hooks, events); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *WebhookService) produceOffers(ctx context.Context, hooks []repository.Webhook) error {

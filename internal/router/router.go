@@ -140,6 +140,7 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/charts/:country/:provider/dates", h.GetChartDates)
 	g.GET("/changes", h.GetChanges)
 	g.GET("/movers", h.GetMovers)
+	g.GET("/breakouts", h.GetBreakouts)
 	g.GET("/leaderboards", h.GetLeaderboard)
 	g.GET("/export/rankings", h.ExportRankings)
 	g.GET("/countries", h.GetCountries)
@@ -156,6 +157,7 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/analytics/genres", h.GetGenres())
 	g.GET("/analytics/origins", h.GetOrigins())
 	g.GET("/analytics/release-patterns", h.GetReleasePatterns())
+	g.GET("/analytics/spread-lag", h.GetSpreadLag())
 	g.GET("/analytics/netflix-calibration", h.GetNetflixCalibration())
 }
 

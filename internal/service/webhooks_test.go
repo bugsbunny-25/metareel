@@ -403,3 +403,74 @@ func TestWebhookUnreachableSkipped(t *testing.T) {
 	_ = repo
 	_ = time.Second
 }
+
+// More charts than a page sharing one changed_at (a backfill or bulk import)
+// must not stall the chart cursor: the real chart stored after them is
+// still delivered, within a few passes.
+func TestWebhookChartCursorPagesLargeBatches(t *testing.T) {
+	db := newTestDB(t)
+	top := NewTop10ReadService(repository.NewFlixPatrolRepository(db)).WithMetadata(repository.NewMetadataRepository(db))
+	svc := NewWebhookService(slog.New(slog.NewTextHandler(io.Discard, nil)), repository.NewWebhookRepository(db),
+		repository.NewOpsRepository(db), top, WebhookOptions{AllowLoopback: true})
+	chart := func(date string, slugs ...string) {
+		var titles []seedTitle
+		var ranks []seedRanking
+		for i, s := range slugs {
+			titles = append(titles, seedTitle{Slug: s, Name: strings.ToUpper(s), Kind: "movie"})
+			ranks = append(ranks, seedRanking{s, date, "US", "netflix", "movies", int64(i + 1)})
+		}
+		seed(t, db, titles, ranks)
+	}
+	ctx := context.Background()
+	rc := &receiver{}
+	srv := httptest.NewServer(rc)
+	defer srv.Close()
+	if _, err := svc.Create(ctx, WebhookInput{Name: "all", URL: srv.URL, Events: []string{EventChartUpdated}}); err != nil {
+		t.Fatal(err)
+	}
+	chart("2026-11-01", "a")
+	svc.Tick(ctx) // starts following
+
+	// 1,200 empty charts with the same changed_at (one with a country the
+	// read API rejects), then a real chart.
+	stamp := time.Now().UTC().Format(sqliteTimeLayout)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 1200; i++ {
+		d := day("2020-01-01").AddDate(0, 0, i).Format(repository.DateLayout)
+		country := "US"
+		if i == 700 {
+			country = "ZZ"
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO chart_snapshots (ranked_on, country, streaming_provider, category, entry_count, signature, changed_at)
+			VALUES (?, ?, 'netflix', 'movies', 0, '', ?)`, d, country, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	chart("2026-11-02", "b", "a")
+	if _, err := db.ExecContext(ctx, `UPDATE chart_snapshots SET changed_at = ? WHERE ranked_on = '2026-11-02'`, stamp); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 4 && len(rc.events()) == 0; i++ {
+		svc.Tick(ctx)
+	}
+	if got := rc.events(); len(got) != 1 || got[0] != EventChartUpdated {
+		t.Fatalf("events = %v (cursor stalled?)", got)
+	}
+	// Later passes skip what was handled and deliver nothing again.
+	svc.Tick(ctx)
+	svc.Tick(ctx)
+	if got := rc.events(); len(got) != 1 {
+		t.Fatalf("re-delivered: %v", got)
+	}
+	cursor, _ := repository.NewOpsRepository(db).Setting(ctx, cursorCharts)
+	if cursor != stamp {
+		t.Fatalf("cursor = %q, want %q", cursor, stamp)
+	}
+}

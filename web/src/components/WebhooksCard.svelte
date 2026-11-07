@@ -14,6 +14,7 @@
     'title.number_one': 'New #1 on a chart',
     'availability.added': 'Title arrived on a service',
     'availability.removed': 'Title left a service',
+    'title.breakout': 'Title rising in several countries',
   }
 
   let hooks = $state([])

@@ -90,13 +90,15 @@ SELECT webhook_id, status, COUNT(*) AS n FROM webhook_deliveries GROUP BY webhoo
 DELETE FROM webhook_deliveries
 WHERE status <> 'pending' AND created_at < datetime('now', CAST(sqlc.arg(window) AS TEXT));
 
--- name: ListChartsChangedSince :many
--- Charts stored or changed at or after a time ('YYYY-MM-DD HH:MM:SS' UTC),
--- oldest first.
+-- name: ListChartsChangedAfter :many
+-- Charts stored or changed after a position (changed_at
+-- 'YYYY-MM-DD HH:MM:SS' UTC, then row id), oldest first: keyset paging, so
+-- many charts sharing one changed_at are read page by page.
 SELECT id, CAST(ranked_on AS TEXT) AS ranked_on, country, streaming_provider, category, entry_count,
        CAST(changed_at AS TEXT) AS changed_at
 FROM chart_snapshots
-WHERE changed_at >= CAST(sqlc.arg(since) AS TEXT)
+WHERE changed_at >= CAST(sqlc.arg(after_at) AS TEXT)
+  AND (changed_at > CAST(sqlc.arg(after_at) AS TEXT) OR id > sqlc.arg(after_id))
 ORDER BY changed_at, id
 LIMIT sqlc.arg(limit);
 

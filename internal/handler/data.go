@@ -384,6 +384,31 @@ func (h *Handler) GetCalendar(c *echo.Context) error {
 	return writeData(c, out, err)
 }
 
+// GetBreakouts lists titles rising in several countries at once:
+// GET /api/v1/breakouts[?date=&window=&min_countries=&min_climb=&category=&provider=&kind=&limit=]
+func (h *Handler) GetBreakouts(c *echo.Context) error {
+	date, err := parseOptionalDate("date", c.QueryParam("date"))
+	if err != nil {
+		return badRequest(c, err)
+	}
+	q := service.BreakoutQuery{Date: date, Category: c.QueryParam("category"), Provider: c.QueryParam("provider"), Kind: c.QueryParam("kind")}
+	for _, p := range []struct {
+		name string
+		dst  *int
+	}{{"window", &q.Window}, {"min_countries", &q.MinCountries}, {"min_climb", &q.MinClimb}, {"limit", &q.Limit}} {
+		v, err := parseIntParam(c, p.name, 0)
+		if err != nil {
+			return badRequest(c, err)
+		}
+		if c.QueryParam(p.name) != "" && v == 0 {
+			return badRequest(c, errors.New("invalid "+p.name+", expected a positive integer"))
+		}
+		*p.dst = v
+	}
+	out, err := h.Breakouts.Breakouts(c.Request().Context(), q)
+	return writeData(c, out, err)
+}
+
 // --- netflix ----------------------------------------------------------------------
 
 // GetNetflixTop10 returns Netflix's official weekly Top 10, globally or for a
@@ -447,6 +472,12 @@ func (h *Handler) GetGenres() echo.HandlerFunc {
 func (h *Handler) GetReleasePatterns() echo.HandlerFunc {
 	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
 		return h.Analytics.ReleasePatterns(c.Request().Context(), q)
+	})
+}
+
+func (h *Handler) GetSpreadLag() echo.HandlerFunc {
+	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
+		return h.Analytics.SpreadLag(c.Request().Context(), q)
 	})
 }
 

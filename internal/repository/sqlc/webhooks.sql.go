@@ -175,21 +175,23 @@ func (q *Queries) InsertWebhookDelivery(ctx context.Context, arg InsertWebhookDe
 	return i, err
 }
 
-const listChartsChangedSince = `-- name: ListChartsChangedSince :many
+const listChartsChangedAfter = `-- name: ListChartsChangedAfter :many
 SELECT id, CAST(ranked_on AS TEXT) AS ranked_on, country, streaming_provider, category, entry_count,
        CAST(changed_at AS TEXT) AS changed_at
 FROM chart_snapshots
 WHERE changed_at >= CAST(?1 AS TEXT)
+  AND (changed_at > CAST(?1 AS TEXT) OR id > ?2)
 ORDER BY changed_at, id
-LIMIT ?2
+LIMIT ?3
 `
 
-type ListChartsChangedSinceParams struct {
-	Since string `json:"since"`
-	Limit int64  `json:"limit"`
+type ListChartsChangedAfterParams struct {
+	AfterAt string `json:"after_at"`
+	AfterID int64  `json:"after_id"`
+	Limit   int64  `json:"limit"`
 }
 
-type ListChartsChangedSinceRow struct {
+type ListChartsChangedAfterRow struct {
 	ID                int64  `json:"id"`
 	RankedOn          string `json:"ranked_on"`
 	Country           string `json:"country"`
@@ -199,17 +201,18 @@ type ListChartsChangedSinceRow struct {
 	ChangedAt         string `json:"changed_at"`
 }
 
-// Charts stored or changed at or after a time ('YYYY-MM-DD HH:MM:SS' UTC),
-// oldest first.
-func (q *Queries) ListChartsChangedSince(ctx context.Context, arg ListChartsChangedSinceParams) ([]ListChartsChangedSinceRow, error) {
-	rows, err := q.db.QueryContext(ctx, listChartsChangedSince, arg.Since, arg.Limit)
+// Charts stored or changed after a position (changed_at
+// 'YYYY-MM-DD HH:MM:SS' UTC, then row id), oldest first: keyset paging, so
+// many charts sharing one changed_at are read page by page.
+func (q *Queries) ListChartsChangedAfter(ctx context.Context, arg ListChartsChangedAfterParams) ([]ListChartsChangedAfterRow, error) {
+	rows, err := q.db.QueryContext(ctx, listChartsChangedAfter, arg.AfterAt, arg.AfterID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListChartsChangedSinceRow{}
+	items := []ListChartsChangedAfterRow{}
 	for rows.Next() {
-		var i ListChartsChangedSinceRow
+		var i ListChartsChangedAfterRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.RankedOn,

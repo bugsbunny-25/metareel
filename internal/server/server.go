@@ -142,8 +142,9 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	// Outbound webhooks: follows charts and watch provider changes, delivers
 	// signed events to subscribed URLs (stopped before the database closes).
+	breakouts := service.NewBreakoutService(analyticsRepo)
 	webhooks := service.NewWebhookService(log, repository.NewWebhookRepository(db), repository.NewOpsRepository(db), top10Read,
-		service.WebhookOptions{AllowLoopback: cfg.Webhooks.AllowLoopback})
+		service.WebhookOptions{AllowLoopback: cfg.Webhooks.AllowLoopback}).WithBreakouts(breakouts)
 	webhookCtx, stopWebhooks := context.WithCancel(ctx)
 	webhooksDone := make(chan struct{})
 	go func() {
@@ -178,11 +179,12 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 			WithEngagement(engagementRepo),
 		Analytics: service.NewAnalyticsService(analyticsRepo, readMetadataRepo, repository.NewImportsRepository(readDB), repository.NewRatingsRepository(readDB)).
 			WithEpisodes(episodesRepo),
-		History:  service.NewHistoryService(historyRepo, readMetadataRepo),
-		Calendar: service.NewCalendarService(episodesRepo),
-		Timeline: service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),
-		Search:   service.NewSearchService(repository.NewSearchRepository(readDB)),
-		Webhooks: webhooks,
+		History:   service.NewHistoryService(historyRepo, readMetadataRepo),
+		Calendar:  service.NewCalendarService(episodesRepo),
+		Breakouts: breakouts,
+		Timeline:  service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),
+		Search:    service.NewSearchService(repository.NewSearchRepository(readDB)),
+		Webhooks:  webhooks,
 		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,
 			taskScheduleRepo, taskBootstrap.Maintenance).WithMapping(repository.NewMappingRepository(db)),
 	}

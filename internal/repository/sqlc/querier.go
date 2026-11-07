@@ -154,9 +154,10 @@ type Querier interface {
 	// Dates with both categories stored for a chart in [from, to].
 	ListChartSnapshotDates(ctx context.Context, arg ListChartSnapshotDatesParams) ([]string, error)
 	ListChartSnapshotsForDate(ctx context.Context, arg ListChartSnapshotsForDateParams) ([]ChartSnapshot, error)
-	// Charts stored or changed at or after a time ('YYYY-MM-DD HH:MM:SS' UTC),
-	// oldest first.
-	ListChartsChangedSince(ctx context.Context, arg ListChartsChangedSinceParams) ([]ListChartsChangedSinceRow, error)
+	// Charts stored or changed after a position (changed_at
+	// 'YYYY-MM-DD HH:MM:SS' UTC, then row id), oldest first: keyset paging, so
+	// many charts sharing one changed_at are read page by page.
+	ListChartsChangedAfter(ctx context.Context, arg ListChartsChangedAfterParams) ([]ListChartsChangedAfterRow, error)
 	// Netflix titles mapped only by a Wikidata label match (source
 	// wikidata_netflix) to a TMDB title whose Netflix ID (not one copied from a
 	// Netflix title) differs from the title's own: the label matched another

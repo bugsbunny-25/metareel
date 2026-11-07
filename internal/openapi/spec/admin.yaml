@@ -1195,7 +1195,10 @@ paths:
         stored or changed, with its entries), title.entered (a title not on
         the chart's previous date; `first_time` when never on it before),
         title.number_one (a new #1), availability.added / availability.removed
-        (a title arrived on / left a service in a country). Body: {id, type,
+        (a title arrived on / left a service in a country), title.breakout (a
+        title rising in 2+ countries at once that wasn't the day before, as in
+        GET /api/v1/breakouts with the defaults; only for the current chart
+        date and the two before it). Body: {id, type,
         created_at, data}. Headers: X-Metareel-Event, X-Metareel-Event-Id
         (stable; use it to ignore repeats), X-Metareel-Delivery and
         X-Metareel-Signature "t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>">".

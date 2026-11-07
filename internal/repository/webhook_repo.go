@@ -280,9 +280,10 @@ type ChangedChart struct {
 	ChangedAt                         string // UTC "YYYY-MM-DD HH:MM:SS"
 }
 
-// ChartsChangedSince lists charts stored or changed at or after since.
-func (r *WebhookRepository) ChartsChangedSince(ctx context.Context, since string, limit int64) ([]ChangedChart, error) {
-	rows, err := r.q.ListChartsChangedSince(ctx, sqlc.ListChartsChangedSinceParams{Since: since, Limit: limit})
+// ChartsChangedAfter lists charts stored or changed after (afterAt, afterID)
+// in (changed_at, id) order; afterID 0 starts at afterAt itself.
+func (r *WebhookRepository) ChartsChangedAfter(ctx context.Context, afterAt string, afterID, limit int64) ([]ChangedChart, error) {
+	rows, err := r.q.ListChartsChangedAfter(ctx, sqlc.ListChartsChangedAfterParams{AfterAt: afterAt, AfterID: afterID, Limit: limit})
 	if err != nil {
 		return nil, fmt.Errorf("list changed charts: %w", err)
 	}

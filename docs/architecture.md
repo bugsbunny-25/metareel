@@ -366,7 +366,14 @@ before the database closes) follows two sources with cursors in
   minutes before the cursor (a re-scraped chart keeps its row id and gets its
   new `changed_at` when its transaction commits, possibly behind a cursor a
   concurrent pass already moved); repeats are dropped by event id
-  (`UNIQUE(webhook_id, event_id)`). Charts at or before
+  (`UNIQUE(webhook_id, event_id)`). The re-read pages by (`changed_at`, id)
+  (`ListChartsChangedAfter`), skips charts the dispatcher already handled (an
+  in-memory id -> `changed_at` set for the lookback; empty after a restart)
+  and turns at most 500 charts into events per pass. The cursor is the newest
+  handled `changed_at`, so thousands of charts sharing one timestamp (a bulk
+  import) are worked through over a few passes instead of stalling the
+  cursor. A chart the read API rejects (e.g. an unknown country) yields no
+  events rather than failing the pass. Charts at or before
   `webhooks.cursor.charts_floor` (where following started: time and highest
   row id) are never sent, so a first start doesn't replay history. Each chart
   is read through `Top10ReadService` and yields `chart.updated` plus
@@ -375,6 +382,12 @@ before the database closes) follows two sources with cursors in
   repeat them.
 - `webhooks.cursor.offers`: `watch_provider_events.id` →
   `availability.added` / `availability.removed`.
+- `title.breakout`: when a pass queued events for charts of the current chart
+  date or the two before it, and a webhook subscribes to the type,
+  `BreakoutService` computes breakouts (defaults) for each such date and the
+  day before; titles that are breakouts on the date but weren't the day before
+  are queued, keyed by title and date. A title that keeps rising is announced
+  once; a backfill of older dates announces nothing.
 
 Events are queued in `webhook_deliveries` for each enabled webhook
 subscribed to the type, then POSTed (10 s timeout, no redirects, no proxy,
@@ -482,6 +495,22 @@ usually the original network or service release, not per country.
   irregular) and measures each season x chart run over the window after the
   premiere from `rankings` (tagged with the season, or untagged), counting a
   chart only when `chart_snapshots` cover the whole window.
+
+## Breakouts and spread lag (`service/breakouts.go`, `service/analytics_spread.go`)
+
+- `GET /api/v1/breakouts` (`service/breakouts.go`) reads `rankings` for the
+  date minus `window` + 8 days. Per chart it compares the latest stored date
+  (the date, or the day before) with the latest stored date at least `window`
+  days earlier (at most 7 days further back). Titles are grouped by TMDB title,
+  as on leaderboards. A title rises on a chart when it entered it or climbed
+  `min_climb` places; per country the chart with the biggest points gain
+  counts, and a breakout rises in `min_countries` countries.
+- `GET /api/v1/analytics/spread-lag` (`service/analytics_spread.go`) finds each
+  title's first appearance per country from `rankings` (range minus 30 days to
+  range end plus `window`). The first one is the debut; the other countries
+  are followed for `window` days. A country whose stored charts start less
+  than 30 days before the debut is unknown for that title, and a debut in such
+  a country is dropped, since an earlier appearance could be missing.
 
 ## Read API Flow
 
@@ -891,6 +920,8 @@ metareel/
 │   │   ├── title_overview.go      # title overview, stats, availability, lookup
 │   │   ├── episodes.go            # tmdb.episodes.refresh job, episode calendar
 │   │   ├── analytics_release_patterns.go # binge / batch / weekly seasons and their chart runs
+│   │   ├── analytics_spread.go    # spread lag: days from a title's first country to the others
+│   │   ├── breakouts.go           # titles rising in several countries at once (+ title.breakout webhooks)
 │   │   ├── timeline.go            # title timeline: events from charts, availability, ratings, pageviews, Netflix, TMDB dates
 │   │   ├── title_offers.go        # watch provider URLs from JustWatch offers (metadata refresh)
 │   │   ├── analytics.go           # decay, similarity, release lag, ratings vs popularity, genres, Netflix calibration

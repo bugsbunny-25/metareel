@@ -861,6 +861,51 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/breakouts:
+    get:
+      operationId: getBreakouts
+      summary: Titles rising in the Top 10 in several countries at once
+      description: >-
+        Compares each chart's latest stored date (on `date`, or the day before
+        when today's chart isn't stored yet) with its stored date `window`
+        days earlier (or the closest stored date up to 7 days before that). A
+        title is rising on a chart when it entered it since then, or climbed
+        at least `min_climb` places; per country its best chart counts. A
+        breakout rises in at least `min_countries` countries. Sorted by rising
+        countries, then score (chart points gained, rank 1 = 10 ... rank 10 =
+        1). Stale charts (latest date more than a day before `date`) are left
+        out; `countries_checked` lists the countries that could be compared.
+        Webhooks can subscribe to `title.breakout` (admin API) to get each new
+        breakout with the default settings.
+      parameters:
+        - $ref: "#/components/parameters/DateParam"
+        - name: window
+          in: query
+          description: Days to compare over (1 to 14)
+          schema: { type: integer, minimum: 1, maximum: 14, default: 3 }
+        - name: min_countries
+          in: query
+          description: Countries a title must be rising in
+          schema: { type: integer, minimum: 1, maximum: 250, default: 2 }
+        - name: min_climb
+          in: query
+          description: Places a title already on a chart must climb to count as rising
+          schema: { type: integer, minimum: 1, maximum: 9, default: 3 }
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/KindQuery"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Breakouts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BreakoutsResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/v1/leaderboards:
     get:
       operationId: getLeaderboard
@@ -1643,6 +1688,45 @@ paths:
                 $ref: "#/components/schemas/ReleasePatternsResponse"
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /api/v1/analytics/spread-lag:
+    get:
+      operationId: getSpreadLag
+      summary: How quickly titles spread from the country they first chart in to others
+      description: >-
+        A title's debut is its first FlixPatrol chart appearance in any
+        country between `from` and `to` (default: the last 90 days, at most
+        180), with none
+        from 30 days before `from`; the countries it charted in that day are
+        its origins. Every other country is followed for `window` days: the
+        lag is the days until the title first charts there. A country counts
+        for a title only when its charts were stored for the 30 days before
+        the debut, and a title debuting in a country without that history is
+        left out (an earlier appearance could be missing). `country` keeps titles that
+        debuted there; `provider`, `category` and `kind` filter the charts and
+        titles. Countries are only those metareel scrapes.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - name: country
+          in: query
+          description: Only titles that debuted in this country (ISO 3166-1 alpha-2)
+          schema: { type: string }
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+        - name: window
+          in: query
+          description: Days after the debut to follow the other countries (7 to 90)
+          schema: { type: integer, minimum: 7, maximum: 90, default: 30 }
+      responses:
+        "200":
+          description: Spread lag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpreadLagResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/v1/analytics/netflix-calibration:
     get:
       operationId: getNetflixCalibration
@@ -1914,6 +1998,45 @@ components:
               re_entries: { type: array, items: { $ref: "#/components/schemas/Mover" } }
               exits: { type: array, items: { $ref: "#/components/schemas/Mover" } }
 
+    BreakoutsResponse:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        window: { type: integer }
+        min_countries: { type: integer }
+        min_climb: { type: integer }
+        category: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        kind: { type: string, nullable: true }
+        countries_checked: { type: array, items: { type: string }, description: Countries with a current chart that could be compared }
+        total: { type: integer, description: Breakouts before the limit }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Breakout" }
+    Breakout:
+      allOf:
+        - $ref: "#/components/schemas/ChartTitle"
+        - type: object
+          properties:
+            rising_countries: { type: integer }
+            charting_countries: { type: array, items: { type: string }, description: Countries where it is on a chart on its latest date, rising or not }
+            score: { type: integer, description: Chart points gained over the rising countries }
+            countries:
+              type: array
+              description: Rising countries, biggest gain first (the best chart per country)
+              items:
+                type: object
+                properties:
+                  country: { type: string }
+                  provider: { type: string }
+                  category: { type: string, enum: [movies, tv_shows] }
+                  date: { type: string, format: date, description: The chart's latest stored date }
+                  base_date: { type: string, format: date, description: The stored date compared with }
+                  rank: { type: integer }
+                  base_rank: { type: integer, nullable: true, description: null when not on the chart on base_date }
+                  movement: { type: string, enum: [entered, climbed] }
+                  gain: { type: integer, description: Chart points gained }
+
     LeaderboardResponse:
       type: object
       properties:
@@ -2089,6 +2212,74 @@ components:
             single: { type: integer }
             in_progress: { type: integer }
             uncharted: { type: integer }
+    LagSummary:
+      type: object
+      properties:
+        titles: { type: integer }
+        median_days: { type: number, nullable: true }
+        p25_days: { type: number, nullable: true }
+        p75_days: { type: number, nullable: true }
+    SpreadArrival:
+      type: object
+      properties:
+        country: { type: string }
+        provider: { type: string, description: Chart of the first appearance (best rank that day) }
+        category: { type: string, enum: [movies, tv_shows] }
+        first_date: { type: string, format: date }
+        lag_days: { type: integer, description: Days after the debut (0 = an origin) }
+        rank: { type: integer }
+    SpreadLagResponse:
+      type: object
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        country: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        kind: { type: string, nullable: true }
+        window: { type: integer }
+        titles: { type: integer, description: Debuts in the range with at least one other country followed }
+        multi_country: { type: integer, description: Titles that charted in two or more countries within the window }
+        simultaneous: { type: integer, description: Titles that debuted in several countries on the same day }
+        summary:
+          allOf:
+            - $ref: "#/components/schemas/LagSummary"
+          description: Lags of every arrival after the first country (0 for the extra origins of a simultaneous debut)
+        countries:
+          type: array
+          items:
+            type: object
+            properties:
+              country: { type: string }
+              origin: { type: integer, description: Titles that debuted here (alone or with other countries) }
+              arrived: { type: integer, description: Titles that charted here after debuting elsewhere, within the window }
+              arrival_lag: { $ref: "#/components/schemas/LagSummary" }
+              not_reached: { type: integer, description: Titles followed here for the whole window that never charted }
+        pairs:
+          type: array
+          description: Routes from a single-origin debut country to another country
+          items:
+            type: object
+            properties:
+              from: { type: string }
+              to: { type: string }
+              reached: { type: integer }
+              not_reached: { type: integer }
+              lag: { $ref: "#/components/schemas/LagSummary" }
+        items_total: { type: integer }
+        items:
+          type: array
+          description: Titles that charted in two or more countries, newest debut first (at most 200)
+          items:
+            allOf:
+              - $ref: "#/components/schemas/ChartTitle"
+              - type: object
+                properties:
+                  debut_date: { type: string, format: date }
+                  origins: { type: array, items: { type: string } }
+                  arrivals: { type: array, items: { $ref: "#/components/schemas/SpreadArrival" } }
+                  not_reached: { type: array, items: { type: string } }
+                  pending: { type: array, items: { type: string }, description: Not charted yet; the window is not over }
     OriginsResponse:
       type: object
       properties:
