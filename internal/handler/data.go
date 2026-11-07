@@ -372,6 +372,18 @@ func (h *Handler) LookupTitle(c *echo.Context) error {
 	return writeData(c, out, err)
 }
 
+// GetCalendar: GET /api/v1/calendar/{country}[?from=&to=&provider_id=]
+func (h *Handler) GetCalendar(c *echo.Context) error {
+	from, to, err := parseRange(c)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Calendar.Calendar(c.Request().Context(), service.CalendarQuery{
+		Country: c.Param("country"), From: from, To: to, ProviderID: c.QueryParam("provider_id"),
+	})
+	return writeData(c, out, err)
+}
+
 // --- netflix ----------------------------------------------------------------------
 
 // GetNetflixTop10 returns Netflix's official weekly Top 10, globally or for a
@@ -396,7 +408,7 @@ func (h *Handler) analytics(run func(c *echo.Context, q service.AnalyticsQuery) 
 			return badRequest(c, err)
 		}
 		q := service.AnalyticsQuery{From: from, To: to, Country: c.QueryParam("country"), Provider: c.QueryParam("provider"),
-			Category: c.QueryParam("category"), Kind: c.QueryParam("kind"), Interval: c.QueryParam("interval")}
+			Category: c.QueryParam("category"), Kind: c.QueryParam("kind"), Interval: c.QueryParam("interval"), Window: c.QueryParam("window")}
 		out, err := run(c, q)
 		return writeData(c, out, err)
 	}
@@ -429,6 +441,12 @@ func (h *Handler) GetRatingsVsPopularity() echo.HandlerFunc {
 func (h *Handler) GetGenres() echo.HandlerFunc {
 	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
 		return h.Analytics.Genres(c.Request().Context(), q)
+	})
+}
+
+func (h *Handler) GetReleasePatterns() echo.HandlerFunc {
+	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
+		return h.Analytics.ReleasePatterns(c.Request().Context(), q)
 	})
 }
 

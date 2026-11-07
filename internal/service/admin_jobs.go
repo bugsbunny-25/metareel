@@ -43,6 +43,8 @@ var taskTypeInfo = map[string]TaskTypeInfo{
 		Description: "Stores the daily English Wikipedia pageviews of every title with an article (found on Wikidata by the metadata job), since the last stored day (90 days for a new title); Force refetches the last week."},
 	tasks.TypeNetflixEngagement: {Label: "Netflix engagement reports",
 		Description: "Imports Netflix's \"What We Watched\" reports (hours viewed and views of every title, twice a year) from the list of report URLs (skipped when unchanged) and links them to Netflix Top 10 titles. Run with a url to add a new report."},
+	tasks.TypeTMDBEpisodes: {Label: "TMDB episodes",
+		Description: "Stores the episodes (air dates, names, finales) of the TV shows metareel knows from TMDB: recent, upcoming and latest seasons; airing shows daily, returning shows weekly, ended shows monthly (needs TMDB_API_KEY). Force refetches every show. Feeds the episode calendar and release patterns."},
 	tasks.TypeMappingRefresh: {Label: "Mapping refresh",
 		Description: "Follows up mapping changes (queued automatically): shares mappings over links, fetches TMDB details and Wikidata IDs of the TMDB titles now mapped to, fills mapped titles' missing IMDb / Wikidata IDs and remaps season numbers. Run by hand, it shares mappings and fills IDs."},
 	tasks.TypeMaintenance: {Label: "Maintenance",

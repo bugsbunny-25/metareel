@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -223,4 +224,76 @@ func (r *tmdbFullResp) toDetails(kind, id string) *TMDBFullDetails {
 		}
 	}
 	return d
+}
+
+// TMDBEpisode is one episode of a TV season.
+type TMDBEpisode struct {
+	SeasonNumber  int    `json:"season_number"`
+	EpisodeNumber int    `json:"episode_number"`
+	Name          string `json:"name"`
+	AirDate       string `json:"air_date"`     // YYYY-MM-DD, empty = TBA
+	EpisodeType   string `json:"episode_type"` // standard | finale | mid_season
+	Runtime       int    `json:"runtime"`      // minutes, 0 = unknown
+}
+
+// tmdbMaxAppends is how many sub-requests TMDB accepts in append_to_response.
+const tmdbMaxAppends = 20
+
+// TVSeasonEpisodes fetches the episodes of a TV show's seasons, up to 20
+// seasons per request (append_to_response=season/N). It returns nil, nil when
+// the show is unknown to TMDB or no API key is configured; seasons TMDB does
+// not return are left out of the map.
+func (c *TMDBClient) TVSeasonEpisodes(ctx context.Context, tvID string, seasons []int) (map[int][]TMDBEpisode, error) {
+	if !c.Enabled() {
+		return nil, nil
+	}
+	if !isDigits(tvID) {
+		return nil, fmt.Errorf("invalid tmdb tv id")
+	}
+	out := make(map[int][]TMDBEpisode, len(seasons))
+	for start := 0; start < len(seasons); start += tmdbMaxAppends {
+		batch := seasons[start:min(start+tmdbMaxAppends, len(seasons))]
+		appends := make([]string, 0, len(batch))
+		for _, n := range batch {
+			appends = append(appends, fmt.Sprintf("season/%d", n))
+		}
+		var raw map[string]json.RawMessage
+		resp, err := c.http.R().
+			SetContext(ctx).
+			SetQueryParams(map[string]string{"api_key": c.apiKey, "append_to_response": strings.Join(appends, ",")}).
+			Get(fmt.Sprintf("https://api.themoviedb.org/3/tv/%s", tvID))
+		if err != nil {
+			return nil, fmt.Errorf("tmdb tv seasons: %w", redactErr(err))
+		}
+		if resp.StatusCode() == 404 {
+			if start == 0 {
+				return nil, nil // unknown show
+			}
+			break // gone between two batches: keep what was read
+		}
+		if resp.IsError() {
+			return nil, fmt.Errorf("tmdb tv seasons status %d", resp.StatusCode())
+		}
+		if err := json.Unmarshal(resp.Body(), &raw); err != nil {
+			return nil, fmt.Errorf("decode tmdb tv %s seasons: %w", tvID, err)
+		}
+		for _, n := range batch {
+			body, ok := raw[fmt.Sprintf("season/%d", n)]
+			if !ok || string(body) == "null" {
+				continue
+			}
+			var season struct {
+				Episodes []TMDBEpisode `json:"episodes"`
+			}
+			if err := json.Unmarshal(body, &season); err != nil {
+				return nil, fmt.Errorf("decode tmdb season %d of tv %s: %w", n, tvID, err)
+			}
+			for i := range season.Episodes {
+				season.Episodes[i].Name = strings.TrimSpace(season.Episodes[i].Name)
+				season.Episodes[i].SeasonNumber = n
+			}
+			out[n] = season.Episodes
+		}
+	}
+	return out, nil
 }

@@ -102,6 +102,7 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 		Handle(tasks.TypeWikipediaPageviews, taskhandlers.PageviewsImportJob(service.NewPageviewsImporter(log, client.NewWikimedia(cfg.HTTP.Timeout), repository.NewHistoryRepository(db)))).
 		Handle(tasks.TypeNetflixEngagement, taskhandlers.NetflixEngagementJob(service.NewNetflixEngagementImporter(log, downloader, importsRepo,
 			repository.NewEngagementRepository(db), repository.NewOpsRepository(db)))).
+		Handle(tasks.TypeTMDBEpisodes, taskhandlers.EpisodesJob(service.NewEpisodesRefresher(log, tmdbClient, repository.NewEpisodesRepository(db)))).
 		Handle(tasks.TypeMappingRefresh, taskhandlers.MappingRefreshJob(mapping)).
 		Handle(tasks.TypeMaintenance, taskhandlers.MaintenanceJob(maintenance))
 	if deps.Ratings != nil {

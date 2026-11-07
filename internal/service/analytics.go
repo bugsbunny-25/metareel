@@ -19,6 +19,7 @@ type AnalyticsService struct {
 	metadata *repository.MetadataRepository
 	imports  *repository.ImportsRepository
 	ratings  *repository.RatingsRepository
+	episodes *repository.EpisodesRepository // optional: release patterns
 	now      func() time.Time
 }
 
@@ -32,6 +33,7 @@ type AnalyticsQuery struct {
 	Country, Provider, Category string
 	Kind                        string
 	Interval                    string // origins: week | month
+	Window                      string // release patterns: days after a premiere
 }
 
 type analyticsFilter struct {

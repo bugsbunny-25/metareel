@@ -144,6 +144,13 @@ func NetflixEngagementJob(n *service.NetflixEngagementImporter) JobFunc {
 	}
 }
 
+// EpisodesJob refreshes TMDB episodes of TV shows.
+func EpisodesJob(e *service.EpisodesRefresher) JobFunc {
+	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
+		return e.Run(ctx, p.Force, run.Log)
+	}
+}
+
 // MappingRefreshJob follows up mapping changes (see TitleMappingService.Refresh).
 func MappingRefreshJob(m *service.TitleMappingService) JobFunc {
 	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {

@@ -157,6 +157,7 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
 | `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz`; known IDs also go to `imdb_rating_history` when changed |
+| `tmdb.episodes.refresh` | `EpisodesRefresher` | `tmdb_episodes` of TV shows with a stored TMDB season list: seasons aired in the last 3 years, undated and the latest (`append_to_response=season/N`, 20 per request, 250 ms apart); due daily when an episode airs within -14..+60 days or a season starts within 30 days, weekly for returning statuses, else monthly (`tmdb_titles.episodes_fetched_at`); each fetched season replaced in one transaction |
 | `wikipedia.pageviews.import` | `PageviewsImporter` | English Wikipedia daily user views (Wikimedia REST, `client.Wikimedia`) of titles with `tmdb_titles.enwiki_title`, since the last stored day (90 days first); 350 ms apart (200 requests/minute limit), `Retry-After` honoured on 429 |
 | `netflix.engagement.import` | `NetflixEngagementImporter` | "What We Watched" `.xlsx` reports from `app_settings` `netflix.engagement.urls` (defaults in code; a run's `url` adds one), parsed by `internal/xlsx`; each period replaced in one transaction, rows linked by name to Netflix Top 10 titles / season titles |
 | `tmdb.popularity.import` | `TMDBPopularityImporter` | TMDB daily ID exports (`movie_ids_MM_DD_YYYY.json.gz`, `tv_series_ids_…`): popularity of known TMDB titles into `tmdb_popularity_history`; yesterday's file until today's is out |
@@ -465,6 +466,23 @@ lists them, up to six months after release); co-productions take the first
 recognised company (Spider-Man on Disney+ counts as Marvel's); regional
 "originals" licensed from a local network are licensed.
 
+## Episodes, calendar and release patterns (`service/episodes.go`, `service/analytics_release_patterns.go`)
+
+`tmdb.episodes.refresh` stores TMDB episodes (`tmdb_episodes`) of the TV
+shows that have a TMDB season list (charting shows and Netflix Top 10
+titles), so only shows metareel knows are covered. Air dates are TMDB's,
+usually the original network or service release, not per country.
+
+- `GET /api/v1/calendar/{country}` joins episodes airing in the range with the
+  show's current subscription / free / ads offers in that country
+  (`tmdb_watch_providers`), one entry per show, season and date.
+- `GET /api/v1/analytics/release-patterns` classifies seasons by their release
+  dates (`classifyRelease`: one date = binge; 2-4 dates averaging 2+ episodes =
+  batch; otherwise by the median gap: 5-9 days weekly, at most 2 daily, else
+  irregular) and measures each season x chart run over the window after the
+  premiere from `rankings` (tagged with the season, or untagged), counting a
+  chart only when `chart_snapshots` cover the whole window.
+
 ## Read API Flow
 
 ```mermaid
@@ -603,6 +621,7 @@ Added since the diagram below:
 | `imdb_ratings` | IMDb dataset ratings (known IMDb IDs by default) |
 | `imdb_rating_history`, `title_rating_history` | Rating history (migration 17): IMDb dataset rating + votes per day, and each provider's rating sources (from `SaveTitleRatings`), written only when the value changed since the previous row (step series; `/history` adds the point in effect at `from`) |
 | `tmdb_popularity_history` | TMDB popularity per title per day from the daily exports |
+| `tmdb_episodes`, `tmdb_titles.episodes_fetched_at` | TV episodes per show / season / episode: name, air date (TMDB's, NULL = TBA), `episode_type` (standard / finale / mid_season), runtime (migration 23); read by the episode calendar and release patterns |
 | `tmdb_titles.enwiki_title`, `wikipedia_pageviews` | English Wikipedia article from Wikidata (sitelink, looked up monthly by `titles.metadata`, migration 20) and its daily user pageviews per project |
 | `tmdb_titles.netflix_premiere`, `netflix_premiere_source` | Earliest Netflix premiere of a Netflix-branded title per the engagement reports (`linked` through a Netflix Top 10 title, or `name`), migration 22; marks Netflix originals for the origin classifier |
 | `netflix_engagement` | Netflix engagement report rows per period × kind × title: hours viewed, runtime, views, available globally, premiere date (originals only), and the Netflix Top 10 title / season it is linked to (migration 21) |
@@ -870,6 +889,8 @@ metareel/
 │   │   ├── imdb_import.go         # IMDb ratings dataset import
 │   │   ├── charts.go              # catalog, history, movers, leaderboards, changes, export
 │   │   ├── title_overview.go      # title overview, stats, availability, lookup
+│   │   ├── episodes.go            # tmdb.episodes.refresh job, episode calendar
+│   │   ├── analytics_release_patterns.go # binge / batch / weekly seasons and their chart runs
 │   │   ├── timeline.go            # title timeline: events from charts, availability, ratings, pageviews, Netflix, TMDB dates
 │   │   ├── title_offers.go        # watch provider URLs from JustWatch offers (metadata refresh)
 │   │   ├── analytics.go           # decay, similarity, release lag, ratings vs popularity, genres, Netflix calibration

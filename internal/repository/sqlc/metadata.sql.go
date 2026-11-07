@@ -186,7 +186,7 @@ func (q *Queries) FindTmdbRefsByNetflixID(ctx context.Context, arg FindTmdbRefsB
 }
 
 const getTmdbTitle = `-- name: GetTmdbTitle :one
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at, enwiki_title, enwiki_fetched_at, netflix_premiere, netflix_premiere_source FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at, enwiki_title, enwiki_fetched_at, netflix_premiere, netflix_premiere_source, episodes_fetched_at FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
 `
 
 type GetTmdbTitleParams struct {
@@ -248,6 +248,7 @@ func (q *Queries) GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (Tmd
 		&i.EnwikiFetchedAt,
 		&i.NetflixPremiere,
 		&i.NetflixPremiereSource,
+		&i.EpisodesFetchedAt,
 	)
 	return i, err
 }
@@ -513,7 +514,7 @@ func (q *Queries) ListTmdbRefsDueForWikidata(ctx context.Context, arg ListTmdbRe
 }
 
 const listTmdbTitlesByIDs = `-- name: ListTmdbTitlesByIDs :many
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at, enwiki_title, enwiki_fetched_at, netflix_premiere, netflix_premiere_source FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at, enwiki_title, enwiki_fetched_at, netflix_premiere, netflix_premiere_source, episodes_fetched_at FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
 `
 
 // Callers filter by kind (TMDB movie and TV IDs overlap).
@@ -587,6 +588,7 @@ func (q *Queries) ListTmdbTitlesByIDs(ctx context.Context, ids []string) ([]Tmdb
 			&i.EnwikiFetchedAt,
 			&i.NetflixPremiere,
 			&i.NetflixPremiereSource,
+			&i.EpisodesFetchedAt,
 		); err != nil {
 			return nil, err
 		}

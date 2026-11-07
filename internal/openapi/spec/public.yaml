@@ -1289,6 +1289,43 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/calendar/{country}:
+    get:
+      operationId: getCalendar
+      summary: Upcoming episodes of shows streamable in a country
+      description: >-
+        Episodes airing between `from` and `to` (default: today and the next 13
+        days; at most 62 days) of the TV shows metareel knows that have a
+        subscription, free or ad-supported offer in the country (TMDB, data by
+        JustWatch). One entry per show, season and date, so a binge release is
+        one entry with every episode. Air dates are TMDB's (usually the
+        original network or service release, not per country), and offers are
+        the show's current ones in the country. Episodes are refreshed by the
+        tmdb.episodes.refresh job (airing shows daily).
+      parameters:
+        - name: country
+          in: path
+          required: true
+          schema: { type: string, example: US }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: provider_id
+          in: query
+          description: Only shows with an offer from this TMDB watch provider (e.g. 8 = Netflix)
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Calendar
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/v1/titles/tmdb/{kind}/{id}/netflix:
     get:
       operationId: getTitleNetflix
@@ -1567,6 +1604,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OriginsResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/release-patterns:
+    get:
+      operationId: getReleasePatterns
+      summary: How long TV seasons stay in the Top 10 by release pattern (binge, batch, weekly)
+      description: >-
+        Classifies each TV season premiering between `from` and `to` (default:
+        the last 365 days) by its TMDB episode air dates: `binge` (every
+        episode on one day), `batch` (2 to 4 drops averaging 2+ episodes, e.g.
+        volumes), `weekly` (drops 5 to 9 days apart, median), `daily` (at most
+        2 days apart) or `irregular`. Then measures each chart run (season x
+        FlixPatrol TV chart) over `window` days from the premiere: days in the
+        Top 10, the last day charting, best rank and points, aggregated per
+        pattern. A chart counts only when stored from the premiere to the end of
+        the window; the window stops before the next season premieres; rankings
+        count when tagged with the season or untagged. Seasons with unaired
+        episodes, a single episode, no chart run yet (`in_progress`) or none at
+        all (`uncharted`) are counted in `excluded`. Only shows metareel knows
+        (charting titles) have episodes, and TMDB air dates are the original
+        release, not per country.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - name: window
+          in: query
+          description: Days after each premiere to measure (30 to 180)
+          schema: { type: integer, minimum: 30, maximum: 180, default: 60 }
+      responses:
+        "200":
+          description: Release patterns
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleasePatternsResponse"
         "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/analytics/netflix-calibration:
@@ -1930,6 +2004,91 @@ components:
         origin: { type: string, enum: [original, in_house, licensed, unknown] }
         owner: { type: string, example: wbd }
         reason: { type: string, example: "network: HBO" }
+    CalendarResponse:
+      type: object
+      properties:
+        country: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        provider_id: { type: integer, nullable: true }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              air_date: { type: string, format: date }
+              tmdb_id: { type: string }
+              title: { type: string }
+              poster_path: { type: string, nullable: true }
+              season_number: { type: integer }
+              season_premiere: { type: boolean, description: Includes episode 1 }
+              season_finale: { type: boolean, description: "Includes TMDB's finale episode" }
+              episodes:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    episode_number: { type: integer }
+                    name: { type: string }
+                    episode_type: { type: string, description: "TMDB: standard | finale | mid_season" }
+                    runtime: { type: integer, description: Minutes }
+              offers:
+                type: array
+                description: The show's subscription, free and ad-supported offers in the country
+                items:
+                  type: object
+                  properties:
+                    provider_id: { type: integer }
+                    provider_name: { type: string }
+                    monetization: { type: string, enum: [flatrate, free, ads] }
+                    url: { type: string }
+    ReleasePatternsResponse:
+      type: object
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        country: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        window_days: { type: integer }
+        patterns:
+          type: array
+          items:
+            type: object
+            properties:
+              pattern: { type: string, enum: [binge, batch, weekly, daily, irregular] }
+              seasons: { type: integer }
+              chart_runs: { type: integer, description: Season x chart pairs with at least one day in the Top 10 }
+              median_days_in_top10: { type: number }
+              mean_days_in_top10: { type: number }
+              median_last_day: { type: number, description: Days from the premiere to the last day in the Top 10 }
+              share_still_charting_day_28: { type: number, description: Share of chart runs still in the Top 10 on or after day 28 }
+              median_best_rank: { type: number }
+              median_points: { type: number, description: "Chart points per run (rank 1 = 10 ... rank 10 = 1)" }
+        seasons:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [tv] }
+              tmdb_id: { type: string }
+              title: { type: string }
+              season_number: { type: integer }
+              pattern: { type: string }
+              premiere: { type: string, format: date }
+              last_episode: { type: string, format: date }
+              episodes: { type: integer }
+              drops: { type: integer, description: Release dates }
+              charts: { type: integer }
+              median_days_in_top10: { type: number }
+              median_last_day: { type: number }
+              best_rank: { type: integer }
+        excluded:
+          type: object
+          properties:
+            unaired: { type: integer }
+            single: { type: integer }
+            in_progress: { type: integer }
+            uncharted: { type: integer }
     OriginsResponse:
       type: object
       properties:

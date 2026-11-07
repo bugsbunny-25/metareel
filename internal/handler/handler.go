@@ -33,6 +33,7 @@ type Handler struct {
 	DataQuality *service.DataQualityService
 	History     *service.HistoryService
 	Timeline    *service.TimelineService
+	Calendar    *service.CalendarService
 	Search      *service.SearchService
 	Webhooks    *service.WebhookService
 }

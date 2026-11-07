@@ -327,6 +327,16 @@ type TitleRatingSource struct {
 	FetchedAt time.Time      `json:"fetched_at"`
 }
 
+type TmdbEpisode struct {
+	TmdbID        string         `json:"tmdb_id"`
+	SeasonNumber  int64          `json:"season_number"`
+	EpisodeNumber int64          `json:"episode_number"`
+	Name          sql.NullString `json:"name"`
+	AirDate       sql.NullString `json:"air_date"`
+	EpisodeType   sql.NullString `json:"episode_type"`
+	Runtime       sql.NullInt64  `json:"runtime"`
+}
+
 type TmdbPopularityHistory struct {
 	TmdbKind   string  `json:"tmdb_kind"`
 	TmdbID     string  `json:"tmdb_id"`
@@ -385,6 +395,7 @@ type TmdbTitle struct {
 	EnwikiFetchedAt       sql.NullTime    `json:"enwiki_fetched_at"`
 	NetflixPremiere       sql.NullString  `json:"netflix_premiere"`
 	NetflixPremiereSource sql.NullString  `json:"netflix_premiere_source"`
+	EpisodesFetchedAt     sql.NullTime    `json:"episodes_fetched_at"`
 }
 
 type TmdbWatchProvider struct {
