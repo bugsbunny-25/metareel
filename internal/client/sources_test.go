@@ -3,12 +3,14 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestTMDBFullDetailsMapping(t *testing.T) {
@@ -25,7 +27,13 @@ func TestTMDBFullDetailsMapping(t *testing.T) {
 	  "release_dates": {"results": [{"iso_3166_1": "US", "release_dates": [
 	    {"release_date": "2025-10-24T00:00:00.000Z", "type": 3},
 	    {"release_date": "2025-12-09T00:00:00.000Z", "type": 4},
-	    {"release_date": "2025-12-01T00:00:00.000Z", "type": 4}]}]}
+	    {"release_date": "2025-12-01T00:00:00.000Z", "type": 4},
+	    {"release_date": "2025-08-28T00:00:00.000Z", "type": 1, "note": "Venice Film Festival"},
+	    {"release_date": "2025-10-17T00:00:00.000Z", "type": 2},
+	    {"release_date": "bad", "type": 5},
+	    {"release_date": "2026-01-10T00:00:00.000Z", "type": 9}]},
+	    {"iso_3166_1": "gb", "release_dates": [{"release_date": "2025-11-07T00:00:00.000Z", "type": 3}]},
+	    {"iso_3166_1": "", "release_dates": [{"release_date": "2025-11-07T00:00:00.000Z", "type": 3}]}]}
 	}`
 	var r tmdbFullResp
 	if err := json.Unmarshal([]byte(body), &r); err != nil {
@@ -40,6 +48,23 @@ func TestTMDBFullDetailsMapping(t *testing.T) {
 	}
 	if d.DigitalReleaseDates["US"] != "2025-12-01" {
 		t.Fatalf("digital release = %v (want earliest type-4 date)", d.DigitalReleaseDates)
+	}
+	// Every valid type, earliest per country and type, sorted; bad dates,
+	// unknown types and bad countries are dropped.
+	want := []TMDBReleaseDate{
+		{Country: "GB", Type: ReleaseTheatrical, Date: "2025-11-07"},
+		{Country: "US", Type: ReleasePremiere, Date: "2025-08-28", Note: "Venice Film Festival"},
+		{Country: "US", Type: ReleaseTheatricalLimited, Date: "2025-10-17"},
+		{Country: "US", Type: ReleaseTheatrical, Date: "2025-10-24"},
+		{Country: "US", Type: ReleaseDigital, Date: "2025-12-01"},
+	}
+	if len(d.ReleaseDates) != len(want) {
+		t.Fatalf("release dates = %+v", d.ReleaseDates)
+	}
+	for i := range want {
+		if d.ReleaseDates[i] != want[i] {
+			t.Fatalf("release dates[%d] = %+v, want %+v", i, d.ReleaseDates[i], want[i])
+		}
 	}
 	if len(d.WatchProviders) != 2 || d.WatchProviders[0].Country != "US" {
 		t.Fatalf("providers = %+v", d.WatchProviders)
@@ -191,5 +216,130 @@ func TestNetflixTop10Search(t *testing.T) {
 	}
 	if _, err := c.ShowID(context.Background(), "1/../x"); err == nil {
 		t.Fatal("non-numeric id accepted")
+	}
+}
+
+func TestWikidataLookupDistributors(t *testing.T) {
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		query = r.Form.Get("query")
+		_, _ = io.WriteString(w, `{"results": {"bindings": [
+		  {"tmdb": {"value": "803796"}, "label": {"value": "Netflix"}},
+		  {"tmdb": {"value": "353081"}, "label": {"value": "Universal Pictures"}},
+		  {"tmdb": {"value": "353081"}, "label": {"value": "Netflix"}},
+		  {"tmdb": {"value": "353081"}, "label": {"value": "Netflix"}},
+		  {"tmdb": {"value": "353081"}, "label": {"value": " "}}]}}`)
+	}))
+	defer srv.Close()
+	c := NewWikidataSPARQL(time.Second)
+	c.endpoint = srv.URL
+
+	got, err := c.LookupDistributors(context.Background(), []string{"803796", "353081", "1", `2" } DROP`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(query, "wdt:P750") || !strings.Contains(query, `"803796"`) || strings.Contains(query, "DROP") {
+		t.Fatalf("query = %s", query)
+	}
+	if d := got["803796"]; len(d) != 1 || d[0] != "Netflix" {
+		t.Fatalf("803796 = %v", d)
+	}
+	if d := got["353081"]; len(d) != 2 || d[0] != "Netflix" || d[1] != "Universal Pictures" {
+		t.Fatalf("353081 = %v (want sorted, deduped)", d)
+	}
+	if _, ok := got["1"]; ok {
+		t.Fatal("movie without distributors should be absent")
+	}
+}
+
+func TestWikimediaPageviews(t *testing.T) {
+	var path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.EscapedPath()
+		if ua := r.Header.Get("User-Agent"); !strings.HasPrefix(ua, "metareel/") {
+			t.Errorf("user agent = %q", ua)
+		}
+		if strings.Contains(path, "Missing") {
+			http.NotFound(w, r)
+			return
+		}
+		if strings.Contains(path, "Busy") {
+			w.Header().Set("Retry-After", "7")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = io.WriteString(w, `{"items":[{"timestamp":"2026110100","views":6108},{"timestamp":"2026110200","views":5294}]}`)
+	}))
+	defer srv.Close()
+	wm := NewWikimedia(time.Second)
+	wm.endpoint = srv.URL
+	from, to := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	got, err := wm.Pageviews(context.Background(), "en.wikipedia", "AC/DC (band)", from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/metrics/pageviews/per-article/en.wikipedia/all-access/user/AC%2FDC_%28band%29/daily/20261101/20261102" {
+		t.Fatalf("path = %s", path)
+	}
+	if len(got) != 2 || got[0].Day != "2026-11-01" || got[0].Views != 6108 {
+		t.Fatalf("views = %+v", got)
+	}
+	if got, err := wm.Pageviews(context.Background(), "en.wikipedia", "Missing article", from, to); got != nil || err != nil {
+		t.Fatalf("missing = %v, %v", got, err)
+	}
+	var rl *RateLimitedError
+	if _, err := wm.Pageviews(context.Background(), "en.wikipedia", "Busy", from, to); !errors.As(err, &rl) || rl.RetryAfter != 7*time.Second {
+		t.Fatalf("rate limited = %v", err)
+	}
+}
+
+func TestWikidataLookupEnwiki(t *testing.T) {
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		query = r.Form.Get("query")
+		_, _ = io.WriteString(w, `{"results":{"bindings":[{"item":{"value":"http://www.wikidata.org/entity/Q19865"},"name":{"value":"Stranger Things"}}]}}`)
+	}))
+	defer srv.Close()
+	c := NewWikidataSPARQL(time.Second)
+	c.endpoint = srv.URL
+	got, err := c.LookupEnwiki(context.Background(), []string{"Q19865", "Q2", "x } DROP", "Qabc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(query, "wd:Q19865 wd:Q2") || strings.Contains(query, "DROP") || strings.Contains(query, "Qabc") || !strings.Contains(query, "en.wikipedia.org") {
+		t.Fatalf("query = %s", query)
+	}
+	if got["Q19865"] != "Stranger Things" || len(got) != 1 {
+		t.Fatalf("got = %v", got)
+	}
+}
+
+func TestReleaseNotesAndCountries(t *testing.T) {
+	long := strings.Repeat("é", 150) // 300 bytes
+	if got := cleanNote(" a\u0007b‮c\n "); got != "abc" {
+		t.Fatalf("cleanNote = %q", got)
+	}
+	if got := cleanNote(long); len(got) > 200 || !utf8.ValidString(got) || got != strings.Repeat("é", 100) {
+		t.Fatalf("cleanNote(long) = %d bytes, valid %v", len(got), utf8.ValidString(got))
+	}
+	var r tmdbFullResp
+	_ = json.Unmarshal([]byte(`{"release_dates": {"results": [
+	  {"iso_3166_1": "1@", "release_dates": [{"release_date": "2025-11-07T00:00:00.000Z", "type": 3}]},
+	  {"iso_3166_1": "DE", "release_dates": [{"release_date": "2025-11-07T00:00:00.000Z", "type": 3}]}]}}`), &r)
+	d := r.toDetails("movie", "1")
+	if !d.ReleaseDatesFetched || len(d.ReleaseDates) != 1 || d.ReleaseDates[0].Country != "DE" {
+		t.Fatalf("release dates = %+v", d.ReleaseDates)
+	}
+	var none tmdbFullResp
+	_ = json.Unmarshal([]byte(`{"title": "x"}`), &none)
+	if none.toDetails("movie", "1").ReleaseDatesFetched {
+		t.Fatal("no release_dates block counted as fetched")
+	}
+	var empty tmdbFullResp
+	_ = json.Unmarshal([]byte(`{"release_dates": {"results": []}}`), &empty)
+	if !empty.toDetails("movie", "1").ReleaseDatesFetched {
+		t.Fatal("an empty release_dates block (none) not counted as fetched")
 	}
 }

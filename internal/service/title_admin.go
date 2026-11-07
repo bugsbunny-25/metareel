@@ -203,6 +203,9 @@ func (s *TitleAdminService) PatchTitleIDs(ctx context.Context, titleID int64, in
 	}
 	if in.TmdbID != nil {
 		tmdbID = strings.TrimSpace(*in.TmdbID)
+		if tmdbID != "" && !tmdbNumericRe.MatchString(tmdbID) {
+			return nil, &ValidationError{Message: "tmdb_id must be a number"}
+		}
 	}
 	imdbGiven := ""
 	if in.ImdbID != nil {

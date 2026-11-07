@@ -22,11 +22,19 @@ type TitleOverviewService struct {
 	metadata  *repository.MetadataRepository
 	ratings   *RatingsService
 	mapping   *TitleMappingService // optional: the overview's ids section
-	now       func() time.Time
+	// engagement: optional, Netflix engagement report rows
+	engagement *repository.EngagementRepository
+	now        func() time.Time
 }
 
 func NewTitleOverviewService(analytics *repository.AnalyticsRepository, flix *repository.FlixPatrolRepository, metadata *repository.MetadataRepository, ratings *RatingsService) *TitleOverviewService {
 	return &TitleOverviewService{analytics: analytics, flix: flix, metadata: metadata, ratings: ratings, now: time.Now}
+}
+
+// WithEngagement adds Netflix engagement report rows to Netflix numbers.
+func (s *TitleOverviewService) WithEngagement(repo *repository.EngagementRepository) *TitleOverviewService {
+	s.engagement = repo
+	return s
 }
 
 // WithMapping adds every known external ID to overviews.
@@ -249,6 +257,9 @@ type TitleNetflixResponse struct {
 	Seasons      []NetflixSeasonSummary      `json:"seasons"` // TV: one per season title, by season number
 	Global       []repository.NetflixWeekRow `json:"global"`
 	CountryWeeks []repository.NetflixWeekRow `json:"country_weeks"`
+	// Engagement: the title's rows in Netflix's "What We Watched" reports
+	// (half-yearly hours viewed and views), newest period first.
+	Engagement []repository.EngagementRow `json:"engagement"`
 }
 
 // NetflixSeasonSummary is one season's run in Netflix's official Top 10.
@@ -293,6 +304,12 @@ func (s *TitleOverviewService) Netflix(ctx context.Context, ref TmdbRef) (*Title
 	}
 	out.WeeksGlobal, out.Countries = len(weeks), sortedKeys(cs)
 	out.Seasons = netflixSeasonSummaries(global, countries)
+	out.Engagement = []repository.EngagementRow{}
+	if s.engagement != nil {
+		if out.Engagement, err = s.engagement.ForTmdb(ctx, ref); err != nil {
+			return nil, err
+		}
+	}
 	return out, nil
 }
 

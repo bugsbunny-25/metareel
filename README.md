@@ -198,14 +198,27 @@ make reports-open
 | GET    | `/api/v1/charts`, `/api/v1/charts/:country/:provider/dates` | Stored charts with date ranges and freshness; stored dates |
 | GET    | `/api/v1/changes?since=`                    | Charts stored / re-scraped since a time (poll this) |
 | GET    | `/api/v1/movers`                            | Climbers, fallers, debuts, re-entries, exits (`country`, `provider`, `date`) |
+| GET    | `/api/v1/discover/:country/hidden-gems`     | Highly rated titles (IMDb ≥ `min_rating` 7.5 from ≥ `min_votes` 5,000) streamable in the country that weren't in its Top 10 over `days` (90), ranked by a vote-weighted rating (`kind`, `provider_id`, `limit`) |
+| GET    | `/api/v1/discover/:country/elsewhere`       | Titles in other countries' Top 10s over `days` (7) with no subscription / free / ads offer in the country, with where they chart and rent / buy offers here (`kind`, `limit`) |
+| GET    | `/api/v1/discover/:country/rotation`        | Which subscription services to pay for (plans and channels grouped per service; `include_other=true` adds TV bundles and niche services): each scored on its titles' chart points, upcoming episodes, arrivals and top-rated titles over `days` (30), with `subscribe` / `skip` (or `keep` / `pause` / `add` given `subscribed=8,9`) for the best `slots` (2) |
+| GET    | `/api/v1/breakouts`                         | Titles rising in several countries at once: entered a chart or climbed `min_climb`+ places (default 3) over `window` days (1–14, default 3) in at least `min_countries` countries (default 2); `date`, `category`, `provider`, `kind`, `limit` |
 | GET    | `/api/v1/leaderboards`                      | Titles by chart points (`period=day\|week\|month\|custom`, filters) |
 | GET    | `/api/v1/export/rankings`                   | Chart entries as CSV / NDJSON (≤ 366 days) |
 | GET    | `/api/v1/countries`, `/api/v1/providers`    | Supported countries; providers with stored charts |
 | GET    | `/api/v1/titles`, `/api/v1/titles/:id`      | Scraped titles (paged; `match_status` filter); a single mapped title carries its TMDB title's `ids` |
+| GET    | `/api/v1/search?q=&kind=movie\|tv&limit=` | Find titles by any name (TMDB title / original title, FlixPatrol and Netflix names); accent- and punctuation-insensitive, word prefixes ("strang thin"), best match then most recently charted first |
 | GET    | `/api/v1/titles/lookup?imdb=\|tmdb=\|slug=\|netflix=` | Find a title by any ID (`netflix` = the number in netflix.com/title/<id>) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id`             | Everything about a title: TMDB metadata, chart stats, current positions, ratings, where to watch, Netflix numbers (`include=`), and `ids` — every known ID (IMDb, Wikidata, Rotten Tomatoes, Netflix, JustWatch, FlixPatrol slugs, Netflix Top 10 names) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/stats`       | Chart performance: points, peak, days at #1, debut, streak, spread across countries |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/availability` | Watch providers per country (TMDB, data by JustWatch), each with `url` to the title on that service |
+| GET    | `/api/v1/titles/tmdb/:kind/:id/availability/history` | When the title arrived on / left each service per country (`added` / `removed` between two TMDB refreshes; `country` optional) |
+| GET    | `/api/v1/titles/tmdb/:kind/:id/history`     | Ratings, TMDB popularity and English Wikipedia pageviews over time (`from`, `to`; default last 90 days, ≤ 366): IMDb dataset, each provider's rating sources (a point when a value changed) and daily TMDB popularity |
+| GET    | `/api/v1/titles/tmdb/:kind/:id/credits`     | Top 25 cast and key crew (directors, writers, creators, composers, cinematographers) from TMDB; TV with episodes credited |
+| GET    | `/api/v1/people/:id`                        | A TMDB person and their titles metareel knows, with roles and each title's chart record (points, days, best rank, countries) |
+| GET    | `/api/v1/titles/tmdb/movie/:id/releases`    | A movie's premiere, theatrical (limited / wide), digital (PVOD), physical and TV dates per country from TMDB, the observed streaming arrival (first offer seen arriving, or first chart day) and the windows between them in days (`country`) |
+| GET    | `/api/v1/titles/tmdb/:kind/:id/timeline`    | Everything that happened to a title, newest first: chart debuts, peaks, #1 runs and re-entries, availability added/removed, rating changes, Wikipedia pageview spikes, Netflix Top 10 weeks and engagement periods, season premieres, release (`types`, `country`, `from`, `to`, `limit`) |
+| GET    | `/api/v1/calendar/:country`                 | Upcoming episodes of shows streamable in the country (subscription / free / ads), one entry per show, season and day with the services (`from`, `to`: default the next 14 days, ≤ 62; `provider_id`) |
+| GET    | `/api/v1/availability/changes`              | Titles that arrived on / left a service across titles (`since` RFC 3339, default 7 days; `country`, `event=added\|removed`, `monetization`, `provider_id`, `limit`) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/netflix`     | Weeks in Netflix's official Top 10, with a per-season summary (`seasons`) for TV |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/rankings`    | Ranking history by TMDB ID (`kind` = movie or tv; `country`, `from`, `to` optional) |
 | GET    | `/api/v1/titles/tmdb/rankings?ids=movie:425,tv:1` | Batch ranking history (max 50 ids)    |
@@ -213,15 +226,23 @@ make reports-open
 | GET    | `/api/v1/titles/tmdb/ratings?ids=`          | Batch ratings (max 50; refreshes up to 10 uncached) |
 | GET    | `/api/v1/netflix/top10[/:country]`, `/api/v1/netflix/most-popular` | Netflix's official weekly Top 10 and most-popular lists (rows carry `season_number` / `season_source`) |
 | GET    | `/api/v1/analytics/{decay,country-similarity,release-lag,ratings-vs-popularity,genres,netflix-calibration}` | Analytics over a range (`from`, `to`, `country`, `provider`, `category`, `kind`) |
+| GET    | `/api/v1/analytics/release-patterns`        | How long TV seasons stay in the Top 10 by release pattern (`binge` / `batch` / `weekly` / `daily` / `irregular`, from TMDB episode air dates), over `window` days (30–180, default 60) after each premiere; `from`, `to` = premiere range (default last 365 days), `country`, `provider` |
+| GET    | `/api/v1/analytics/spread-lag`              | How many days after a title first charts in one country it charts in the others: overall and per-country lags, origin → destination routes, titles never reached within `window` days (7–90, default 30). Debuts between `from` and `to` (default last 90 days, ≤ 180); `country` = debuted there; `provider`, `category`, `kind` |
+| GET    | `/api/v1/analytics/people`                  | People ranked by the Top 10 points of their titles in a range (`role` = actor (top-10 billed) / director / writer / creator / composer / cinematographer; `from`, `to`, `country`, `provider`, `category`, `kind`, `limit`) |
+| GET    | `/api/v1/analytics/release-windows`         | Theatrical → digital (PVOD), theatrical → streaming and digital → streaming windows of movies released in theaters in `country` (default US) between `from` and `to` (default last 365 days): medians, quartiles, how many were ≤ 17 / 31 / 45 / 90 days, per streaming service, and each movie (`limit`, ≤ 500) |
+| GET    | `/api/v1/analytics/origins`                 | Each service's chart points by origin — `original` / `in_house` (parent company's studios and channels) / `licensed` / `unknown` — per week or month (`interval`), with the owners of licensed titles and top titles. Chart entries carry the same `origin` |
 | GET    | `/api/v1/titles/new/:country/:service`      | Titles added to a service per day, live from JustWatch (`from`, `to` default last 7 days; `type`) |
 | GET    | `/api/v1/titles/upcoming/:country/:service` | Titles announced for a service, live from JustWatch (`from`, `to`, `type`) |
 | GET    | `/api/v1/services/:country`                 | JustWatch service codes in a country (for `:service`) |
 | GET/POST/PATCH/DELETE | `/api/v1/admin/...`           | Admin API: schedules, runs, stats, API keys, settings, title corrections (`PATCH /api/v1/admin/titles/:id`, `POST .../rematch`), `POST /jobs/:type/run`, `POST /backfill`, `GET /data-quality`, `GET /task-types`, and admin copies of the read routes above |
 | GET/PATCH/POST | `/api/v1/admin/netflix/titles[/:id[/rematch\|/candidates]]` | Netflix official Top 10 titles: list (`q`, `kind`, `match_status`, `missing=tmdb\|season`, `flag=cross_kind\|linked`, `sort`), detail with season titles, weeks and linked FlixPatrol titles, fix by hand (`tmdb_kind` + `tmdb_id`, or an IMDb / Wikidata ID resolved to TMDB), rematch, candidate search |
 | GET/POST | `/api/v1/admin/mappings[/sync\|/:kind/:id[/remap]]` | The TMDB-keyed mapping: every TMDB title with all its IDs and the FlixPatrol / Netflix titles mapped to it (`q`, `kind`, `flag=conflict\|cross_kind\|both\|netflix_only\|flixpatrol_only\|manual`); `sync` recomputes links now; `remap` moves everything on a TMDB title to another (by TMDB, IMDb or Wikidata ID) |
+| GET    | `/api/v1/admin/mappings/review/:subject/:id/suggestions` | Other TMDB titles a queued mapping could be, ranked (name, kind, release year against the first chart, an offer on the charted service), for the queue's one-click fix |
+| GET    | `/api/v1/admin/mappings/review?subject=flixpatrol\|netflix&reason=&min_risk=25` | Mapping review queue: every automatic mapping scored 0–100 by how likely it is wrong (not on the service it charted on, released after it charted, IMDb / year / name disagreement, weak matching rule), riskiest first, with the reasons |
 | GET    | `/api/v1/admin/mapping-refs?tmdb_kind=movie\|tv&mapped=true` | The mapping reference (view `mapping_refs`): one row per chart title with its TMDB title and every ID (IMDb, Wikidata, RT, Metacritic, Letterboxd, JustWatch, Netflix), FlixPatrol slug / kind and Netflix title / kind |
 | GET    | `/api/v1/admin/mapping-events?subject=flixpatrol:12\|netflix:34&tmdb=movie:550&limit=` | History of mapping changes, newest first: action, TMDB title before / after, source and who made it (job, `mapping.sync`, `admin`) |
 | PATCH  | `/api/v1/admin/netflix/seasons/:id`         | Set a Netflix season title's season number by hand (`{"season_number": 2}`) or hand it back (`{"auto": true}`) |
+| GET/POST/PATCH/DELETE | `/api/v1/admin/webhooks[/:id[/test\|/rotate-secret\|/deliveries]]`, `/api/v1/admin/webhook-deliveries/:id[/retry]` | Outbound webhooks (see [Webhooks](#webhooks)) |
 | GET    | `/` (and any unmatched path)                | Serves `web/dist/` SPA if present           |
 
 GET responses under `/api/v1` carry an `ETag`; send it back as
@@ -236,13 +257,18 @@ on demand from Data health or `POST /api/v1/admin/jobs/:type/run`.
 |---|---|---|
 | `flixpatrol.top10.scrape` | your schedules | Scrapes each target's current chart, fills gaps from the last `backfill_days`, re-checks hourly for `recheck_hours` when FlixPatrol has not published the day's chart yet. A failed chart page does not stop the run (status `partial`); retries only redo failed pages. New titles are queued for matching right away. |
 | `titles.enrich` | 03:00 | Matches titles to TMDB / IMDb (FlixPatrol title page → JustWatch → TMDB), retrying unmatched ones after 1, 3, 7, then every 30 days; finds RT slugs via Wikidata SPARQL, then RT search. Titles fixed in the admin UI (`manual`) are never re-matched, but their TMDB titles get missing RT slugs. |
-| `titles.metadata` | 04:00 | TMDB details + watch providers with each service's link from JustWatch (charting titles every 3 days, others monthly) and Wikidata IDs (RT, Metacritic, Letterboxd) of TMDB titles. Needs `TMDB_API_KEY`. |
+| `titles.metadata` | 04:00 | TMDB details + watch providers with each service's link from JustWatch (charting titles every 3 days, others monthly), Wikidata IDs (RT, Metacritic, Letterboxd) of TMDB titles films' Wikidata distributors (for origins) and English Wikipedia articles (for pageviews), monthly. Needs `TMDB_API_KEY`. |
 | `ratings.prewarm` | 15:30 | Refreshes expired ratings of titles charting in the last 3 days. |
 | `netflix.top10.import` | 21:00 | Netflix's official weekly Top 10 (global, per country, most popular); skipped when unchanged. Matches up to 400 new titles (see [TMDB mapping](#tmdb-mapping)) and maps season titles to season numbers. |
 | `netflix.titles.match` | 09:00 | Works through the backlog of unmatched Netflix titles (retrying after 1, 3, 7, then every 30 days; `manual` titles are never touched), looks up Netflix IDs of up to 200 more titles (fixing earlier name matches), then remaps seasons. Also queued by "Match again" in the admin UI. |
-| `imdb.ratings.import` | 06:00 | IMDb's daily ratings dataset for the IMDb IDs metareel knows. |
+| `imdb.ratings.import` | 06:00 | IMDb's daily ratings dataset for the IMDb IDs metareel knows (also kept as history: a row whenever a title's rating or votes changed). |
+| `tmdb.credits.refresh` | 05:30 | TMDB cast (top 25) and key crew of the titles metareel knows: never-fetched titles first, each again after 60 days, at most 1,000 a run (one request per title). Feeds `/titles/tmdb/:kind/:id/credits`, `/people/:id` and `/analytics/people`. |
+| `tmdb.episodes.refresh` | 05:00 | TMDB episodes (air dates, names, finales) of the TV shows metareel knows: seasons from the last three years, undated ones and the latest, one request per show (20 seasons each). Airing shows daily, returning shows weekly, ended shows monthly; at most 1,500 shows a run. Feeds `/calendar/:country` and `/analytics/release-patterns`. |
+| `wikipedia.pageviews.import` | 10:00 | Daily English Wikipedia user pageviews of every title with an article (the metadata job finds it on Wikidata), since the last stored day (90 days for a new title), for `/history`. Paced for Wikimedia's 200 requests/minute limit (about 15 minutes for 2,500 titles). |
+| `netflix.engagement.import` | 07:00 | Netflix's "What We Watched" reports (hours viewed, views, runtime and the premiere date of originals for every title watched 50k+ hours in six months) from the list in `app_settings` `netflix.engagement.urls` (seeded with H2 2025 and H1 2026; skipped when unchanged). Run it with `{"url": "https://…xlsx"}` to add a new report. Rows are linked to Netflix Top 10 titles by name and shown in `/titles/tmdb/:kind/:id/netflix` (`engagement`); their premiere dates mark Netflix originals for the chart `origin` and `/analytics/origins`. |
+| `tmdb.popularity.import` | 09:30 | TMDB's daily ID exports (no API key): popularity of every TMDB title metareel knows, one row per title per day, for `/history`. Skipped when unchanged; yesterday's export is used until today's is published (~08:00 UTC). |
 | `mapping.refresh` | — (queued) | Follows up every mapping change (matches, fixes, remaps, shared mappings): TMDB details and Wikidata IDs of the TMDB titles now mapped to, season numbers. Run by hand, it first recomputes every linked title's mapping. |
-| `maintenance` | 02:00 | Run retention (`RUN_RETENTION_DAYS`), stale-chart alerts, SQLite optimize. |
+| `maintenance` | 02:00 | Run retention (`RUN_RETENTION_DAYS`), stale-chart alerts, deletes TMDB people left without credits, SQLite optimize. |
 
 ### TMDB mapping
 
@@ -339,10 +365,13 @@ Discord or ntfy messages.
 - **Netflix Top 10** (`netflix.com/tudum/top10` TSV downloads), and the Top
   10 page's own search for Netflix IDs (an undocumented persisted GraphQL
   query, sent anonymously; `NETFLIX_TOP10_SEARCH=false` turns it off).
+- **Netflix "What We Watched" engagement reports** (`.xlsx` downloads linked
+  from about.netflix.com), and **Wikimedia pageviews** (REST API, no key;
+  identified by User-Agent, 200 requests a minute).
 - **IMDb non-commercial datasets** (`title.ratings.tsv.gz`) — personal and
   non-commercial use only; see https://developer.imdb.com/non-commercial-datasets/.
 - **TMDB** (search, details, watch providers — watch provider data is by
-  JustWatch and must be attributed), **Wikidata** (SPARQL, CC0),
+  JustWatch and must be attributed; daily ID exports for popularity), **Wikidata** (SPARQL, CC0; IDs and film distributors),
   **JustWatch** GraphQL, **Rotten Tomatoes** search index, **MDBList** (optional).
 
 ## Public API keys
@@ -365,6 +394,45 @@ Every `/api/v1` route outside `/api/v1/admin` needs an API key, sent as
 ```bash
 curl -H "X-API-Key: mr_..." http://localhost:8080/api/v1/top10/movies/US
 ```
+
+## Webhooks
+
+Instead of polling `/api/v1/changes`, a client can register a URL (admin UI
+→ Settings → Webhooks, or `POST /api/v1/admin/webhooks`
+`{"name","url","events":["*"]}`) and get a signed POST per event:
+
+| Event | When | `data` |
+|---|---|---|
+| `chart.updated` | A chart was stored or its content changed | country, provider, category, date, `entries` (as in `/top10`, with `origin`) |
+| `title.entered` | A title is on a chart that it was not on at the chart's previous date (`first_time`: never before) | `chart`, `entry` |
+| `title.number_one` | A new #1 on a chart | `chart`, `entry` |
+| `availability.added` / `availability.removed` | A title arrived on / left a service in a country (between two TMDB refreshes) | as in `/availability/changes` |
+| `title.breakout` | A title became a breakout (rising in 2+ countries, as `/breakouts` with the defaults) on the current chart date or the two before; not repeated while it keeps rising | `date`, `window`, `min_countries`, `min_climb` and the breakout item |
+
+The body is `{"id","type","created_at","data"}`. Verify
+`X-Metareel-Signature: t=<unix>,v1=<hex>`, the HMAC-SHA256 of `<t>.<raw
+body>` keyed with the webhook's secret (shown once when created or rotated),
+reject old timestamps, and use `X-Metareel-Event-Id` to ignore repeats. Any
+2xx answer counts as delivered; anything else (including redirects) is
+retried after 1, 5, 30 minutes, 2 and 12 hours before the delivery fails.
+The admin UI shows each webhook's delivery log, its bodies, and can send a
+test ping or a delivery again. Events from before the server first ran with
+webhooks are not sent. Compare signatures in constant time and reject
+timestamps older than a few minutes.
+
+Receivers may be on your LAN; deliveries never go to link-local addresses
+(169.254.0.0/16 incl. cloud metadata, fe80::/10), multicast or unspecified
+ones, nor to loopback unless `WEBHOOK_ALLOW_LOOPBACK=true` (for a receiver on
+the same host outside Docker; inside a container loopback is metareel
+itself). Proxies from the environment are not used. Signing secrets are
+stored in the database (they are needed to sign), so copies and backups of
+`data/metareel.db` carry them: rotate a webhook's secret if a copy leaks.
+
+The admin API (and so webhook configuration) is not authenticated: keep it
+on your LAN. It sends no CORS headers (only the public API does), and it
+refuses requests that change data when a browser marks them as coming from
+another site (`Sec-Fetch-Site` / `Origin`), so a web page a LAN user opens
+can't drive it; curl and scripts are unaffected.
 
 ## Adding a future UI
 

@@ -139,7 +139,11 @@ Every background job is an asynq task type run from a DB schedule
 (`task_schedules.task_type`) or on demand (`POST /api/v1/admin/jobs/:type/run`,
 `/backfill`, a schedule's run-now). `tasks.ForSchedule` builds the task and its
 options for both paths; every task is enqueued with `asynq.Unique`, so the same
-run can't be queued twice (409 from the API). `handlers.Runner` records each
+run can't be queued twice (409 from the API). asynq archives a task whose
+last attempt failed and keeps its lock until it expires (the job's timeout),
+so manual runs (`/jobs/:type/run`, a schedule's run-now, `/backfill`) first
+delete an identical archived task (`enqueueUnique`, through the inspector)
+and enqueue again; only a queued, running or retrying copy is a conflict. `handlers.Runner` records each
 attempt in `task_runs` (status `started | succeeded | partial | failed`,
 target counts, JSON `summary`) and `task_run_logs`, and posts an alert when the
 last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
@@ -148,13 +152,18 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 |---|---|---|
 | `flixpatrol.top10.scrape` | `FlixPatrolJob` | Charts only; tags the new TV rankings with seasons, enqueues `titles.enrich` for new titles and hourly re-checks for unpublished charts |
 | `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Mapping sync (linked Netflix titles' mappings first), matching with backoff, RT via Wikidata then search (per TMDB title, backoff in `tmdb_titles.next_rt_at`), mapping sync; then seasons |
-| `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists) + watch providers with each offer's URL from JustWatch (`title_offers.go`), Wikidata IDs; then seasons |
+| `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists) + watch providers with each offer's URL from JustWatch (`title_offers.go`), Wikidata IDs, films' Wikidata distributors (P750, `tmdb_titles.distributors`, monthly); then seasons |
 | `ratings.prewarm` | `RatingsService.Prewarm` | Charting titles' expired ratings |
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
-| `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz` |
+| `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz`; known IDs also go to `imdb_rating_history` when changed |
+| `tmdb.credits.refresh` | `CreditsRefresher` | `tmdb_people` + `tmdb_credits` of every TMDB title: `/movie/{id}/credits`, or `/tv/{id}?append_to_response=aggregate_credits` (with `created_by` as Creator); keeps the top 25 cast and the jobs in `creditJobs` (TV: 10 per job by episodes); never-fetched first, again after 60 days (`tmdb_titles.credits_fetched_at`), 1,000 a run, 250 ms apart; each title replaced in one transaction |
+| `tmdb.episodes.refresh` | `EpisodesRefresher` | `tmdb_episodes` of TV shows with a stored TMDB season list: seasons aired in the last 3 years, undated and the latest (`append_to_response=season/N`, 20 per request, 250 ms apart); due daily when an episode airs within -14..+60 days or a season starts within 30 days, weekly for returning statuses, else monthly (`tmdb_titles.episodes_fetched_at`); each fetched season replaced in one transaction |
+| `wikipedia.pageviews.import` | `PageviewsImporter` | English Wikipedia daily user views (Wikimedia REST, `client.Wikimedia`) of titles with `tmdb_titles.enwiki_title`, since the last stored day (90 days first); 350 ms apart (200 requests/minute limit), `Retry-After` honoured on 429 |
+| `netflix.engagement.import` | `NetflixEngagementImporter` | "What We Watched" `.xlsx` reports from `app_settings` `netflix.engagement.urls` (defaults in code; a run's `url` adds one), parsed by `internal/xlsx`; each period replaced in one transaction, rows linked by name to Netflix Top 10 titles / season titles |
+| `tmdb.popularity.import` | `TMDBPopularityImporter` | TMDB daily ID exports (`movie_ids_MM_DD_YYYY.json.gz`, `tv_series_ids_…`): popularity of known TMDB titles into `tmdb_popularity_history`; yesterday's file until today's is out |
 | `mapping.refresh` | `TitleMappingService.Refresh` | Queued by the mapping writer after mapping changes (payload: `tmdb_refs`, `netflix_title_ids`; not unique): TMDB details (skipped if fetched within 24 h and an IMDb ID is known) + Wikidata IDs (titles never looked up; the metadata job rechecks the rest) of the TMDB titles now mapped to, seasons of the Netflix titles that changed or sit on those TMDB titles, ranking season tags. Run by hand (empty payload) it first runs a mapping sync |
-| `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, `PRAGMA optimize` |
+| `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, deletes `tmdb_people` without any `tmdb_credits` left, `PRAGMA optimize` |
 
 FlixPatrol fetches from every job go through one `flixpatrol.SerialFetcher`:
 one page at a time, `SCRAPER_MIN_INTERVAL` apart.
@@ -267,7 +276,12 @@ FlixPatrol title in the same list → Wikidata items with a Netflix ID by
 English label (`pickWikidataNetflix`; a title with its own Netflix ID only
 takes an item with that ID, so the 2010 film is not taken for the 2025
 remake) → JustWatch's US Netflix catalogue (the
-list's kind, then the other) → a unique exact name in JustWatch US → mapping
+list's kind, then the other) → TMDB (`netflix_tmdb.go`: search the list's
+kind, then the other; hits whose title or original title is the name, else
+an alternative title of the top hits, released no later than the year it
+first charted; the only one TMDB shows streaming on Netflix in any country,
+or among several the only recent release: `tmdb_netflix`,
+`tmdb_netflix_alt_title`) → a unique exact name in JustWatch US → mapping
 sync. Before that, label matches (`wikidata_netflix`) that the title's own
 Netflix ID contradicts (its TMDB title has another, non-copied Netflix ID)
 are cleared through the mapping writer (`clear` event) and matched again
@@ -342,6 +356,245 @@ sequenceDiagram
 `POST /api/v1/admin/titles/:id/rematch` clears the backoff (and with
 `clear: true`, the IDs) and queues the title.
 
+## Webhooks (`service/webhooks.go`)
+
+A loop in the server process (`WebhookService.Run`, every 30 s, stopped
+before the database closes) follows two sources with cursors in
+`app_settings`:
+
+- `webhooks.cursor.charts`: `chart_snapshots.changed_at` (set when a chart is
+  stored or its content changes). Each pass re-reads charts changed up to 2
+  minutes before the cursor (a re-scraped chart keeps its row id and gets its
+  new `changed_at` when its transaction commits, possibly behind a cursor a
+  concurrent pass already moved); repeats are dropped by event id
+  (`UNIQUE(webhook_id, event_id)`). The re-read pages by (`changed_at`, id)
+  (`ListChartsChangedAfter`), skips charts the dispatcher already handled (an
+  in-memory id -> `changed_at` set for the lookback; empty after a restart)
+  and turns at most 500 charts into events per pass. The cursor is the newest
+  handled `changed_at`, so thousands of charts sharing one timestamp (a bulk
+  import) are worked through over a few passes instead of stalling the
+  cursor. A chart the read API rejects (e.g. an unknown country) yields no
+  events rather than failing the pass. Charts at or before
+  `webhooks.cursor.charts_floor` (where following started: time and highest
+  row id) are never sent, so a first start doesn't replay history. Each chart
+  is read through `Top10ReadService` and yields `chart.updated` plus
+  `title.entered` (no `previous_rank`) and `title.number_one` (rank 1, not 1
+  before); title events are keyed by chart and title, so a re-scrape doesn't
+  repeat them.
+- `webhooks.cursor.offers`: `watch_provider_events.id` →
+  `availability.added` / `availability.removed`.
+- `title.breakout`: when a pass queued events for charts of the current chart
+  date or the two before it, and a webhook subscribes to the type,
+  `BreakoutService` computes breakouts (defaults) for each such date and the
+  day before; titles that are breakouts on the date but weren't the day before
+  are queued, keyed by title and date. A title that keeps rising is announced
+  once; a backfill of older dates announces nothing.
+
+Events are queued in `webhook_deliveries` for each enabled webhook
+subscribed to the type, then POSTed (10 s timeout, no redirects, no proxy,
+response read up to 300 bytes for the error) with an HMAC-SHA256 signature.
+The dialer checks every resolved address (`webhookDialControl`, so DNS
+rebinding is covered): no link-local, multicast, unspecified or broadcast
+addresses, loopback only with `WEBHOOK_ALLOW_LOOPBACK`. A receiver that
+can't be reached is skipped for the rest of the pass. Failures
+back off 1 m, 5 m, 30 m, 2 h, 12 h, then fail; finished deliveries older
+than 30 days are pruned hourly. Errors never include the URL (it may carry
+tokens) or the secret, which is stored in `webhooks.secret` (it is needed to
+sign) and only returned when created or rotated.
+
+CORS headers are only sent for the public API (the `Skipper` in
+`router.Register`); the admin group runs `handler.SameOriginWrites`, which
+refuses non-GET requests a browser marks as cross-site (`Sec-Fetch-Site`
+other than same-origin / none, or an `Origin` whose host is not the request's
+`Host` / `X-Forwarded-Host`), so pages on other sites can't drive the
+unauthenticated admin API; clients without those headers (curl) pass.
+
+## Title search (`service/search.go`)
+
+`GET /search` matches the names of every mapped TMDB title (TMDB title and
+original title, FlixPatrol chart / page names, Netflix Top 10 names) from an
+in-memory index: names folded (lowercase, accents removed, `&` → and,
+punctuation → spaces) and split into words. The index is rebuilt when
+`SearchIndexStamp` (counts and latest updates of `tmdb_titles`, `titles`,
+`netflix_titles`, the newest chart and Netflix week) changes, checked at most
+every 30 s; the rebuild is not cancelled with the triggering request and a
+failed rebuild keeps the old index. Queries are capped at 200 bytes and 8
+words, and scoring stops when the request is cancelled. Scores: whole name 100, prefix 85, all query words starting words
+in order 70 / any order 60, substring 40; ties go to the most recently
+charted title.
+
+## Mapping review queue (`service/mapping_review.go`)
+
+`GET /admin/mappings/review` (Mapping → Review queue) scores every automatic
+mapping (FlixPatrol and Netflix titles not fixed by hand) 0–100 by how
+likely it is wrong and lists the riskiest first (default `min_risk=25`;
+`subject`, `reason` filters). Signals add up: the match source's base risk
+(`sourceRisk`: 0 for a FlixPatrol title page path or a Netflix ID, up to 35
+for a unique-name fallback; ≥ 20 shows as `weak_source`), `not_on_provider`
+(+35: TMDB lists no offer of the service it charted on, in any country and
+form — only checked when it charted there within 60 days before the offers
+were fetched, since titles leave services; `providerOffers` maps FlixPatrol
+providers to TMDB provider IDs), `released_later` (+40: TMDB release year
+after it first charted), `imdb_mismatch` (+30: the match came with another
+IMDb ID), `year_mismatch` (+25: films whose FlixPatrol premiere year is more
+than a year off), `no_offers` (+15), `name_differs` (+15: the chart name,
+without season suffixes, neither is nor contains TMDB's title), `no_details`
+(+5). Computed on request; nothing is stored.
+
+Each queue row has two one-click fixes in the admin UI: **Looks right** saves
+the current TMDB title by hand, and **Find fix** loads
+`GET /admin/mappings/review/{subject}/{id}/suggestions`
+(`service/mapping_review_fix.go`), then **Use this** saves a suggestion by
+hand. Both saves use the title / Netflix title PATCH, so the title leaves
+the queue. Suggestions come from a live JustWatch + TMDB search of the name
+(and its base without a season) in both kinds, scored on the same signals
+as the queue; the best five are checked for an offer of the charted service.
+Calls run one at a time with searches 500 ms apart (up to 8 searches and 5
+offer lookups each), results without search errors are kept for 5 minutes,
+and only numeric TMDB IDs are suggested.
+
+### Golden mappings (`service/golden_mappings_test.go`)
+
+`testdata/golden_mappings/cases.json` holds chart titles that were hard to
+map (each fixed or confirmed by hand on the deployed instance), and
+`http.json` holds the JustWatch and TMDB responses recorded for them. The
+test runs `TitleMatcher.Match` (FlixPatrol) and the Netflix TMDB step against
+the recordings. Each case must reach its `want`, or match its `known_miss`
+(the current wrong or missing result, with why), so any change in matching
+shows up. After a matcher change, or to add a case, re-record with
+`GOLDEN_RECORD=1 TMDB_API_KEY=... go test -run TestGoldenMappings ./internal/service/`,
+which makes live requests and drops `api_key` from the recorded keys.
+
+## Title origins (`service/origins.go`)
+
+`ClassifyOrigin(provider, movie, metadata)` says where a title on a
+service's chart comes from; it runs at read time (chart entries' `origin`,
+`GET /analytics/origins`), so rule changes apply to every stored chart.
+`mediaGroups` lists each media group with the FlixPatrol providers it owns,
+their own original brands, its other studios / channels, whether it is a
+theatrical major, and the year its streaming originals start. Brands match
+whole names ignoring case, or a prefix when they end in `*`.
+
+0. **original (Netflix)** — on Netflix charts, a title with
+   `tmdb_titles.netflix_premiere` (Netflix's engagement reports give a
+   release date for Netflix-branded titles only, including regional
+   exclusives such as some Korean dramas and WWE Raw); set by
+   `netflix.engagement.import` from report rows linked to Netflix Top 10
+   titles, or by a unique name of the right kind with a fitting year
+   (`markOriginals`). Elsewhere it makes Netflix the owner when nothing else
+   does.
+1. **original** — TV: one of the service's own networks (TMDB `networks`,
+   e.g. HBO / Max on hbo-max); films (and shows without networks): the
+   service's studio among the production companies (Amazon MGM Studios,
+   Apple Studios); films: the service among the Wikidata distributors, no
+   other distributor a major studio or another streamer, released no
+   earlier than the group's originals (Wikidata also lists streamers that
+   carry licensed films, e.g. Netflix on Jumanji).
+2. Otherwise the **owner** is the first group matching the networks (TV),
+   then the production companies, then the distributors (studios only).
+   Same group as the provider → **in_house**; another or none →
+   **licensed**.
+3. **unknown** — no metadata, a provider without rules, or no owner and no
+   decisive source (no network for a show, no Wikidata distributors for a
+   film): metareel does not guess "licensed".
+
+Known limits: non-Netflix originals with no Wikidata distributors come out
+unknown (Netflix's are covered by its engagement reports once a report
+lists them, up to six months after release); co-productions take the first
+recognised company (Spider-Man on Disney+ counts as Marvel's); regional
+"originals" licensed from a local network are licensed.
+
+## Episodes, calendar and release patterns (`service/episodes.go`, `service/analytics_release_patterns.go`)
+
+`tmdb.episodes.refresh` stores TMDB episodes (`tmdb_episodes`) of the TV
+shows that have a TMDB season list (charting shows and Netflix Top 10
+titles), so only shows metareel knows are covered. Air dates are TMDB's,
+usually the original network or service release, not per country.
+
+- `GET /api/v1/calendar/{country}` joins episodes airing in the range with the
+  show's current subscription / free / ads offers in that country
+  (`tmdb_watch_providers`), one entry per show, season and date.
+- `GET /api/v1/analytics/release-patterns` classifies seasons by their release
+  dates (`classifyRelease`: one date = binge; 2-4 dates averaging 2+ episodes =
+  batch; otherwise by the median gap: 5-9 days weekly, at most 2 daily, else
+  irregular) and measures each season x chart run over the window after the
+  premiere from `rankings` (tagged with the season, or untagged), counting a
+  chart only when `chart_snapshots` cover the whole window.
+
+## Credits and people (`service/credits.go`)
+
+`GET /api/v1/titles/tmdb/{kind}/{id}/credits` reads the stored credits.
+`GET /api/v1/people/{id}` lists a person's credited titles with each title's
+FlixPatrol record (`ListPersonChartStats`, all stored charts).
+`GET /api/v1/analytics/people` sums each title's chart points in the range
+(`ChartEntries` with the usual filters) and credits them in full to every
+person credited in the role (actors: billing order under 10), once per
+person and title.
+
+## Release windows (`service/release_dates.go`)
+
+`titles.metadata` already asks TMDB for `release_dates` with every movie's
+details; `SaveDetails` now keeps the earliest date of each type per country in
+`tmdb_release_dates` (replacing the movie's rows). TMDB has no streaming
+type, so the streaming arrival per country is observed, as the earlier of:
+
+- the first `added` subscription / free / ads offer in `watch_provider_events`
+  (seen at a metadata refresh, so up to a few days late; offers already there
+  at a title's first refresh have no event);
+- the movie's first FlixPatrol chart day in the country, when that chart was
+  stored on at least 80% of the 14 days before (not the chart's first days or
+  right after a gap).
+
+Observations before the theatrical release are ignored. Windows start at the
+wide theatrical date (type 3), else the limited one (type 2).
+`GET /api/v1/titles/tmdb/movie/{id}/releases` shows one movie per country;
+`GET /api/v1/analytics/release-windows` sums up the movies released in theaters
+in a country in a range.
+
+## Admin UI for the newer data
+
+The admin console shows the newer endpoints through their admin copies:
+Insights → Analytics (release patterns, release windows, spread lag below the
+older cards), Insights → Breakouts, Discover (hidden gems, trending elsewhere,
+rotation) and People (people analytics, with a person drawer); New & upcoming
+→ Episodes (the episode calendar); and the title drawers' Timeline, Credits
+and Releases tabs.
+
+## Discovery (`service/discover.go`)
+
+Three per-country views for tides over the titles metareel knows, computed
+on request from `imdb_ratings` (through `tmdb_titles.imdb_id`),
+`tmdb_watch_providers`, `rankings`, `watch_provider_events` and
+`tmdb_episodes`:
+
+- `GET /api/v1/discover/{country}/hidden-gems`: rated, streamable in the
+  country (flatrate / free / ads), and no Top 10 points there in the window.
+  Ranked by a Bayesian average (prior 6.5 over 25,000 votes).
+- `GET /api/v1/discover/{country}/elsewhere`: Top 10 points in other
+  countries over the window, none in the country, details fetched, and no
+  streaming offer in the country.
+- `GET /api/v1/discover/{country}/rotation`: services with flatrate / ads
+  offers, a service's plans and channels grouped through `providerOffers`
+  (others only with `include_other`), scored as chart points of their titles (in the country, or every
+  country without charts there) + 10 per show with episodes coming + 3 per
+  arrival + 1 per top-rated title. The best `slots` are recommended.
+
+## Breakouts and spread lag (`service/breakouts.go`, `service/analytics_spread.go`)
+
+- `GET /api/v1/breakouts` (`service/breakouts.go`) reads `rankings` for the
+  date minus `window` + 8 days. Per chart it compares the latest stored date
+  (the date, or the day before) with the latest stored date at least `window`
+  days earlier (at most 7 days further back). Titles are grouped by TMDB title,
+  as on leaderboards. A title rises on a chart when it entered it or climbed
+  `min_climb` places; per country the chart with the biggest points gain
+  counts, and a breakout rises in `min_countries` countries.
+- `GET /api/v1/analytics/spread-lag` (`service/analytics_spread.go`) finds each
+  title's first appearance per country from `rankings` (range minus 30 days to
+  range end plus `window`). The first one is the debut; the other countries
+  are followed for `window` days. A country whose stored charts start less
+  than 30 days before the debut is unknown for that title, and a debut in such
+  a country is dropped, since an earlier appearance could be missing.
+
 ## Read API Flow
 
 ```mermaid
@@ -375,6 +628,16 @@ Ranking history (`GET /api/v1/titles/tmdb/{movie|tv}/{id}/rankings`, and the
 batch `GET /api/v1/titles/tmdb/rankings?ids=movie:425,tv:154385`) looks up
 every title row with that TMDB ID and kind, then returns its chart
 appearances and a per-chart summary.
+
+The title timeline (`GET /api/v1/titles/tmdb/{movie|tv}/{id}/timeline`,
+`TimelineService`) derives dated events at request time from data already
+stored, nothing new is written: chart debuts / peaks / #1 runs / re-entries
+from the title's rankings (a re-entry needs a 7+ day gap and a stored
+`chart_snapshots` date of that chart in between, so scrape gaps don't count),
+`watch_provider_events` grouped per day, provider and offer type, value
+changes of the rating history tables (displayed precision; one provider per
+source), Wikipedia pageview spikes (3x the 28-day median, 1,000+ views),
+Netflix Top 10 weeks and engagement rows, and TMDB release / season dates.
 
 ---
 
@@ -468,6 +731,16 @@ Added since the diagram below:
 | `netflix_seasons` | One row per Netflix season title: `season_number`, `season_source` (parsed / tmdb_name / number / tmdb_air_date / tmdb_single / manual), the season's own `netflix_id` |
 | `tmdb_titles.seasons`, `rankings.season_source` | TMDB season list (JSON) of TV shows; where a ranking's season came from (chart / netflix / tmdb_air_date) |
 | `imdb_ratings` | IMDb dataset ratings (known IMDb IDs by default) |
+| `imdb_rating_history`, `title_rating_history` | Rating history (migration 17): IMDb dataset rating + votes per day, and each provider's rating sources (from `SaveTitleRatings`), written only when the value changed since the previous row (step series; `/history` adds the point in effect at `from`) |
+| `tmdb_popularity_history` | TMDB popularity per title per day from the daily exports |
+| `tmdb_release_dates` | Movies' TMDB release dates: earliest date (and note) per country and type 1-6 (premiere, theatrical limited, theatrical, digital, physical, TV), replaced on every details refresh; migration 24 seeded type 4 from `tmdb_titles.digital_release_dates`, which is still written |
+| `tmdb_people`, `tmdb_credits`, `tmdb_titles.credits_fetched_at` | TMDB people (name, profile, known-for department) and their cast / crew credits per title (job, character, billing order, TV episodes), migration 25; read by title credits, people and people analytics |
+| `tmdb_episodes`, `tmdb_titles.episodes_fetched_at` | TV episodes per show / season / episode: name, air date (TMDB's, NULL = TBA), `episode_type` (standard / finale / mid_season), runtime (migration 23); read by the episode calendar and release patterns |
+| `tmdb_titles.enwiki_title`, `wikipedia_pageviews` | English Wikipedia article from Wikidata (sitelink, looked up monthly by `titles.metadata`, migration 20) and its daily user pageviews per project |
+| `tmdb_titles.netflix_premiere`, `netflix_premiere_source` | Earliest Netflix premiere of a Netflix-branded title per the engagement reports (`linked` through a Netflix Top 10 title, or `name`), migration 22; marks Netflix originals for the origin classifier |
+| `netflix_engagement` | Netflix engagement report rows per period × kind × title: hours viewed, runtime, views, available globally, premiere date (originals only), and the Netflix Top 10 title / season it is linked to (migration 21) |
+| `tmdb_titles.distributors` | A film's distributors on Wikidata (P750, English labels, JSON), `distributors_fetched_at` (migration 18); one of the origin signals |
+| `watch_provider_events` | Offers that appeared / disappeared between two TMDB refreshes of a title (`added` / `removed`, `previous_check_at` → `observed_at`), computed in `MetadataRepository.SaveDetails` by diffing the stored providers; a title's first refresh is the baseline (no events) |
 | `data_imports` | Last imported ETag / Last-Modified per file |
 | `task_schedules` (new columns) | `backfill_days`, `recheck_hours`; `task_type` validated in Go |
 | `task_runs` (new columns) | nullable `schedule_id`, `targets_*` counts, `summary` JSON; status adds `partial` |
@@ -557,7 +830,7 @@ Key constraints:
 - `rankings` has a unique index on `(ranked_on, country, streaming_provider, category, rank)` — upserts replace stale title references cleanly.
 - `titles` is keyed on `slug` (FlixPatrol URL slug). Its TMDB ID is computed from evidence; other IDs live on `tmdb_titles` and are only replaced by an equal or stronger source.
 - `task_schedules.name` is unique — the admin API returns `409 Conflict` on duplicates.
-- SQLite connection pool is capped at 1 (`SetMaxOpenConns(1)`) to serialize writes; WAL mode allows concurrent reads alongside the single writer.
+- The writer pool is capped at 1 (`SetMaxOpenConns(1)`) to serialize writes; a separate read-only pool (`DATABASE_READ_CONNS`, `query_only`) serves the read API alongside it (WAL).
 
 ---
 
@@ -585,7 +858,7 @@ Implementation note: both YAML specs and Swagger UI HTML are embedded from `inte
 | `github.com/redis/go-redis/v9` | v9.18.0 | Redis client (used by `asynq` and the cache wrapper) |
 | `github.com/gocolly/colly/v2` | v2.3.0 | Web scraping framework (async, robots.txt, rate limiting) |
 | `github.com/PuerkitoBio/goquery` | v1.11.0 | jQuery-style HTML parsing (used inside Colly callbacks) |
-| `github.com/go-resty/resty/v2` | v2.17.2 | HTTP client with retry and timeout for external REST APIs |
+| `github.com/go-resty/resty/v2` | v2.17.2 | HTTP client with retry and timeout for external REST APIs; its own logging (transport errors while retrying, with the full URL) goes through `redactingLogger` to slog, so query-string keys are hidden |
 | `github.com/hasura/go-graphql-client` | v0.16.0 | GraphQL client for the JustWatch API |
 | `modernc.org/sqlite` | v1.49.1 | Pure-Go SQLite driver (no CGO — enables fully static binary) |
 | `github.com/pressly/goose/v3` | v3.27.0 | SQL migration runner (up/down, versioned files) |
@@ -629,6 +902,8 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `DATABASE_URL` | `file:./data/metareel.db?...` | SQLite DSN (WAL + busy timeout + FK enforcement) |
 | `DATABASE_MIGRATIONS_DIR` | `db/migrations` | Goose migrations directory |
+| `WEBHOOK_ALLOW_LOOPBACK` | `false` | Let webhook URLs resolve to loopback (a receiver on the same host outside Docker); link-local, multicast and unspecified addresses are always refused |
+| `DATABASE_READ_CONNS` | `4` | Read-only connections (`query_only`) serving charts, analytics and title overviews next to the single writer; `0` serves them from the writer |
 | `REDIS_ADDR` | `localhost:6379` | Redis address |
 | `REDIS_PASSWORD` | _(empty)_ | Redis auth password |
 | `REDIS_DB` | `0` | Redis logical DB index |
@@ -728,6 +1003,14 @@ metareel/
 │   │   ├── imdb_import.go         # IMDb ratings dataset import
 │   │   ├── charts.go              # catalog, history, movers, leaderboards, changes, export
 │   │   ├── title_overview.go      # title overview, stats, availability, lookup
+│   │   ├── episodes.go            # tmdb.episodes.refresh job, episode calendar
+│   │   ├── credits.go             # tmdb.credits.refresh job, title credits, people, people analytics
+│   │   ├── analytics_release_patterns.go # binge / batch / weekly seasons and their chart runs
+│   │   ├── analytics_spread.go    # spread lag: days from a title's first country to the others
+│   │   ├── breakouts.go           # titles rising in several countries at once (+ title.breakout webhooks)
+│   │   ├── discover.go            # hidden gems, trending elsewhere, subscription rotation
+│   │   ├── release_dates.go       # movie release dates per country, streaming arrivals, release windows
+│   │   ├── timeline.go            # title timeline: events from charts, availability, ratings, pageviews, Netflix, TMDB dates
 │   │   ├── title_offers.go        # watch provider URLs from JustWatch offers (metadata refresh)
 │   │   ├── analytics.go           # decay, similarity, release lag, ratings vs popularity, genres, Netflix calibration
 │   │   ├── data_quality.go        # admin data-quality report
@@ -769,8 +1052,8 @@ metareel/
 **Pure-Go SQLite (`modernc.org/sqlite`)**
 No CGO dependency means the final Docker image is built on `scratch` and is fully static (~15–20 MB). The trade-off is that `modernc` is slightly slower than `mattn/go-sqlite3` for high-throughput write workloads — acceptable here since rankings are written by background jobs, not hot paths.
 
-**Single SQLite writer connection**
-`SetMaxOpenConns(1)` serializes all writes. Combined with WAL mode (reads don't block the writer), this eliminates `SQLITE_BUSY` under concurrent API + worker load without needing a mutex.
+**Single SQLite writer connection, separate read pool**
+`SetMaxOpenConns(1)` serializes all writes. Combined with WAL mode (reads don't block the writer), this eliminates `SQLITE_BUSY` under concurrent API + worker load without needing a mutex. Read-only services (charts, top 10, analytics, title overviews, history) use a second handle (`repository.OpenReadOnly`, `DATABASE_READ_CONNS` connections, each `PRAGMA query_only`) so API reads don't queue behind job writes or each other; services that also write (ratings, admin, jobs) stay on the writer. A write through the read pool fails with "readonly database".
 
 **Asynq over a simpler cron package**
 Asynq gives persistent, Redis-backed job state, retries with backoff, task deduplication, and the `PeriodicTaskManager` which can reload schedules from the DB every minute — meaning schedule changes take effect without a restart.

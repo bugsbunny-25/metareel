@@ -64,6 +64,19 @@ export const remapMapping = (kind, tmdbId, body) => req(`/mappings/${kind}/${tmd
 export const syncMappings = () => req('/mappings/sync', { method: 'POST' })
 export const listMappingEvents = (q) => req('/mapping-events', { query: q })
 export const listMappingRefs = (q) => req('/mapping-refs', { query: q })
+export const reviewMappings = (q) => req('/mappings/review', { query: q })
+
+// ── Roadmap views: breakouts, discovery, people, calendar, timeline ───
+export const getBreakouts = (q) => req('/breakouts', { query: q })
+export const getHiddenGems = (country, q) => req(`/discover/${country}/hidden-gems`, { query: q })
+export const getElsewhere = (country, q) => req(`/discover/${country}/elsewhere`, { query: q })
+export const getRotation = (country, q) => req(`/discover/${country}/rotation`, { query: q })
+export const getPerson = (id) => req(`/people/${id}`)
+export const getCalendar = (country, q) => req(`/calendar/${country}`, { query: q })
+export const getTimeline = (kind, tmdbId, q) => req(`/titles/tmdb/${kind}/${tmdbId}/timeline`, { query: q })
+export const getCredits = (kind, tmdbId) => req(`/titles/tmdb/${kind}/${tmdbId}/credits`)
+export const getTitleReleases = (kind, tmdbId, q) => req(`/titles/tmdb/${kind}/${tmdbId}/releases`, { query: q })
+export const getReviewSuggestions = (subject, id) => req(`/mappings/review/${subject}/${id}/suggestions`)
 
 // ── Top 10 ──────────────────────────────────────────────────────────
 export function getTop10({ country, provider, category, date }) {
@@ -100,6 +113,17 @@ export const createApiKey = (name) => req('/api-keys', { method: 'POST', body: {
 export const renameApiKey = (id, name) => req(`/api-keys/${id}`, { method: 'PATCH', body: { name } })
 export const rotateApiKey = (id) => req(`/api-keys/${id}/rotate`, { method: 'POST' })
 export const deleteApiKey = (id) => req(`/api-keys/${id}`, { method: 'DELETE' })
+
+// ── Webhooks ────────────────────────────────────────────────────────
+export const listWebhooks = () => req('/webhooks')
+export const createWebhook = (body) => req('/webhooks', { method: 'POST', body })
+export const updateWebhook = (id, body) => req(`/webhooks/${id}`, { method: 'PATCH', body })
+export const deleteWebhook = (id) => req(`/webhooks/${id}`, { method: 'DELETE' })
+export const rotateWebhookSecret = (id) => req(`/webhooks/${id}/rotate-secret`, { method: 'POST' })
+export const testWebhook = (id) => req(`/webhooks/${id}/test`, { method: 'POST' })
+export const listWebhookDeliveries = (id, q) => req(`/webhooks/${id}/deliveries`, { query: q })
+export const getWebhookDelivery = (id) => req(`/webhook-deliveries/${id}`)
+export const retryWebhookDelivery = (id) => req(`/webhook-deliveries/${id}/retry`, { method: 'POST' })
 
 // ── Jobs ────────────────────────────────────────────────────────────
 export const listTaskTypes = () => req('/task-types')

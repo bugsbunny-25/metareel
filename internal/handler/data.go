@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v5"
@@ -28,7 +30,8 @@ func writeData(c *echo.Context, out any, err error) error {
 		return c.JSON(http.StatusConflict, map[string]any{"error": conflictErr.Error()})
 	case errors.Is(err, service.ErrTitleNotFound), errors.Is(err, service.ErrTop10NotFound),
 		errors.Is(err, service.ErrNoMetadata), errors.Is(err, service.ErrNetflixTitleNotFound),
-		errors.Is(err, service.ErrNetflixSeasonNotFound):
+		errors.Is(err, service.ErrNetflixSeasonNotFound), errors.Is(err, service.ErrWebhookNotFound),
+		errors.Is(err, service.ErrReviewSubjectNotFound), errors.Is(err, service.ErrPersonNotFound):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": err.Error()})
 	case errors.Is(err, sql.ErrNoRows):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": "not found"})
@@ -270,6 +273,110 @@ func (h *Handler) GetTitleAvailability(c *echo.Context) error {
 	return writeData(c, out, err)
 }
 
+// SearchTitles: GET /api/v1/search?q=&kind=movie|tv&limit=
+func (h *Handler) SearchTitles(c *echo.Context) error {
+	limit, err := parseIntParam(c, "limit", 0)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Search.Search(c.Request().Context(), service.SearchQuery{Q: c.QueryParam("q"), Kind: c.QueryParam("kind"), Limit: limit})
+	return writeData(c, out, err)
+}
+
+// GetTitleHistory: GET /api/v1/titles/tmdb/{kind}/{id}/history[?from=&to=]
+func (h *Handler) GetTitleHistory(c *echo.Context) error {
+	ref, err := h.parseRef(c)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	from, to, err := parseRange(c)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.History.TitleHistory(c.Request().Context(), ref, service.TitleHistoryQuery{From: from, To: to})
+	return writeData(c, out, err)
+}
+
+// GetTitleTimeline: GET /api/v1/titles/tmdb/{kind}/{id}/timeline[?types=&country=&from=&to=&limit=]
+func (h *Handler) GetTitleTimeline(c *echo.Context) error {
+	ref, err := h.parseRef(c)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	from, to, err := parseRange(c)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	limit, err := parseIntParam(c, "limit", 0)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Timeline.Timeline(c.Request().Context(), ref, service.TimelineQuery{
+		Types: c.QueryParam("types"), Country: c.QueryParam("country"), From: from, To: to, Limit: limit,
+	})
+	return writeData(c, out, err)
+}
+
+// GetTitleReleases returns a movie's release dates and windows per country:
+// GET /api/v1/titles/tmdb/movie/{id}/releases[?country=]
+func (h *Handler) GetTitleReleases(c *echo.Context) error {
+	ref, err := h.parseRef(c)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	out, err := h.ReleaseWindows.TitleReleases(c.Request().Context(), ref, c.QueryParam("country"))
+	return writeData(c, out, err)
+}
+
+// GetReleaseWindows: GET /api/v1/analytics/release-windows[?from=&to=&country=&limit=]
+func (h *Handler) GetReleaseWindows(c *echo.Context) error {
+	from, to, err := parseRange(c)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	limit, err := parseIntParam(c, "limit", 0)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	if c.QueryParam("limit") != "" && limit == 0 {
+		return badRequest(c, errors.New("invalid limit, expected a positive integer"))
+	}
+	out, err := h.ReleaseWindows.Windows(c.Request().Context(), service.ReleaseWindowsQuery{From: from, To: to, Country: c.QueryParam("country"), Limit: limit})
+	return writeData(c, out, err)
+}
+
+// GetTitleAvailabilityHistory: GET /api/v1/titles/tmdb/{kind}/{id}/availability/history[?country=]
+func (h *Handler) GetTitleAvailabilityHistory(c *echo.Context) error {
+	ref, err := h.parseRef(c)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	out, err := h.History.TitleAvailabilityHistory(c.Request().Context(), ref, c.QueryParam("country"))
+	return writeData(c, out, err)
+}
+
+// GetAvailabilityChanges: GET /api/v1/availability/changes[?since=&country=&event=&monetization=&provider_id=&limit=]
+func (h *Handler) GetAvailabilityChanges(c *echo.Context) error {
+	q := service.AvailabilityChangesQuery{
+		Country: c.QueryParam("country"), Event: c.QueryParam("event"),
+		Monetization: c.QueryParam("monetization"), ProviderID: c.QueryParam("provider_id"),
+	}
+	if raw := c.QueryParam("since"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return badRequest(c, errors.New("invalid since, expected RFC 3339 (e.g. 2026-10-09T12:00:00Z)"))
+		}
+		q.Since = &t
+	}
+	limit, err := parseIntParam(c, "limit", 200)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	q.Limit = limit
+	out, err := h.History.AvailabilityChanges(c.Request().Context(), q)
+	return writeData(c, out, err)
+}
+
 // GetTitleNetflix: GET /api/v1/titles/tmdb/{kind}/{id}/netflix
 func (h *Handler) GetTitleNetflix(c *echo.Context) error {
 	ref, err := h.parseRef(c)
@@ -293,6 +400,130 @@ func (h *Handler) GetTitleRatingsBatch(c *echo.Context) error {
 // LookupTitle: GET /api/v1/titles/lookup?imdb=tt…|tmdb=movie:425|slug=…|netflix=81231974
 func (h *Handler) LookupTitle(c *echo.Context) error {
 	out, err := h.Overview.Lookup(c.Request().Context(), c.QueryParam("imdb"), c.QueryParam("tmdb"), c.QueryParam("slug"), c.QueryParam("netflix"))
+	return writeData(c, out, err)
+}
+
+// GetCalendar: GET /api/v1/calendar/{country}[?from=&to=&provider_id=]
+func (h *Handler) GetCalendar(c *echo.Context) error {
+	from, to, err := parseRange(c)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Calendar.Calendar(c.Request().Context(), service.CalendarQuery{
+		Country: c.Param("country"), From: from, To: to, ProviderID: c.QueryParam("provider_id"),
+	})
+	return writeData(c, out, err)
+}
+
+// GetBreakouts lists titles rising in several countries at once:
+// GET /api/v1/breakouts[?date=&window=&min_countries=&min_climb=&category=&provider=&kind=&limit=]
+func (h *Handler) GetBreakouts(c *echo.Context) error {
+	date, err := parseOptionalDate("date", c.QueryParam("date"))
+	if err != nil {
+		return badRequest(c, err)
+	}
+	q := service.BreakoutQuery{Date: date, Category: c.QueryParam("category"), Provider: c.QueryParam("provider"), Kind: c.QueryParam("kind")}
+	for _, p := range []struct {
+		name string
+		dst  *int
+	}{{"window", &q.Window}, {"min_countries", &q.MinCountries}, {"min_climb", &q.MinClimb}, {"limit", &q.Limit}} {
+		v, err := parseIntParam(c, p.name, 0)
+		if err != nil {
+			return badRequest(c, err)
+		}
+		if c.QueryParam(p.name) != "" && v == 0 {
+			return badRequest(c, errors.New("invalid "+p.name+", expected a positive integer"))
+		}
+		*p.dst = v
+	}
+	out, err := h.Breakouts.Breakouts(c.Request().Context(), q)
+	return writeData(c, out, err)
+}
+
+// --- discovery --------------------------------------------------------------------
+
+// intParams reads optional positive integer query params (0 = default).
+func intParams(c *echo.Context, dst map[string]*int) error {
+	for _, name := range []string{"days", "limit", "slots", "min_titles"} {
+		p, ok := dst[name]
+		if !ok {
+			continue
+		}
+		v, err := parseIntParam(c, name, 0)
+		if err != nil {
+			return err
+		}
+		if c.QueryParam(name) != "" && v == 0 {
+			return errors.New("invalid " + name + ", expected a positive integer")
+		}
+		*p = v
+	}
+	return nil
+}
+
+// GetHiddenGems: GET /api/v1/discover/{country}/hidden-gems[?kind=&provider_id=&min_rating=&min_votes=&days=&limit=]
+func (h *Handler) GetHiddenGems(c *echo.Context) error {
+	q := service.HiddenGemsQuery{Country: c.Param("country"), Kind: c.QueryParam("kind")}
+	if err := intParams(c, map[string]*int{"days": &q.Days, "limit": &q.Limit}); err != nil {
+		return badRequest(c, err)
+	}
+	if raw := c.QueryParam("provider_id"); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || v <= 0 {
+			return badRequest(c, errors.New("invalid provider_id"))
+		}
+		q.ProviderID = v
+	}
+	if raw := c.QueryParam("min_rating"); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || !(v >= 1 && v <= 10) { // also rejects NaN
+			return badRequest(c, errors.New("invalid min_rating, expected 1-10"))
+		}
+		q.MinRating = v
+	}
+	if raw := c.QueryParam("min_votes"); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || v <= 0 {
+			return badRequest(c, errors.New("invalid min_votes, expected a positive integer"))
+		}
+		q.MinVotes = v
+	}
+	out, err := h.Discover.HiddenGems(c.Request().Context(), q)
+	return writeData(c, out, err)
+}
+
+// GetElsewhere: GET /api/v1/discover/{country}/elsewhere[?kind=&days=&limit=]
+func (h *Handler) GetElsewhere(c *echo.Context) error {
+	q := service.ElsewhereQuery{Country: c.Param("country"), Kind: c.QueryParam("kind")}
+	if err := intParams(c, map[string]*int{"days": &q.Days, "limit": &q.Limit}); err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Discover.Elsewhere(c.Request().Context(), q)
+	return writeData(c, out, err)
+}
+
+// GetRotation: GET /api/v1/discover/{country}/rotation[?subscribed=8,9&slots=&days=&min_titles=]
+func (h *Handler) GetRotation(c *echo.Context) error {
+	q := service.RotationQuery{Country: c.Param("country"), IncludeOther: c.QueryParam("include_other") == "true"}
+	if err := intParams(c, map[string]*int{"days": &q.Days, "slots": &q.Slots, "min_titles": &q.MinTitles}); err != nil {
+		return badRequest(c, err)
+	}
+	if raw := strings.TrimSpace(c.QueryParam("subscribed")); raw != "" {
+		parts := strings.Split(raw, ",")
+		if len(parts) > 20 {
+			return badRequest(c, errors.New("at most 20 subscribed services"))
+		}
+		for _, part := range parts {
+			v, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+			if err != nil || v <= 0 {
+				return badRequest(c, errors.New("invalid subscribed, expected comma-separated TMDB provider IDs"))
+			}
+			if !slices.Contains(q.Subscribed, v) {
+				q.Subscribed = append(q.Subscribed, v)
+			}
+		}
+	}
+	out, err := h.Discover.Rotation(c.Request().Context(), q)
 	return writeData(c, out, err)
 }
 
@@ -320,7 +551,11 @@ func (h *Handler) analytics(run func(c *echo.Context, q service.AnalyticsQuery) 
 			return badRequest(c, err)
 		}
 		q := service.AnalyticsQuery{From: from, To: to, Country: c.QueryParam("country"), Provider: c.QueryParam("provider"),
-			Category: c.QueryParam("category"), Kind: c.QueryParam("kind")}
+			Category: c.QueryParam("category"), Kind: c.QueryParam("kind"), Interval: c.QueryParam("interval"), Window: c.QueryParam("window"),
+			Role: c.QueryParam("role")}
+		if err := intParams(c, map[string]*int{"limit": &q.Limit}); err != nil {
+			return badRequest(c, err)
+		}
 		out, err := run(c, q)
 		return writeData(c, out, err)
 	}
@@ -353,6 +588,50 @@ func (h *Handler) GetRatingsVsPopularity() echo.HandlerFunc {
 func (h *Handler) GetGenres() echo.HandlerFunc {
 	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
 		return h.Analytics.Genres(c.Request().Context(), q)
+	})
+}
+
+func (h *Handler) GetReleasePatterns() echo.HandlerFunc {
+	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
+		return h.Analytics.ReleasePatterns(c.Request().Context(), q)
+	})
+}
+
+func (h *Handler) GetSpreadLag() echo.HandlerFunc {
+	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
+		return h.Analytics.SpreadLag(c.Request().Context(), q)
+	})
+}
+
+func (h *Handler) GetPeopleAnalytics() echo.HandlerFunc {
+	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
+		return h.Analytics.People(c.Request().Context(), q)
+	})
+}
+
+// GetTitleCredits: GET /api/v1/titles/tmdb/{kind}/{id}/credits
+func (h *Handler) GetTitleCredits(c *echo.Context) error {
+	ref, err := h.parseRef(c)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	out, err := h.Credits.TitleCredits(c.Request().Context(), ref)
+	return writeData(c, out, err)
+}
+
+// GetPerson: GET /api/v1/people/{id}
+func (h *Handler) GetPerson(c *echo.Context) error {
+	id, err := parseID(c.Param("id"), "person id")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Credits.Person(c.Request().Context(), id)
+	return writeData(c, out, err)
+}
+
+func (h *Handler) GetOrigins() echo.HandlerFunc {
+	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
+		return h.Analytics.Origins(c.Request().Context(), q)
 	})
 }
 

@@ -790,6 +790,48 @@ paths:
                 $ref: "#/components/schemas/ChartChangesResponse"
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /api/v1/availability/changes:
+    get:
+      operationId: listAvailabilityChanges
+      summary: Titles that arrived on or left a service (across titles)
+      description: >-
+        Watch provider changes observed since `since` (default: 7 days ago),
+        newest first, with the TMDB title. See the per-title
+        `/availability/history` for how changes are detected.
+      parameters:
+        - name: since
+          in: query
+          schema: { type: string, format: date-time, example: "2026-11-01T00:00:00Z" }
+        - name: country
+          in: query
+          schema: { type: string, example: US }
+        - name: event
+          in: query
+          schema: { type: string, enum: [added, removed] }
+        - name: monetization
+          in: query
+          schema: { type: string, enum: [flatrate, free, ads, rent, buy] }
+        - name: provider_id
+          in: query
+          description: TMDB watch provider ID (e.g. 8 = Netflix)
+          schema: { type: integer }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+      responses:
+        "200":
+          description: Offer changes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  since: { type: string, format: date-time }
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/OfferEvent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/v1/movers:
     get:
       operationId: getMovers
@@ -818,6 +860,171 @@ paths:
                 $ref: "#/components/schemas/MoversResponse"
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/breakouts:
+    get:
+      operationId: getBreakouts
+      summary: Titles rising in the Top 10 in several countries at once
+      description: >-
+        Compares each chart's latest stored date (on `date`, or the day before
+        when today's chart isn't stored yet) with its stored date `window`
+        days earlier (or the closest stored date up to 7 days before that). A
+        title is rising on a chart when it entered it since then, or climbed
+        at least `min_climb` places; per country its best chart counts. A
+        breakout rises in at least `min_countries` countries. Sorted by rising
+        countries, then score (chart points gained, rank 1 = 10 ... rank 10 =
+        1). Stale charts (latest date more than a day before `date`) are left
+        out; `countries_checked` lists the countries that could be compared.
+        Webhooks can subscribe to `title.breakout` (admin API) to get each new
+        breakout with the default settings.
+      parameters:
+        - $ref: "#/components/parameters/DateParam"
+        - name: window
+          in: query
+          description: Days to compare over (1 to 14)
+          schema: { type: integer, minimum: 1, maximum: 14, default: 3 }
+        - name: min_countries
+          in: query
+          description: Countries a title must be rising in
+          schema: { type: integer, minimum: 1, maximum: 250, default: 2 }
+        - name: min_climb
+          in: query
+          description: Places a title already on a chart must climb to count as rising
+          schema: { type: integer, minimum: 1, maximum: 9, default: 3 }
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/KindQuery"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Breakouts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BreakoutsResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/discover/{country}/hidden-gems:
+    get:
+      operationId: getHiddenGems
+      summary: Highly rated titles streamable in a country that weren't in its Top 10 lately
+      description: >-
+        Titles metareel knows (charting and Netflix Top 10 titles) with an IMDb
+        rating (IMDb's dataset) of at least `min_rating` from at least
+        `min_votes` votes, a subscription, free or ads offer in the country
+        (TMDB watch providers; `provider_id` = only that service), and no
+        FlixPatrol Top 10 points in the country over the last `days` days.
+        Sorted by `score`, the rating pulled toward 6.5 by 25,000 votes (a
+        Bayesian average), so ratings from few votes rank lower.
+        `points_elsewhere` / `charted_in` show where it charted meanwhile.
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - name: kind
+          in: query
+          schema: { type: string, enum: [movie, tv] }
+        - name: provider_id
+          in: query
+          description: TMDB watch provider ID (e.g. 8 = Netflix)
+          schema: { type: integer, minimum: 1 }
+        - name: min_rating
+          in: query
+          schema: { type: number, minimum: 1, maximum: 10, default: 7.5 }
+        - name: min_votes
+          in: query
+          schema: { type: integer, minimum: 1, default: 5000 }
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 7, maximum: 180, default: 90 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Hidden gems
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HiddenGemsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/discover/{country}/elsewhere:
+    get:
+      operationId: getElsewhere
+      summary: Titles trending in other countries that can't be streamed in this one
+      description: >-
+        Titles in other countries' FlixPatrol Top 10s over the last `days`
+        days (default 7) that have no subscription, free or ads offer in the
+        country (TMDB watch providers), the most charted first, with where
+        they chart and any rent / buy offers here. Titles charting in the
+        country too, streamable here, or without TMDB offers fetched yet are
+        counted in `skipped`. Only countries metareel scrapes are checked
+        (`countries_checked`).
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - name: kind
+          in: query
+          schema: { type: string, enum: [movie, tv] }
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 30, default: 7 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Trending elsewhere
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ElsewhereResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/discover/{country}/rotation:
+    get:
+      operationId: getRotation
+      summary: Which streaming services to pay for this month in a country
+      description: >-
+        Ranks the country's subscription services by `score`. A service
+        groups its TMDB plans and channels (e.g. Netflix Standard with Ads,
+        HBO Max Amazon Channel; `provider_ids`) with `flatrate` or `ads`
+        offers of at least `min_titles` titles metareel knows. By default only
+        Netflix, Prime Video, Apple TV, Disney+, HBO Max, Paramount+, Peacock
+        and Hulu; `include_other=true` adds every other provider on its own
+        (live-TV bundles, niche services). `score` = Top 10 points its titles earned over the past
+        `days` days (in the country; every country when the country has no
+        charts, see `chart_basis`) + 10 per show with episodes in the coming
+        `days` days + 3 per title that arrived in the past window + 1 per title
+        rated 7.5+ on IMDb (5,000+ votes). The top `slots` services are
+        `subscribe`, the rest `skip`; with `subscribed` (the services paid for
+        now, any plan's provider ID): `keep` / `pause` for those, `add` / `skip` for the others.
+        `highlights` names the top charting titles, upcoming shows and
+        arrivals. Offer arrivals are only known since metareel started
+        following offers.
+      parameters:
+        - $ref: "#/components/parameters/CountryParam"
+        - name: subscribed
+          in: query
+          description: Comma-separated TMDB provider IDs paid for now (at most 20)
+          schema: { type: string, example: "8,9" }
+        - name: slots
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 10, default: 2 }
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 7, maximum: 90, default: 30 }
+        - name: min_titles
+          in: query
+          schema: { type: integer, minimum: 1, default: 10 }
+        - name: include_other
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Services, best first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RotationResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/leaderboards:
     get:
@@ -912,6 +1119,56 @@ paths:
                   properties:
                     slug: { type: string, example: netflix }
                     countries: { type: array, items: { type: string } }
+
+  /api/v1/search:
+    get:
+      operationId: searchTitles
+      summary: Find titles by name
+      description: >-
+        Searches every title metareel has chart data for (one result per TMDB
+        title) by any name it goes by: TMDB's title and original title, and
+        the FlixPatrol and Netflix Top 10 names mapped to it. Case, accents
+        and punctuation are ignored and words may be prefixes ("strang thin"
+        finds Stranger Things). Results are ordered by match quality (`score`:
+        100 the whole name, 85 the name starts with the query, 70 / 60 every
+        word starts a word of the name in / out of order, 40 the query inside
+        the name), then by when the title last charted.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 200 }
+        - name: kind
+          in: query
+          schema: { type: string, enum: [movie, tv] }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        "200":
+          description: Matching titles, best first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query: { type: string }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: { type: string, enum: [movie, tv] }
+                        tmdb_id: { type: string }
+                        title: { type: string }
+                        original_title: { type: string }
+                        year: { type: integer }
+                        poster_path: { type: string }
+                        matched: { type: string, description: The name that matched }
+                        sources: { type: array, items: { type: string, enum: [flixpatrol, netflix] } }
+                        last_charted: { type: string, format: date }
+                        score: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/titles/lookup:
     get:
@@ -1061,6 +1318,260 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/titles/tmdb/{kind}/{id}/availability/history:
+    get:
+      operationId: getTitleAvailabilityHistory
+      summary: When a title arrived on or left each service, per country
+      description: >-
+        Watch provider offers that appeared (`added`) or disappeared
+        (`removed`) between two TMDB refreshes of the title (titles.metadata,
+        charting titles every 3 days). The change happened after
+        `previous_check_at` and by `observed_at` (UTC). A title's first
+        refresh is the baseline and records nothing. Newest first, up to 500.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+        - name: country
+          in: query
+          schema: { type: string, example: US }
+      responses:
+        "200":
+          description: Offer changes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kind: { type: string }
+                  tmdb_id: { type: string }
+                  country: { type: string, nullable: true }
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/OfferEvent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404":
+          description: Unknown TMDB title
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/tmdb/{kind}/{id}/history:
+    get:
+      operationId: getTitleHistory
+      summary: A title's ratings and TMDB popularity over time
+      description: >-
+        `imdb` (IMDb's daily dataset) and `ratings` (per provider and source,
+        from ratings refreshes) hold a point whenever a value changed, so each
+        is a step function; the first point may be before `from` (the value in
+        effect at `from`). `popularity` has a point per day of TMDB's daily
+        export (tmdb.popularity.import), `wikipedia` the English article's daily
+        views (wikipedia.pageviews.import, 90 days back on its first import).
+        History starts when this version was deployed. Default range: the last 90 days; at most 366 days.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: History
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleHistoryResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404":
+          description: Unknown TMDB title
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/titles/tmdb/{kind}/{id}/credits:
+    get:
+      operationId: getTitleCredits
+      summary: A title's top-billed cast and key crew (TMDB)
+      description: >-
+        The top 25 cast by billing order and the directors, writers
+        (screenplay, writer, story, novel, teleplay, characters), creators, music
+        composers and cinematographers, from TMDB (movie credits; for TV the
+        aggregate credits of every season, with `episodes`, and the show's
+        creators). Stored by the tmdb.credits.refresh job; empty until it has
+        fetched the title.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+      responses:
+        "200":
+          description: Credits
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TitleCreditsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/people/{id}:
+    get:
+      operationId: getPerson
+      summary: A person (TMDB) and their titles metareel knows, with each title's chart record
+      description: >-
+        The person's credits on the titles metareel knows (`roles`: "as
+        <character>" for cast, else the job) with each title's FlixPatrol
+        record over every stored chart (points, days, best rank, countries,
+        first and last day), most charted first.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: TMDB person ID
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: The person
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PersonResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/titles/tmdb/{kind}/{id}/releases:
+    get:
+      operationId: getTitleReleases
+      summary: A movie's theatrical, digital, physical, TV and streaming dates per country, and the windows between them
+      description: >-
+        Release dates from TMDB (earliest of each type per country, refreshed
+        with the title's metadata): premiere (1), theatrical_limited (2),
+        theatrical (3), digital (4, PVOD / EST), physical (5), tv (6). TMDB has
+        no streaming type, so `streaming` is observed: the first time a
+        subscription, free or ads offer was seen arriving (`offer_added`,
+        between two metadata refreshes; offers already there at a title's
+        first refresh have no arrival) or the movie's first FlixPatrol chart
+        day in the country when that chart was stored on most of the 14 days
+        before (`first_chart`), whichever is earlier and not before the
+        theatrical release. Both are upper bounds. `streaming_now` lists the
+        current offers. Windows (days) start at the wide theatrical date, or
+        the limited one without it. Movies only (kind=tv is a 400).
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+        - name: country
+          in: query
+          description: One country (ISO 3166-1 alpha-2); default every country with a date or an offer
+          schema: { type: string, example: US }
+      responses:
+        "200":
+          description: Releases per country
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleReleasesResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/titles/tmdb/{kind}/{id}/timeline:
+    get:
+      operationId: getTitleTimeline
+      summary: A title's dated events from every source, newest first
+      description: >-
+        One feed of what happened to a title. Chart events per chart (country
+        x provider x category): `chart_debut`, `chart_peak` (first day at its
+        best rank, when after the debut; `days` = days after the debut),
+        `chart_number_one` (a run of days at #1; `days` = length) and
+        `chart_reentry` (back after at least 7 days away, only when the chart
+        was stored without the title in between; `days` = days away).
+        `availability_added` / `availability_removed`: watch provider changes,
+        one event per day, provider and offer type with every country.
+        `rating_changed`: a rating source's displayed value changed (one
+        decimal on 0-10 scales, whole numbers on 0-100; the first value is the
+        baseline; IMDb from IMDb's dataset when known, other sources from
+        Rotten Tomatoes, then MDBList, then JustWatch).
+        `pageview_spike`: days in a row with at least 1,000 English Wikipedia
+        views and 3x the median of the previous 28 days.
+        `netflix_top10_week`: a week (and season) in Netflix's global or
+        country Top 10s. `netflix_engagement`: a "What We Watched" report row.
+        `season_premiere` (may be upcoming), `release` (movie release / TV
+        first air date) and `netflix_premiere` (Netflix originals) from TMDB
+        and Netflix's reports. Spans (`end_date`) are kept when they overlap
+        `from`..`to`. `country` limits charts, availability and Netflix weeks
+        (adding `country_rank`); the other events are worldwide and always
+        kept. Exactly one detail object is set per event, by type group.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+        - name: types
+          in: query
+          description: Comma-separated event types (default all)
+          schema: { type: string, example: "chart_debut,chart_number_one,availability_added" }
+        - name: country
+          in: query
+          schema: { type: string, example: US }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: limit
+          in: query
+          description: Newest events to return (default 200, also used for 0; at most 1000); `total` counts all matches
+          schema: { type: integer, minimum: 0, maximum: 1000 }
+      responses:
+        "200":
+          description: Timeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleTimelineResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404":
+          description: Unknown TMDB title (no metadata and no chart entries)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/calendar/{country}:
+    get:
+      operationId: getCalendar
+      summary: Upcoming episodes of shows streamable in a country
+      description: >-
+        Episodes airing between `from` and `to` (default: today and the next 13
+        days; at most 62 days) of the TV shows metareel knows that have a
+        subscription, free or ad-supported offer in the country (TMDB, data by
+        JustWatch). One entry per show, season and date, so a binge release is
+        one entry with every episode. Air dates are TMDB's (usually the
+        original network or service release, not per country), and offers are
+        the show's current ones in the country. Episodes are refreshed by the
+        tmdb.episodes.refresh job (airing shows daily).
+      parameters:
+        - name: country
+          in: path
+          required: true
+          schema: { type: string, example: US }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: provider_id
+          in: query
+          description: Only shows with an offer from this TMDB watch provider (e.g. 8 = Netflix)
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Calendar
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/v1/titles/tmdb/{kind}/{id}/netflix:
     get:
       operationId: getTitleNetflix
@@ -1086,6 +1597,25 @@ paths:
                   seasons: { type: array, items: { $ref: "#/components/schemas/NetflixSeasonSummary" } }
                   global: { type: array, items: { $ref: "#/components/schemas/NetflixWeekRow" } }
                   country_weeks: { type: array, items: { $ref: "#/components/schemas/NetflixWeekRow" } }
+                  engagement:
+                    type: array
+                    description: >-
+                      The title's rows in Netflix's "What We Watched" engagement reports
+                      (every title watched 50k+ hours in a six-month period), newest
+                      period first; release_date is given for Netflix originals only.
+                    items:
+                      type: object
+                      properties:
+                        period_start: { type: string, format: date }
+                        period_end: { type: string, format: date }
+                        kind: { type: string, enum: [movie, tv_show] }
+                        title: { type: string }
+                        available_globally: { type: boolean, nullable: true }
+                        release_date: { type: string, format: date }
+                        hours_viewed: { type: integer, nullable: true }
+                        runtime_minutes: { type: integer, nullable: true }
+                        views: { type: integer, nullable: true }
+                        season_number: { type: integer }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -1223,7 +1753,9 @@ paths:
       description: >
         Uses the title's digital release date in the chart's country from TMDB
         when known, else TMDB's release / first air date. Needs TMDB metadata
-        (titles.metadata job). Range default: last 90 days.
+        (titles.metadata job). Range default: last 90 days. `items` lists the
+        newest first chart appearances, at most `limit`; `items_total` and the
+        summaries cover all of them.
       parameters:
         - $ref: "#/components/parameters/AnalyticsFrom"
         - $ref: "#/components/parameters/AnalyticsTo"
@@ -1231,9 +1763,12 @@ paths:
         - $ref: "#/components/parameters/ProviderQuery"
         - $ref: "#/components/parameters/CategoryQuery"
         - $ref: "#/components/parameters/KindQuery"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 500 }
       responses:
         "200":
-          description: Per-title lags with median / quartiles overall and per provider
+          description: Per-title lags with median / quartiles overall and per provider (`summary`, `by_provider`, `items_total`, `items`)
           content:
             application/json:
               schema:
@@ -1284,6 +1819,185 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnalyticsResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/origins:
+    get:
+      operationId: getOrigins
+      summary: Each service's chart points by origin (original, in-house, licensed)
+      description: >-
+        Splits every provider's chart points (rank 1 = 10 … rank 10 = 1) by
+        where the titles come from: `original` (made for the service: its own
+        network, its studio, or a film it released with no theatrical studio
+        involved), `in_house` (the parent company's studios and channels,
+        e.g. a Marvel film on Disney+, a CBS show on Paramount+), `licensed`
+        (another company or an independent) and `unknown` (no TMDB metadata,
+        or nothing says who made it). Computed from TMDB networks and
+        production companies and Wikidata distributors, per week or month,
+        with the owners of licensed titles (`suppliers`) and the top titles of
+        each origin. Charts of different providers are separate, so compare
+        shares rather than points across providers. Default range: the last
+        90 days.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+        - name: interval
+          in: query
+          schema: { type: string, enum: [week, month], default: week }
+      responses:
+        "200":
+          description: Origin mix per provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OriginsResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/release-patterns:
+    get:
+      operationId: getReleasePatterns
+      summary: How long TV seasons stay in the Top 10 by release pattern (binge, batch, weekly)
+      description: >-
+        Classifies each TV season premiering between `from` and `to` (default:
+        the last 365 days) by its TMDB episode air dates: `binge` (every
+        episode on one day), `batch` (2 to 4 drops averaging 2+ episodes, e.g.
+        volumes), `weekly` (drops 5 to 9 days apart, median), `daily` (at most
+        2 days apart) or `irregular`. Then measures each chart run (season x
+        FlixPatrol TV chart) over `window` days from the premiere: days in the
+        Top 10, the last day charting, best rank and points, aggregated per
+        pattern. A chart counts only when stored from the premiere to the end of
+        the window; the window stops before the next season premieres; rankings
+        count when tagged with the season or untagged. Seasons with unaired
+        episodes, a single episode, no chart run yet (`in_progress`) or none at
+        all (`uncharted`) are counted in `excluded`. Only shows metareel knows
+        (charting titles) have episodes, and TMDB air dates are the original
+        release, not per country.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - name: window
+          in: query
+          description: Days after each premiere to measure (30 to 180)
+          schema: { type: integer, minimum: 30, maximum: 180, default: 60 }
+      responses:
+        "200":
+          description: Release patterns
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleasePatternsResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/spread-lag:
+    get:
+      operationId: getSpreadLag
+      summary: How quickly titles spread from the country they first chart in to others
+      description: >-
+        A title's debut is its first FlixPatrol chart appearance in any
+        country between `from` and `to` (default: the last 90 days, at most
+        180), with none
+        from 30 days before `from`; the countries it charted in that day are
+        its origins. Every other country is followed for `window` days: the
+        lag is the days until the title first charts there. A country counts
+        for a title only when its charts were stored for the 30 days before
+        the debut, and a title debuting in a country without that history is
+        left out (an earlier appearance could be missing). `country` keeps titles that
+        debuted there; `provider`, `category` and `kind` filter the charts and
+        titles. Countries are only those metareel scrapes.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - name: country
+          in: query
+          description: Only titles that debuted in this country (ISO 3166-1 alpha-2)
+          schema: { type: string }
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+        - name: window
+          in: query
+          description: Days after the debut to follow the other countries (7 to 90)
+          schema: { type: integer, minimum: 7, maximum: 90, default: 30 }
+      responses:
+        "200":
+          description: Spread lag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpreadLagResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/release-windows:
+    get:
+      operationId: getReleaseWindows
+      summary: How long after a theatrical release movies reach digital (PVOD) and streaming
+      description: >-
+        Movies metareel knows (charting or Netflix titles) released in
+        theaters in `country` (default US) between `from` and `to` (default:
+        the last 365 days; the wide date, or the limited one without it).
+        Summaries of the theatrical-to-digital, theatrical-to-streaming and
+        digital-to-streaming windows (median and quartiles in days, how many
+        were at most 17 / 31 / 45 / 90 days, and movies without the later
+        date), theatrical-to-streaming per first service, and each movie's
+        dates (as in /titles/tmdb/movie/{id}/releases). Streaming dates are
+        observed (offer arrivals since metareel started following offers,
+        and first chart days), so many movies have none.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - name: country
+          in: query
+          schema: { type: string, default: US }
+        - name: limit
+          in: query
+          description: Movies to list (default and at most 500); `items_total` counts all
+          schema: { type: integer, minimum: 1, maximum: 500 }
+      responses:
+        "200":
+          description: Release windows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleaseWindowsResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/people:
+    get:
+      operationId: getPeopleAnalytics
+      summary: People ranked by the Top 10 points their titles earned
+      description: >-
+        For a `role` (actor: billed in a title's top 10; director, writer,
+        creator, composer, cinematographer: the crew jobs stored), each
+        person's titles' FlixPatrol chart points in the range (default: the
+        last 90 days; `country`, `provider`, `category`, `kind` filter the
+        charts), each title counted in full for everyone credited and once
+        per person. With the number of their titles that charted, their best
+        rank and their top three titles.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+        - name: role
+          in: query
+          schema: { type: string, enum: [actor, director, writer, creator, composer, cinematographer], default: actor }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: People, most points first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PeopleResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/analytics/netflix-calibration:
@@ -1557,6 +2271,154 @@ components:
               re_entries: { type: array, items: { $ref: "#/components/schemas/Mover" } }
               exits: { type: array, items: { $ref: "#/components/schemas/Mover" } }
 
+    BreakoutsResponse:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        window: { type: integer }
+        min_countries: { type: integer }
+        min_climb: { type: integer }
+        category: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        kind: { type: string, nullable: true }
+        countries_checked: { type: array, items: { type: string }, description: Countries with a current chart that could be compared }
+        total: { type: integer, description: Breakouts before the limit }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Breakout" }
+    Breakout:
+      allOf:
+        - $ref: "#/components/schemas/ChartTitle"
+        - type: object
+          properties:
+            rising_countries: { type: integer }
+            charting_countries: { type: array, items: { type: string }, description: Countries where it is on a chart on its latest date, rising or not }
+            score: { type: integer, description: Chart points gained over the rising countries }
+            countries:
+              type: array
+              description: Rising countries, biggest gain first (the best chart per country)
+              items:
+                type: object
+                properties:
+                  country: { type: string }
+                  provider: { type: string }
+                  category: { type: string, enum: [movies, tv_shows] }
+                  date: { type: string, format: date, description: The chart's latest stored date }
+                  base_date: { type: string, format: date, description: The stored date compared with }
+                  rank: { type: integer }
+                  base_rank: { type: integer, nullable: true, description: null when not on the chart on base_date }
+                  movement: { type: string, enum: [entered, climbed] }
+                  gain: { type: integer, description: Chart points gained }
+
+    DiscoverOffer:
+      type: object
+      properties:
+        provider_id: { type: integer }
+        provider_name: { type: string }
+        monetization: { type: string, enum: [flatrate, free, ads, rent, buy] }
+    DiscoverTitle:
+      type: object
+      properties:
+        kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        title: { type: string }
+        year: { type: integer, nullable: true }
+        poster_path: { type: string, nullable: true }
+        imdb_rating: { type: number, nullable: true }
+        imdb_votes: { type: integer, nullable: true }
+    HiddenGemsResponse:
+      type: object
+      properties:
+        country: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        kind: { type: string, nullable: true }
+        provider_id: { type: integer, nullable: true }
+        min_rating: { type: number }
+        min_votes: { type: integer }
+        considered: { type: integer, description: Rated and streamable in the country }
+        total: { type: integer }
+        items:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/DiscoverTitle"
+              - type: object
+                properties:
+                  genres: { type: array, items: { type: string } }
+                  score: { type: number }
+                  streaming_here: { type: array, items: { $ref: "#/components/schemas/DiscoverOffer" } }
+                  points_elsewhere: { type: integer }
+                  charted_in: { type: array, items: { type: string } }
+    ElsewhereResponse:
+      type: object
+      properties:
+        country: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        kind: { type: string, nullable: true }
+        countries_checked: { type: array, items: { type: string } }
+        skipped:
+          type: object
+          properties:
+            available_here: { type: integer }
+            charting_here: { type: integer }
+            availability_unknown: { type: integer }
+        total: { type: integer }
+        items:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/DiscoverTitle"
+              - type: object
+                properties:
+                  points: { type: integer }
+                  countries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        country: { type: string }
+                        points: { type: integer }
+                        best_rank: { type: integer }
+                        providers: { type: array, items: { type: string } }
+                  rent_buy_here: { type: array, items: { $ref: "#/components/schemas/DiscoverOffer" } }
+    RotationResponse:
+      type: object
+      properties:
+        country: { type: string }
+        past_from: { type: string, format: date }
+        past_to: { type: string, format: date }
+        upcoming_to: { type: string, format: date }
+        chart_basis: { type: string, enum: [country, all_countries] }
+        slots: { type: integer }
+        subscribed: { type: array, items: { type: integer } }
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              provider_id: { type: integer, description: "The service's main TMDB provider ID" }
+              provider_name: { type: string }
+              provider_ids: { type: array, items: { type: integer }, description: Every TMDB provider (plans, channels) counted in it }
+              titles: { type: integer }
+              chart_points: { type: integer }
+              charting: { type: integer }
+              arrivals: { type: integer }
+              departures: { type: integer }
+              upcoming_shows: { type: integer }
+              top_rated: { type: integer }
+              score: { type: integer }
+              recommendation: { type: string, enum: [subscribe, skip, keep, pause, add] }
+              highlights:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    kind: { type: string }
+                    tmdb_id: { type: string }
+                    title: { type: string }
+                    detail: { type: string }
     LeaderboardResponse:
       type: object
       properties:
@@ -1635,6 +2497,565 @@ components:
         link: { type: string, nullable: true, description: "Always null here; see the country's link" }
         fetched_at: { type: string, format: date-time }
 
+    OriginInfo:
+      type: object
+      description: >-
+        Where a title on this provider's chart comes from (see
+        /api/v1/analytics/origins). `owner` is the media group the title
+        belongs to (netflix, amazon, apple, disney, wbd, nbcu, paramount,
+        sony, lionsgate, a24; absent = independent or not recognised);
+        `reason` is the brand that decided it.
+      properties:
+        origin: { type: string, enum: [original, in_house, licensed, unknown] }
+        owner: { type: string, example: wbd }
+        reason: { type: string, example: "network: HBO" }
+    CalendarResponse:
+      type: object
+      properties:
+        country: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        provider_id: { type: integer, nullable: true }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              air_date: { type: string, format: date }
+              tmdb_id: { type: string }
+              title: { type: string }
+              poster_path: { type: string, nullable: true }
+              season_number: { type: integer }
+              season_premiere: { type: boolean, description: Includes episode 1 }
+              season_finale: { type: boolean, description: "Includes TMDB's finale episode" }
+              episodes:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    episode_number: { type: integer }
+                    name: { type: string }
+                    episode_type: { type: string, description: "TMDB: standard | finale | mid_season" }
+                    runtime: { type: integer, description: Minutes }
+              offers:
+                type: array
+                description: The show's subscription, free and ad-supported offers in the country
+                items:
+                  type: object
+                  properties:
+                    provider_id: { type: integer }
+                    provider_name: { type: string }
+                    monetization: { type: string, enum: [flatrate, free, ads] }
+                    url: { type: string }
+    ReleasePatternsResponse:
+      type: object
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        country: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        window_days: { type: integer }
+        patterns:
+          type: array
+          items:
+            type: object
+            properties:
+              pattern: { type: string, enum: [binge, batch, weekly, daily, irregular] }
+              seasons: { type: integer }
+              chart_runs: { type: integer, description: Season x chart pairs with at least one day in the Top 10 }
+              median_days_in_top10: { type: number }
+              mean_days_in_top10: { type: number }
+              median_last_day: { type: number, description: Days from the premiere to the last day in the Top 10 }
+              share_still_charting_day_28: { type: number, description: Share of chart runs still in the Top 10 on or after day 28 }
+              median_best_rank: { type: number }
+              median_points: { type: number, description: "Chart points per run (rank 1 = 10 ... rank 10 = 1)" }
+        seasons:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [tv] }
+              tmdb_id: { type: string }
+              title: { type: string }
+              season_number: { type: integer }
+              pattern: { type: string }
+              premiere: { type: string, format: date }
+              last_episode: { type: string, format: date }
+              episodes: { type: integer }
+              drops: { type: integer, description: Release dates }
+              charts: { type: integer }
+              median_days_in_top10: { type: number }
+              median_last_day: { type: number }
+              best_rank: { type: integer }
+        excluded:
+          type: object
+          properties:
+            unaired: { type: integer }
+            single: { type: integer }
+            in_progress: { type: integer }
+            uncharted: { type: integer }
+    LagSummary:
+      type: object
+      properties:
+        titles: { type: integer }
+        median_days: { type: number, nullable: true }
+        p25_days: { type: number, nullable: true }
+        p75_days: { type: number, nullable: true }
+    SpreadArrival:
+      type: object
+      properties:
+        country: { type: string }
+        provider: { type: string, description: Chart of the first appearance (best rank that day) }
+        category: { type: string, enum: [movies, tv_shows] }
+        first_date: { type: string, format: date }
+        lag_days: { type: integer, description: Days after the debut (0 = an origin) }
+        rank: { type: integer }
+    SpreadLagResponse:
+      type: object
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        country: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        kind: { type: string, nullable: true }
+        window: { type: integer }
+        titles: { type: integer, description: Debuts in the range with at least one other country followed }
+        multi_country: { type: integer, description: Titles that charted in two or more countries within the window }
+        simultaneous: { type: integer, description: Titles that debuted in several countries on the same day }
+        summary:
+          allOf:
+            - $ref: "#/components/schemas/LagSummary"
+          description: Lags of every arrival after the first country (0 for the extra origins of a simultaneous debut)
+        countries:
+          type: array
+          items:
+            type: object
+            properties:
+              country: { type: string }
+              origin: { type: integer, description: Titles that debuted here (alone or with other countries) }
+              arrived: { type: integer, description: Titles that charted here after debuting elsewhere, within the window }
+              arrival_lag: { $ref: "#/components/schemas/LagSummary" }
+              not_reached: { type: integer, description: Titles followed here for the whole window that never charted }
+        pairs:
+          type: array
+          description: Routes from a single-origin debut country to another country
+          items:
+            type: object
+            properties:
+              from: { type: string }
+              to: { type: string }
+              reached: { type: integer }
+              not_reached: { type: integer }
+              lag: { $ref: "#/components/schemas/LagSummary" }
+        items_total: { type: integer }
+        items:
+          type: array
+          description: Titles that charted in two or more countries, newest debut first (at most 200)
+          items:
+            allOf:
+              - $ref: "#/components/schemas/ChartTitle"
+              - type: object
+                properties:
+                  debut_date: { type: string, format: date }
+                  origins: { type: array, items: { type: string } }
+                  arrivals: { type: array, items: { $ref: "#/components/schemas/SpreadArrival" } }
+                  not_reached: { type: array, items: { type: string } }
+                  pending: { type: array, items: { type: string }, description: Not charted yet; the window is not over }
+    TitleCreditsResponse:
+      type: object
+      properties:
+        kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        title: { type: string, nullable: true }
+        cast:
+          type: array
+          items:
+            type: object
+            properties:
+              person_id: { type: integer }
+              name: { type: string }
+              profile_path: { type: string, nullable: true }
+              character: { type: string }
+              order: { type: integer }
+              episodes: { type: integer, nullable: true, description: TV episodes credited }
+        crew:
+          type: array
+          items:
+            type: object
+            properties:
+              person_id: { type: integer }
+              name: { type: string }
+              profile_path: { type: string, nullable: true }
+              job: { type: string, description: "Director, Screenplay, Writer, Story, Novel, Teleplay, Characters, Creator, Original Music Composer, Director of Photography" }
+              department: { type: string }
+              episodes: { type: integer, nullable: true }
+    PersonResponse:
+      type: object
+      properties:
+        person_id: { type: integer }
+        name: { type: string }
+        profile_path: { type: string, nullable: true }
+        known_for: { type: string, nullable: true }
+        points: { type: integer, description: Top 10 points over all their titles }
+        charting: { type: integer, description: Their titles that charted }
+        titles:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [movie, tv] }
+              tmdb_id: { type: string }
+              title: { type: string }
+              year: { type: integer, nullable: true }
+              poster_path: { type: string, nullable: true }
+              roles: { type: array, items: { type: string } }
+              points: { type: integer }
+              days: { type: integer }
+              best_rank: { type: integer, nullable: true }
+              countries: { type: integer }
+              first_charted: { type: string, format: date, nullable: true }
+              last_charted: { type: string, format: date, nullable: true }
+    PeopleResponse:
+      type: object
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        country: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        kind: { type: string, nullable: true }
+        role: { type: string }
+        total: { type: integer }
+        people:
+          type: array
+          items:
+            type: object
+            properties:
+              person_id: { type: integer }
+              name: { type: string }
+              profile_path: { type: string, nullable: true }
+              points: { type: integer }
+              titles: { type: integer }
+              best_rank: { type: integer }
+              top_titles:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    kind: { type: string }
+                    tmdb_id: { type: string }
+                    title: { type: string }
+                    points: { type: integer }
+    CountryReleases:
+      type: object
+      properties:
+        country: { type: string }
+        premiere: { type: string, format: date, nullable: true }
+        theatrical_limited: { type: string, format: date, nullable: true }
+        theatrical: { type: string, format: date, nullable: true }
+        digital: { type: string, format: date, nullable: true, description: PVOD / EST }
+        physical: { type: string, format: date, nullable: true }
+        tv: { type: string, format: date, nullable: true }
+        notes: { type: object, additionalProperties: { type: string }, description: TMDB notes by release kind (e.g. a festival) }
+        streaming:
+          type: object
+          nullable: true
+          description: First observed streaming arrival (an upper bound)
+          properties:
+            date: { type: string, format: date }
+            basis: { type: string, enum: [offer_added, first_chart] }
+            provider: { type: string, description: TMDB provider name (offer_added) or FlixPatrol service (first_chart) }
+            provider_id: { type: integer, description: TMDB provider id (offer_added) }
+            monetization: { type: string, enum: [flatrate, free, ads] }
+        streaming_now:
+          type: array
+          items:
+            type: object
+            properties:
+              provider_id: { type: integer }
+              provider_name: { type: string }
+              monetization: { type: string, enum: [flatrate, free, ads] }
+        windows:
+          type: object
+          description: Days between releases (null when a date is missing; negative when the later one came first)
+          properties:
+            theatrical_basis: { type: string, enum: [wide, limited], nullable: true }
+            theatrical_to_digital: { type: integer, nullable: true }
+            theatrical_to_streaming: { type: integer, nullable: true }
+            digital_to_streaming: { type: integer, nullable: true }
+    TitleReleasesResponse:
+      type: object
+      properties:
+        kind: { type: string, enum: [movie] }
+        tmdb_id: { type: string }
+        title: { type: string, nullable: true }
+        release_date: { type: string, format: date, nullable: true, description: "TMDB's primary release date" }
+        countries: { type: array, items: { $ref: "#/components/schemas/CountryReleases" } }
+    WindowStats:
+      allOf:
+        - $ref: "#/components/schemas/LagSummary"
+        - type: object
+          properties:
+            within_days:
+              type: object
+              description: Movies whose window was at most N days (keys 17, 31, 45, 90)
+              additionalProperties: { type: integer }
+            missing: { type: integer, description: Movies in the range without the later date }
+    ReleaseWindowsResponse:
+      type: object
+      properties:
+        country: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        movies: { type: integer }
+        theatrical_to_digital: { $ref: "#/components/schemas/WindowStats" }
+        theatrical_to_streaming: { $ref: "#/components/schemas/WindowStats" }
+        digital_to_streaming: { $ref: "#/components/schemas/WindowStats" }
+        streaming_by_provider:
+          type: array
+          items:
+            type: object
+            properties:
+              provider: { type: string }
+              basis: { type: string, enum: [offer_added, first_chart] }
+              lag: { $ref: "#/components/schemas/LagSummary" }
+        items_total: { type: integer }
+        items:
+          type: array
+          description: Newest theatrical release first
+          items:
+            allOf:
+              - $ref: "#/components/schemas/CountryReleases"
+              - type: object
+                properties:
+                  tmdb_id: { type: string }
+                  title: { type: string }
+                  poster_path: { type: string, nullable: true }
+    OriginsResponse:
+      type: object
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        country: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        kind: { type: string, nullable: true }
+        interval: { type: string, enum: [week, month] }
+        providers:
+          type: array
+          items:
+            type: object
+            properties:
+              provider: { type: string }
+              points: { type: integer }
+              origins:
+                type: object
+                description: original, in_house, licensed, unknown
+                additionalProperties:
+                  type: object
+                  properties:
+                    points: { type: integer }
+                    share: { type: number, description: "of the provider's points" }
+                    titles: { type: integer }
+              series:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    period: { type: string, format: date, description: "first day of the week (Monday) or month" }
+                    points: { type: integer }
+                    shares: { type: object, additionalProperties: { type: number } }
+              suppliers:
+                type: array
+                description: Owners of licensed titles by points
+                items:
+                  type: object
+                  properties:
+                    owner: { type: string, description: '"" = independent or not recognised' }
+                    name: { type: string }
+                    points: { type: integer }
+                    share: { type: number, description: "of the provider's licensed points" }
+                    titles: { type: integer }
+              top:
+                type: object
+                description: Up to 5 titles per origin
+                additionalProperties:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      kind: { type: string }
+                      tmdb_id: { type: string }
+                      points: { type: integer }
+                      owner: { type: string }
+                      reason: { type: string }
+    OfferEvent:
+      type: object
+      properties:
+        id: { type: integer }
+        tmdb_kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        title: { type: string, description: "TMDB title (feed only)" }
+        release_date: { type: string, description: "feed only" }
+        poster_path: { type: string, description: "feed only" }
+        country: { type: string }
+        monetization: { type: string, enum: [flatrate, free, ads, rent, buy] }
+        provider_id: { type: integer }
+        provider_name: { type: string }
+        event: { type: string, enum: [added, removed] }
+        previous_check_at: { type: string, description: "UTC YYYY-MM-DD HH:MM:SS; the change happened after this" }
+        observed_at: { type: string, description: "UTC YYYY-MM-DD HH:MM:SS; the change was seen at this refresh" }
+    RatingPoint:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        value: { type: number }
+        votes: { type: integer, nullable: true }
+    TitleTimelineResponse:
+      type: object
+      properties:
+        kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        title: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        from: { type: string, format: date, nullable: true }
+        to: { type: string, format: date, nullable: true }
+        total: { type: integer, description: Matching events before the limit }
+        counts:
+          type: object
+          description: Matching events per type
+          additionalProperties: { type: integer }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/TimelineEvent" }
+    TimelineEvent:
+      type: object
+      required: [type, date, summary]
+      properties:
+        type:
+          type: string
+          enum: [chart_debut, chart_peak, chart_number_one, chart_reentry, availability_added, availability_removed,
+            rating_changed, pageview_spike, netflix_top10_week, netflix_engagement, season_premiere, release, netflix_premiere]
+        date: { type: string, format: date, description: "UTC; a span's first day" }
+        end_date: { type: string, format: date, description: "A span's last day (#1 runs, spikes, Netflix weeks, report periods)" }
+        summary: { type: string, example: "Debuted at #3 on netflix TV shows (US)" }
+        chart:
+          type: object
+          description: chart_* events
+          properties:
+            country: { type: string }
+            provider: { type: string }
+            category: { type: string, enum: [movies, tv_shows] }
+            rank: { type: integer }
+            season_number: { type: integer }
+            days: { type: integer, description: "chart_number_one: days at #1; chart_peak: days after the debut; chart_reentry: days away" }
+        availability:
+          type: object
+          description: availability_* events
+          properties:
+            provider_id: { type: integer }
+            provider_name: { type: string }
+            monetization: { type: string, enum: [flatrate, free, ads, rent, buy] }
+            countries: { type: array, items: { type: string } }
+        rating:
+          type: object
+          description: rating_changed
+          properties:
+            provider: { type: string, example: imdb_dataset }
+            source: { type: string, example: imdb }
+            value: { type: number }
+            previous_value: { type: number, description: The previous displayed (rounded) value }
+            votes: { type: integer }
+        pageviews:
+          type: object
+          description: pageview_spike
+          properties:
+            peak_day: { type: string, format: date }
+            peak_views: { type: integer }
+            baseline_views: { type: integer, description: Median daily views of the 28 days before the spike }
+            ratio: { type: number }
+            days: { type: integer }
+        netflix:
+          type: object
+          description: netflix_top10_week (date = Monday, end_date = week = Sunday)
+          properties:
+            week: { type: string, format: date }
+            category: { type: string }
+            global_rank: { type: integer, nullable: true, description: null when only in country lists that week }
+            season_title: { type: string }
+            season_number: { type: integer }
+            hours_viewed: { type: integer }
+            views: { type: integer }
+            cumulative_weeks: { type: integer }
+            countries: { type: integer, description: Country Top 10s it was in that week }
+            country_rank: { type: integer, description: Rank in the requested country }
+        engagement:
+          type: object
+          description: netflix_engagement
+          properties:
+            period_start: { type: string, format: date }
+            period_end: { type: string, format: date }
+            title: { type: string }
+            hours_viewed: { type: integer, nullable: true }
+            views: { type: integer, nullable: true }
+            runtime_minutes: { type: integer, nullable: true }
+            season_number: { type: integer }
+            available_globally: { type: boolean, nullable: true }
+        season:
+          type: object
+          description: season_premiere
+          properties:
+            season_number: { type: integer }
+            name: { type: string }
+            episode_count: { type: integer }
+    TitleHistoryResponse:
+      type: object
+      properties:
+        kind: { type: string }
+        tmdb_id: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        imdb:
+          type: object
+          nullable: true
+          properties:
+            imdb_id: { type: string }
+            points:
+              type: array
+              items: { $ref: "#/components/schemas/RatingPoint" }
+        ratings:
+          type: array
+          items:
+            type: object
+            properties:
+              provider: { type: string, example: rottentomatoes }
+              source: { type: string, example: tomatoes }
+              points:
+                type: array
+                items: { $ref: "#/components/schemas/RatingPoint" }
+        popularity:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              popularity: { type: number }
+        wikipedia:
+          type: object
+          nullable: true
+          description: Daily user views of the title's English Wikipedia article (null without one)
+          properties:
+            article: { type: string }
+            url: { type: string }
+            points:
+              type: array
+              items:
+                type: object
+                properties:
+                  date: { type: string, format: date }
+                  views: { type: integer }
     AvailabilityResponse:
       type: object
       properties:
@@ -2007,6 +3428,8 @@ components:
           description: TV only, when known
         season_source:
           $ref: "#/components/schemas/RankingSeasonSource"
+        origin:
+          $ref: "#/components/schemas/OriginInfo"
       required: [date, rank, previous_rank, days_in_top10, provider, slug, name, kind]
 
     Top10Response:

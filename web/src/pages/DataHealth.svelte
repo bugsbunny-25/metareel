@@ -34,8 +34,13 @@
   }
   $effect(() => { load() })
 
-  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'netflix.titles.match', 'imdb.ratings.import', 'ratings.prewarm', 'maintenance']
+  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'netflix.titles.match', 'imdb.ratings.import', 'tmdb.popularity.import', 'wikipedia.pageviews.import', 'netflix.engagement.import', 'tmdb.episodes.refresh', 'tmdb.credits.refresh', 'ratings.prewarm', 'maintenance']
   const label = (t) => taskTypes.find((x) => x.type === t)?.label ?? t
+  const forceTitle = (t) =>
+    t === 'tmdb.episodes.refresh' ? 'Refetch every show, not only those due'
+      : t === 'tmdb.credits.refresh' ? 'Refetch every title, not only those due'
+        : t.endsWith('.import') ? 'Re-import even if the file is unchanged' : ''
+
 
   async function start(type, force = false) {
     busy = { ...busy, [type]: true }
@@ -52,6 +57,7 @@
   const total = (m) => Object.values(m ?? {}).reduce((a, b) => a + b, 0)
   const IMPORT_LABEL = {
     'netflix.global': 'Netflix global weekly', 'netflix.countries': 'Netflix per country', 'netflix.most_popular': 'Netflix most popular', 'imdb.ratings': 'IMDb ratings',
+    'tmdb.popularity.movie': 'TMDB popularity (movies)', 'tmdb.popularity.tv': 'TMDB popularity (TV)',
   }
 
   const share = (a, b) => (b ? Math.round((100 * a) / b) : null)
@@ -133,7 +139,7 @@
                     <div class="small muted">{taskTypes.find((x) => x.type === t)?.description ?? ''}</div>
                   </td>
                   <td class="right nowrap">
-                    {#if t.endsWith('.import')}<button class="btn btn-sm" onclick={() => start(t, true)} disabled={busy[t]} title="Re-import even if the file is unchanged">Force</button>{/if}
+                    {#if forceTitle(t)}<button class="btn btn-sm" onclick={() => start(t, true)} disabled={busy[t]} title={forceTitle(t)}>Force</button>{/if}
                     <button class="btn btn-sm" onclick={() => start(t)} disabled={busy[t]}><Icon name="play" size={12} />Run</button>
                     <a class="btn btn-sm" href={href('/runs', { type: t })} aria-label="Runs of {label(t)}"><Icon name="list" size={12} /></a>
                   </td>
@@ -152,7 +158,7 @@
             <tbody>
               {#each report.imports as i (i.source)}
                 <tr>
-                  <td>{IMPORT_LABEL[i.source] ?? i.source}</td>
+                  <td>{IMPORT_LABEL[i.source] ?? (i.source.startsWith('netflix.engagement:') ? 'Netflix engagement report' : i.source)}</td>
                   <td class="right">{number(i.rows)}</td>
                   <td class="nowrap" title={dateTime(i.imported_at)}>{relativeTime(i.imported_at)}</td>
                 </tr>

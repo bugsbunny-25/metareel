@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +26,10 @@ func NewDownloader(timeout time.Duration, userAgent string) *Downloader {
 	}
 	return &Downloader{http: &http.Client{Timeout: timeout}, userAgent: userAgent}
 }
+
+// ErrFileNotFound: the server answered 404 (e.g. a dated export not
+// published yet).
+var ErrFileNotFound = errors.New("file not found")
 
 // FileVersion identifies a version of a remote file.
 type FileVersion struct {
@@ -67,6 +72,10 @@ func (d *Downloader) Open(ctx context.Context, url string, prev FileVersion) (*D
 	if resp.StatusCode == http.StatusNotModified {
 		resp.Body.Close()
 		return nil, nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		resp.Body.Close()
+		return nil, fmt.Errorf("download %s: %w", url, ErrFileNotFound)
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 200))

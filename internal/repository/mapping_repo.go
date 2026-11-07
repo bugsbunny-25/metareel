@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/bugsbunny-25/metareel/internal/repository/sqlc"
 )
@@ -330,6 +332,91 @@ func (r *MappingRepository) Refs(ctx context.Context, tmdbKind string, mappedOnl
 			NetflixKind: nullStringPtr(row.NetflixKind), NetflixTitleNetflixID: nullStringPtr(row.NetflixTitleNetflixID),
 			NetflixMatchStatus: nullStringPtr(row.NetflixMatchStatus),
 		})
+	}
+	return out, nil
+}
+
+// ReviewCandidate is an automatically mapped chart title with the facts the
+// mapping review queue scores.
+type ReviewCandidate struct {
+	Subject           string // flixpatrol | netflix
+	ID                int64
+	Name              string
+	Kind              string // movie | tv_show (the list's, for Netflix)
+	TmdbKind          string
+	TmdbID            string
+	MatchSource       string
+	TmdbTitle         string
+	TmdbOriginalTitle string
+	TmdbReleaseDate   string
+	HasDetails        bool
+	TmdbIMDbID        string
+	EvidenceIMDbID    string
+	FPPremiereDate    string   // FlixPatrol title page (FlixPatrol only)
+	FirstCharted      string   // YYYY-MM-DD: first chart date / Netflix week
+	Providers         []string // FlixPatrol providers it charted on; netflix for Netflix titles
+	// LastCharted is the last date (YYYY-MM-DD) it charted on each provider.
+	LastCharted      map[string]string
+	DetailsFetchedAt string // when TMDB details (and watch providers) were stored
+	Points           int64  // chart points (FlixPatrol) or weeks in Netflix's global Top 10
+}
+
+// ReviewCandidates lists every automatically mapped FlixPatrol and Netflix
+// title.
+func (r *MappingRepository) ReviewCandidates(ctx context.Context) ([]ReviewCandidate, error) {
+	fp, err := r.q.ListMappingReviewFlixPatrol(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list flixpatrol review candidates: %w", err)
+	}
+	nf, err := r.q.ListMappingReviewNetflix(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list netflix review candidates: %w", err)
+	}
+	out := make([]ReviewCandidate, 0, len(fp)+len(nf))
+	for _, t := range fp {
+		kind := "movie"
+		if t.Kind == "tv_show" {
+			kind = "tv"
+		}
+		var providers []string
+		last := map[string]string{}
+		if t.Providers != "" {
+			for _, pl := range strings.Split(t.Providers, ",") {
+				p, d, _ := strings.Cut(pl, "@")
+				providers = append(providers, p)
+				last[p] = d
+			}
+			sort.Strings(providers)
+		}
+		out = append(out, ReviewCandidate{Subject: "flixpatrol", ID: t.ID, Name: t.Name, Kind: t.Kind, TmdbKind: kind, TmdbID: t.TmdbID,
+			MatchSource: t.MatchSource, TmdbTitle: t.TmdbTitle, TmdbOriginalTitle: t.TmdbOriginalTitle, TmdbReleaseDate: t.TmdbReleaseDate,
+			HasDetails: t.HasDetails == 1, TmdbIMDbID: t.TmdbImdbID, EvidenceIMDbID: t.EvidenceImdbID, FPPremiereDate: t.FpPremiereDate,
+			FirstCharted: t.FirstCharted, Providers: providers, LastCharted: last, DetailsFetchedAt: t.DetailsFetchedAt, Points: t.Points})
+	}
+	for _, t := range nf {
+		out = append(out, ReviewCandidate{Subject: "netflix", ID: t.ID, Name: t.Name, Kind: t.Kind, TmdbKind: t.TmdbKind, TmdbID: t.TmdbID,
+			MatchSource: t.MatchSource, TmdbTitle: t.TmdbTitle, TmdbOriginalTitle: t.TmdbOriginalTitle, TmdbReleaseDate: t.TmdbReleaseDate,
+			HasDetails: t.HasDetails == 1, TmdbIMDbID: t.TmdbImdbID, EvidenceIMDbID: t.EvidenceImdbID,
+			FirstCharted: t.FirstCharted, Providers: []string{"netflix"}, LastCharted: map[string]string{"netflix": t.LastCharted},
+			DetailsFetchedAt: t.DetailsFetchedAt, Points: t.Points})
+	}
+	return out, nil
+}
+
+// WatchProviderIDs returns the TMDB provider IDs offering each title (any
+// country and form), keyed by "kind:id".
+func (r *MappingRepository) WatchProviderIDs(ctx context.Context) (map[string]map[int64]bool, error) {
+	rows, err := r.q.ListWatchProviderIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list watch provider ids: %w", err)
+	}
+	out := map[string]map[int64]bool{}
+	for _, row := range rows {
+		k := row.TmdbKind + ":" + row.TmdbID
+		if out[k] == nil {
+			out[k] = map[int64]bool{}
+		}
+		out[k][row.ProviderID] = true
 	}
 	return out, nil
 }

@@ -22,7 +22,14 @@ type MaintenanceService struct {
 	alerts          *AlertService
 	retentionDays   int
 	staleChartHours int
+	credits         *repository.CreditsRepository // optional: prune people without credits
 	now             func() time.Time
+}
+
+// WithCredits makes the job delete TMDB people left without any credit.
+func (m *MaintenanceService) WithCredits(repo *repository.CreditsRepository) *MaintenanceService {
+	m.credits = repo
+	return m
 }
 
 func NewMaintenanceService(log *slog.Logger, ops *repository.OpsRepository, schedules *repository.TaskScheduleRepository, alerts *AlertService, retentionDays, staleChartHours int) *MaintenanceService {
@@ -35,6 +42,7 @@ type MaintenanceReport struct {
 	RunsDeleted    int64        `json:"runs_deleted"`
 	LogsDeleted    int64        `json:"logs_deleted"`
 	StaleRunsFixed int64        `json:"stale_runs_failed"`
+	PeopleDeleted  int64        `json:"people_deleted"` // TMDB people without any credit left
 	StaleCharts    []StaleChart `json:"stale_charts"`
 	AlertsSent     int          `json:"alerts_sent"`
 }
@@ -68,6 +76,17 @@ func (m *MaintenanceService) Run(ctx context.Context, runLog func(level, msg str
 		}
 		rep.RunsDeleted, rep.LogsDeleted = runs, logs
 		logf("info", "Retention: deleted %d runs and %d log lines older than %d days", runs, logs, m.retentionDays)
+	}
+
+	if m.credits != nil {
+		n, err := m.credits.PruneOrphanPeople(ctx)
+		if err != nil {
+			return rep, err
+		}
+		rep.PeopleDeleted = n
+		if n > 0 {
+			logf("info", "Deleted %d TMDB people without any credit left", n)
+		}
 	}
 
 	stale, err := m.StaleCharts(ctx)

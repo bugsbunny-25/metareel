@@ -126,6 +126,38 @@ func IMDbImportJob(i *service.IMDbImporter) JobFunc {
 	}
 }
 
+func TMDBPopularityImportJob(i *service.TMDBPopularityImporter) JobFunc {
+	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
+		return i.Run(ctx, p.Force, run.Log)
+	}
+}
+
+func PageviewsImportJob(p *service.PageviewsImporter) JobFunc {
+	return func(ctx context.Context, payload tasks.JobPayload, run *Run) (any, error) {
+		return p.Run(ctx, payload.Force, run.Log)
+	}
+}
+
+func NetflixEngagementJob(n *service.NetflixEngagementImporter) JobFunc {
+	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
+		return n.Run(ctx, p.Force, p.URL, run.Log)
+	}
+}
+
+// EpisodesJob refreshes TMDB episodes of TV shows.
+func EpisodesJob(e *service.EpisodesRefresher) JobFunc {
+	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
+		return e.Run(ctx, p.Force, run.Log)
+	}
+}
+
+// CreditsJob refreshes TMDB cast and crew.
+func CreditsJob(c *service.CreditsRefresher) JobFunc {
+	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
+		return c.Run(ctx, p.Force, run.Log)
+	}
+}
+
 // MappingRefreshJob follows up mapping changes (see TitleMappingService.Refresh).
 func MappingRefreshJob(m *service.TitleMappingService) JobFunc {
 	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {

@@ -52,12 +52,32 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	log.Info("database ready", slog.String("dsn", cfg.Database.URL))
 
+	// Read-only pool for the read API (charts, analytics, title overviews):
+	// WAL lets these read while the single writer connection is busy.
+	readDB, err := repository.OpenReadOnly(cfg.Database.URL, cfg.Database.ReadConns)
+	if err != nil {
+		return fmt.Errorf("open read db: %w", err)
+	}
+	if readDB != nil {
+		defer func() {
+			if err := readDB.Close(); err != nil {
+				log.Warn("sqlite reader close", slog.Any("err", err))
+			}
+		}()
+		log.Info("database read pool ready", slog.Int("conns", cfg.Database.ReadConns))
+	} else {
+		readDB = db
+	}
+
 	flixRepo := repository.NewFlixPatrolRepository(db)
 	taskScheduleRepo := repository.NewTaskScheduleRepository(db)
 	importsRepo := repository.NewImportsRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db)
-	analyticsRepo := repository.NewAnalyticsRepository(db)
-	top10Read := service.NewTop10ReadService(flixRepo)
+	// Repositories over the read pool, for services that only read.
+	readFlixRepo := repository.NewFlixPatrolRepository(readDB)
+	readMetadataRepo := repository.NewMetadataRepository(readDB)
+	analyticsRepo := repository.NewAnalyticsRepository(readDB)
+	top10Read := service.NewTop10ReadService(readFlixRepo).WithMetadata(readMetadataRepo)
 
 	redisOpt := asynq.RedisClientOpt{
 		Addr:     cfg.Redis.Addr,
@@ -70,7 +90,9 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	ratings := newRatingsService(log, cfg, db, flixRepo).WithIMDbDataset(importsRepo)
 	taskBootstrap := taskruntime.Build(log, cfg, db, taskruntime.Deps{Asynq: asynqClient, Ratings: ratings})
 
-	taskScheduleAdmin := service.NewTaskScheduleAdminService(taskScheduleRepo, asynqClient, cfg.Asynq.Queue)
+	inspector := asynq.NewInspector(redisOpt)
+	defer inspector.Close()
+	taskScheduleAdmin := service.NewTaskScheduleAdminService(taskScheduleRepo, asynqClient, cfg.Asynq.Queue).WithInspector(inspector)
 
 	worker := asynq.NewServer(redisOpt, asynq.Config{
 		Concurrency: cfg.Asynq.Concurrency,
@@ -118,6 +140,28 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if settings.RequireAPIKey && len(keyCount) == 0 {
 		log.Warn("public api requires an API key but none exist yet; create one in the admin UI (Settings)")
 	}
+	// Outbound webhooks: follows charts and watch provider changes, delivers
+	// signed events to subscribed URLs (stopped before the database closes).
+	breakouts := service.NewBreakoutService(analyticsRepo)
+	webhooks := service.NewWebhookService(log, repository.NewWebhookRepository(db), repository.NewOpsRepository(db), top10Read,
+		service.WebhookOptions{AllowLoopback: cfg.Webhooks.AllowLoopback}).WithBreakouts(breakouts)
+	webhookCtx, stopWebhooks := context.WithCancel(ctx)
+	webhooksDone := make(chan struct{})
+	go func() {
+		webhooks.Run(webhookCtx)
+		close(webhooksDone)
+	}()
+	// On every return (before the deferred database close): stop the loop
+	// and wait for its pass to finish.
+	defer func() {
+		stopWebhooks()
+		<-webhooksDone
+	}()
+
+	historyRepo := repository.NewHistoryRepository(readDB)
+	engagementRepo := repository.NewEngagementRepository(readDB)
+	episodesRepo := repository.NewEpisodesRepository(readDB)
+	creditsRepo := repository.NewCreditsRepository(readDB)
 	h := &handler.Handler{
 		Top10:      top10Read,
 		AdminTasks: taskScheduleAdmin,
@@ -125,15 +169,28 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Ratings:    ratings,
 		Releases:   service.NewReleasesService(log, justWatch),
 		Candidates: candidates,
-		Netflix:    service.NewNetflixAdminService(log, importsRepo, taskBootstrap.Writer, metadataRepo, taskBootstrap.Metadata, taskBootstrap.Seasons, candidates).WithMapping(taskBootstrap.Mapping),
-		Mapping:    taskBootstrap.Mapping,
-		Stats:      service.NewAdminStatsService(taskScheduleRepo, flixRepo),
-		APIKeys:    apiKeys,
-		Health:     service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
+		ReviewFix: service.NewReviewFixService(log, repository.NewMappingRepository(db), candidates,
+			client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
+		Netflix: service.NewNetflixAdminService(log, importsRepo, taskBootstrap.Writer, metadataRepo, taskBootstrap.Metadata, taskBootstrap.Seasons, candidates).WithMapping(taskBootstrap.Mapping),
+		Mapping: taskBootstrap.Mapping,
+		Stats:   service.NewAdminStatsService(taskScheduleRepo, flixRepo),
+		APIKeys: apiKeys,
+		Health:  service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
 
-		Charts:    service.NewChartsService(analyticsRepo),
-		Overview:  service.NewTitleOverviewService(analyticsRepo, flixRepo, metadataRepo, ratings).WithMapping(taskBootstrap.Mapping),
-		Analytics: service.NewAnalyticsService(analyticsRepo, metadataRepo, importsRepo, repository.NewRatingsRepository(db)),
+		Charts: service.NewChartsService(analyticsRepo),
+		Overview: service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping).
+			WithEngagement(engagementRepo),
+		Analytics: service.NewAnalyticsService(analyticsRepo, readMetadataRepo, repository.NewImportsRepository(readDB), repository.NewRatingsRepository(readDB)).
+			WithEpisodes(episodesRepo).WithCredits(creditsRepo),
+		History:        service.NewHistoryService(historyRepo, readMetadataRepo),
+		Calendar:       service.NewCalendarService(episodesRepo),
+		Breakouts:      breakouts,
+		Credits:        service.NewCreditsService(creditsRepo, readMetadataRepo),
+		Discover:       service.NewDiscoverService(repository.NewDiscoverRepository(readDB), analyticsRepo, episodesRepo, readMetadataRepo),
+		ReleaseWindows: service.NewReleaseWindowsService(repository.NewReleaseDatesRepository(readDB), readMetadataRepo, analyticsRepo),
+		Timeline:       service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),
+		Search:         service.NewSearchService(repository.NewSearchRepository(readDB)),
+		Webhooks:       webhooks,
 		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,
 			taskScheduleRepo, taskBootstrap.Maintenance).WithMapping(repository.NewMappingRepository(db)),
 	}

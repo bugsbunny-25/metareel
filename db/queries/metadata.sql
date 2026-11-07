@@ -243,3 +243,30 @@ WHERE tmdb_kind = sqlc.arg(tmdb_kind) AND tmdb_id = sqlc.arg(tmdb_id);
 -- Every TMDB title anything is mapped to has a row (filled by the refresh).
 INSERT INTO tmdb_titles (tmdb_kind, tmdb_id) VALUES (sqlc.arg(tmdb_kind), sqlc.arg(tmdb_id))
 ON CONFLICT(tmdb_kind, tmdb_id) DO NOTHING;
+
+-- name: ListTmdbMoviesDueForDistributors :many
+-- TMDB movies with details whose Wikidata distributors were never looked up
+-- or not within the window (a SQLite datetime modifier, e.g. '-30 days').
+SELECT tmdb_id FROM tmdb_titles
+WHERE tmdb_kind = 'movie' AND details_fetched_at IS NOT NULL
+  AND (distributors_fetched_at IS NULL OR distributors_fetched_at < datetime('now', CAST(sqlc.arg(window) AS TEXT)))
+ORDER BY distributors_fetched_at IS NOT NULL, distributors_fetched_at
+LIMIT sqlc.arg(limit);
+
+-- name: SaveTmdbDistributors :exec
+-- distributors is a JSON list (NULL when Wikidata has none).
+UPDATE tmdb_titles SET distributors = sqlc.narg(distributors), distributors_fetched_at = CURRENT_TIMESTAMP
+WHERE tmdb_kind = 'movie' AND tmdb_id = sqlc.arg(tmdb_id);
+
+-- name: ListTmdbTitlesDueForEnwiki :many
+-- TMDB titles with a Wikidata ID whose English Wikipedia article was not
+-- looked up within the window ('-30 days'), never-checked first.
+SELECT tmdb_kind, tmdb_id, CAST(wikidata_id AS TEXT) AS wikidata_id FROM tmdb_titles
+WHERE COALESCE(wikidata_id, '') <> ''
+  AND (enwiki_fetched_at IS NULL OR enwiki_fetched_at < datetime('now', CAST(sqlc.arg(window) AS TEXT)))
+ORDER BY enwiki_fetched_at IS NOT NULL, enwiki_fetched_at
+LIMIT sqlc.arg(limit);
+
+-- name: SaveTmdbEnwiki :exec
+UPDATE tmdb_titles SET enwiki_title = sqlc.narg(enwiki_title), enwiki_fetched_at = CURRENT_TIMESTAMP
+WHERE tmdb_kind = sqlc.arg(tmdb_kind) AND tmdb_id = sqlc.arg(tmdb_id);

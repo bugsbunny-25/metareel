@@ -231,6 +231,11 @@ func TestTitleMappingFlow(t *testing.T) {
 	gamblerNetflix := netflixID("The Gambler")
 	fg, _ := flix.GetTitleBySlug(ctx, "the-gambler")
 	a, b := "222", "333"
+	if bad := "../search"; true {
+		if _, err := titles.PatchTitleIDs(ctx, fg.ID, PatchTitleIDsInput{TmdbID: &bad}); !isValidation(err) {
+			t.Fatalf("non-numeric tmdb_id: %v", err)
+		}
+	}
 	if _, err := titles.PatchTitleIDs(ctx, fg.ID, PatchTitleIDsInput{TmdbID: &a}); err != nil {
 		t.Fatal(err)
 	}

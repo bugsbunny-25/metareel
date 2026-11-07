@@ -8,11 +8,13 @@
   import Titles from './Titles.svelte'
   import NetflixTitles from './NetflixTitles.svelte'
   import Mapping from './Mapping.svelte'
+  import MappingReview from './MappingReview.svelte'
 
   const TABS = [
     { path: '/titles', label: 'FlixPatrol titles', page: Titles },
     { path: '/netflix', label: 'Netflix Top 10 titles', page: NetflixTitles },
     { path: '/mapping', label: 'TMDB mappings', page: Mapping },
+    { path: '/review', label: 'Review queue', page: MappingReview },
   ]
   const tab = $derived(TABS.find((t) => t.path === route.path) ?? TABS[0])
   const Page = $derived(tab.page)

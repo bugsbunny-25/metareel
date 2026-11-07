@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -36,6 +37,16 @@ var taskTypeInfo = map[string]TaskTypeInfo{
 		Description: "Works through the backlog of unmatched Netflix titles (retrying with backoff: 1, 3, 7, then 30 days), then maps Netflix season titles and FlixPatrol TV rankings to season numbers."},
 	tasks.TypeIMDbRatingsImport: {Label: "IMDb ratings dataset",
 		Description: "Imports IMDb's daily title.ratings dataset (personal, non-commercial use) for the IMDb IDs metareel knows; used as the headline IMDb rating."},
+	tasks.TypeTMDBPopularityImport: {Label: "TMDB popularity export",
+		Description: "Records the daily TMDB popularity of the TMDB titles metareel knows from TMDB's daily ID exports (no API key needed; skipped when unchanged), for popularity history."},
+	tasks.TypeWikipediaPageviews: {Label: "Wikipedia pageviews",
+		Description: "Stores the daily English Wikipedia pageviews of every title with an article (found on Wikidata by the metadata job), since the last stored day (90 days for a new title); Force refetches the last week."},
+	tasks.TypeNetflixEngagement: {Label: "Netflix engagement reports",
+		Description: "Imports Netflix's \"What We Watched\" reports (hours viewed and views of every title, twice a year) from the list of report URLs (skipped when unchanged) and links them to Netflix Top 10 titles. Run with a url to add a new report."},
+	tasks.TypeTMDBEpisodes: {Label: "TMDB episodes",
+		Description: "Stores the episodes (air dates, names, finales) of the TV shows metareel knows from TMDB: recent, upcoming and latest seasons; airing shows daily, returning shows weekly, ended shows monthly (needs TMDB_API_KEY). Force refetches every show. Feeds the episode calendar and release patterns."},
+	tasks.TypeTMDBCredits: {Label: "TMDB credits",
+		Description: "Stores the top-billed cast and key crew (directors, writers, creators, composers, cinematographers) of the titles metareel knows from TMDB, new titles first, each again after 60 days, at most 1,000 a run (needs TMDB_API_KEY). Force refetches every title. Feeds title credits, people and people analytics."},
 	tasks.TypeMappingRefresh: {Label: "Mapping refresh",
 		Description: "Follows up mapping changes (queued automatically): shares mappings over links, fetches TMDB details and Wikidata IDs of the TMDB titles now mapped to, fills mapped titles' missing IMDb / Wikidata IDs and remaps season numbers. Run by hand, it shares mappings and fills IDs."},
 	tasks.TypeMaintenance: {Label: "Maintenance",
@@ -57,6 +68,7 @@ func (s *TaskScheduleAdminService) TaskTypes() []TaskTypeInfo {
 type RunJobInput struct {
 	TitleIDs []int64 `json:"title_ids,omitempty"` // titles.enrich (FlixPatrol title IDs) or netflix.titles.match (Netflix title IDs)
 	Force    bool    `json:"force,omitempty"`     // imports: re-import unchanged files
+	URL      string  `json:"url,omitempty"`       // netflix.engagement.import: a report to add
 }
 
 // RunJob enqueues an ad-hoc run of a non-FlixPatrol job type.
@@ -67,10 +79,19 @@ func (s *TaskScheduleAdminService) RunJob(ctx context.Context, taskType string, 
 	if len(in.TitleIDs) > 0 && taskType != tasks.TypeTitlesEnrich && taskType != tasks.TypeNetflixTitlesMatch {
 		return nil, &ValidationError{Message: "title_ids only apply to titles.enrich and netflix.titles.match"}
 	}
+	if in.URL != "" {
+		if taskType != tasks.TypeNetflixEngagement {
+			return nil, &ValidationError{Message: "url only applies to netflix.engagement.import"}
+		}
+		var err error
+		if in.URL, err = ValidEngagementURL(in.URL); err != nil {
+			return nil, err
+		}
+	}
 	if len(in.TitleIDs) > 500 {
 		return nil, &ValidationError{Message: "at most 500 title_ids"}
 	}
-	task, err := tasks.NewJobTask(taskType, tasks.JobPayload{TitleIDs: in.TitleIDs, Force: in.Force, RequestDelaySeconds: 5, Reason: "started from the admin API"})
+	task, err := tasks.NewJobTask(taskType, tasks.JobPayload{TitleIDs: in.TitleIDs, Force: in.Force, URL: in.URL, RequestDelaySeconds: 5, Reason: "started from the admin API"})
 	if err != nil {
 		return nil, &ValidationError{Message: err.Error()}
 	}
@@ -163,14 +184,65 @@ func (s *TaskScheduleAdminService) Backfill(ctx context.Context, in BackfillInpu
 }
 
 func (s *TaskScheduleAdminService) enqueue(ctx context.Context, task *asynq.Task, opts []asynq.Option) error {
+	return s.enqueueUnique(ctx, task, opts, "the same job is already queued, running or retrying")
+}
+
+// archivedScanPages caps the archived tasks scanned for a failed duplicate
+// (100 per page).
+const archivedScanPages = 20
+
+// enqueueUnique enqueues a unique task. When an identical task holds the
+// lock only because it failed (archived), that task is deleted, which frees
+// the lock, and the task is enqueued again; one queued, running or retrying
+// is a conflict.
+func (s *TaskScheduleAdminService) enqueueUnique(ctx context.Context, task *asynq.Task, opts []asynq.Option, conflict string) error {
 	if s.asynq == nil {
 		return fmt.Errorf("asynq client not configured")
 	}
-	if _, err := s.asynq.EnqueueContext(ctx, task, opts...); err != nil {
+	_, err := s.asynq.EnqueueContext(ctx, task, opts...)
+	if errors.Is(err, asynq.ErrDuplicateTask) && s.archived != nil {
+		if freed, ferr := s.freeFailedDuplicate(task); ferr != nil {
+			return fmt.Errorf("free failed run: %w", ferr)
+		} else if freed {
+			_, err = s.asynq.EnqueueContext(ctx, task, opts...)
+		}
+	}
+	if err != nil {
 		if errors.Is(err, asynq.ErrDuplicateTask) {
-			return &ConflictError{Message: "the same job is already queued, running or retrying"}
+			return &ConflictError{Message: conflict}
 		}
 		return fmt.Errorf("enqueue task: %w", err)
 	}
 	return nil
+}
+
+// freeFailedDuplicate deletes archived (failed) tasks with the same type and
+// payload as task; it reports whether it deleted any.
+func (s *TaskScheduleAdminService) freeFailedDuplicate(task *asynq.Task) (bool, error) {
+	queue := s.queueName
+	if queue == "" {
+		queue = "default"
+	}
+	freed := false
+	for page := 1; page <= archivedScanPages; page++ {
+		infos, err := s.archived.ListArchivedTasks(queue, asynq.PageSize(100), asynq.Page(page))
+		if err != nil {
+			if errors.Is(err, asynq.ErrQueueNotFound) {
+				return false, nil
+			}
+			return freed, err
+		}
+		for _, info := range infos {
+			if info.Type == task.Type() && bytes.Equal(info.Payload, task.Payload()) {
+				if err := s.archived.DeleteTask(queue, info.ID); err != nil && !errors.Is(err, asynq.ErrTaskNotFound) {
+					return freed, err
+				}
+				freed = true
+			}
+		}
+		if len(infos) < 100 {
+			break
+		}
+	}
+	return freed, nil
 }

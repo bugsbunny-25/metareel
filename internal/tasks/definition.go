@@ -17,6 +17,11 @@ const (
 	TypeNetflixTop10Import    = "netflix.top10.import"
 	TypeNetflixTitlesMatch    = "netflix.titles.match"
 	TypeIMDbRatingsImport     = "imdb.ratings.import"
+	TypeTMDBPopularityImport  = "tmdb.popularity.import"
+	TypeWikipediaPageviews    = "wikipedia.pageviews.import"
+	TypeNetflixEngagement     = "netflix.engagement.import"
+	TypeTMDBEpisodes          = "tmdb.episodes.refresh"
+	TypeTMDBCredits           = "tmdb.credits.refresh"
 	TypeMaintenance           = "maintenance"
 	// TypeMappingRefresh follows mapping changes: TMDB details and IDs of
 	// the TMDB titles now mapped to, season numbers of Netflix titles that
@@ -33,6 +38,11 @@ var Types = []string{
 	TypeNetflixTop10Import,
 	TypeNetflixTitlesMatch,
 	TypeIMDbRatingsImport,
+	TypeTMDBPopularityImport,
+	TypeWikipediaPageviews,
+	TypeNetflixEngagement,
+	TypeTMDBEpisodes,
+	TypeTMDBCredits,
 	TypeMappingRefresh,
 	TypeMaintenance,
 }
@@ -57,7 +67,7 @@ func Timeout(taskType string) time.Duration {
 	switch taskType {
 	case TypeFlixPatrolScheduleRun, TypeTitlesEnrich:
 		return FlixPatrolTop10Timeout
-	case TypeIMDbRatingsImport, TypeNetflixTop10Import, TypeNetflixTitlesMatch, TypeTitlesMetadata:
+	case TypeIMDbRatingsImport, TypeTMDBPopularityImport, TypeWikipediaPageviews, TypeNetflixEngagement, TypeTMDBEpisodes, TypeTMDBCredits, TypeNetflixTop10Import, TypeNetflixTitlesMatch, TypeTitlesMetadata:
 		return time.Hour
 	default:
 		return 30 * time.Minute
@@ -120,6 +130,8 @@ type JobPayload struct {
 	TitleIDs []int64 `json:"title_ids,omitempty"`
 	// Force refreshes even fresh data (imports: ignore "unchanged" checks).
 	Force bool `json:"force,omitempty"`
+	// URL adds a report to netflix.engagement.import's list.
+	URL string `json:"url,omitempty"`
 	// Reason is shown in the run log, e.g. "after scrape run 12".
 	Reason string `json:"reason,omitempty"`
 	// TmdbRefs ("movie:123" | "tv:456") and NetflixTitleIDs are what

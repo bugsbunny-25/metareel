@@ -12,13 +12,22 @@
   import LineChart from '../components/LineChart.svelte'
   import Legend from '../components/Legend.svelte'
   import { define } from '../lib/glossary.js'
+  import BreakoutsView from '../components/BreakoutsView.svelte'
+  import DiscoverView from '../components/DiscoverView.svelte'
+  import PeopleView from '../components/PeopleView.svelte'
+  import ReleaseAnalytics from '../components/ReleaseAnalytics.svelte'
 
   const TABS = [
     { key: 'leaderboard', label: 'Leaderboard', hint: 'The titles that scored the most points across all charts in the period. #1 on a chart earns 10 points a day, #10 earns 1.' },
     { key: 'movers', label: 'Movers', hint: 'How one chart changed since the previous day: who climbed, fell, debuted, came back or dropped out.' },
     { key: 'netflix', label: 'Netflix official', hint: "Netflix's own weekly Top 10 (Monday to Sunday). Global lists include views and hours viewed." },
-    { key: 'analytics', label: 'Analytics', hint: 'Patterns across all stored charts: which genres chart, how long after release titles chart, how fast they fade, and whether ratings track popularity.' },
+    { key: 'analytics', label: 'Analytics', hint: 'Patterns across all stored charts: which genres chart, how long after release titles chart, how fast they fade, whether ratings track popularity, how release patterns and windows play out, and how titles spread between countries.' },
+    { key: 'breakouts', label: 'Breakouts', hint: 'Titles rising in several countries at once: entered a chart or climbed several places over the last few days.' },
+    { key: 'discover', label: 'Discover', hint: 'Per country: highly rated titles nobody is watching yet, hits elsewhere that can’t be streamed here, and which services are worth paying for this month.' },
+    { key: 'people', label: 'People', hint: 'Actors, directors, writers and creators ranked by the chart points of their titles. Click a person for their titles.' },
   ]
+  // Tabs with their own filters and data (components).
+  const OWN = ['breakouts', 'discover', 'people']
   const tabInfo = $derived(TABS.find((t) => t.key === tab))
   const tab = $derived(route.query.tab ?? 'leaderboard')
   const country = $derived(route.query.country ?? (tab === 'movers' ? 'US' : ''))
@@ -45,6 +54,11 @@
   $effect(() => {
     const t = tab
     const q = { country, provider, period, kind, date, category: nfCategory, range }
+    if (OWN.includes(t)) {
+      loading = false
+      loaded = null
+      return
+    }
     loading = true
     loaded = null
     let cancelled = false
@@ -78,9 +92,16 @@
     info={define('Points')}
   />
 
-  <PageTabs tabs={TABS} active={tab} label="Insight views" onselect={(k) => setQuery({ tab: k === 'leaderboard' ? '' : k, country: '', provider: '', date: '', category: '' })} />
+  <PageTabs tabs={TABS} active={tab} label="Insight views" onselect={(k) => setQuery({ tab: k === 'leaderboard' ? '' : k, country: '', provider: '', date: '', category: '', kind: '', range: '', view: '', role: '', person: '', window: '', min_countries: '', slots: '' })} />
   <p class="tab-hint">{tabInfo?.hint}</p>
 
+  {#if tab === 'breakouts'}
+    <BreakoutsView />
+  {:else if tab === 'discover'}
+    <DiscoverView />
+  {:else if tab === 'people'}
+    <PeopleView />
+  {:else}
   <div class="toolbar">
     {#if tab === 'leaderboard'}
       <div class="segmented" role="group" aria-label="Period">
@@ -291,6 +312,8 @@
         </div>
       </div>
     </div>
+    <ReleaseAnalytics {range} {country} {provider} {kind} />
+  {/if}
   {/if}
 </div>
 

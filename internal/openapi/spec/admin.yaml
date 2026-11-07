@@ -426,6 +426,7 @@ paths:
               properties:
                 title_ids: { type: array, items: { type: integer, format: int64 }, maxItems: 500 }
                 force: { type: boolean }
+                url: { type: string, description: "netflix.engagement.import only: an https report (.xlsx) to add to the list" }
       responses:
         "202":
           description: Enqueued
@@ -884,6 +885,153 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/admin/mappings/review:
+    get:
+      operationId: reviewMappings
+      summary: Automatic mappings scored by how likely they are wrong
+      description: >-
+        Scores every automatic mapping (FlixPatrol and Netflix titles not
+        fixed by hand) 0-100 and lists those at or above min_risk, riskiest
+        (then most charted) first. Reasons and their points: weak_source
+        (the match rule, up to 35), not_on_provider (35; TMDB shows no offer
+        of the service it charted on in any country, checked when it charted
+        there within 60 days of the offers being fetched), released_later
+        (40), imdb_mismatch (30), year_mismatch (25, films), no_offers (15),
+        name_differs (15), no_details (5). `reasons` counts mappings per
+        reason before the reason filter.
+      parameters:
+        - name: subject
+          in: query
+          schema: { type: string, enum: [flixpatrol, netflix] }
+        - name: reason
+          in: query
+          schema: { type: string, enum: [weak_source, not_on_provider, no_offers, released_later, year_mismatch, name_differs, imdb_mismatch, no_details] }
+        - name: min_risk
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 100, default: 25 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: The queue
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checked: { type: integer, description: Automatic mappings scored }
+                  total: { type: integer }
+                  reasons: { type: object, additionalProperties: { type: integer } }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        subject: { type: string, enum: [flixpatrol, netflix] }
+                        id: { type: integer }
+                        name: { type: string }
+                        kind: { type: string }
+                        tmdb_kind: { type: string }
+                        tmdb_id: { type: string }
+                        tmdb_title: { type: string }
+                        tmdb_year: { type: integer }
+                        match_source: { type: string }
+                        providers: { type: array, items: { type: string } }
+                        first_charted: { type: string, format: date }
+                        points: { type: integer, description: "chart points (FlixPatrol) or weeks in the global Top 10 (Netflix)" }
+                        risk: { type: integer }
+                        reasons:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              code: { type: string }
+                              text: { type: string }
+                              points: { type: integer }
+        "400":
+          description: Invalid filter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/admin/mappings/review/{subject}/{id}/suggestions:
+    get:
+      operationId: getReviewSuggestions
+      summary: Other TMDB titles a mapping in the review queue could be, ranked
+      description: >-
+        Searches JustWatch and TMDB (live) for the chart title's name (and
+        its base name without a season), in its kind and the other, and ranks
+        TMDB titles other than the current mapping: same name (+40) or a
+        similar one (+15), the chart's kind (+10), when it came out against
+        when it first charted (TMDB's release date: up to 18 months before
+        +15, up to three years +5, after it -50; without a date by year: the
+        year before +15, the same year or up to three years +5, later -50),
+        FlixPatrol's premiere year (+20), and, for the best five, an offer of
+        the service it charted on in any country (+35; `on_provider`). Up to
+        five suggestions. Apply one (or keep the current mapping) with
+        PATCH /api/v1/admin/titles/{id} (`kind`, `tmdb_id`) or
+        PATCH /api/v1/admin/netflix/titles/{id} (`tmdb_kind`, `tmdb_id`); both
+        are manual fixes, so the title leaves the queue. `errors` names
+        searches that failed. Calls run one at a time (searches 500 ms
+        apart); a result without errors is kept for 5 minutes.
+      parameters:
+        - name: subject
+          in: path
+          required: true
+          schema: { type: string, enum: [flixpatrol, netflix] }
+        - name: id
+          in: path
+          required: true
+          description: The FlixPatrol title id or Netflix title id (as in the queue)
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject: { type: string, enum: [flixpatrol, netflix] }
+                  id: { type: integer }
+                  name: { type: string }
+                  kind: { type: string, enum: [movie, tv_show] }
+                  tmdb_kind: { type: string, description: The current mapping }
+                  tmdb_id: { type: string }
+                  first_charted: { type: string, format: date }
+                  providers: { type: array, items: { type: string } }
+                  errors: { type: object, additionalProperties: { type: string } }
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tmdb_kind: { type: string, enum: [movie, tv] }
+                        tmdb_id: { type: string }
+                        title: { type: string }
+                        year: { type: integer, nullable: true }
+                        on_provider: { type: boolean, nullable: true, description: An offer of the charted service on TMDB (null = not checked) }
+                        score: { type: integer }
+                        reasons: { type: array, items: { type: string } }
+                        url: { type: string }
+        "400":
+          description: Invalid subject or id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not an automatic mapping (unmapped, or fixed by hand)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/v1/admin/mappings/sync:
     post:
       operationId: syncMappings
@@ -1111,6 +1259,157 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/admin/webhooks:
+    get:
+      operationId: listWebhooks
+      summary: Webhooks with delivery counts, and the event types
+      description: >-
+        Webhooks receive a signed POST per event: chart.updated (a chart
+        stored or changed, with its entries), title.entered (a title not on
+        the chart's previous date; `first_time` when never on it before),
+        title.number_one (a new #1), availability.added / availability.removed
+        (a title arrived on / left a service in a country), title.breakout (a
+        title rising in 2+ countries at once that wasn't the day before, as in
+        GET /api/v1/breakouts with the defaults; only for the current chart
+        date and the two before it). Body: {id, type,
+        created_at, data}. Headers: X-Metareel-Event, X-Metareel-Event-Id
+        (stable; use it to ignore repeats), X-Metareel-Delivery and
+        X-Metareel-Signature "t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>">".
+        Any 2xx is success; redirects and other answers are retried after 1,
+        5 and 30 minutes, 2 and 12 hours, then the delivery fails. Events
+        from before metareel started following (first start with this
+        version) are not sent.
+      responses:
+        "200":
+          description: Webhooks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_types: { type: array, items: { type: string } }
+                  items: { type: array, items: { $ref: "#/components/schemas/Webhook" } }
+    post:
+      operationId: createWebhook
+      summary: Add a webhook (returns its signing secret once)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookInput" }
+      responses:
+        "201":
+          description: Created, with `secret`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookWithSecret" }
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/admin/webhooks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    patch:
+      operationId: updateWebhook
+      summary: Change a webhook's name, URL, events or enabled flag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        "400": { description: Invalid input, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: No such webhook, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    delete:
+      operationId: deleteWebhook
+      summary: Delete a webhook and its delivery log
+      responses:
+        "204": { description: Deleted }
+        "404": { description: No such webhook, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/admin/webhooks/{id}/rotate-secret:
+    post:
+      operationId: rotateWebhookSecret
+      summary: Replace a webhook's signing secret (returned once)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: New secret
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookWithSecret" }
+        "404": { description: No such webhook, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/admin/webhooks/{id}/test:
+    post:
+      operationId: testWebhook
+      summary: Send a ping event now and record it
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Outcome (delivery.status delivered or failed)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivery: { $ref: "#/components/schemas/WebhookDelivery" }
+                  status_code: { type: integer }
+                  error: { type: string }
+                  duration_ms: { type: integer }
+        "404": { description: No such webhook, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/admin/webhooks/{id}/deliveries:
+    get:
+      operationId: listWebhookDeliveries
+      summary: A webhook's latest deliveries, newest first
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Deliveries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/WebhookDelivery" } }
+        "404": { description: No such webhook, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/admin/webhook-deliveries/{id}:
+    get:
+      operationId: getWebhookDelivery
+      summary: The JSON body a delivery sends
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The event body, content: { application/json: { schema: { type: object } } } }
+        "404": { description: No such delivery, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/admin/webhook-deliveries/{id}/retry:
+    post:
+      operationId: retryWebhookDelivery
+      summary: Send a delivered or failed delivery again (within 30 seconds)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Queued }
+        "400": { description: No finished delivery with that id, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
   /api/v1/admin/api-keys:
     get:
       operationId: listApiKeys
@@ -1291,7 +1590,7 @@ components:
         tmdb_id: { type: string, nullable: true }
         imdb_id: { type: string, nullable: true }
         match_status: { type: string, enum: [pending, matched, unmatched, manual] }
-        match_source: { type: string, nullable: true, description: "e.g. flixpatrol_title, netflix_title, wikidata_netflix, justwatch_netflix, justwatch_netflix_other_kind, justwatch_unique_name, manual" }
+        match_source: { type: string, nullable: true, description: "e.g. flixpatrol_title, netflix_title, wikidata_netflix, justwatch_netflix, justwatch_netflix_other_kind, tmdb_netflix, tmdb_netflix_alt_title, justwatch_unique_name, manual" }
         match_attempts: { type: integer }
         next_match_at: { type: string, format: date-time, nullable: true }
         updated_at: { type: string, format: date-time }
@@ -1462,6 +1761,47 @@ components:
                   first_week: { type: string, format: date }
                   last_week: { type: string, format: date }
 
+    Webhook:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        url: { type: string }
+        events: { type: array, items: { type: string }, description: 'Event types, or ["*"] for all' }
+        enabled: { type: boolean }
+        last_delivery_at: { type: string, format: date-time, nullable: true }
+        last_status: { type: string, enum: [delivered, failed], nullable: true }
+        last_error: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deliveries: { type: object, additionalProperties: { type: integer }, description: "Deliveries per status (list only)" }
+    WebhookWithSecret:
+      allOf:
+        - $ref: "#/components/schemas/Webhook"
+        - type: object
+          properties:
+            secret: { type: string, description: "whsec_…; shown only here" }
+    WebhookInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        url: { type: string, description: An http(s) URL }
+        events: { type: array, items: { type: string } }
+        enabled: { type: boolean }
+    WebhookDelivery:
+      type: object
+      properties:
+        id: { type: integer }
+        webhook_id: { type: integer }
+        event_id: { type: string }
+        event_type: { type: string }
+        status: { type: string, enum: [pending, delivered, failed] }
+        attempts: { type: integer }
+        next_attempt_at: { type: string, description: "UTC YYYY-MM-DD HH:MM:SS (pending only)" }
+        last_status_code: { type: integer, nullable: true }
+        last_error: { type: string, nullable: true }
+        created_at: { type: string }
+        delivered_at: { type: string }
     ErrorResponse:
       type: object
       additionalProperties: false

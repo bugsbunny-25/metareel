@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/labstack/echo/v5"
 	emw "github.com/labstack/echo/v5/middleware"
@@ -13,13 +14,20 @@ import (
 	"github.com/bugsbunny-25/metareel/internal/openapi"
 )
 
+func isAdminPath(p string) bool {
+	return p == "/api/v1/admin" || strings.HasPrefix(p, "/api/v1/admin/")
+}
+
 // Register wires all routes and middleware onto the given Echo instance.
 func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	e.Use(emw.Recover())
 	e.Use(emw.RequestID())
 	e.Use(emw.RequestLogger())
 	e.Use(emw.Gzip())
+	// CORS for the public API only: the admin UI is same-origin, and other
+	// websites a LAN user opens must not be able to drive /api/v1/admin.
 	e.Use(emw.CORSWithConfig(emw.CORSConfig{
+		Skipper:      func(c *echo.Context) bool { return isAdminPath(c.Request().URL.Path) },
 		AllowOrigins: []string{"*"},
 		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 	}))
@@ -39,7 +47,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	// copies of the public routes, so it needs no API key. The admin API is
 	// not authenticated: keep it off the public internet (e.g. expose only
 	// /api/v1 except /api/v1/admin through your reverse proxy).
-	admin := e.Group("/api/v1/admin", handler.ETag)
+	admin := e.Group("/api/v1/admin", handler.SameOriginWrites, handler.ETag)
 	registerReadRoutes(admin, h)
 	admin.GET("/stats", h.GetAdminStats)
 	admin.PATCH("/titles/:id", h.PatchTitle)
@@ -57,6 +65,8 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.PATCH("/netflix/seasons/:id", h.PatchNetflixSeason)
 	admin.GET("/mappings", h.ListMappings)
 	admin.POST("/mappings/sync", h.SyncMappings)
+	admin.GET("/mappings/review", h.ReviewMappings)
+	admin.GET("/mappings/review/:subject/:id/suggestions", h.GetReviewSuggestions)
 	admin.GET("/mappings/:kind/:id", h.GetMapping)
 	admin.POST("/mappings/:kind/:id/remap", h.RemapMapping)
 	admin.GET("/mapping-events", h.ListMappingEvents)
@@ -76,6 +86,15 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.PATCH("/api-keys/:id", h.RenameAPIKey)
 	admin.POST("/api-keys/:id/rotate", h.RotateAPIKey)
 	admin.DELETE("/api-keys/:id", h.DeleteAPIKey)
+	admin.GET("/webhooks", h.ListWebhooks)
+	admin.POST("/webhooks", h.CreateWebhook)
+	admin.PATCH("/webhooks/:id", h.UpdateWebhook)
+	admin.DELETE("/webhooks/:id", h.DeleteWebhook)
+	admin.POST("/webhooks/:id/rotate-secret", h.RotateWebhookSecret)
+	admin.POST("/webhooks/:id/test", h.TestWebhook)
+	admin.GET("/webhooks/:id/deliveries", h.ListWebhookDeliveries)
+	admin.GET("/webhook-deliveries/:id", h.GetWebhookDelivery)
+	admin.POST("/webhook-deliveries/:id/retry", h.RetryWebhookDelivery)
 	admin.GET("/settings", h.GetSettings)
 	admin.PATCH("/settings", h.PatchSettings)
 
@@ -92,6 +111,7 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/titles/:id", h.GetTitle)
 	g.GET("/titles/:id/rankings", h.GetTitleRankingsByID)
 	g.GET("/titles/lookup", h.LookupTitle)
+	g.GET("/search", h.SearchTitles)
 	g.GET("/titles/tmdb/rankings", h.GetTitleRankingsBatch)
 	g.GET("/titles/tmdb/ratings", h.GetTitleRatingsBatch)
 	g.GET("/titles/tmdb/:kind/:id", h.GetTitleOverview)
@@ -99,6 +119,14 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/titles/tmdb/:kind/:id/ratings", h.GetTitleRatings)
 	g.GET("/titles/tmdb/:kind/:id/stats", h.GetTitleStats)
 	g.GET("/titles/tmdb/:kind/:id/availability", h.GetTitleAvailability)
+	g.GET("/titles/tmdb/:kind/:id/availability/history", h.GetTitleAvailabilityHistory)
+	g.GET("/titles/tmdb/:kind/:id/history", h.GetTitleHistory)
+	g.GET("/titles/tmdb/:kind/:id/timeline", h.GetTitleTimeline)
+	g.GET("/titles/tmdb/:kind/:id/releases", h.GetTitleReleases)
+	g.GET("/titles/tmdb/:kind/:id/credits", h.GetTitleCredits)
+	g.GET("/people/:id", h.GetPerson)
+	g.GET("/availability/changes", h.GetAvailabilityChanges)
+	g.GET("/calendar/:country", h.GetCalendar)
 	g.GET("/titles/tmdb/:kind/:id/netflix", h.GetTitleNetflix)
 	g.GET("/titles/new/:country/:service", h.GetNewTitles)
 	g.GET("/titles/upcoming/:country/:service", h.GetUpcomingTitles)
@@ -116,6 +144,10 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/charts/:country/:provider/dates", h.GetChartDates)
 	g.GET("/changes", h.GetChanges)
 	g.GET("/movers", h.GetMovers)
+	g.GET("/breakouts", h.GetBreakouts)
+	g.GET("/discover/:country/hidden-gems", h.GetHiddenGems)
+	g.GET("/discover/:country/elsewhere", h.GetElsewhere)
+	g.GET("/discover/:country/rotation", h.GetRotation)
 	g.GET("/leaderboards", h.GetLeaderboard)
 	g.GET("/export/rankings", h.ExportRankings)
 	g.GET("/countries", h.GetCountries)
@@ -130,6 +162,11 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/analytics/release-lag", h.GetReleaseLag())
 	g.GET("/analytics/ratings-vs-popularity", h.GetRatingsVsPopularity())
 	g.GET("/analytics/genres", h.GetGenres())
+	g.GET("/analytics/origins", h.GetOrigins())
+	g.GET("/analytics/release-patterns", h.GetReleasePatterns())
+	g.GET("/analytics/spread-lag", h.GetSpreadLag())
+	g.GET("/analytics/release-windows", h.GetReleaseWindows)
+	g.GET("/analytics/people", h.GetPeopleAnalytics())
 	g.GET("/analytics/netflix-calibration", h.GetNetflixCalibration())
 }
 

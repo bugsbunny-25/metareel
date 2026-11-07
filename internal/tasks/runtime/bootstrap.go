@@ -74,7 +74,8 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 	metadata := service.NewTitleMetadataService(log, metadataRepo, tmdbClient, client.NewWikidataSPARQL(cfg.HTTP.Timeout), justWatchClient)
 	downloader := client.NewDownloader(cfg.Imports.DownloadTimeout, "")
 	alerts := service.NewAlertService(log, opsRepo, cfg.Alerts.WebhookURL, cfg.Alerts.Format, cfg.Alerts.Cooldown)
-	maintenance := service.NewMaintenanceService(log, opsRepo, taskScheduleRepo, alerts, cfg.Maintenance.RunRetentionDays, cfg.Alerts.StaleChartHours)
+	maintenance := service.NewMaintenanceService(log, opsRepo, taskScheduleRepo, alerts, cfg.Maintenance.RunRetentionDays, cfg.Alerts.StaleChartHours).
+		WithCredits(repository.NewCreditsRepository(db))
 
 	seasons := service.NewSeasonMapper(log, importsRepo)
 	mappingRepo := repository.NewMappingRepository(db)
@@ -98,6 +99,12 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 		Handle(tasks.TypeNetflixTop10Import, taskhandlers.NetflixImportJob(netflix)).
 		Handle(tasks.TypeNetflixTitlesMatch, taskhandlers.NetflixMatchJob(netflix)).
 		Handle(tasks.TypeIMDbRatingsImport, taskhandlers.IMDbImportJob(service.NewIMDbImporter(log, downloader, importsRepo, cfg.Imports.IMDbScope == "all"))).
+		Handle(tasks.TypeTMDBPopularityImport, taskhandlers.TMDBPopularityImportJob(service.NewTMDBPopularityImporter(log, downloader, importsRepo, repository.NewHistoryRepository(db)))).
+		Handle(tasks.TypeWikipediaPageviews, taskhandlers.PageviewsImportJob(service.NewPageviewsImporter(log, client.NewWikimedia(cfg.HTTP.Timeout), repository.NewHistoryRepository(db)))).
+		Handle(tasks.TypeNetflixEngagement, taskhandlers.NetflixEngagementJob(service.NewNetflixEngagementImporter(log, downloader, importsRepo,
+			repository.NewEngagementRepository(db), repository.NewOpsRepository(db)))).
+		Handle(tasks.TypeTMDBEpisodes, taskhandlers.EpisodesJob(service.NewEpisodesRefresher(log, tmdbClient, repository.NewEpisodesRepository(db)))).
+		Handle(tasks.TypeTMDBCredits, taskhandlers.CreditsJob(service.NewCreditsRefresher(log, tmdbClient, repository.NewCreditsRepository(db)))).
 		Handle(tasks.TypeMappingRefresh, taskhandlers.MappingRefreshJob(mapping)).
 		Handle(tasks.TypeMaintenance, taskhandlers.MaintenanceJob(maintenance))
 	if deps.Ratings != nil {

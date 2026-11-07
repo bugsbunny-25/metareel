@@ -78,8 +78,8 @@ func TestMigration5KeepsRunsAndLogs(t *testing.T) {
 		t.Fatalf("unmapped title status = %q", status)
 	}
 	mustScan(`SELECT COUNT(*) FROM task_schedules WHERE task_type <> 'flixpatrol.top10.scrape'`, &n)
-	if n != 7 { // 6 from migration 5, netflix.titles.match from 11
-		t.Fatalf("default job schedules = %d, want 7", n)
+	if n != 12 { // 6 from migration 5, netflix.titles.match from 11, tmdb.popularity.import from 17, wikipedia.pageviews.import from 20, netflix.engagement.import from 21, tmdb.episodes.refresh from 23, tmdb.credits.refresh from 25
+		t.Fatalf("default job schedules = %d, want 12", n)
 	}
 	// Foreign keys must be back on and consistent.
 	rows, err := db.Query(`PRAGMA foreign_key_check`)

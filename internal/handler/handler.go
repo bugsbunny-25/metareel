@@ -21,16 +21,26 @@ type Handler struct {
 	Ratings    *service.RatingsService
 	Releases   *service.ReleasesService
 	Candidates *service.TitleCandidatesService
+	ReviewFix  *service.ReviewFixService
 	Netflix    *service.NetflixAdminService
 	Mapping    *service.TitleMappingService
 	Stats      *service.AdminStatsService
 	APIKeys    *service.APIKeyService
 	Health     *service.HealthService
 
-	Charts      *service.ChartsService
-	Overview    *service.TitleOverviewService
-	Analytics   *service.AnalyticsService
-	DataQuality *service.DataQualityService
+	Charts         *service.ChartsService
+	Overview       *service.TitleOverviewService
+	Analytics      *service.AnalyticsService
+	DataQuality    *service.DataQualityService
+	History        *service.HistoryService
+	Timeline       *service.TimelineService
+	Calendar       *service.CalendarService
+	Breakouts      *service.BreakoutService
+	Discover       *service.DiscoverService
+	Credits        *service.CreditsService
+	ReleaseWindows *service.ReleaseWindowsService
+	Search         *service.SearchService
+	Webhooks       *service.WebhookService
 }
 
 // Live is a lightweight liveness endpoint.

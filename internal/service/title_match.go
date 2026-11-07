@@ -1,6 +1,8 @@
 package service
 
 import (
+	"html"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -88,10 +90,24 @@ func (q titleQuery) matchesName(c *titleCandidate) bool {
 	return false
 }
 
+// htmlEntityRe matches a complete HTML entity ("&#39;", "&#x27;", "&amp;").
+var htmlEntityRe = regexp.MustCompile(`&(#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{1,31});`)
+
+// decodeEntities decodes complete HTML entities only (FlixPatrol names can
+// carry them, e.g. "Big John&#39;s"); a bare "&" followed by letters, as in
+// "Bread&nothing", is left alone (html.UnescapeString would read "&not").
+func decodeEntities(s string) string {
+	if !strings.Contains(s, "&") {
+		return s
+	}
+	return htmlEntityRe.ReplaceAllStringFunc(s, html.UnescapeString)
+}
+
 // normalizeTitle lowercases and drops punctuation / whitespace so that e.g.
 // "Spider-Man: No Way Home" and "Spider Man No Way Home" compare equal.
+// HTML entities are decoded first.
 func normalizeTitle(s string) string {
-	s = strings.ReplaceAll(strings.ToLower(s), "&", "and")
+	s = strings.ReplaceAll(strings.ToLower(decodeEntities(s)), "&", "and")
 	var b strings.Builder
 	for _, r := range s {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {

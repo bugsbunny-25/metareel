@@ -8,6 +8,7 @@
   import Pagination from '../components/Pagination.svelte'
   import SortTh from '../components/SortTh.svelte'
   import KindBadge from '../components/KindBadge.svelte'
+  import EpisodeCalendar from '../components/EpisodeCalendar.svelte'
 
   const type = $derived(route.query.type ?? 'new')
   const country = $derived(route.query.country ?? 'US')
@@ -32,6 +33,11 @@
 
   $effect(() => {
     const args = [type, country, service, { type: kind, from, to }]
+    if (type === 'episodes') { // its own component and data
+      data = null
+      loading = false
+      return
+    }
     loading = true
     let cancelled = false
     getReleases(...args)
@@ -86,10 +92,10 @@
 <div class="page">
   <PageHeader
     title="New & upcoming"
-    desc="Titles just added to, or announced for, a streaming service. Fetched live from JustWatch and not stored."
+    desc="Titles just added to, or announced for, a streaming service (live from JustWatch, not stored), and coming episodes of the shows metareel knows (TMDB air dates)."
   >
     {#snippet actions()}
-      <button class="btn" onclick={exportCSV} disabled={!filtered.length}><Icon name="download" />Export CSV</button>
+      {#if type !== 'episodes'}<button class="btn" onclick={exportCSV} disabled={!filtered.length}><Icon name="download" />Export CSV</button>{/if}
     {/snippet}
   </PageHeader>
 
@@ -97,10 +103,12 @@
     <div class="segmented" role="group" aria-label="Listing">
       <button class:active={type === 'new'} onclick={() => setQuery({ type: 'new', from: '', to: '', sort: '', page: '' })}>New</button>
       <button class:active={type === 'upcoming'} onclick={() => setQuery({ type: 'upcoming', from: '', to: '', sort: '', page: '' })}>Upcoming</button>
+      <button class:active={type === 'episodes'} onclick={() => setQuery({ type: 'episodes', from: '', to: '', sort: '', page: '' })} title="New episodes of shows metareel knows, by day">Episodes</button>
     </div>
     <select class="select" value={country} onchange={(e) => set({ country: e.currentTarget.value })} aria-label="Country">
       {#each COUNTRIES as c (c.code)}<option value={c.code}>{c.name}</option>{/each}
     </select>
+    {#if type !== 'episodes'}
     <select class="select" style="max-width:220px" value={service} onchange={(e) => set({ service: e.currentTarget.value })} aria-label="Service">
       <optgroup label="Charted providers">
         {#each PROVIDERS as p (p.value)}<option value={p.value}>{p.label}</option>{/each}
@@ -123,7 +131,12 @@
       <input class="input" style="width:200px" type="search" placeholder="Filter title or genre" value={q} oninput={onSearch} />
     </div>
     {#if loading}<span class="spinner"></span>{/if}
+    {/if}
   </div>
+
+  {#if type === 'episodes'}
+    <EpisodeCalendar {country} />
+  {:else}
 
   {#if error}<div class="alert alert-error"><Icon name="alert" />{error}</div>{/if}
 
@@ -180,4 +193,5 @@
     </div>
     <Pagination {page} {size} total={filtered.length} onchange={(p, s) => setQuery({ page: p === 1 ? '' : p, size: s === 50 ? '' : s })} />
   </div>
+  {/if}
 </div>

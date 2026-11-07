@@ -299,3 +299,15 @@ func (r *AnalyticsRepository) NetflixGlobalRange(ctx context.Context, fromWeek, 
 	}
 	return out, nil
 }
+
+// ChartSnapshotsBetween counts the stored dates of one chart strictly
+// between two dates (YYYY-MM-DD).
+func (r *AnalyticsRepository) ChartSnapshotsBetween(ctx context.Context, country, provider, category, after, before string) (int64, error) {
+	n, err := r.q.CountChartSnapshotsBetween(ctx, sqlc.CountChartSnapshotsBetweenParams{
+		Country: country, Provider: provider, Category: category, AfterDate: after, BeforeDate: before,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("count chart snapshots: %w", err)
+	}
+	return n, nil
+}
