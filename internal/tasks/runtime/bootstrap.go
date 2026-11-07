@@ -31,7 +31,9 @@ type Bootstrap struct {
 	Mapping     *service.TitleMappingService
 	Writer      *service.MappingWriter // every mapping change goes through it
 	Maintenance *service.MaintenanceService
-	Alerts      *service.AlertService
+	// Sessions is shared with the API so its session cache is one instance.
+	Sessions *service.SessionService
+	Alerts   *service.AlertService
 }
 
 // Deps are built by the server and shared with the task handlers.
@@ -74,8 +76,11 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 	metadata := service.NewTitleMetadataService(log, metadataRepo, tmdbClient, client.NewWikidataSPARQL(cfg.HTTP.Timeout), justWatchClient)
 	downloader := client.NewDownloader(cfg.Imports.DownloadTimeout, "")
 	alerts := service.NewAlertService(log, opsRepo, cfg.Alerts.WebhookURL, cfg.Alerts.Format, cfg.Alerts.Cooldown)
+	sessions := service.NewSessionService(log, repository.NewUserRepository(db),
+		service.SessionConfig{TTL: cfg.Auth.SessionTTL, IdleTimeout: cfg.Auth.SessionIdleTimeout})
 	maintenance := service.NewMaintenanceService(log, opsRepo, taskScheduleRepo, alerts, cfg.Maintenance.RunRetentionDays, cfg.Alerts.StaleChartHours).
-		WithCredits(repository.NewCreditsRepository(db))
+		WithCredits(repository.NewCreditsRepository(db)).
+		WithSessions(sessions)
 
 	seasons := service.NewSeasonMapper(log, importsRepo)
 	mappingRepo := repository.NewMappingRepository(db)
@@ -123,6 +128,7 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 		Mapping:        mapping,
 		Writer:         writer,
 		Maintenance:    maintenance,
+		Sessions:       sessions,
 		Alerts:         alerts,
 	}
 }

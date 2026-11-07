@@ -191,6 +191,8 @@ make reports-open
 | GET    | `/readyz`                                   | Readiness: DB + Redis (503 if down), FlareSolverr reported as `degraded` |
 | GET    | `/docs`, `/docs/admin`                      | Swagger UI (public + admin)                 |
 | GET    | `/openapi/public.yaml`, `/openapi/admin.yaml` | OpenAPI specs (YAML)                      |
+| POST   | `/api/v1/auth/login`, `/api/v1/auth/logout` | Sign a user in (session cookie + token) or out ([access](#public-api-access)) |
+| GET    | `/api/v1/auth/me`                           | Who the request is authenticated as (user or API key) |
 | GET    | `/api/v1/top10/{movies\|tv-shows}/:country[/:provider]` | Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`, and for TV `season_number` + `season_source` when known) |
 | GET    | `/api/v1/top10/:country`                    | Every provider's movie + TV chart of a country in one call |
 | GET    | `/api/v1/top10/{movies\|tv-shows}/:country/:provider/history` | One chart over a range (`from`, `to`; ≤ 92 days) |
@@ -374,25 +376,75 @@ Discord or ntfy messages.
   JustWatch and must be attributed; daily ID exports for popularity), **Wikidata** (SPARQL, CC0; IDs and film distributors),
   **JustWatch** GraphQL, **Rotten Tomatoes** search index, **MDBList** (optional).
 
-## Public API keys
+## Public API access
 
-Every `/api/v1` route outside `/api/v1/admin` needs an API key, sent as
-`X-API-Key: <key>` (or `Authorization: Bearer <key>`). Health checks and
-`/docs` stay open.
+Every `/api/v1` route outside `/api/v1/admin` and `/api/v1/auth` needs
+credentials: an **API key** or a **signed-in user's session**. Both work on
+every route. Health checks and `/docs` stay open.
+
+| Credential | How to send it |
+| --- | --- |
+| API key (`mr_…`) | `X-API-Key: <key>` or `Authorization: Bearer <key>` |
+| Session token (`mrs_…`) | `Authorization: Bearer <token>` (from `POST /api/v1/auth/login`) |
+| Session cookie | `metareel_session`, set by the login response (browsers) |
+
+A header credential wins over the cookie, and a credential that is sent must be
+valid (a wrong key is rejected even when a valid cookie is present).
+
+### API keys
 
 - Create, rotate, rename and revoke keys in the admin console under
   **Settings & API keys**. A key is shown once; only a PBKDF2-SHA256 digest of it is stored.
   Rotating replaces the secret immediately.
-- Requests are rate limited per key (default 300/min, 0 = off); over the
-  limit the API answers 429 with `Retry-After`.
 - Key enforcement can be switched off in the same page (e.g. local dev);
-  requests are then rate limited per client IP.
-- The admin console and `/api/v1/admin` are **not** authenticated. Expose only
+  anonymous requests are then rate limited per client IP. Credentials that are
+  sent are still checked.
+
+### Users
+
+- `POST /api/v1/auth/login` with `{"username","password"}` returns
+  `{token, expires_at, user}` and sets the `metareel_session` cookie (HttpOnly,
+  SameSite=Strict, `Secure` when the request came over HTTPS, including via a
+  proxy that sets `X-Forwarded-Proto: https`). `POST /api/v1/auth/logout` ends
+  the session; `GET /api/v1/auth/me` says who a request is authenticated as.
+- Sessions last `AUTH_SESSION_TTL` (default 30 days) and end after
+  `AUTH_SESSION_IDLE_TIMEOUT` (default 7 days) without use. Only a digest of
+  each token is stored; the maintenance job deletes expired sessions.
+- Passwords (at least 10 characters) are stored as argon2id hashes. Logins are
+  rate limited per client IP (10, then 1 every 6 s) and failed logins per
+  username (5, then 1 every 30 s); answers are 429 with `Retry-After`.
+- Roles are `admin` and `reader`. Both can use the public API; the role will
+  gate the admin API once it requires sign-in.
+- The first admin is created on startup from `AUTH_ADMIN_USERNAME` and
+  `AUTH_ADMIN_PASSWORD` (or `AUTH_ADMIN_PASSWORD_FILE`, e.g. a Docker secret)
+  when no users exist yet. Manage users with the CLI in the same binary:
+
+```bash
+docker exec -it metareel /app/metareel user create -role reader alice   # asks for the password
+docker exec -it metareel /app/metareel user list
+docker exec -it metareel /app/metareel user passwd alice                 # also signs alice out
+docker exec -it metareel /app/metareel user disable alice                # also signs alice out
+docker exec -it metareel /app/metareel user logout alice                 # ends every session
+```
+
+Locally: `go run ./cmd/server user …`. Changes made with the CLI reach a running
+server's session cache within 30 seconds.
+
+### Rate limits and the admin API
+
+- Requests are rate limited per key or per user (default 300/min, 0 = off,
+  set in **Settings & API keys**); over the limit the API answers 429 with
+  `Retry-After`.
+- The admin console and `/api/v1/admin` are **not** authenticated yet. Expose only
   the public API to the internet, e.g. block `/` and `/api/v1/admin` at the
   reverse proxy.
 
 ```bash
 curl -H "X-API-Key: mr_..." http://localhost:8080/api/v1/top10/movies/US
+
+token=$(curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"..."}' http://localhost:8080/api/v1/auth/login | jq -r .token)
+curl -H "Authorization: Bearer $token" http://localhost:8080/api/v1/top10/movies/US
 ```
 
 ## Webhooks

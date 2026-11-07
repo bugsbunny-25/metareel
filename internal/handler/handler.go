@@ -26,6 +26,8 @@ type Handler struct {
 	Mapping    *service.TitleMappingService
 	Stats      *service.AdminStatsService
 	APIKeys    *service.APIKeyService
+	Auth       *service.AuthService
+	Sessions   *service.SessionService
 	Health     *service.HealthService
 
 	Charts         *service.ChartsService

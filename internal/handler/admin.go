@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/labstack/echo/v5"
 
@@ -103,29 +102,5 @@ func writeAPIKeyResponse(c *echo.Context, status int, out any, err error) error 
 		return c.JSON(http.StatusNotFound, map[string]any{"error": "api key not found"})
 	default:
 		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
-	}
-}
-
-// RequireAPIKey guards the public API: it accepts the key from the
-// X-API-Key header or an "Authorization: Bearer <key>" header, and applies
-// the per-key (or per-IP) rate limit.
-func (h *Handler) RequireAPIKey(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c *echo.Context) error {
-		key := c.Request().Header.Get("X-API-Key")
-		if key == "" {
-			if auth := c.Request().Header.Get("Authorization"); len(auth) > 7 && strings.EqualFold(auth[:7], "bearer ") {
-				key = auth[7:]
-			}
-		}
-		switch err := h.APIKeys.Authorize(key, c.RealIP()); {
-		case err == nil:
-			return next(c)
-		case errors.Is(err, service.ErrRateLimited):
-			c.Response().Header().Set("Retry-After", "60")
-			return c.JSON(http.StatusTooManyRequests, map[string]any{"error": err.Error()})
-		default:
-			c.Response().Header().Set("WWW-Authenticate", `ApiKey header="X-API-Key"`)
-			return c.JSON(http.StatusUnauthorized, map[string]any{"error": err.Error()})
-		}
 	}
 }

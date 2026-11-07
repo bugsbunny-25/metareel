@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -140,6 +141,11 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if settings.RequireAPIKey && len(keyCount) == 0 {
 		log.Warn("public api requires an API key but none exist yet; create one in the admin UI (Settings)")
 	}
+	sessions := taskBootstrap.Sessions
+	users := service.NewUserService(log, repository.NewUserRepository(db), sessions)
+	if err := bootstrapAdmin(ctx, log, users, cfg.Auth); err != nil {
+		return err
+	}
 	// Outbound webhooks: follows charts and watch provider changes, delivers
 	// signed events to subscribed URLs (stopped before the database closes).
 	breakouts := service.NewBreakoutService(analyticsRepo)
@@ -171,11 +177,13 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Candidates: candidates,
 		ReviewFix: service.NewReviewFixService(log, repository.NewMappingRepository(db), candidates,
 			client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
-		Netflix: service.NewNetflixAdminService(log, importsRepo, taskBootstrap.Writer, metadataRepo, taskBootstrap.Metadata, taskBootstrap.Seasons, candidates).WithMapping(taskBootstrap.Mapping),
-		Mapping: taskBootstrap.Mapping,
-		Stats:   service.NewAdminStatsService(taskScheduleRepo, flixRepo),
-		APIKeys: apiKeys,
-		Health:  service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
+		Netflix:  service.NewNetflixAdminService(log, importsRepo, taskBootstrap.Writer, metadataRepo, taskBootstrap.Metadata, taskBootstrap.Seasons, candidates).WithMapping(taskBootstrap.Mapping),
+		Mapping:  taskBootstrap.Mapping,
+		Stats:    service.NewAdminStatsService(taskScheduleRepo, flixRepo),
+		APIKeys:  apiKeys,
+		Auth:     service.NewAuthService(apiKeys, sessions),
+		Sessions: sessions,
+		Health:   service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
 
 		Charts: service.NewChartsService(analyticsRepo),
 		Overview: service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping).
@@ -295,4 +303,32 @@ func failStaleRuns(ctx context.Context, log *slog.Logger, repo *repository.TaskS
 			sweep()
 		}
 	}
+}
+
+// bootstrapAdmin creates the first admin from AUTH_ADMIN_USERNAME and
+// AUTH_ADMIN_PASSWORD(_FILE) when no users exist yet.
+func bootstrapAdmin(ctx context.Context, log *slog.Logger, users *service.UserService, cfg config.Auth) error {
+	if cfg.AdminUsername == "" {
+		return nil
+	}
+	password := cfg.AdminPassword
+	if cfg.AdminPasswordFile != "" {
+		b, err := os.ReadFile(cfg.AdminPasswordFile)
+		if err != nil {
+			return fmt.Errorf("read AUTH_ADMIN_PASSWORD_FILE: %w", err)
+		}
+		password = strings.TrimRight(string(b), "\r\n")
+	}
+	if password == "" {
+		log.Warn("AUTH_ADMIN_USERNAME is set without AUTH_ADMIN_PASSWORD or AUTH_ADMIN_PASSWORD_FILE; no admin created")
+		return nil
+	}
+	created, err := users.EnsureAdmin(ctx, cfg.AdminUsername, password)
+	if err != nil {
+		return fmt.Errorf("create admin user: %w", err)
+	}
+	if created {
+		log.Info("admin user created from AUTH_ADMIN_USERNAME", slog.String("username", cfg.AdminUsername))
+	}
+	return nil
 }

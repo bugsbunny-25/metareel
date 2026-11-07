@@ -3,16 +3,23 @@ info:
   title: metareel Public API
   version: "1.0.0"
   description: >
-    Every /api/v1 endpoint needs an API key, sent as `X-API-Key: <key>` or
-    `Authorization: Bearer <key>` (unless keys are turned off in the admin
-    console). Keys are created and rotated in the admin console under
-    Settings & API keys. Requests are rate limited per key; over the limit
-    the API returns 429 with Retry-After. Missing or invalid keys get 401.
+    Every /api/v1 endpoint needs credentials (unless keys are turned off in
+    the admin console), either an API key or a signed-in user's session.
+    API keys (`mr_...`) are sent as `X-API-Key: <key>` or
+    `Authorization: Bearer <key>`, and are created and rotated in the admin
+    console under Settings & API keys. Users sign in with
+    POST /api/v1/auth/login and send the session token (`mrs_...`) as
+    `Authorization: Bearer <token>`, or let the browser send the
+    metareel_session cookie. Header credentials win over the cookie, and a
+    credential that is sent must be valid. Requests are rate limited per key
+    or per user; over the limit the API returns 429 with Retry-After.
+    Missing or invalid credentials get 401.
 servers:
   - url: /
 security:
   - ApiKeyHeader: []
   - BearerKey: []
+  - SessionCookie: []
 paths:
   /healthz:
     get:
@@ -48,6 +55,83 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReadinessReport"
+
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      security: []
+      summary: Sign in with a username and password
+      description: >
+        Starts a session. Sets the metareel_session cookie (HttpOnly,
+        SameSite=Strict, Secure over HTTPS) and returns the session token
+        once, for clients that send it as a Bearer token. Attempts are rate
+        limited per client IP and failed attempts per username (429 with
+        Retry-After). Cross-site browser requests are refused (403).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Signed in
+          headers:
+            Set-Cookie:
+              description: metareel_session=<token>
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Invalid username or password (also for unknown or disabled users)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Cross-site browser request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many login attempts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      security: []
+      summary: End the current session
+      description: >
+        Ends the session of the Bearer session token or cookie sent, and
+        clears the cookie. Succeeds also when there is no session.
+      responses:
+        "204":
+          description: Signed out
+  /api/v1/auth/me:
+    get:
+      operationId: me
+      summary: Who the request is authenticated as (user or API key)
+      responses:
+        "200":
+          description: The caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Principal"
+        "401":
+          description: No or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/test:
     get:
@@ -2032,7 +2116,12 @@ components:
     BearerKey:
       type: http
       scheme: bearer
-      description: 'The same API key, as "Authorization: Bearer <key>"'
+      description: 'An API key (mr_...) or a session token from /api/v1/auth/login (mrs_...), as "Authorization: Bearer <value>"'
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: metareel_session
+      description: Session cookie set by POST /api/v1/auth/login
   responses:
     BadRequest:
       description: Validation error
@@ -3268,6 +3357,62 @@ components:
         status:
           type: string
       required: [status]
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+      required: [username, password]
+
+    LoginResult:
+      type: object
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          description: Session token (mrs_...); shown only here
+        expires_at:
+          type: string
+          format: date-time
+          description: Absolute expiry; the session also ends after the idle timeout without use
+        user:
+          type: object
+          additionalProperties: false
+          properties:
+            id:
+              type: integer
+              format: int64
+            username:
+              type: string
+            role:
+              type: string
+              enum: [admin, reader]
+          required: [id, username, role]
+      required: [token, expires_at, user]
+
+    Principal:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [api_key, user]
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          description: API key name or username
+        role:
+          type: string
+          enum: [admin, reader]
+          description: Users only
+      required: [kind]
 
     ErrorResponse:
       type: object

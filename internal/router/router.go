@@ -38,9 +38,17 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	e.GET("/healthz", h.Live)
 	e.GET("/readyz", h.Ready)
 
-	// Public API: needs an API key (unless disabled in the admin settings)
-	// and is rate limited per key.
-	public := e.Group("/api/v1", h.RequireAPIKey, handler.ETag)
+	// Sign-in for users (the alternative to API keys). Browser writes must
+	// come from the same origin, so other sites can't sign a visitor in or
+	// out.
+	auth := e.Group("/api/v1/auth", handler.SameOriginWrites)
+	auth.POST("/login", h.Login)
+	auth.POST("/logout", h.Logout)
+	auth.GET("/me", h.Me, h.Authenticate)
+
+	// Public API: needs an API key or a user's session (unless keys are
+	// made optional in the admin settings) and is rate limited per caller.
+	public := e.Group("/api/v1", h.Authenticate, handler.ETag)
 	registerReadRoutes(public, h)
 
 	// Admin API and UI. The UI reads the same data through these admin

@@ -42,16 +42,21 @@ type Querier interface {
 	CountTitles(ctx context.Context, arg CountTitlesParams) (int64, error)
 	CountTitlesByMatchStatus(ctx context.Context) ([]CountTitlesByMatchStatusRow, error)
 	CountTmdbTitles(ctx context.Context) (CountTmdbTitlesRow, error)
+	// User accounts and their sign-in sessions.
+	CountUsers(ctx context.Context) (int64, error)
 	CountWebhookDeliveriesByStatus(ctx context.Context) ([]CountWebhookDeliveriesByStatusRow, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskRunLog(ctx context.Context, arg CreateTaskRunLogParams) error
 	CreateTaskSchedule(ctx context.Context, arg CreateTaskScheduleParams) (TaskSchedule, error)
 	CreateTaskScheduleRunTime(ctx context.Context, arg CreateTaskScheduleRunTimeParams) error
 	CreateTaskScheduleTarget(ctx context.Context, arg CreateTaskScheduleTargetParams) error
+	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWebhook(ctx context.Context, arg CreateWebhookParams) (Webhook, error)
 	DeleteAPIKey(ctx context.Context, id int64) (int64, error)
 	DeleteChartRankings(ctx context.Context, arg DeleteChartRankingsParams) error
+	DeleteExpiredSessions(ctx context.Context, idle string) (int64, error)
 	// One kind of a title's evidence, or all of it (kind '').
 	DeleteMappingEvidence(ctx context.Context, arg DeleteMappingEvidenceParams) (int64, error)
 	// Netflix "What We Watched" engagement reports.
@@ -63,6 +68,7 @@ type Querier interface {
 	// when a movie reached streaming, for release windows.
 	DeleteReleaseDates(ctx context.Context, arg DeleteReleaseDatesParams) error
 	DeleteSeasonEpisodes(ctx context.Context, arg DeleteSeasonEpisodesParams) error
+	DeleteSessionByHash(ctx context.Context, tokenHash string) (DeleteSessionByHashRow, error)
 	// Retention: drop logs of runs that started before the cutoff.
 	DeleteTaskRunLogsBefore(ctx context.Context, olderThan string) (int64, error)
 	DeleteTaskRunsBefore(ctx context.Context, olderThan string) (int64, error)
@@ -72,6 +78,7 @@ type Querier interface {
 	DeleteTitleLink(ctx context.Context, arg DeleteTitleLinkParams) error
 	DeleteTitleRatingSourcesByProvider(ctx context.Context, arg DeleteTitleRatingSourcesByProviderParams) error
 	DeleteTmdbWatchProviders(ctx context.Context, arg DeleteTmdbWatchProvidersParams) error
+	DeleteUserSessions(ctx context.Context, username string) (int64, error)
 	DeleteWebhook(ctx context.Context, id int64) (int64, error)
 	// One netflix_seasons row per season title a TV title charted with.
 	EnsureNetflixSeasons(ctx context.Context) error
@@ -101,6 +108,10 @@ type Querier interface {
 	// any_source = 0 leaves out IDs copied from a Netflix title mapped here
 	// (source netflix): they only repeat that title's own mapping.
 	FindTmdbRefsByNetflixID(ctx context.Context, arg FindTmdbRefsByNetflixIDParams) ([]FindTmdbRefsByNetflixIDRow, error)
+	// GetActiveSession returns a session that has not expired, was used within
+	// the idle window (idle is a negative modifier, e.g. '-604800 seconds') and
+	// belongs to an enabled user.
+	GetActiveSession(ctx context.Context, arg GetActiveSessionParams) (GetActiveSessionRow, error)
 	// Operations: settings lookups, chart freshness.
 	GetAppSetting(ctx context.Context, key string) (string, error)
 	// File imports: Netflix official Top 10 and IMDb ratings.
@@ -121,6 +132,7 @@ type Querier interface {
 	// On-demand ratings cache, keyed by TMDB namespace ('movie' | 'tv') + ID.
 	GetTitleRatings(ctx context.Context, arg GetTitleRatingsParams) (TitleRating, error)
 	GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (TmdbTitle, error)
+	GetUserByUsername(ctx context.Context, username string) (User, error)
 	GetWebhook(ctx context.Context, id int64) (Webhook, error)
 	GetWebhookDeliveryPayload(ctx context.Context, id int64) (string, error)
 	InsertCredit(ctx context.Context, arg InsertCreditParams) error
@@ -412,6 +424,7 @@ type Querier interface {
 	ListTop10ByProvider(ctx context.Context, arg ListTop10ByProviderParams) ([]ListTop10ByProviderRow, error)
 	// Report rows of Netflix originals not linked to a Netflix Top 10 title.
 	ListUnlinkedNetflixOriginals(ctx context.Context) ([]ListUnlinkedNetflixOriginalsRow, error)
+	ListUsers(ctx context.Context) ([]User, error)
 	// Changes across titles since a time (observed_at >= since, a
 	// 'YYYY-MM-DD HH:MM:SS' UTC string), newest first, with the TMDB title.
 	ListWatchProviderEvents(ctx context.Context, arg ListWatchProviderEventsParams) ([]ListWatchProviderEventsRow, error)
@@ -453,6 +466,7 @@ type Querier interface {
 	// One Rotten Tomatoes search for a TMDB title; retry after retry_after (a
 	// SQLite datetime modifier). A slug found is stored with UpsertTmdbTitleIDs.
 	RecordTmdbRTAttempt(ctx context.Context, arg RecordTmdbRTAttemptParams) error
+	RecordUserLogin(ctx context.Context, id int64) error
 	RecordWebhookResult(ctx context.Context, arg RecordWebhookResultParams) error
 	RenameAPIKey(ctx context.Context, arg RenameAPIKeyParams) (ApiKey, error)
 	RequeueNetflixTitleMatch(ctx context.Context, arg RequeueNetflixTitleMatchParams) error
@@ -480,9 +494,13 @@ type Querier interface {
 	SetNetflixSeasonManual(ctx context.Context, arg SetNetflixSeasonManualParams) (NetflixSeason, error)
 	SetNetflixSeasonNetflixID(ctx context.Context, arg SetNetflixSeasonNetflixIDParams) error
 	SetNetflixTitleNetflixID(ctx context.Context, arg SetNetflixTitleNetflixIDParams) error
+	SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) (int64, error)
+	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) (int64, error)
+	SetUserRole(ctx context.Context, arg SetUserRoleParams) (int64, error)
 	SetWebhookSecret(ctx context.Context, arg SetWebhookSecretParams) (Webhook, error)
 	TitleMappingStats(ctx context.Context) (TitleMappingStatsRow, error)
 	TouchAPIKey(ctx context.Context, id int64) error
+	TouchSession(ctx context.Context, id int64) error
 	// Unmatched titles per country they charted in, from a date on.
 	UnmatchedTitlesByCountry(ctx context.Context, since string) ([]UnmatchedTitlesByCountryRow, error)
 	UpdateNetflixSeasonMapping(ctx context.Context, arg UpdateNetflixSeasonMappingParams) error
