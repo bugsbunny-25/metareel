@@ -31,7 +31,7 @@ func writeData(c *echo.Context, out any, err error) error {
 	case errors.Is(err, service.ErrTitleNotFound), errors.Is(err, service.ErrTop10NotFound),
 		errors.Is(err, service.ErrNoMetadata), errors.Is(err, service.ErrNetflixTitleNotFound),
 		errors.Is(err, service.ErrNetflixSeasonNotFound), errors.Is(err, service.ErrWebhookNotFound),
-		errors.Is(err, service.ErrReviewSubjectNotFound):
+		errors.Is(err, service.ErrReviewSubjectNotFound), errors.Is(err, service.ErrPersonNotFound):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": err.Error()})
 	case errors.Is(err, sql.ErrNoRows):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": "not found"})
@@ -551,7 +551,11 @@ func (h *Handler) analytics(run func(c *echo.Context, q service.AnalyticsQuery) 
 			return badRequest(c, err)
 		}
 		q := service.AnalyticsQuery{From: from, To: to, Country: c.QueryParam("country"), Provider: c.QueryParam("provider"),
-			Category: c.QueryParam("category"), Kind: c.QueryParam("kind"), Interval: c.QueryParam("interval"), Window: c.QueryParam("window")}
+			Category: c.QueryParam("category"), Kind: c.QueryParam("kind"), Interval: c.QueryParam("interval"), Window: c.QueryParam("window"),
+			Role: c.QueryParam("role")}
+		if err := intParams(c, map[string]*int{"limit": &q.Limit}); err != nil {
+			return badRequest(c, err)
+		}
 		out, err := run(c, q)
 		return writeData(c, out, err)
 	}
@@ -597,6 +601,32 @@ func (h *Handler) GetSpreadLag() echo.HandlerFunc {
 	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
 		return h.Analytics.SpreadLag(c.Request().Context(), q)
 	})
+}
+
+func (h *Handler) GetPeopleAnalytics() echo.HandlerFunc {
+	return h.analytics(func(c *echo.Context, q service.AnalyticsQuery) (any, error) {
+		return h.Analytics.People(c.Request().Context(), q)
+	})
+}
+
+// GetTitleCredits: GET /api/v1/titles/tmdb/{kind}/{id}/credits
+func (h *Handler) GetTitleCredits(c *echo.Context) error {
+	ref, err := h.parseRef(c)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	out, err := h.Credits.TitleCredits(c.Request().Context(), ref)
+	return writeData(c, out, err)
+}
+
+// GetPerson: GET /api/v1/people/{id}
+func (h *Handler) GetPerson(c *echo.Context) error {
+	id, err := parseID(c.Param("id"), "person id")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Credits.Person(c.Request().Context(), id)
+	return writeData(c, out, err)
 }
 
 func (h *Handler) GetOrigins() echo.HandlerFunc {

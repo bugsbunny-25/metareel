@@ -1,6 +1,7 @@
 package client
 
 import (
+	"log/slog"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -15,10 +16,11 @@ func New(cfg config.HTTPClient) *resty.Client {
 	c := resty.New().
 		SetTimeout(cfg.Timeout).
 		SetRetryCount(cfg.RetryCount).
-		SetRetryWaitTime(500 * time.Millisecond).
-		SetRetryMaxWaitTime(5 * time.Second).
+		SetRetryWaitTime(500*time.Millisecond).
+		SetRetryMaxWaitTime(5*time.Second).
 		SetHeader("User-Agent", cfg.UserAgent).
-		SetHeader("Accept", "application/json")
+		SetHeader("Accept", "application/json").
+		SetLogger(redactingLogger{slog.Default()})
 
 	// Retry on transient failures and 5xx responses.
 	c.AddRetryCondition(func(r *resty.Response, err error) bool {

@@ -1392,6 +1392,53 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/titles/tmdb/{kind}/{id}/credits:
+    get:
+      operationId: getTitleCredits
+      summary: A title's top-billed cast and key crew (TMDB)
+      description: >-
+        The top 25 cast by billing order and the directors, writers
+        (screenplay, writer, story, novel, teleplay, characters), creators, music
+        composers and cinematographers, from TMDB (movie credits; for TV the
+        aggregate credits of every season, with `episodes`, and the show's
+        creators). Stored by the tmdb.credits.refresh job; empty until it has
+        fetched the title.
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+      responses:
+        "200":
+          description: Credits
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TitleCreditsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/people/{id}:
+    get:
+      operationId: getPerson
+      summary: A person (TMDB) and their titles metareel knows, with each title's chart record
+      description: >-
+        The person's credits on the titles metareel knows (`roles`: "as
+        <character>" for cast, else the job) with each title's FlixPatrol
+        record over every stored chart (points, days, best rank, countries,
+        first and last day), most charted first.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: TMDB person ID
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: The person
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PersonResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/titles/tmdb/{kind}/{id}/releases:
     get:
       operationId: getTitleReleases
@@ -1913,6 +1960,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReleaseWindowsResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/people:
+    get:
+      operationId: getPeopleAnalytics
+      summary: People ranked by the Top 10 points their titles earned
+      description: >-
+        For a `role` (actor: billed in a title's top 10; director, writer,
+        creator, composer, cinematographer: the crew jobs stored), each
+        person's titles' FlixPatrol chart points in the range (default: the
+        last 90 days; `country`, `provider`, `category`, `kind` filter the
+        charts), each title counted in full for everyone credited and once
+        per person. With the number of their titles that charted, their best
+        rank and their top three titles.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - $ref: "#/components/parameters/HistoryCountryParam"
+        - $ref: "#/components/parameters/ProviderQuery"
+        - $ref: "#/components/parameters/CategoryQuery"
+        - $ref: "#/components/parameters/KindQuery"
+        - name: role
+          in: query
+          schema: { type: string, enum: [actor, director, writer, creator, composer, cinematographer], default: actor }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: People, most points first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PeopleResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/analytics/netflix-calibration:
@@ -2577,6 +2657,91 @@ components:
                   arrivals: { type: array, items: { $ref: "#/components/schemas/SpreadArrival" } }
                   not_reached: { type: array, items: { type: string } }
                   pending: { type: array, items: { type: string }, description: Not charted yet; the window is not over }
+    TitleCreditsResponse:
+      type: object
+      properties:
+        kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        title: { type: string, nullable: true }
+        cast:
+          type: array
+          items:
+            type: object
+            properties:
+              person_id: { type: integer }
+              name: { type: string }
+              profile_path: { type: string, nullable: true }
+              character: { type: string }
+              order: { type: integer }
+              episodes: { type: integer, nullable: true, description: TV episodes credited }
+        crew:
+          type: array
+          items:
+            type: object
+            properties:
+              person_id: { type: integer }
+              name: { type: string }
+              profile_path: { type: string, nullable: true }
+              job: { type: string, description: "Director, Screenplay, Writer, Story, Novel, Teleplay, Characters, Creator, Original Music Composer, Director of Photography" }
+              department: { type: string }
+              episodes: { type: integer, nullable: true }
+    PersonResponse:
+      type: object
+      properties:
+        person_id: { type: integer }
+        name: { type: string }
+        profile_path: { type: string, nullable: true }
+        known_for: { type: string, nullable: true }
+        points: { type: integer, description: Top 10 points over all their titles }
+        charting: { type: integer, description: Their titles that charted }
+        titles:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [movie, tv] }
+              tmdb_id: { type: string }
+              title: { type: string }
+              year: { type: integer, nullable: true }
+              poster_path: { type: string, nullable: true }
+              roles: { type: array, items: { type: string } }
+              points: { type: integer }
+              days: { type: integer }
+              best_rank: { type: integer, nullable: true }
+              countries: { type: integer }
+              first_charted: { type: string, format: date, nullable: true }
+              last_charted: { type: string, format: date, nullable: true }
+    PeopleResponse:
+      type: object
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        country: { type: string, nullable: true }
+        provider: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        kind: { type: string, nullable: true }
+        role: { type: string }
+        total: { type: integer }
+        people:
+          type: array
+          items:
+            type: object
+            properties:
+              person_id: { type: integer }
+              name: { type: string }
+              profile_path: { type: string, nullable: true }
+              points: { type: integer }
+              titles: { type: integer }
+              best_rank: { type: integer }
+              top_titles:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    kind: { type: string }
+                    tmdb_id: { type: string }
+                    title: { type: string }
+                    points: { type: integer }
     CountryReleases:
       type: object
       properties:

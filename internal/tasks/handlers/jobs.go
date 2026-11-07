@@ -151,6 +151,13 @@ func EpisodesJob(e *service.EpisodesRefresher) JobFunc {
 	}
 }
 
+// CreditsJob refreshes TMDB cast and crew.
+func CreditsJob(c *service.CreditsRefresher) JobFunc {
+	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
+		return c.Run(ctx, p.Force, run.Log)
+	}
+}
+
 // MappingRefreshJob follows up mapping changes (see TitleMappingService.Refresh).
 func MappingRefreshJob(m *service.TitleMappingService) JobFunc {
 	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {

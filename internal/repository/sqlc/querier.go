@@ -68,6 +68,7 @@ type Querier interface {
 	DeleteTaskRunsBefore(ctx context.Context, olderThan string) (int64, error)
 	DeleteTaskScheduleRunTimesByScheduleID(ctx context.Context, scheduleID int64) error
 	DeleteTaskScheduleTargets(ctx context.Context, scheduleID int64) error
+	DeleteTitleCredits(ctx context.Context, arg DeleteTitleCreditsParams) error
 	DeleteTitleLink(ctx context.Context, arg DeleteTitleLinkParams) error
 	DeleteTitleRatingSourcesByProvider(ctx context.Context, arg DeleteTitleRatingSourcesByProviderParams) error
 	DeleteTmdbWatchProviders(ctx context.Context, arg DeleteTmdbWatchProvidersParams) error
@@ -111,6 +112,7 @@ type Querier interface {
 	GetNetflixSeason(ctx context.Context, id int64) (NetflixSeason, error)
 	GetNetflixTitle(ctx context.Context, id int64) (GetNetflixTitleRow, error)
 	GetNetflixTitleRow(ctx context.Context, id int64) (NetflixTitle, error)
+	GetPerson(ctx context.Context, personID int64) (GetPersonRow, error)
 	GetPreviousChartSnapshot(ctx context.Context, arg GetPreviousChartSnapshotParams) (ChartSnapshot, error)
 	GetTaskRunByID(ctx context.Context, id int64) (TaskRun, error)
 	GetTaskScheduleByID(ctx context.Context, id int64) (TaskSchedule, error)
@@ -121,6 +123,7 @@ type Querier interface {
 	GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (TmdbTitle, error)
 	GetWebhook(ctx context.Context, id int64) (Webhook, error)
 	GetWebhookDeliveryPayload(ctx context.Context, id int64) (string, error)
+	InsertCredit(ctx context.Context, arg InsertCreditParams) error
 	InsertEpisode(ctx context.Context, arg InsertEpisodeParams) error
 	InsertMappingEvent(ctx context.Context, arg InsertMappingEventParams) error
 	InsertNetflixEngagement(ctx context.Context, arg InsertNetflixEngagementParams) error
@@ -173,6 +176,13 @@ type Querier interface {
 	ListCountryOfferEvents(ctx context.Context, arg ListCountryOfferEventsParams) ([]ListCountryOfferEventsRow, error)
 	// Every offer in a country (any monetization) of the titles metareel knows.
 	ListCountryOffers(ctx context.Context, country string) ([]ListCountryOffersRow, error)
+	// TMDB cast and crew (migration 000025).
+	// TMDB titles with when their credits were last fetched ('' = never),
+	// never fetched first, then oldest.
+	ListCreditTargets(ctx context.Context) ([]ListCreditTargetsRow, error)
+	// Every credit of one type (cast | crew) with the person, for people
+	// analytics.
+	ListCreditsOfType(ctx context.Context, creditType string) ([]ListCreditsOfTypeRow, error)
 	ListDataImports(ctx context.Context) ([]DataImport, error)
 	// Pending deliveries whose next attempt is due, of enabled webhooks.
 	ListDueWebhookDeliveries(ctx context.Context, limit int64) ([]ListDueWebhookDeliveriesRow, error)
@@ -300,6 +310,10 @@ type Querier interface {
 	// TMDB titles with an English Wikipedia article and the last day stored.
 	ListPageviewTargets(ctx context.Context) ([]ListPageviewTargetsRow, error)
 	ListPageviews(ctx context.Context, arg ListPageviewsParams) ([]ListPageviewsRow, error)
+	// FlixPatrol chart stats of each title a person has a credit on.
+	ListPersonChartStats(ctx context.Context, personID int64) ([]ListPersonChartStatsRow, error)
+	// A person's credits on the titles metareel knows, with the titles.
+	ListPersonCredits(ctx context.Context, personID int64) ([]ListPersonCreditsRow, error)
 	// The slice must stay last: sqlc numbers the named params ?1..?3 and SQLite
 	// numbers the expanded "?" list after them.
 	ListRankingsByTitleIDs(ctx context.Context, arg ListRankingsByTitleIDsParams) ([]ListRankingsByTitleIDsRow, error)
@@ -330,6 +344,7 @@ type Querier interface {
 	// Every release date in a country of the movies with a theatrical release
 	// (type 2 or 3) there between two dates, with the movie's title.
 	ListTheatricalReleaseDates(ctx context.Context, arg ListTheatricalReleaseDatesParams) ([]ListTheatricalReleaseDatesRow, error)
+	ListTitleCredits(ctx context.Context, arg ListTitleCreditsParams) ([]ListTitleCreditsRow, error)
 	ListTitleIDsOnRef(ctx context.Context, arg ListTitleIDsOnRefParams) ([]int64, error)
 	ListTitleLinks(ctx context.Context) ([]ListTitleLinksRow, error)
 	ListTitleLinksForFlixPatrolIDs(ctx context.Context, ids []int64) ([]ListTitleLinksForFlixPatrolIDsRow, error)
@@ -454,6 +469,7 @@ type Querier interface {
 	// rebuilt only then.
 	SearchIndexStamp(ctx context.Context) (string, error)
 	SetAppSetting(ctx context.Context, arg SetAppSettingParams) error
+	SetCreditsFetched(ctx context.Context, arg SetCreditsFetchedParams) error
 	SetEpisodesFetched(ctx context.Context, tmdbID string) error
 	// From report rows linked to Netflix Top 10 titles mapped to the TMDB title.
 	SetLinkedNetflixPremieres(ctx context.Context) (int64, error)
@@ -477,6 +493,7 @@ type Querier interface {
 	UpsertMappingEvidence(ctx context.Context, arg UpsertMappingEvidenceParams) error
 	UpsertNetflixCountry(ctx context.Context, arg UpsertNetflixCountryParams) error
 	UpsertNetflixGlobal(ctx context.Context, arg UpsertNetflixGlobalParams) error
+	UpsertPerson(ctx context.Context, arg UpsertPersonParams) error
 	UpsertTitleRatings(ctx context.Context, arg UpsertTitleRatingsParams) (TitleRating, error)
 	// TMDB metadata, watch providers and Wikidata IDs per TMDB title.
 	// TMDB's own IDs are stored with UpsertTmdbTitleIDs (source tmdb).

@@ -20,6 +20,7 @@ type AnalyticsService struct {
 	imports  *repository.ImportsRepository
 	ratings  *repository.RatingsRepository
 	episodes *repository.EpisodesRepository // optional: release patterns
+	credits  *repository.CreditsRepository  // optional: people analytics
 	now      func() time.Time
 }
 
@@ -34,6 +35,8 @@ type AnalyticsQuery struct {
 	Kind                        string
 	Interval                    string // origins: week | month
 	Window                      string // release patterns: days after a premiere
+	Role                        string // people: actor | director | ...
+	Limit                       int    // people
 }
 
 type analyticsFilter struct {

@@ -123,6 +123,8 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/titles/tmdb/:kind/:id/history", h.GetTitleHistory)
 	g.GET("/titles/tmdb/:kind/:id/timeline", h.GetTitleTimeline)
 	g.GET("/titles/tmdb/:kind/:id/releases", h.GetTitleReleases)
+	g.GET("/titles/tmdb/:kind/:id/credits", h.GetTitleCredits)
+	g.GET("/people/:id", h.GetPerson)
 	g.GET("/availability/changes", h.GetAvailabilityChanges)
 	g.GET("/calendar/:country", h.GetCalendar)
 	g.GET("/titles/tmdb/:kind/:id/netflix", h.GetTitleNetflix)
@@ -164,6 +166,7 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/analytics/release-patterns", h.GetReleasePatterns())
 	g.GET("/analytics/spread-lag", h.GetSpreadLag())
 	g.GET("/analytics/release-windows", h.GetReleaseWindows)
+	g.GET("/analytics/people", h.GetPeopleAnalytics())
 	g.GET("/analytics/netflix-calibration", h.GetNetflixCalibration())
 }
 

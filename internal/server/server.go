@@ -161,6 +161,7 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	historyRepo := repository.NewHistoryRepository(readDB)
 	engagementRepo := repository.NewEngagementRepository(readDB)
 	episodesRepo := repository.NewEpisodesRepository(readDB)
+	creditsRepo := repository.NewCreditsRepository(readDB)
 	h := &handler.Handler{
 		Top10:      top10Read,
 		AdminTasks: taskScheduleAdmin,
@@ -180,10 +181,11 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Overview: service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping).
 			WithEngagement(engagementRepo),
 		Analytics: service.NewAnalyticsService(analyticsRepo, readMetadataRepo, repository.NewImportsRepository(readDB), repository.NewRatingsRepository(readDB)).
-			WithEpisodes(episodesRepo),
+			WithEpisodes(episodesRepo).WithCredits(creditsRepo),
 		History:        service.NewHistoryService(historyRepo, readMetadataRepo),
 		Calendar:       service.NewCalendarService(episodesRepo),
 		Breakouts:      breakouts,
+		Credits:        service.NewCreditsService(creditsRepo, readMetadataRepo),
 		Discover:       service.NewDiscoverService(repository.NewDiscoverRepository(readDB), analyticsRepo, episodesRepo, readMetadataRepo),
 		ReleaseWindows: service.NewReleaseWindowsService(repository.NewReleaseDatesRepository(readDB), readMetadataRepo, analyticsRepo),
 		Timeline:       service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),

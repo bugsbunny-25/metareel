@@ -157,6 +157,7 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
 | `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz`; known IDs also go to `imdb_rating_history` when changed |
+| `tmdb.credits.refresh` | `CreditsRefresher` | `tmdb_people` + `tmdb_credits` of every TMDB title: `/movie/{id}/credits`, or `/tv/{id}?append_to_response=aggregate_credits` (with `created_by` as Creator); keeps the top 25 cast and the jobs in `creditJobs` (TV: 10 per job by episodes); never-fetched first, again after 60 days (`tmdb_titles.credits_fetched_at`), 1,000 a run, 250 ms apart; each title replaced in one transaction |
 | `tmdb.episodes.refresh` | `EpisodesRefresher` | `tmdb_episodes` of TV shows with a stored TMDB season list: seasons aired in the last 3 years, undated and the latest (`append_to_response=season/N`, 20 per request, 250 ms apart); due daily when an episode airs within -14..+60 days or a season starts within 30 days, weekly for returning statuses, else monthly (`tmdb_titles.episodes_fetched_at`); each fetched season replaced in one transaction |
 | `wikipedia.pageviews.import` | `PageviewsImporter` | English Wikipedia daily user views (Wikimedia REST, `client.Wikimedia`) of titles with `tmdb_titles.enwiki_title`, since the last stored day (90 days first); 350 ms apart (200 requests/minute limit), `Retry-After` honoured on 429 |
 | `netflix.engagement.import` | `NetflixEngagementImporter` | "What We Watched" `.xlsx` reports from `app_settings` `netflix.engagement.urls` (defaults in code; a run's `url` adds one), parsed by `internal/xlsx`; each period replaced in one transaction, rows linked by name to Netflix Top 10 titles / season titles |
@@ -520,6 +521,16 @@ usually the original network or service release, not per country.
   premiere from `rankings` (tagged with the season, or untagged), counting a
   chart only when `chart_snapshots` cover the whole window.
 
+## Credits and people (`service/credits.go`)
+
+`GET /api/v1/titles/tmdb/{kind}/{id}/credits` reads the stored credits.
+`GET /api/v1/people/{id}` lists a person's credited titles with each title's
+FlixPatrol record (`ListPersonChartStats`, all stored charts).
+`GET /api/v1/analytics/people` sums each title's chart points in the range
+(`ChartEntries` with the usual filters) and credits them in full to every
+person credited in the role (actors: billing order under 10), once per
+person and title.
+
 ## Release windows (`service/release_dates.go`)
 
 `titles.metadata` already asks TMDB for `release_dates` with every movie's
@@ -714,6 +725,7 @@ Added since the diagram below:
 | `imdb_rating_history`, `title_rating_history` | Rating history (migration 17): IMDb dataset rating + votes per day, and each provider's rating sources (from `SaveTitleRatings`), written only when the value changed since the previous row (step series; `/history` adds the point in effect at `from`) |
 | `tmdb_popularity_history` | TMDB popularity per title per day from the daily exports |
 | `tmdb_release_dates` | Movies' TMDB release dates: earliest date (and note) per country and type 1-6 (premiere, theatrical limited, theatrical, digital, physical, TV), replaced on every details refresh; migration 24 seeded type 4 from `tmdb_titles.digital_release_dates`, which is still written |
+| `tmdb_people`, `tmdb_credits`, `tmdb_titles.credits_fetched_at` | TMDB people (name, profile, known-for department) and their cast / crew credits per title (job, character, billing order, TV episodes), migration 25; read by title credits, people and people analytics |
 | `tmdb_episodes`, `tmdb_titles.episodes_fetched_at` | TV episodes per show / season / episode: name, air date (TMDB's, NULL = TBA), `episode_type` (standard / finale / mid_season), runtime (migration 23); read by the episode calendar and release patterns |
 | `tmdb_titles.enwiki_title`, `wikipedia_pageviews` | English Wikipedia article from Wikidata (sitelink, looked up monthly by `titles.metadata`, migration 20) and its daily user pageviews per project |
 | `tmdb_titles.netflix_premiere`, `netflix_premiere_source` | Earliest Netflix premiere of a Netflix-branded title per the engagement reports (`linked` through a Netflix Top 10 title, or `name`), migration 22; marks Netflix originals for the origin classifier |
@@ -837,7 +849,7 @@ Implementation note: both YAML specs and Swagger UI HTML are embedded from `inte
 | `github.com/redis/go-redis/v9` | v9.18.0 | Redis client (used by `asynq` and the cache wrapper) |
 | `github.com/gocolly/colly/v2` | v2.3.0 | Web scraping framework (async, robots.txt, rate limiting) |
 | `github.com/PuerkitoBio/goquery` | v1.11.0 | jQuery-style HTML parsing (used inside Colly callbacks) |
-| `github.com/go-resty/resty/v2` | v2.17.2 | HTTP client with retry and timeout for external REST APIs |
+| `github.com/go-resty/resty/v2` | v2.17.2 | HTTP client with retry and timeout for external REST APIs; its own logging (transport errors while retrying, with the full URL) goes through `redactingLogger` to slog, so query-string keys are hidden |
 | `github.com/hasura/go-graphql-client` | v0.16.0 | GraphQL client for the JustWatch API |
 | `modernc.org/sqlite` | v1.49.1 | Pure-Go SQLite driver (no CGO — enables fully static binary) |
 | `github.com/pressly/goose/v3` | v3.27.0 | SQL migration runner (up/down, versioned files) |
@@ -983,6 +995,7 @@ metareel/
 │   │   ├── charts.go              # catalog, history, movers, leaderboards, changes, export
 │   │   ├── title_overview.go      # title overview, stats, availability, lookup
 │   │   ├── episodes.go            # tmdb.episodes.refresh job, episode calendar
+│   │   ├── credits.go             # tmdb.credits.refresh job, title credits, people, people analytics
 │   │   ├── analytics_release_patterns.go # binge / batch / weekly seasons and their chart runs
 │   │   ├── analytics_spread.go    # spread lag: days from a title's first country to the others
 │   │   ├── breakouts.go           # titles rising in several countries at once (+ title.breakout webhooks)

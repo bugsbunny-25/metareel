@@ -34,9 +34,13 @@
   }
   $effect(() => { load() })
 
-  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'netflix.titles.match', 'imdb.ratings.import', 'tmdb.popularity.import', 'wikipedia.pageviews.import', 'netflix.engagement.import', 'tmdb.episodes.refresh', 'ratings.prewarm', 'maintenance']
+  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'netflix.titles.match', 'imdb.ratings.import', 'tmdb.popularity.import', 'wikipedia.pageviews.import', 'netflix.engagement.import', 'tmdb.episodes.refresh', 'tmdb.credits.refresh', 'ratings.prewarm', 'maintenance']
   const label = (t) => taskTypes.find((x) => x.type === t)?.label ?? t
-  const forceTitle = (t) => (t === 'tmdb.episodes.refresh' ? 'Refetch every show, not only those due' : t.endsWith('.import') ? 'Re-import even if the file is unchanged' : '')
+  const forceTitle = (t) =>
+    t === 'tmdb.episodes.refresh' ? 'Refetch every show, not only those due'
+      : t === 'tmdb.credits.refresh' ? 'Refetch every title, not only those due'
+        : t.endsWith('.import') ? 'Re-import even if the file is unchanged' : ''
+
 
   async function start(type, force = false) {
     busy = { ...busy, [type]: true }
