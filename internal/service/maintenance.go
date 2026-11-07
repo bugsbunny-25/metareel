@@ -23,12 +23,19 @@ type MaintenanceService struct {
 	retentionDays   int
 	staleChartHours int
 	credits         *repository.CreditsRepository // optional: prune people without credits
+	sessions        *SessionService               // optional: delete expired sign-in sessions
 	now             func() time.Time
 }
 
 // WithCredits makes the job delete TMDB people left without any credit.
 func (m *MaintenanceService) WithCredits(repo *repository.CreditsRepository) *MaintenanceService {
 	m.credits = repo
+	return m
+}
+
+// WithSessions makes the job delete expired and idle sign-in sessions.
+func (m *MaintenanceService) WithSessions(sessions *SessionService) *MaintenanceService {
+	m.sessions = sessions
 	return m
 }
 
@@ -42,7 +49,8 @@ type MaintenanceReport struct {
 	RunsDeleted    int64        `json:"runs_deleted"`
 	LogsDeleted    int64        `json:"logs_deleted"`
 	StaleRunsFixed int64        `json:"stale_runs_failed"`
-	PeopleDeleted  int64        `json:"people_deleted"` // TMDB people without any credit left
+	PeopleDeleted  int64        `json:"people_deleted"`  // TMDB people without any credit left
+	SessionsPruned int64        `json:"sessions_pruned"` // expired or idle sign-in sessions
 	StaleCharts    []StaleChart `json:"stale_charts"`
 	AlertsSent     int          `json:"alerts_sent"`
 }
@@ -86,6 +94,17 @@ func (m *MaintenanceService) Run(ctx context.Context, runLog func(level, msg str
 		rep.PeopleDeleted = n
 		if n > 0 {
 			logf("info", "Deleted %d TMDB people without any credit left", n)
+		}
+	}
+
+	if m.sessions != nil {
+		n, err := m.sessions.PruneExpired(ctx)
+		if err != nil {
+			return rep, err
+		}
+		rep.SessionsPruned = n
+		if n > 0 {
+			logf("info", "Deleted %d expired sign-in sessions", n)
 		}
 	}
 

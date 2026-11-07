@@ -191,6 +191,9 @@ make reports-open
 | GET    | `/readyz`                                   | Readiness: DB + Redis (503 if down), FlareSolverr reported as `degraded` |
 | GET    | `/docs`, `/docs/admin`                      | Swagger UI (public + admin)                 |
 | GET    | `/openapi/public.yaml`, `/openapi/admin.yaml` | OpenAPI specs (YAML)                      |
+| POST   | `/api/v1/auth/login`, `/api/v1/auth/logout` | Sign a user in (session cookie + token) or out ([access](#public-api-access)) |
+| GET    | `/api/v1/auth/me`                           | Who the request is authenticated as (user or API key) |
+| GET    | `/api/v1/auth/session`                      | For the console: whether admin sign-in is required and who is signed in |
 | GET    | `/api/v1/top10/{movies\|tv-shows}/:country[/:provider]` | Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`, and for TV `season_number` + `season_source` when known) |
 | GET    | `/api/v1/top10/:country`                    | Every provider's movie + TV chart of a country in one call |
 | GET    | `/api/v1/top10/{movies\|tv-shows}/:country/:provider/history` | One chart over a range (`from`, `to`; ≤ 92 days) |
@@ -234,7 +237,7 @@ make reports-open
 | GET    | `/api/v1/titles/new/:country/:service`      | Titles added to a service per day, live from JustWatch (`from`, `to` default last 7 days; `type`) |
 | GET    | `/api/v1/titles/upcoming/:country/:service` | Titles announced for a service, live from JustWatch (`from`, `to`, `type`) |
 | GET    | `/api/v1/services/:country`                 | JustWatch service codes in a country (for `:service`) |
-| GET/POST/PATCH/DELETE | `/api/v1/admin/...`           | Admin API: schedules, runs, stats, API keys, settings, title corrections (`PATCH /api/v1/admin/titles/:id`, `POST .../rematch`), `POST /jobs/:type/run`, `POST /backfill`, `GET /data-quality`, `GET /task-types`, and admin copies of the read routes above |
+| GET/POST/PATCH/DELETE | `/api/v1/admin/...`           | Admin API (admin sign-in with `AUTH_REQUIRE_ADMIN_LOGIN`): schedules, runs, stats, API keys, users (`/users`, `/users/:username`, `/users/:username/logout`) and sessions (`/sessions`, `DELETE /sessions/:id`), settings, title corrections (`PATCH /api/v1/admin/titles/:id`, `POST .../rematch`), `POST /jobs/:type/run`, `POST /backfill`, `GET /data-quality`, `GET /task-types`, and admin copies of the read routes above |
 | GET/PATCH/POST | `/api/v1/admin/netflix/titles[/:id[/rematch\|/candidates]]` | Netflix official Top 10 titles: list (`q`, `kind`, `match_status`, `missing=tmdb\|season`, `flag=cross_kind\|linked`, `sort`), detail with season titles, weeks and linked FlixPatrol titles, fix by hand (`tmdb_kind` + `tmdb_id`, or an IMDb / Wikidata ID resolved to TMDB), rematch, candidate search |
 | GET/POST | `/api/v1/admin/mappings[/sync\|/:kind/:id[/remap]]` | The TMDB-keyed mapping: every TMDB title with all its IDs and the FlixPatrol / Netflix titles mapped to it (`q`, `kind`, `flag=conflict\|cross_kind\|both\|netflix_only\|flixpatrol_only\|manual`); `sync` recomputes links now; `remap` moves everything on a TMDB title to another (by TMDB, IMDb or Wikidata ID) |
 | GET    | `/api/v1/admin/mappings/review/:subject/:id/suggestions` | Other TMDB titles a queued mapping could be, ranked (name, kind, release year against the first chart, an offer on the charted service), for the queue's one-click fix |
@@ -374,25 +377,90 @@ Discord or ntfy messages.
   JustWatch and must be attributed; daily ID exports for popularity), **Wikidata** (SPARQL, CC0; IDs and film distributors),
   **JustWatch** GraphQL, **Rotten Tomatoes** search index, **MDBList** (optional).
 
-## Public API keys
+## Public API access
 
-Every `/api/v1` route outside `/api/v1/admin` needs an API key, sent as
-`X-API-Key: <key>` (or `Authorization: Bearer <key>`). Health checks and
-`/docs` stay open.
+Every `/api/v1` route outside `/api/v1/admin` and `/api/v1/auth` needs
+credentials: an **API key** or a **signed-in user's session**. Both work on
+every route. Health checks and `/docs` stay open.
+
+| Credential | How to send it |
+| --- | --- |
+| API key (`mr_…`) | `X-API-Key: <key>` or `Authorization: Bearer <key>` |
+| Session token (`mrs_…`) | `Authorization: Bearer <token>` (from `POST /api/v1/auth/login`) |
+| Session cookie | `metareel_session`, set by the login response (browsers) |
+
+A header credential wins over the cookie, and a credential that is sent must be
+valid (a wrong key is rejected even when a valid cookie is present).
+
+### API keys
 
 - Create, rotate, rename and revoke keys in the admin console under
   **Settings & API keys**. A key is shown once; only a PBKDF2-SHA256 digest of it is stored.
   Rotating replaces the secret immediately.
-- Requests are rate limited per key (default 300/min, 0 = off); over the
-  limit the API answers 429 with `Retry-After`.
 - Key enforcement can be switched off in the same page (e.g. local dev);
-  requests are then rate limited per client IP.
-- The admin console and `/api/v1/admin` are **not** authenticated. Expose only
-  the public API to the internet, e.g. block `/` and `/api/v1/admin` at the
-  reverse proxy.
+  anonymous requests are then rate limited per client IP. Credentials that are
+  sent are still checked.
+
+### Users
+
+- `POST /api/v1/auth/login` with `{"username","password"}` returns
+  `{token, expires_at, user}` and sets the `metareel_session` cookie (HttpOnly,
+  SameSite=Strict, `Secure` when the request came over HTTPS, including via a
+  proxy that sets `X-Forwarded-Proto: https`). `POST /api/v1/auth/logout` ends
+  the session; `GET /api/v1/auth/me` says who a request is authenticated as.
+- Sessions last `AUTH_SESSION_TTL` (default 30 days) and end after
+  `AUTH_SESSION_IDLE_TIMEOUT` (default 7 days) without use. Only a digest of
+  each token is stored; the maintenance job deletes expired sessions.
+- Passwords (at least 10 characters) are stored as argon2id hashes. Logins are
+  rate limited per client IP (10, then 1 every 6 s) and failed logins per
+  username (5, then 1 every 30 s); answers are 429 with `Retry-After`.
+- Roles are `admin` and `reader`. Both can use the public API; only admins
+  can use the admin console when it requires sign-in (below).
+- The first admin is created on startup from `AUTH_ADMIN_USERNAME` and
+  `AUTH_ADMIN_PASSWORD` (or `AUTH_ADMIN_PASSWORD_FILE`, e.g. a Docker secret)
+  when no users exist yet. Manage users with the CLI in the same binary:
+
+```bash
+docker exec -it metareel /app/metareel user create -role reader alice   # asks for the password
+docker exec -it metareel /app/metareel user list
+docker exec -it metareel /app/metareel user passwd alice                 # also signs alice out
+docker exec -it metareel /app/metareel user disable alice                # also signs alice out
+docker exec -it metareel /app/metareel user logout alice                 # ends every session
+docker exec -it metareel /app/metareel user delete alice
+```
+
+Locally: `go run ./cmd/server user …`. Changes made with the CLI reach a running
+server's session cache within 30 seconds. Admins can do the same in the console
+under **Users & sessions**, which also lists active sessions and ends them.
+
+### Admin console sign-in
+
+Set `AUTH_REQUIRE_ADMIN_LOGIN=true` to require a signed-in admin for the
+console and `/api/v1/admin`: without a session the API answers 401 and the
+console shows a sign-in screen; readers get 403. API keys never open the admin
+API. The setting is off by default (the admin API stays open, as before), so
+create an admin first, then turn it on and restart. The server logs an error at
+startup if it is on while no enabled admin exists; recover with
+`metareel user create -role admin <name>`. Nobody can demote, disable or delete
+their own account or the last enabled admin.
+
+### Rate limits and exposure
+
+- Requests are rate limited per key or per user (default 300/min, 0 = off,
+  set in **Settings & API keys**); over the limit the API answers 429 with
+  `Retry-After`.
+- Without `AUTH_REQUIRE_ADMIN_LOGIN` the admin console and `/api/v1/admin`
+  are open to anyone who can reach them. Either turn it on, or expose only the
+  public API to the internet (e.g. block `/` and `/api/v1/admin` at the reverse
+  proxy). Serve the console over HTTPS when it is reachable from outside your
+  LAN, so the session cookie is marked `Secure`.
 
 ```bash
 curl -H "X-API-Key: mr_..." http://localhost:8080/api/v1/top10/movies/US
+
+token=$(curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"..."}' http://localhost:8080/api/v1/auth/login | jq -r .token)
+curl -H "Authorization: Bearer $token" http://localhost:8080/api/v1/top10/movies/US
 ```
 
 ## Webhooks
@@ -428,8 +496,8 @@ itself). Proxies from the environment are not used. Signing secrets are
 stored in the database (they are needed to sign), so copies and backups of
 `data/metareel.db` carry them: rotate a webhook's secret if a copy leaks.
 
-The admin API (and so webhook configuration) is not authenticated: keep it
-on your LAN. It sends no CORS headers (only the public API does), and it
+The admin API (and so webhook configuration) is open unless
+`AUTH_REQUIRE_ADMIN_LOGIN` is on: keep it on your LAN otherwise. It sends no CORS headers (only the public API does), and it
 refuses requests that change data when a browser marks them as coming from
 another site (`Sec-Fetch-Site` / `Origin`), so a web page a LAN user opens
 can't drive it; curl and scripts are unaffected.

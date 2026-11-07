@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -101,12 +102,16 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		LogLevel:    scheduler.AsynqLogLevel(cfg.Log.Level),
 	})
 
-	workerErr := make(chan error, 1)
-	go func() {
-		if err := worker.Run(taskBootstrap.Mux); err != nil {
-			workerErr <- err
-		}
-		close(workerErr)
+	// Start, not Run: Run installs asynq's own SIGTERM handler and shuts the
+	// worker down itself. metareel handles signals once, below, and every
+	// component is shut down exactly once by these defers, which run on any
+	// return before the database closes.
+	if err := worker.Start(taskBootstrap.Mux); err != nil {
+		return fmt.Errorf("start asynq worker: %w", err)
+	}
+	defer func() {
+		worker.Shutdown() // waits for active tasks (asynq's ShutdownTimeout)
+		log.Info("asynq worker stopped")
 	}()
 
 	go failStaleRuns(ctx, log, taskScheduleRepo)
@@ -115,12 +120,14 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("create periodic task manager: %w", err)
 	}
-	schedulerErr := make(chan error, 1)
-	go func() {
-		if err := periodicManager.Run(); err != nil {
-			schedulerErr <- err
-		}
-		close(schedulerErr)
+	// PeriodicTaskManager.Shutdown closes a channel, so it must run once only
+	// (Run would call it on SIGTERM as well).
+	if err := periodicManager.Start(); err != nil {
+		return fmt.Errorf("start periodic task manager: %w", err)
+	}
+	defer func() {
+		periodicManager.Shutdown()
+		log.Info("scheduler stopped")
 	}()
 
 	titlesAdmin := service.NewTitleAdminService(flixRepo, taskBootstrap.Writer).WithMapping(taskBootstrap.Mapping)
@@ -139,6 +146,20 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		slog.Int("rate_limit_per_minute", settings.RateLimitPerMinute))
 	if settings.RequireAPIKey && len(keyCount) == 0 {
 		log.Warn("public api requires an API key but none exist yet; create one in the admin UI (Settings)")
+	}
+	sessions := taskBootstrap.Sessions
+	users := service.NewUserService(log, repository.NewUserRepository(db), sessions)
+	if err := bootstrapAdmin(ctx, log, users, cfg.Auth); err != nil {
+		return err
+	}
+	admins, err := users.EnabledAdmins(ctx)
+	if err != nil {
+		return fmt.Errorf("count admins: %w", err)
+	}
+	log.Info("admin console access", slog.Bool("require_login", cfg.Auth.RequireAdminLogin), slog.Int64("enabled_admins", admins))
+	if cfg.Auth.RequireAdminLogin && admins == 0 {
+		log.Error("AUTH_REQUIRE_ADMIN_LOGIN is on but no enabled admin exists, so nobody can use the admin console; " +
+			"create one with `metareel user create -role admin <name>` or AUTH_ADMIN_USERNAME / AUTH_ADMIN_PASSWORD")
 	}
 	// Outbound webhooks: follows charts and watch provider changes, delivers
 	// signed events to subscribed URLs (stopped before the database closes).
@@ -171,11 +192,17 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Candidates: candidates,
 		ReviewFix: service.NewReviewFixService(log, repository.NewMappingRepository(db), candidates,
 			client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
-		Netflix: service.NewNetflixAdminService(log, importsRepo, taskBootstrap.Writer, metadataRepo, taskBootstrap.Metadata, taskBootstrap.Seasons, candidates).WithMapping(taskBootstrap.Mapping),
-		Mapping: taskBootstrap.Mapping,
-		Stats:   service.NewAdminStatsService(taskScheduleRepo, flixRepo),
-		APIKeys: apiKeys,
-		Health:  service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
+		Netflix:  service.NewNetflixAdminService(log, importsRepo, taskBootstrap.Writer, metadataRepo, taskBootstrap.Metadata, taskBootstrap.Seasons, candidates).WithMapping(taskBootstrap.Mapping),
+		Mapping:  taskBootstrap.Mapping,
+		Stats:    service.NewAdminStatsService(taskScheduleRepo, flixRepo),
+		APIKeys:  apiKeys,
+		Auth:     service.NewAuthService(apiKeys, sessions),
+		Sessions: sessions,
+		Users:    users,
+
+		AdminLoginRequired: cfg.Auth.RequireAdminLogin,
+		Log:                log,
+		Health:             service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
 
 		Charts: service.NewChartsService(analyticsRepo),
 		Overview: service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping).
@@ -220,32 +247,29 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	var runErr error
 	select {
 	case <-sigCtx.Done():
 		log.Info("shutdown signal received")
 	case err := <-serverErr:
 		if err != nil {
-			return fmt.Errorf("server error: %w", err)
-		}
-	case err := <-workerErr:
-		if err != nil {
-			return fmt.Errorf("asynq worker error: %w", err)
-		}
-	case err := <-schedulerErr:
-		if err != nil {
-			return fmt.Errorf("asynq scheduler error: %w", err)
+			runErr = fmt.Errorf("server error: %w", err)
 		}
 	}
+	// A second signal now ends the process at once.
+	stop()
 
-	periodicManager.Shutdown()
-	worker.Shutdown()
-
+	// Stop taking requests first; the deferred shutdowns then stop webhooks,
+	// the scheduler, the worker and the database, in that order.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("graceful shutdown: %w", err)
+	if err := httpServer.Shutdown(shutdownCtx); err != nil && runErr == nil {
+		runErr = fmt.Errorf("graceful shutdown: %w", err)
 	}
-	log.Info("server stopped cleanly")
+	if runErr != nil {
+		return runErr
+	}
+	log.Info("http server stopped")
 	return nil
 }
 
@@ -295,4 +319,32 @@ func failStaleRuns(ctx context.Context, log *slog.Logger, repo *repository.TaskS
 			sweep()
 		}
 	}
+}
+
+// bootstrapAdmin creates the first admin from AUTH_ADMIN_USERNAME and
+// AUTH_ADMIN_PASSWORD(_FILE) when no users exist yet.
+func bootstrapAdmin(ctx context.Context, log *slog.Logger, users *service.UserService, cfg config.Auth) error {
+	if cfg.AdminUsername == "" {
+		return nil
+	}
+	password := cfg.AdminPassword
+	if cfg.AdminPasswordFile != "" {
+		b, err := os.ReadFile(cfg.AdminPasswordFile)
+		if err != nil {
+			return fmt.Errorf("read AUTH_ADMIN_PASSWORD_FILE: %w", err)
+		}
+		password = strings.TrimRight(string(b), "\r\n")
+	}
+	if password == "" {
+		log.Warn("AUTH_ADMIN_USERNAME is set without AUTH_ADMIN_PASSWORD or AUTH_ADMIN_PASSWORD_FILE; no admin created")
+		return nil
+	}
+	created, err := users.EnsureAdmin(ctx, cfg.AdminUsername, password)
+	if err != nil {
+		return fmt.Errorf("create admin user: %w", err)
+	}
+	if created {
+		log.Info("admin user created from AUTH_ADMIN_USERNAME", slog.String("username", cfg.AdminUsername))
+	}
+	return nil
 }

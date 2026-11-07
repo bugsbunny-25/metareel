@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -18,6 +19,14 @@ func main() {
 	if err != nil {
 		slog.Error("config load failed", slog.Any("err", err))
 		os.Exit(1)
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "user" {
+		if err := runUserCommand(cfg, os.Args[2:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	log, closeLog := newLogger(cfg.Log.Level, cfg.Log.FilePath)

@@ -203,6 +203,17 @@ type Ranking struct {
 	SeasonSource      sql.NullString `json:"season_source"`
 }
 
+type Session struct {
+	ID         int64     `json:"id"`
+	UserID     int64     `json:"user_id"`
+	TokenHash  string    `json:"token_hash"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	UserAgent  string    `json:"user_agent"`
+	Ip         string    `json:"ip"`
+}
+
 type TaskRun struct {
 	ID               int64          `json:"id"`
 	ScheduleID       sql.NullInt64  `json:"schedule_id"`
@@ -440,6 +451,17 @@ type TmdbWatchProvider struct {
 	Link            sql.NullString `json:"link"`
 	FetchedAt       time.Time      `json:"fetched_at"`
 	Url             sql.NullString `json:"url"`
+}
+
+type User struct {
+	ID           int64        `json:"id"`
+	Username     string       `json:"username"`
+	PasswordHash string       `json:"password_hash"`
+	Role         string       `json:"role"`
+	Disabled     bool         `json:"disabled"`
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at"`
+	LastLoginAt  sql.NullTime `json:"last_login_at"`
 }
 
 type WatchProviderEvent struct {

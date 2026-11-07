@@ -28,6 +28,7 @@ type Config struct {
 	Alerts       Alerts
 	Webhooks     Webhooks
 	Maintenance  Maintenance
+	Auth         Auth
 }
 
 type App struct {
@@ -167,6 +168,23 @@ type Alerts struct {
 type Maintenance struct {
 	// RunRetentionDays deletes task runs (and their logs) older than this.
 	RunRetentionDays int `env:"RUN_RETENTION_DAYS" envDefault:"90"`
+}
+
+// Auth configures user sign-in for the API (next to API keys).
+type Auth struct {
+	// RequireAdminLogin protects the admin API and console: only signed-in
+	// users with the admin role may use them. Off keeps them open (LAN only).
+	RequireAdminLogin bool `env:"AUTH_REQUIRE_ADMIN_LOGIN" envDefault:"false"`
+	// SessionTTL is a sign-in session's absolute lifetime.
+	SessionTTL time.Duration `env:"AUTH_SESSION_TTL" envDefault:"720h"`
+	// SessionIdleTimeout ends a session unused for this long.
+	SessionIdleTimeout time.Duration `env:"AUTH_SESSION_IDLE_TIMEOUT" envDefault:"168h"`
+	// AdminUsername and AdminPassword (or AdminPasswordFile, e.g. a Docker
+	// secret) create the first admin account when no users exist yet.
+	// Ignored once any user exists.
+	AdminUsername     string `env:"AUTH_ADMIN_USERNAME" envDefault:""`
+	AdminPassword     string `env:"AUTH_ADMIN_PASSWORD" envDefault:""`
+	AdminPasswordFile string `env:"AUTH_ADMIN_PASSWORD_FILE" envDefault:""`
 }
 
 // Load reads configuration from environment variables. If a `.env` file is

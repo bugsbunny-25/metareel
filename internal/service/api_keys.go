@@ -33,7 +33,7 @@ const (
 )
 
 var (
-	ErrAPIKeyMissing = errors.New("missing API key: send it in the X-API-Key header")
+	ErrAPIKeyMissing = errors.New("missing credentials: send an API key in the X-API-Key header, or sign in")
 	ErrAPIKeyInvalid = errors.New("invalid API key")
 	ErrRateLimited   = errors.New("rate limit exceeded")
 )
@@ -47,10 +47,15 @@ type APIKeyService struct {
 	now  func() time.Time
 
 	mu         sync.RWMutex
-	keysByHash map[string]int64 // hashAPIKey digest -> key id
+	keysByHash map[string]apiKeyEntry // hashAPIKey digest -> key
 	settings   PublicAPISettings
 	limiters   map[string]*rate.Limiter // by key id or client IP
 	lastTouch  map[int64]time.Time
+}
+
+type apiKeyEntry struct {
+	id   int64
+	name string
 }
 
 type PublicAPISettings struct {
@@ -82,7 +87,7 @@ func NewAPIKeyService(log *slog.Logger, repo *repository.APIKeyRepository) *APIK
 		log:        log,
 		repo:       repo,
 		now:        time.Now,
-		keysByHash: map[string]int64{},
+		keysByHash: map[string]apiKeyEntry{},
 		settings:   PublicAPISettings{RequireAPIKey: true, RateLimitPerMinute: defaultRateLimitPerMinute},
 		limiters:   map[string]*rate.Limiter{},
 		lastTouch:  map[int64]time.Time{},
@@ -102,9 +107,9 @@ func (s *APIKeyService) reloadKeys(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	byHash := make(map[string]int64, len(keys))
+	byHash := make(map[string]apiKeyEntry, len(keys))
 	for _, k := range keys {
-		byHash[k.KeyHash] = k.ID
+		byHash[k.KeyHash] = apiKeyEntry{id: k.ID, name: k.Name}
 	}
 	s.mu.Lock()
 	s.keysByHash = byHash
@@ -134,27 +139,21 @@ func (s *APIKeyService) reloadSettings(ctx context.Context) error {
 	return nil
 }
 
-// Authorize checks a public API request. rawKey is the X-API-Key (or Bearer)
-// value, clientIP is used for rate limiting when keys are not required.
-func (s *APIKeyService) Authorize(rawKey, clientIP string) error {
-	rawKey = strings.TrimSpace(rawKey)
+// lookupKey returns the key a raw X-API-Key / Bearer value belongs to.
+func (s *APIKeyService) lookupKey(rawKey string) (apiKeyEntry, bool) {
 	s.mu.RLock()
-	settings := s.settings
-	keyID, keyOK := s.keysByHash[hashAPIKey(rawKey)]
+	k, ok := s.keysByHash[hashAPIKey(rawKey)]
 	s.mu.RUnlock()
-
-	limiterKey := "ip:" + clientIP
-	switch {
-	case rawKey != "" && keyOK:
-		limiterKey = "key:" + strconv.FormatInt(keyID, 10)
-		s.touch(keyID)
-	case settings.RequireAPIKey && rawKey == "":
-		return ErrAPIKeyMissing
-	case settings.RequireAPIKey || rawKey != "":
-		// A wrong key is rejected even when keys are optional.
-		return ErrAPIKeyInvalid
+	if ok {
+		s.touch(k.id)
 	}
+	return k, ok
+}
 
+// allow applies the public API rate limit to one caller (a key, a user or a
+// client IP).
+func (s *APIKeyService) allow(limiterKey string) error {
+	settings := s.Settings()
 	if settings.RateLimitPerMinute > 0 && !s.limiter(limiterKey, settings.RateLimitPerMinute).Allow() {
 		return ErrRateLimited
 	}
@@ -337,7 +336,13 @@ const apiKeyHashIterations = 4096
 // hashAPIKey returns the hex digest stored for a key ("" if hashing fails,
 // which matches no stored key).
 func hashAPIKey(key string) string {
-	sum, err := pbkdf2.Key(sha256.New, key, apiKeyHashSalt, apiKeyHashIterations, 32)
+	return hashToken(key, apiKeyHashSalt)
+}
+
+// hashToken is the deterministic PBKDF2-SHA256 digest used for random
+// 256-bit secrets (API keys, session tokens).
+func hashToken(token string, salt []byte) string {
+	sum, err := pbkdf2.Key(sha256.New, token, salt, apiKeyHashIterations, 32)
 	if err != nil {
 		return ""
 	}

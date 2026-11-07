@@ -163,7 +163,7 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | `netflix.engagement.import` | `NetflixEngagementImporter` | "What We Watched" `.xlsx` reports from `app_settings` `netflix.engagement.urls` (defaults in code; a run's `url` adds one), parsed by `internal/xlsx`; each period replaced in one transaction, rows linked by name to Netflix Top 10 titles / season titles |
 | `tmdb.popularity.import` | `TMDBPopularityImporter` | TMDB daily ID exports (`movie_ids_MM_DD_YYYY.json.gz`, `tv_series_ids_…`): popularity of known TMDB titles into `tmdb_popularity_history`; yesterday's file until today's is out |
 | `mapping.refresh` | `TitleMappingService.Refresh` | Queued by the mapping writer after mapping changes (payload: `tmdb_refs`, `netflix_title_ids`; not unique): TMDB details (skipped if fetched within 24 h and an IMDb ID is known) + Wikidata IDs (titles never looked up; the metadata job rechecks the rest) of the TMDB titles now mapped to, seasons of the Netflix titles that changed or sit on those TMDB titles, ranking season tags. Run by hand (empty payload) it first runs a mapping sync |
-| `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, deletes `tmdb_people` without any `tmdb_credits` left, `PRAGMA optimize` |
+| `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, deletes `tmdb_people` without any `tmdb_credits` left and expired / idle `sessions`, `PRAGMA optimize` |
 
 FlixPatrol fetches from every job go through one `flixpatrol.SerialFetcher`:
 one page at a time, `SCRAPER_MIN_INTERVAL` apart.
@@ -407,7 +407,8 @@ CORS headers are only sent for the public API (the `Skipper` in
 refuses non-GET requests a browser marks as cross-site (`Sec-Fetch-Site`
 other than same-origin / none, or an `Origin` whose host is not the request's
 `Host` / `X-Forwarded-Host`), so pages on other sites can't drive the
-unauthenticated admin API; clients without those headers (curl) pass.
+admin API (open, or signed in with a SameSite=Strict cookie); clients without
+those headers (curl) pass.
 
 ## Title search (`service/search.go`)
 
@@ -595,6 +596,58 @@ on request from `imdb_ratings` (through `tmdb_titles.imdb_id`),
   than 30 days before the debut is unknown for that title, and a debut in such
   a country is dropped, since an earlier appearance could be missing.
 
+## Public API Authentication (`service/auth.go`, `service/sessions.go`, `service/users.go`)
+
+The public API accepts an API key or a user's session; `handler.Authenticate`
+(on the `/api/v1` group and `/api/v1/auth/me`) turns the request into
+`service.Credentials` and `AuthService.Authenticate` returns a `Principal`
+(`api_key`, `user` or `anonymous`), stored on the Echo context
+(`handler.PrincipalFrom`).
+
+- Credential choice: `X-API-Key` → API key; else `Authorization: Bearer`
+  → session token when it starts with `mrs_`, otherwise API key; else the
+  `metareel_session` cookie. Only one credential is checked, and one that is
+  sent must be valid (no fallback to the cookie or to anonymous).
+- API keys are looked up in `APIKeyService`'s in-memory digest map (no DB).
+  Sessions are looked up by PBKDF2 digest (`hashToken`, its own salt) in
+  `SessionService`, which caches active sessions for 30 s; revocations made
+  in the process (logout, password change, disable, role change) drop the
+  cache entries at once, ones made by the CLI are seen within 30 s.
+  `GetActiveSession` checks expiry, idle time and that the user is enabled
+  in one query; `last_seen_at` is written at most once a minute.
+- Without credentials the request passes only when API keys are optional
+  (`app_settings` `public_api.require_key`). The public rate limit then applies
+  per caller: `key:<id>`, `user:<id>` or `ip:<addr>`.
+- `POST /api/v1/auth/login` (`SessionService.Login`): per-IP limiter on every
+  attempt, per-username limiter on failed ones; unknown and disabled users are
+  verified against a dummy argon2id hash so they fail like a wrong password;
+  at most 4 argon2id hashes run at once (19 MiB each). The response sets the
+  HttpOnly, SameSite=Strict cookie and returns the token once. `/api/v1/auth`
+  sits behind `SameOriginWrites`, so other sites can't sign a browser in or out.
+- Users are created by `AUTH_ADMIN_*` on first start (`server.bootstrapAdmin`,
+  only while `users` is empty) and managed with `metareel user …`
+  (`cmd/server/user.go`) or the console's Users & sessions page.
+
+### Admin console sign-in (`handler.AdminAuth`)
+
+With `AUTH_REQUIRE_ADMIN_LOGIN` the admin group (after `SameOriginWrites`)
+needs a session (cookie or `Bearer mrs_…`) of a user with role `admin`:
+401 without one, 403 for readers; API keys are ignored there. Admin requests
+skip the public rate limit (`AuthService.AuthenticateSession`). Without the
+setting a valid session still identifies the caller (for "you" in the UI and
+the self-protection rules) but nothing is refused.
+
+- `GET /api/v1/auth/session` tells the console whether to show its sign-in
+  screen (`admin_login_required`, `user`); the console also returns to it on
+  any 401 from the admin API (`setUnauthorizedHandler` in `web/src/lib/api.js`).
+- `/api/v1/admin/users…` and `/sessions…` (`handler/users_admin.go`) manage
+  accounts; changes are logged with the acting admin. `UserService` refuses to
+  demote, disable or delete the last enabled admin (`ErrLastAdmin`), and the
+  handler refuses those changes to the caller's own account. Changing your own
+  password keeps the current session (`RevokeUserExcept`).
+- Startup logs `admin console access` with the number of enabled admins, and
+  an error when sign-in is required but none exists.
+
 ## Read API Flow
 
 ```mermaid
@@ -741,6 +794,8 @@ Added since the diagram below:
 | `netflix_engagement` | Netflix engagement report rows per period × kind × title: hours viewed, runtime, views, available globally, premiere date (originals only), and the Netflix Top 10 title / season it is linked to (migration 21) |
 | `tmdb_titles.distributors` | A film's distributors on Wikidata (P750, English labels, JSON), `distributors_fetched_at` (migration 18); one of the origin signals |
 | `watch_provider_events` | Offers that appeared / disappeared between two TMDB refreshes of a title (`added` / `removed`, `previous_check_at` → `observed_at`), computed in `MetadataRepository.SaveDetails` by diffing the stored providers; a title's first refresh is the baseline (no events) |
+| `users` | Accounts that can sign in (migration 26): username (unique, case-insensitive), argon2id `password_hash` (PHC string), `role` admin / reader (validated in Go), `disabled`, `last_login_at` |
+| `sessions` | Sign-in sessions: PBKDF2 `token_hash` (the token is only given to the client), `expires_at` (absolute), `last_seen_at` (idle timeout; touched at most once a minute), user agent, IP; deleted with their user |
 | `data_imports` | Last imported ETag / Last-Modified per file |
 | `task_schedules` (new columns) | `backfill_days`, `recheck_hours`; `task_type` validated in Go |
 | `task_runs` (new columns) | nullable `schedule_id`, `targets_*` counts, `summary` JSON; status adds `partial` |
@@ -864,6 +919,8 @@ Implementation note: both YAML specs and Swagger UI HTML are embedded from `inte
 | `github.com/pressly/goose/v3` | v3.27.0 | SQL migration runner (up/down, versioned files) |
 | `github.com/caarlos0/env/v11` | v11.4.0 | Struct-tag-based environment variable parsing |
 | `github.com/joho/godotenv` | v1.5.1 | Loads `.env` file into the process environment at startup |
+| `golang.org/x/crypto` | v0.58.0 | argon2id password hashing for user accounts |
+| `golang.org/x/term` | v0.47.0 | Password prompt without echo in `metareel user …` |
 
 ### Dev-only dependencies (`tools/go.mod`)
 
@@ -938,6 +995,11 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `ALERT_STALE_CHART_HOURS` | `24` | Alert when a scheduled chart's next date has been due this long |
 | `ALERT_COOLDOWN` | `12h` | Minimum time between repeats of one alert |
 | `RUN_RETENTION_DAYS` | `90` | The maintenance job deletes older task runs and logs |
+| `AUTH_REQUIRE_ADMIN_LOGIN` | `false` | Require a signed-in admin for the admin console and `/api/v1/admin` |
+| `AUTH_SESSION_TTL` | `720h` | Absolute lifetime of a user's sign-in session |
+| `AUTH_SESSION_IDLE_TIMEOUT` | `168h` | A session unused this long ends (capped at the TTL) |
+| `AUTH_ADMIN_USERNAME` | _(empty)_ | Creates the first admin on startup while no users exist |
+| `AUTH_ADMIN_PASSWORD` / `AUTH_ADMIN_PASSWORD_FILE` | _(empty)_ | That admin's password, or a file holding it (trailing newline trimmed); never logged |
 
 ---
 

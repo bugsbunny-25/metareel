@@ -19,9 +19,14 @@ func TestAPIKeys(t *testing.T) {
 	if err := svc.Load(ctx); err != nil {
 		t.Fatal(err)
 	}
+	auth := NewAuthService(svc, nil)
+	authorize := func(key, ip string) error {
+		_, err := auth.Authenticate(ctx, Credentials{APIKey: key, ClientIP: ip})
+		return err
+	}
 
 	// Required by default, and no keys exist yet.
-	if err := svc.Authorize("", "1.2.3.4"); !errors.Is(err, ErrAPIKeyMissing) {
+	if err := authorize("", "1.2.3.4"); !errors.Is(err, ErrAPIKeyMissing) {
 		t.Fatalf("no key: err = %v, want ErrAPIKeyMissing", err)
 	}
 
@@ -32,10 +37,10 @@ func TestAPIKeys(t *testing.T) {
 	if !strings.HasPrefix(created.Key, "mr_") || len(created.Key) != 46 || !strings.HasPrefix(created.Key, strings.TrimSuffix(created.Prefix, "…")) {
 		t.Fatalf("key = %q prefix = %q", created.Key, created.Prefix)
 	}
-	if err := svc.Authorize(created.Key, "1.2.3.4"); err != nil {
+	if err := authorize(created.Key, "1.2.3.4"); err != nil {
 		t.Fatalf("valid key rejected: %v", err)
 	}
-	if err := svc.Authorize("mr_wrong", "1.2.3.4"); !errors.Is(err, ErrAPIKeyInvalid) {
+	if err := authorize("mr_wrong", "1.2.3.4"); !errors.Is(err, ErrAPIKeyInvalid) {
 		t.Fatalf("wrong key: err = %v, want ErrAPIKeyInvalid", err)
 	}
 
@@ -49,10 +54,10 @@ func TestAPIKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Rotate: %v", err)
 	}
-	if err := svc.Authorize(created.Key, "1.2.3.4"); !errors.Is(err, ErrAPIKeyInvalid) {
+	if err := authorize(created.Key, "1.2.3.4"); !errors.Is(err, ErrAPIKeyInvalid) {
 		t.Fatalf("old key after rotation: err = %v, want ErrAPIKeyInvalid", err)
 	}
-	if err := svc.Authorize(rotated.Key, "1.2.3.4"); err != nil || rotated.RotatedAt == nil {
+	if err := authorize(rotated.Key, "1.2.3.4"); err != nil || rotated.RotatedAt == nil {
 		t.Fatalf("rotated key: err = %v rotated_at = %v", err, rotated.RotatedAt)
 	}
 
@@ -61,10 +66,10 @@ func TestAPIKeys(t *testing.T) {
 	if _, err := svc.UpdateSettings(ctx, UpdateSettingsInput{RequireAPIKey: &off}); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.Authorize("", "1.2.3.4"); err != nil {
+	if err := authorize("", "1.2.3.4"); err != nil {
 		t.Fatalf("optional key, none sent: %v", err)
 	}
-	if err := svc.Authorize("mr_wrong", "1.2.3.4"); !errors.Is(err, ErrAPIKeyInvalid) {
+	if err := authorize("mr_wrong", "1.2.3.4"); !errors.Is(err, ErrAPIKeyInvalid) {
 		t.Fatalf("optional key, wrong key: err = %v", err)
 	}
 
@@ -75,7 +80,7 @@ func TestAPIKeys(t *testing.T) {
 	}
 	var limited int
 	for i := 0; i < 15; i++ {
-		if errors.Is(svc.Authorize(rotated.Key, "1.2.3.4"), ErrRateLimited) {
+		if errors.Is(authorize(rotated.Key, "1.2.3.4"), ErrRateLimited) {
 			limited++
 		}
 	}
@@ -100,7 +105,7 @@ func TestAPIKeys(t *testing.T) {
 	if err := svc.Delete(ctx, created.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if err := svc.Authorize(rotated.Key, "5.6.7.8"); !errors.Is(err, ErrAPIKeyInvalid) {
+	if err := authorize(rotated.Key, "5.6.7.8"); !errors.Is(err, ErrAPIKeyInvalid) {
 		t.Fatalf("deleted key: err = %v", err)
 	}
 	if err := svc.Delete(ctx, created.ID); !errors.Is(err, sql.ErrNoRows) {

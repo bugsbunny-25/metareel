@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -26,7 +27,15 @@ type Handler struct {
 	Mapping    *service.TitleMappingService
 	Stats      *service.AdminStatsService
 	APIKeys    *service.APIKeyService
-	Health     *service.HealthService
+	Auth       *service.AuthService
+	Sessions   *service.SessionService
+	Users      *service.UserService
+	// AdminLoginRequired makes /api/v1/admin need a signed-in admin.
+	AdminLoginRequired bool
+	// Log receives handler errors and the audit log of user changes
+	// (slog.Default() when nil).
+	Log    *slog.Logger
+	Health *service.HealthService
 
 	Charts         *service.ChartsService
 	Overview       *service.TitleOverviewService
@@ -41,6 +50,13 @@ type Handler struct {
 	ReleaseWindows *service.ReleaseWindowsService
 	Search         *service.SearchService
 	Webhooks       *service.WebhookService
+}
+
+func (h *Handler) logger() *slog.Logger {
+	if h.Log != nil {
+		return h.Log
+	}
+	return slog.Default()
 }
 
 // Live is a lightweight liveness endpoint.
