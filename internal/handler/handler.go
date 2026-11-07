@@ -36,6 +36,7 @@ type Handler struct {
 	Timeline       *service.TimelineService
 	Calendar       *service.CalendarService
 	Breakouts      *service.BreakoutService
+	Discover       *service.DiscoverService
 	ReleaseWindows *service.ReleaseWindowsService
 	Search         *service.SearchService
 	Webhooks       *service.WebhookService

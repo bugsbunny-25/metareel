@@ -168,6 +168,11 @@ type Querier interface {
 	// title of the same name. Titles with a fix by hand or a Netflix ID match are
 	// left alone.
 	ListContradictedNetflixLabelMatches(ctx context.Context, limit int64) ([]int64, error)
+	// Subscription / free / ads offers that arrived or left in a country since
+	// a time ('YYYY-MM-DD HH:MM:SS' UTC).
+	ListCountryOfferEvents(ctx context.Context, arg ListCountryOfferEventsParams) ([]ListCountryOfferEventsRow, error)
+	// Every offer in a country (any monetization) of the titles metareel knows.
+	ListCountryOffers(ctx context.Context, country string) ([]ListCountryOffersRow, error)
 	ListDataImports(ctx context.Context) ([]DataImport, error)
 	// Pending deliveries whose next attempt is due, of enabled webhooks.
 	ListDueWebhookDeliveries(ctx context.Context, limit int64) ([]ListDueWebhookDeliveriesRow, error)
@@ -195,6 +200,10 @@ type Querier interface {
 	// Titles whose deciding evidence came with an IMDb ID other than their TMDB
 	// title's: the match or TMDB's IMDb ID is wrong.
 	ListIMDbMismatches(ctx context.Context, limit int64) ([]ListIMDbMismatchesRow, error)
+	// Discovery for tides (service/discover.go): ratings, offers and offer
+	// changes per country across the titles metareel knows.
+	// TMDB titles with an IMDb rating from IMDb's dataset.
+	ListIMDbRatedTitles(ctx context.Context) ([]ListIMDbRatedTitlesRow, error)
 	// Points up to the end date; the caller keeps the last one before the start
 	// date as the series' starting value.
 	ListIMDbRatingHistory(ctx context.Context, arg ListIMDbRatingHistoryParams) ([]ListIMDbRatingHistoryRow, error)

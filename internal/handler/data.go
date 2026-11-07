@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v5"
@@ -435,6 +437,93 @@ func (h *Handler) GetBreakouts(c *echo.Context) error {
 		*p.dst = v
 	}
 	out, err := h.Breakouts.Breakouts(c.Request().Context(), q)
+	return writeData(c, out, err)
+}
+
+// --- discovery --------------------------------------------------------------------
+
+// intParams reads optional positive integer query params (0 = default).
+func intParams(c *echo.Context, dst map[string]*int) error {
+	for _, name := range []string{"days", "limit", "slots", "min_titles"} {
+		p, ok := dst[name]
+		if !ok {
+			continue
+		}
+		v, err := parseIntParam(c, name, 0)
+		if err != nil {
+			return err
+		}
+		if c.QueryParam(name) != "" && v == 0 {
+			return errors.New("invalid " + name + ", expected a positive integer")
+		}
+		*p = v
+	}
+	return nil
+}
+
+// GetHiddenGems: GET /api/v1/discover/{country}/hidden-gems[?kind=&provider_id=&min_rating=&min_votes=&days=&limit=]
+func (h *Handler) GetHiddenGems(c *echo.Context) error {
+	q := service.HiddenGemsQuery{Country: c.Param("country"), Kind: c.QueryParam("kind")}
+	if err := intParams(c, map[string]*int{"days": &q.Days, "limit": &q.Limit}); err != nil {
+		return badRequest(c, err)
+	}
+	if raw := c.QueryParam("provider_id"); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || v <= 0 {
+			return badRequest(c, errors.New("invalid provider_id"))
+		}
+		q.ProviderID = v
+	}
+	if raw := c.QueryParam("min_rating"); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || !(v >= 1 && v <= 10) { // also rejects NaN
+			return badRequest(c, errors.New("invalid min_rating, expected 1-10"))
+		}
+		q.MinRating = v
+	}
+	if raw := c.QueryParam("min_votes"); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || v <= 0 {
+			return badRequest(c, errors.New("invalid min_votes, expected a positive integer"))
+		}
+		q.MinVotes = v
+	}
+	out, err := h.Discover.HiddenGems(c.Request().Context(), q)
+	return writeData(c, out, err)
+}
+
+// GetElsewhere: GET /api/v1/discover/{country}/elsewhere[?kind=&days=&limit=]
+func (h *Handler) GetElsewhere(c *echo.Context) error {
+	q := service.ElsewhereQuery{Country: c.Param("country"), Kind: c.QueryParam("kind")}
+	if err := intParams(c, map[string]*int{"days": &q.Days, "limit": &q.Limit}); err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Discover.Elsewhere(c.Request().Context(), q)
+	return writeData(c, out, err)
+}
+
+// GetRotation: GET /api/v1/discover/{country}/rotation[?subscribed=8,9&slots=&days=&min_titles=]
+func (h *Handler) GetRotation(c *echo.Context) error {
+	q := service.RotationQuery{Country: c.Param("country"), IncludeOther: c.QueryParam("include_other") == "true"}
+	if err := intParams(c, map[string]*int{"days": &q.Days, "slots": &q.Slots, "min_titles": &q.MinTitles}); err != nil {
+		return badRequest(c, err)
+	}
+	if raw := strings.TrimSpace(c.QueryParam("subscribed")); raw != "" {
+		parts := strings.Split(raw, ",")
+		if len(parts) > 20 {
+			return badRequest(c, errors.New("at most 20 subscribed services"))
+		}
+		for _, part := range parts {
+			v, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+			if err != nil || v <= 0 {
+				return badRequest(c, errors.New("invalid subscribed, expected comma-separated TMDB provider IDs"))
+			}
+			if !slices.Contains(q.Subscribed, v) {
+				q.Subscribed = append(q.Subscribed, v)
+			}
+		}
+	}
+	out, err := h.Discover.Rotation(c.Request().Context(), q)
 	return writeData(c, out, err)
 }
 

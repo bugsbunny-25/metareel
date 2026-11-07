@@ -540,6 +540,25 @@ wide theatrical date (type 3), else the limited one (type 2).
 `GET /api/v1/analytics/release-windows` sums up the movies released in theaters
 in a country in a range.
 
+## Discovery (`service/discover.go`)
+
+Three per-country views for tides over the titles metareel knows, computed
+on request from `imdb_ratings` (through `tmdb_titles.imdb_id`),
+`tmdb_watch_providers`, `rankings`, `watch_provider_events` and
+`tmdb_episodes`:
+
+- `GET /api/v1/discover/{country}/hidden-gems`: rated, streamable in the
+  country (flatrate / free / ads), and no Top 10 points there in the window.
+  Ranked by a Bayesian average (prior 6.5 over 25,000 votes).
+- `GET /api/v1/discover/{country}/elsewhere`: Top 10 points in other
+  countries over the window, none in the country, details fetched, and no
+  streaming offer in the country.
+- `GET /api/v1/discover/{country}/rotation`: services with flatrate / ads
+  offers, a service's plans and channels grouped through `providerOffers`
+  (others only with `include_other`), scored as chart points of their titles (in the country, or every
+  country without charts there) + 10 per show with episodes coming + 3 per
+  arrival + 1 per top-rated title. The best `slots` are recommended.
+
 ## Breakouts and spread lag (`service/breakouts.go`, `service/analytics_spread.go`)
 
 - `GET /api/v1/breakouts` (`service/breakouts.go`) reads `rankings` for the
@@ -967,6 +986,7 @@ metareel/
 │   │   ├── analytics_release_patterns.go # binge / batch / weekly seasons and their chart runs
 │   │   ├── analytics_spread.go    # spread lag: days from a title's first country to the others
 │   │   ├── breakouts.go           # titles rising in several countries at once (+ title.breakout webhooks)
+│   │   ├── discover.go            # hidden gems, trending elsewhere, subscription rotation
 │   │   ├── release_dates.go       # movie release dates per country, streaming arrivals, release windows
 │   │   ├── timeline.go            # title timeline: events from charts, availability, ratings, pageviews, Netflix, TMDB dates
 │   │   ├── title_offers.go        # watch provider URLs from JustWatch offers (metadata refresh)

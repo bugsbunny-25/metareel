@@ -184,6 +184,7 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		History:        service.NewHistoryService(historyRepo, readMetadataRepo),
 		Calendar:       service.NewCalendarService(episodesRepo),
 		Breakouts:      breakouts,
+		Discover:       service.NewDiscoverService(repository.NewDiscoverRepository(readDB), analyticsRepo, episodesRepo, readMetadataRepo),
 		ReleaseWindows: service.NewReleaseWindowsService(repository.NewReleaseDatesRepository(readDB), readMetadataRepo, analyticsRepo),
 		Timeline:       service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),
 		Search:         service.NewSearchService(repository.NewSearchRepository(readDB)),
