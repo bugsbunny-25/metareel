@@ -22,6 +22,9 @@ const (
 var (
 	ErrUserNotFound = errors.New("user not found")
 	ErrUserExists   = errors.New("a user with that username already exists")
+	// ErrLastAdmin keeps at least one enabled admin, so nobody is locked out
+	// of the admin console.
+	ErrLastAdmin = &ValidationError{Message: "this is the last enabled admin; make another user an admin first"}
 )
 
 var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$`)
@@ -57,6 +60,16 @@ func (s *UserService) List(ctx context.Context) ([]UserResponse, error) {
 		out = append(out, toUserResponse(u))
 	}
 	return out, nil
+}
+
+// Get returns one user; ErrUserNotFound if there is none.
+func (s *UserService) Get(ctx context.Context, username string) (*UserResponse, error) {
+	u, err := s.repo.GetUserByUsername(ctx, username)
+	if err != nil {
+		return nil, userErr(err)
+	}
+	out := toUserResponse(u)
+	return &out, nil
 }
 
 func (s *UserService) Create(ctx context.Context, username, password, role string) (*UserResponse, error) {
@@ -101,8 +114,9 @@ func (s *UserService) EnsureAdmin(ctx context.Context, username, password string
 	return true, nil
 }
 
-// SetPassword changes a password and signs the user out everywhere.
-func (s *UserService) SetPassword(ctx context.Context, username, password string) error {
+// SetPassword changes a password and ends the user's sessions, except
+// keepSessionID (the caller's own session; 0 ends every one).
+func (s *UserService) SetPassword(ctx context.Context, username, password string, keepSessionID int64) error {
 	if err := validatePassword(password); err != nil {
 		return err
 	}
@@ -113,13 +127,22 @@ func (s *UserService) SetPassword(ctx context.Context, username, password string
 	if err := userErr(s.repo.SetUserPassword(ctx, username, hash)); err != nil {
 		return err
 	}
-	_, err = s.sessions.RevokeUser(ctx, username)
+	if keepSessionID > 0 {
+		_, err = s.sessions.RevokeUserExcept(ctx, username, keepSessionID)
+	} else {
+		_, err = s.sessions.RevokeUser(ctx, username)
+	}
 	return err
 }
 
 func (s *UserService) SetRole(ctx context.Context, username, role string) error {
 	if err := validateRole(role); err != nil {
 		return err
+	}
+	if role != RoleAdmin {
+		if err := s.keepAnAdmin(ctx, username); err != nil {
+			return err
+		}
 	}
 	if err := userErr(s.repo.SetUserRole(ctx, username, role)); err != nil {
 		return err
@@ -131,12 +154,54 @@ func (s *UserService) SetRole(ctx context.Context, username, role string) error 
 
 // SetDisabled disables (and signs out) or re-enables a user.
 func (s *UserService) SetDisabled(ctx context.Context, username string, disabled bool) error {
+	if disabled {
+		if err := s.keepAnAdmin(ctx, username); err != nil {
+			return err
+		}
+	}
 	if err := userErr(s.repo.SetUserDisabled(ctx, username, disabled)); err != nil {
 		return err
 	}
 	if disabled {
 		_, err := s.sessions.RevokeUser(ctx, username)
 		return err
+	}
+	return nil
+}
+
+// Delete removes a user and their sessions.
+func (s *UserService) Delete(ctx context.Context, username string) error {
+	if err := s.keepAnAdmin(ctx, username); err != nil {
+		return err
+	}
+	s.sessions.forgetUser(username)
+	if err := userErr(s.repo.DeleteUser(ctx, username)); err != nil {
+		return err
+	}
+	s.log.Info("user deleted", slog.String("username", username))
+	return nil
+}
+
+// EnabledAdmins counts admins who can sign in.
+func (s *UserService) EnabledAdmins(ctx context.Context) (int64, error) {
+	return s.repo.CountEnabledAdmins(ctx)
+}
+
+// keepAnAdmin refuses to demote, disable or delete the last enabled admin.
+func (s *UserService) keepAnAdmin(ctx context.Context, username string) error {
+	u, err := s.repo.GetUserByUsername(ctx, username)
+	if err != nil {
+		return userErr(err)
+	}
+	if u.Role != RoleAdmin || u.Disabled {
+		return nil
+	}
+	n, err := s.repo.CountEnabledAdmins(ctx)
+	if err != nil {
+		return err
+	}
+	if n <= 1 {
+		return ErrLastAdmin
 	}
 	return nil
 }

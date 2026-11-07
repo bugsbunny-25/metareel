@@ -152,6 +152,15 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if err := bootstrapAdmin(ctx, log, users, cfg.Auth); err != nil {
 		return err
 	}
+	admins, err := users.EnabledAdmins(ctx)
+	if err != nil {
+		return fmt.Errorf("count admins: %w", err)
+	}
+	log.Info("admin console access", slog.Bool("require_login", cfg.Auth.RequireAdminLogin), slog.Int64("enabled_admins", admins))
+	if cfg.Auth.RequireAdminLogin && admins == 0 {
+		log.Error("AUTH_REQUIRE_ADMIN_LOGIN is on but no enabled admin exists, so nobody can use the admin console; " +
+			"create one with `metareel user create -role admin <name>` or AUTH_ADMIN_USERNAME / AUTH_ADMIN_PASSWORD")
+	}
 	// Outbound webhooks: follows charts and watch provider changes, delivers
 	// signed events to subscribed URLs (stopped before the database closes).
 	breakouts := service.NewBreakoutService(analyticsRepo)
@@ -189,7 +198,11 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		APIKeys:  apiKeys,
 		Auth:     service.NewAuthService(apiKeys, sessions),
 		Sessions: sessions,
-		Health:   service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
+		Users:    users,
+
+		AdminLoginRequired: cfg.Auth.RequireAdminLogin,
+		Log:                log,
+		Health:             service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
 
 		Charts: service.NewChartsService(analyticsRepo),
 		Overview: service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping).

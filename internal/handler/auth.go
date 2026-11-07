@@ -40,10 +40,63 @@ func (h *Handler) Authenticate(next echo.HandlerFunc) echo.HandlerFunc {
 			c.Response().Header().Add("WWW-Authenticate", `Bearer realm="metareel"`)
 			return c.JSON(http.StatusUnauthorized, map[string]any{"error": err.Error()})
 		default:
-			c.Logger().Error("authenticate request", "err", err)
+			h.logger().Error("authenticate request", "err", err)
 			return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
 		}
 	}
+}
+
+// AdminAuth guards /api/v1/admin. With AdminLoginRequired only signed-in
+// users with the admin role pass (session cookie or "Bearer mrs_…"; API keys
+// never open the admin API): no session → 401, other roles → 403. Without it
+// the admin API stays open, but a valid session still identifies the caller.
+func (h *Handler) AdminAuth(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		r := c.Request()
+		signedIn := false
+		if token := sessionToken(r); token != "" && h.Auth != nil {
+			p, err := h.Auth.AuthenticateSession(r.Context(), token)
+			switch {
+			case err == nil:
+				c.Set(principalKey, p)
+				signedIn = true
+			case errors.Is(err, service.ErrSessionInvalid):
+			default:
+				h.logger().Error("authenticate admin request", "err", err)
+				return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
+			}
+		}
+		if !h.AdminLoginRequired {
+			return next(c)
+		}
+		if !signedIn {
+			c.Response().Header().Set("WWW-Authenticate", `Bearer realm="metareel admin"`)
+			return c.JSON(http.StatusUnauthorized, map[string]any{"error": "sign in to use the admin console"})
+		}
+		if p, _ := PrincipalFrom(c); p.Role != service.RoleAdmin {
+			return c.JSON(http.StatusForbidden, map[string]any{"error": "the admin console needs the admin role"})
+		}
+		return next(c)
+	}
+}
+
+// AuthSession: GET /api/v1/auth/session tells the admin console whether it
+// needs a sign-in and who is signed in (user is null otherwise). Never 401.
+func (h *Handler) AuthSession(c *echo.Context) error {
+	out := map[string]any{"admin_login_required": h.AdminLoginRequired, "user": nil}
+	r := c.Request()
+	if token := sessionToken(r); token != "" && h.Auth != nil {
+		p, err := h.Auth.AuthenticateSession(r.Context(), token)
+		switch {
+		case err == nil:
+			out["user"] = service.SessionUser{ID: p.ID, Username: p.Name, Role: p.Role}
+		case !errors.Is(err, service.ErrSessionInvalid):
+			h.logger().Error("auth session", "err", err)
+			return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
+		}
+	}
+	c.Response().Header().Set("Cache-Control", "no-store")
+	return c.JSON(http.StatusOK, out)
 }
 
 // PrincipalFrom returns who made a request that passed Authenticate.
@@ -116,7 +169,7 @@ func (h *Handler) Login(c *echo.Context) error {
 		c.Response().Header().Set("Retry-After", "60")
 		return c.JSON(http.StatusTooManyRequests, map[string]any{"error": err.Error()})
 	default:
-		c.Logger().Error("login", "err", err)
+		h.logger().Error("login", "err", err)
 		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
 	}
 	c.SetCookie(sessionCookie(r, out.Token, out.ExpiresAt))
@@ -130,7 +183,7 @@ func (h *Handler) Logout(c *echo.Context) error {
 	r := c.Request()
 	if token := sessionToken(r); token != "" {
 		if err := h.Sessions.Logout(r.Context(), token); err != nil {
-			c.Logger().Error("logout", "err", err)
+			h.logger().Error("logout", "err", err)
 			return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
 		}
 	}

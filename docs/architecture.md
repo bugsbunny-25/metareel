@@ -407,7 +407,8 @@ CORS headers are only sent for the public API (the `Skipper` in
 refuses non-GET requests a browser marks as cross-site (`Sec-Fetch-Site`
 other than same-origin / none, or an `Origin` whose host is not the request's
 `Host` / `X-Forwarded-Host`), so pages on other sites can't drive the
-unauthenticated admin API; clients without those headers (curl) pass.
+admin API (open, or signed in with a SameSite=Strict cookie); clients without
+those headers (curl) pass.
 
 ## Title search (`service/search.go`)
 
@@ -625,7 +626,27 @@ The public API accepts an API key or a user's session; `handler.Authenticate`
   sits behind `SameOriginWrites`, so other sites can't sign a browser in or out.
 - Users are created by `AUTH_ADMIN_*` on first start (`server.bootstrapAdmin`,
   only while `users` is empty) and managed with `metareel user …`
-  (`cmd/server/user.go`). The admin API does not check sessions yet.
+  (`cmd/server/user.go`) or the console's Users & sessions page.
+
+### Admin console sign-in (`handler.AdminAuth`)
+
+With `AUTH_REQUIRE_ADMIN_LOGIN` the admin group (after `SameOriginWrites`)
+needs a session (cookie or `Bearer mrs_…`) of a user with role `admin`:
+401 without one, 403 for readers; API keys are ignored there. Admin requests
+skip the public rate limit (`AuthService.AuthenticateSession`). Without the
+setting a valid session still identifies the caller (for "you" in the UI and
+the self-protection rules) but nothing is refused.
+
+- `GET /api/v1/auth/session` tells the console whether to show its sign-in
+  screen (`admin_login_required`, `user`); the console also returns to it on
+  any 401 from the admin API (`setUnauthorizedHandler` in `web/src/lib/api.js`).
+- `/api/v1/admin/users…` and `/sessions…` (`handler/users_admin.go`) manage
+  accounts; changes are logged with the acting admin. `UserService` refuses to
+  demote, disable or delete the last enabled admin (`ErrLastAdmin`), and the
+  handler refuses those changes to the caller's own account. Changing your own
+  password keeps the current session (`RevokeUserExcept`).
+- Startup logs `admin console access` with the number of enabled admins, and
+  an error when sign-in is required but none exists.
 
 ## Read API Flow
 
@@ -974,6 +995,7 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `ALERT_STALE_CHART_HOURS` | `24` | Alert when a scheduled chart's next date has been due this long |
 | `ALERT_COOLDOWN` | `12h` | Minimum time between repeats of one alert |
 | `RUN_RETENTION_DAYS` | `90` | The maintenance job deletes older task runs and logs |
+| `AUTH_REQUIRE_ADMIN_LOGIN` | `false` | Require a signed-in admin for the admin console and `/api/v1/admin` |
 | `AUTH_SESSION_TTL` | `720h` | Absolute lifetime of a user's sign-in session |
 | `AUTH_SESSION_IDLE_TIMEOUT` | `168h` | A session unused this long ends (capped at the TTL) |
 | `AUTH_ADMIN_USERNAME` | _(empty)_ | Creates the first admin on startup while no users exist |

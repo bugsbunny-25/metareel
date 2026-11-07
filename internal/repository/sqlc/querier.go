@@ -27,6 +27,7 @@ type Querier interface {
 	// Stored dates of one chart strictly between two dates (YYYY-MM-DD): tells a
 	// title that left a chart apart from a chart that was not scraped.
 	CountChartSnapshotsBetween(ctx context.Context, arg CountChartSnapshotsBetweenParams) (int64, error)
+	CountEnabledAdmins(ctx context.Context) (int64, error)
 	CountIMDbRatings(ctx context.Context) (int64, error)
 	CountNetflixEngagement(ctx context.Context) ([]CountNetflixEngagementRow, error)
 	CountNetflixSeasonsBySource(ctx context.Context) ([]CountNetflixSeasonsBySourceRow, error)
@@ -69,6 +70,7 @@ type Querier interface {
 	DeleteReleaseDates(ctx context.Context, arg DeleteReleaseDatesParams) error
 	DeleteSeasonEpisodes(ctx context.Context, arg DeleteSeasonEpisodesParams) error
 	DeleteSessionByHash(ctx context.Context, tokenHash string) (DeleteSessionByHashRow, error)
+	DeleteSessionByID(ctx context.Context, id int64) (string, error)
 	// Retention: drop logs of runs that started before the cutoff.
 	DeleteTaskRunLogsBefore(ctx context.Context, olderThan string) (int64, error)
 	DeleteTaskRunsBefore(ctx context.Context, olderThan string) (int64, error)
@@ -78,7 +80,9 @@ type Querier interface {
 	DeleteTitleLink(ctx context.Context, arg DeleteTitleLinkParams) error
 	DeleteTitleRatingSourcesByProvider(ctx context.Context, arg DeleteTitleRatingSourcesByProviderParams) error
 	DeleteTmdbWatchProviders(ctx context.Context, arg DeleteTmdbWatchProvidersParams) error
+	DeleteUser(ctx context.Context, username string) (int64, error)
 	DeleteUserSessions(ctx context.Context, username string) (int64, error)
+	DeleteUserSessionsExcept(ctx context.Context, arg DeleteUserSessionsExceptParams) (int64, error)
 	DeleteWebhook(ctx context.Context, id int64) (int64, error)
 	// One netflix_seasons row per season title a TV title charted with.
 	EnsureNetflixSeasons(ctx context.Context) error
@@ -152,6 +156,9 @@ type Querier interface {
 	LatestNetflixGlobalWeek(ctx context.Context) (string, error)
 	// API keys for the public API, and admin-editable settings.
 	ListAPIKeys(ctx context.Context) ([]ApiKey, error)
+	// ListActiveSessions lists unexpired sessions used within the idle window
+	// (idle is a negative modifier, e.g. '-604800 seconds'), newest use first.
+	ListActiveSessions(ctx context.Context, idle string) ([]ListActiveSessionsRow, error)
 	// Distinct targets of every FlixPatrol schedule (enabled or not).
 	ListAllFlixPatrolTargets(ctx context.Context) ([]ListAllFlixPatrolTargetsRow, error)
 	ListAllMappingEvidence(ctx context.Context) ([]MappingEvidence, error)

@@ -172,6 +172,9 @@ type Maintenance struct {
 
 // Auth configures user sign-in for the API (next to API keys).
 type Auth struct {
+	// RequireAdminLogin protects the admin API and console: only signed-in
+	// users with the admin role may use them. Off keeps them open (LAN only).
+	RequireAdminLogin bool `env:"AUTH_REQUIRE_ADMIN_LOGIN" envDefault:"false"`
 	// SessionTTL is a sign-in session's absolute lifetime.
 	SessionTTL time.Duration `env:"AUTH_SESSION_TTL" envDefault:"720h"`
 	// SessionIdleTimeout ends a session unused for this long.

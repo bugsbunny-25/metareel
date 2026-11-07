@@ -149,6 +149,62 @@ func (r *UserRepository) DeleteExpiredSessions(ctx context.Context, idle time.Du
 	return n, nil
 }
 
+func (r *UserRepository) CountEnabledAdmins(ctx context.Context) (int64, error) {
+	n, err := r.q.CountEnabledAdmins(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count admins: %w", err)
+	}
+	return n, nil
+}
+
+// DeleteUser deletes a user and (by cascade) their sessions; sql.ErrNoRows
+// when there is no such user.
+func (r *UserRepository) DeleteUser(ctx context.Context, username string) error {
+	return affected(r.q.DeleteUser(ctx, username))
+}
+
+// SessionInfo describes an active session for listings.
+type SessionInfo struct {
+	ID         int64
+	UserID     int64
+	Username   string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
+	UserAgent  string
+	IP         string
+}
+
+// ListActiveSessions lists sessions that have not expired and were used
+// within idle.
+func (r *UserRepository) ListActiveSessions(ctx context.Context, idle time.Duration) ([]SessionInfo, error) {
+	rows, err := r.q.ListActiveSessions(ctx, sqliteOffset(-idle))
+	if err != nil {
+		return nil, fmt.Errorf("list sessions: %w", err)
+	}
+	out := make([]SessionInfo, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, SessionInfo{ID: row.ID, UserID: row.UserID, Username: row.Username, CreatedAt: row.CreatedAt,
+			LastSeenAt: row.LastSeenAt, ExpiresAt: row.ExpiresAt, UserAgent: row.UserAgent, IP: row.Ip})
+	}
+	return out, nil
+}
+
+// DeleteSessionByID removes one session and returns its token digest;
+// sql.ErrNoRows when there is none.
+func (r *UserRepository) DeleteSessionByID(ctx context.Context, id int64) (string, error) {
+	return r.q.DeleteSessionByID(ctx, id)
+}
+
+// DeleteUserSessionsExcept removes a user's sessions other than keepID.
+func (r *UserRepository) DeleteUserSessionsExcept(ctx context.Context, username string, keepID int64) (int64, error) {
+	n, err := r.q.DeleteUserSessionsExcept(ctx, sqlc.DeleteUserSessionsExceptParams{Username: username, KeepID: keepID})
+	if err != nil {
+		return 0, fmt.Errorf("delete user sessions: %w", err)
+	}
+	return n, nil
+}
+
 // sqliteOffset formats a duration as a datetime() modifier ("+3600 seconds").
 func sqliteOffset(d time.Duration) string {
 	return fmt.Sprintf("%+d seconds", int64(d/time.Second))

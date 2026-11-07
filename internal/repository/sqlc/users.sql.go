@@ -10,6 +10,17 @@ import (
 	"time"
 )
 
+const countEnabledAdmins = `-- name: CountEnabledAdmins :one
+SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled = 0
+`
+
+func (q *Queries) CountEnabledAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countEnabledAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 
 SELECT COUNT(*) FROM users
@@ -119,6 +130,30 @@ func (q *Queries) DeleteSessionByHash(ctx context.Context, tokenHash string) (De
 	return i, err
 }
 
+const deleteSessionByID = `-- name: DeleteSessionByID :one
+DELETE FROM sessions WHERE id = ?1
+RETURNING token_hash
+`
+
+func (q *Queries) DeleteSessionByID(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRowContext(ctx, deleteSessionByID, id)
+	var token_hash string
+	err := row.Scan(&token_hash)
+	return token_hash, err
+}
+
+const deleteUser = `-- name: DeleteUser :execrows
+DELETE FROM users WHERE username = ?1
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, username string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUser, username)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteUserSessions = `-- name: DeleteUserSessions :execrows
 DELETE FROM sessions
 WHERE user_id = (SELECT id FROM users WHERE username = ?1)
@@ -126,6 +161,25 @@ WHERE user_id = (SELECT id FROM users WHERE username = ?1)
 
 func (q *Queries) DeleteUserSessions(ctx context.Context, username string) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteUserSessions, username)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteUserSessionsExcept = `-- name: DeleteUserSessionsExcept :execrows
+DELETE FROM sessions
+WHERE user_id = (SELECT u.id FROM users u WHERE u.username = ?1)
+  AND sessions.id <> ?2
+`
+
+type DeleteUserSessionsExceptParams struct {
+	Username string `json:"username"`
+	KeepID   int64  `json:"keep_id"`
+}
+
+func (q *Queries) DeleteUserSessionsExcept(ctx context.Context, arg DeleteUserSessionsExceptParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUserSessionsExcept, arg.Username, arg.KeepID)
 	if err != nil {
 		return 0, err
 	}
@@ -191,6 +245,60 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.LastLoginAt,
 	)
 	return i, err
+}
+
+const listActiveSessions = `-- name: ListActiveSessions :many
+SELECT s.id, s.user_id, u.username, s.created_at, s.last_seen_at, s.expires_at, s.user_agent, s.ip
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.expires_at > datetime('now')
+  AND s.last_seen_at > datetime('now', CAST(?1 AS TEXT))
+ORDER BY s.last_seen_at DESC, s.id DESC
+`
+
+type ListActiveSessionsRow struct {
+	ID         int64     `json:"id"`
+	UserID     int64     `json:"user_id"`
+	Username   string    `json:"username"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	UserAgent  string    `json:"user_agent"`
+	Ip         string    `json:"ip"`
+}
+
+// ListActiveSessions lists unexpired sessions used within the idle window
+// (idle is a negative modifier, e.g. '-604800 seconds'), newest use first.
+func (q *Queries) ListActiveSessions(ctx context.Context, idle string) ([]ListActiveSessionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveSessions, idle)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveSessionsRow{}
+	for rows.Next() {
+		var i ListActiveSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Username,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.ExpiresAt,
+			&i.UserAgent,
+			&i.Ip,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUsers = `-- name: ListUsers :many

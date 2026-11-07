@@ -101,6 +101,10 @@ func TestLoginAndSessions(t *testing.T) {
 	if _, err := f.users.Create(ctx, "alice", "long enough pw", RoleReader); err != nil {
 		t.Fatal(err)
 	}
+	// Another admin, so alice may be demoted or disabled later.
+	if _, err := f.users.Create(ctx, "root", "long enough pw", RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, tc := range []struct{ user, pw string }{{"alice", "wrong password"}, {"bob", "long enough pw"}} {
 		if _, err := f.sessions.Login(ctx, tc.user, tc.pw, "test", "10.0.0.1"); !errors.Is(err, ErrInvalidLogin) {
@@ -160,7 +164,7 @@ func TestLoginAndSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.users.SetPassword(ctx, "alice", "a new long password"); err != nil {
+	if err := f.users.SetPassword(ctx, "alice", "a new long password", 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.sessions.Lookup(ctx, res2.Token); !errors.Is(err, ErrSessionInvalid) {
@@ -335,5 +339,84 @@ func TestAuthenticateKeysAndSessions(t *testing.T) {
 	}
 	if n := count(Credentials{APIKey: key.Key}); n != 2 {
 		t.Fatalf("key after user hit its limit: rate limited %d of 12, want 2", n)
+	}
+}
+
+func TestLastAdminGuard(t *testing.T) {
+	ctx := context.Background()
+	f := newAuthFixture(t)
+	if _, err := f.users.Create(ctx, "root", "long enough pw", RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.users.Create(ctx, "alice", "long enough pw", RoleReader); err != nil {
+		t.Fatal(err)
+	}
+	for name, err := range map[string]error{
+		"demote":  f.users.SetRole(ctx, "root", RoleReader),
+		"disable": f.users.SetDisabled(ctx, "root", true),
+		"delete":  f.users.Delete(ctx, "root"),
+	} {
+		if !errors.Is(err, ErrLastAdmin) {
+			t.Errorf("%s last admin: err = %v, want ErrLastAdmin", name, err)
+		}
+	}
+	// Readers aren't guarded; a second admin lifts the guard.
+	if err := f.users.SetDisabled(ctx, "alice", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.users.SetDisabled(ctx, "alice", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.users.SetRole(ctx, "alice", RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.users.SetRole(ctx, "root", RoleReader); err != nil {
+		t.Fatalf("demote with another admin: %v", err)
+	}
+	if err := f.users.Delete(ctx, "alice"); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("delete the remaining admin: err = %v", err)
+	}
+	if n, _ := f.users.EnabledAdmins(ctx); n != 1 {
+		t.Fatalf("EnabledAdmins = %d, want 1", n)
+	}
+}
+
+func TestSessionListAndRevoke(t *testing.T) {
+	ctx := context.Background()
+	f := newAuthFixture(t)
+	if _, err := f.users.Create(ctx, "alice", "long enough pw", RoleReader); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := f.sessions.Login(ctx, "alice", "long enough pw", "ua-a", "10.0.0.1")
+	b, _ := f.sessions.Login(ctx, "alice", "long enough pw", "ua-b", "10.0.0.2")
+	list, err := f.sessions.List(ctx)
+	if err != nil || len(list) != 2 || list[0].Username != "alice" {
+		t.Fatalf("List = %+v, %v", list, err)
+	}
+	// Warm the cache, then revoke by ID: the cached entry must go too.
+	sa, err := f.sessions.Lookup(ctx, a.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.sessions.Revoke(ctx, sa.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.sessions.Lookup(ctx, a.Token); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatalf("revoked session: err = %v", err)
+	}
+	if err := f.sessions.Revoke(ctx, sa.ID); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("revoke twice: err = %v", err)
+	}
+	// RevokeUserExcept keeps the given session.
+	c, _ := f.sessions.Login(ctx, "alice", "long enough pw", "ua-c", "10.0.0.3")
+	sb, _ := f.sessions.Lookup(ctx, b.Token)
+	if n, err := f.sessions.RevokeUserExcept(ctx, "alice", sb.ID); err != nil || n != 1 {
+		t.Fatalf("RevokeUserExcept = %d, %v; want 1", n, err)
+	}
+	if _, err := f.sessions.Lookup(ctx, b.Token); err != nil {
+		t.Fatalf("kept session: %v", err)
+	}
+	if _, err := f.sessions.Lookup(ctx, c.Token); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatalf("other session: err = %v", err)
 	}
 }

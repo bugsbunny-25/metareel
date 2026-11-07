@@ -9,8 +9,8 @@ import (
 
 // SameOriginWrites refuses requests that change data (anything but GET,
 // HEAD and OPTIONS) when a browser says they come from another site: the
-// admin API is unauthenticated (LAN only), so a web page a LAN user opens
-// must not be able to send it requests (cross-site form posts and fetches
+// admin API may be open (LAN only) or signed in with a cookie, so a web page
+// a LAN user opens must not be able to send it requests (cross-site form posts and fetches
 // with no preflight, e.g. a bodiless POST). Browsers mark the origin with
 // Sec-Fetch-Site and Origin; clients that send neither (curl, scripts) are
 // allowed. Behind a reverse proxy that rewrites Host, X-Forwarded-Host is

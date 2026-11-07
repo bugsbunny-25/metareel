@@ -1,6 +1,14 @@
 // The admin UI talks only to /api/v1/admin, which serves the same data as the
-// public API without needing an API key.
+// public API without needing an API key (and, when the server requires it,
+// with the admin's session cookie), plus /api/v1/auth to sign in and out.
 const BASE = '/api/v1/admin'
+const AUTH = '/api/v1/auth'
+
+// Called when the admin API answers 401 (the session ended or expired).
+let onUnauthorized = () => {}
+export function setUnauthorizedHandler(fn) {
+  onUnauthorized = fn
+}
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -9,8 +17,8 @@ export class ApiError extends Error {
   }
 }
 
-async function req(path, { method = 'GET', body, query, withTotal = false } = {}) {
-  let url = BASE + path
+async function req(path, { method = 'GET', body, query, withTotal = false, base = BASE } = {}) {
+  let url = base + path
   if (query) {
     const p = new URLSearchParams()
     for (const [k, v] of Object.entries(query)) {
@@ -26,6 +34,7 @@ async function req(path, { method = 'GET', body, query, withTotal = false } = {}
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) {
+    if (res.status === 401 && base === BASE) onUnauthorized()
     const data = await res.json().catch(() => ({}))
     throw new ApiError(data.error ?? `Request failed (HTTP ${res.status})`, res.status)
   }
@@ -104,6 +113,18 @@ export const runScheduleNow = (id) => req(`/task-schedules/${id}/run-now`, { met
 export const listRuns = (q) => req('/task-runs', { query: q, withTotal: true })
 export const getRun = (id) => req(`/task-runs/${id}`)
 export const getRunLogs = (id) => req(`/task-runs/${id}/logs`)
+
+// ── Sign-in, users and sessions ─────────────────────────────────────
+export const getAuthSession = () => req('/session', { base: AUTH })
+export const login = (username, password) => req('/login', { method: 'POST', body: { username, password }, base: AUTH })
+export const logout = () => req('/logout', { method: 'POST', base: AUTH })
+export const listUsers = () => req('/users')
+export const createUser = (body) => req('/users', { method: 'POST', body })
+export const updateUser = (username, body) => req(`/users/${encodeURIComponent(username)}`, { method: 'PATCH', body })
+export const deleteUser = (username) => req(`/users/${encodeURIComponent(username)}`, { method: 'DELETE' })
+export const logoutUser = (username) => req(`/users/${encodeURIComponent(username)}/logout`, { method: 'POST' })
+export const listSessions = () => req('/sessions')
+export const revokeSession = (id) => req(`/sessions/${id}`, { method: 'DELETE' })
 
 // ── Settings & API keys ─────────────────────────────────────────────
 export const getSettings = () => req('/settings')

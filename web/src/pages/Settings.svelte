@@ -7,6 +7,8 @@
   import Icon from '../components/Icon.svelte'
   import Modal from '../components/Modal.svelte'
   import WebhooksCard from '../components/WebhooksCard.svelte'
+  import { auth } from '../lib/auth.svelte.js'
+  import { href } from '../lib/router.svelte.js'
 
   let settings = $state(null)
   let rateLimit = $state(0)
@@ -126,7 +128,7 @@
 <div class="page">
   <PageHeader
     title="Settings & API keys"
-    desc="Who can use the public API (/api/v1, everything except /api/v1/admin), and where metareel sends webhook events."
+    desc="Who can use the public API (/api/v1, everything except /api/v1/admin) with API keys, and where metareel sends webhook events. Users who sign in are managed under Users & sessions."
   />
 
   {#if error}<div class="alert alert-error"><Icon name="alert" />{error}</div>{/if}
@@ -157,7 +159,7 @@
         </div>
         <div class="alert alert-info small" style="margin:0">
           <Icon name="alert" size={14} />
-          <div>The admin console and <span class="mono">/api/v1/admin</span> are not protected by API keys. Expose only the public API to the internet (e.g. block <span class="mono">/api/v1/admin</span> and <span class="mono">/</span> at your reverse proxy).</div>
+          <div>API keys never open the admin console or <span class="mono">/api/v1/admin</span>. {#if auth.loginRequired}They require an admin sign-in.{:else}They are open to anyone who can reach them: require an admin sign-in (see <a href={href('/users')}>Users &amp; sessions</a>) or expose only the public API to the internet (e.g. block <span class="mono">/api/v1/admin</span> and <span class="mono">/</span> at your reverse proxy).{/if}</div>
         </div>
       </div>
     </div>

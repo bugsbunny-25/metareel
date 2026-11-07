@@ -31,6 +31,7 @@ Usage:
   metareel user disable <username>                       (also signs the user out)
   metareel user enable <username>
   metareel user logout <username>                        (ends every session)
+  metareel user delete <username>
 
 Passwords are read from the terminal, or from the first line of stdin when it
 is not a terminal (e.g. docker exec -i metareel /app/metareel user passwd alice < pw.txt).
@@ -107,7 +108,7 @@ func runUserCommand(cfg *config.Config, args []string, stdin io.Reader, stdout i
 		if err != nil {
 			return err
 		}
-		if err := users.SetPassword(ctx, username, pw); err != nil {
+		if err := users.SetPassword(ctx, username, pw, 0); err != nil {
 			return userCmdErr(err)
 		}
 		fmt.Fprintf(stdout, "password changed for %s; existing sessions ended\n", username)
@@ -132,6 +133,17 @@ func runUserCommand(cfg *config.Config, args []string, stdin io.Reader, stdout i
 			return userCmdErr(err)
 		}
 		fmt.Fprintf(stdout, "%sd %s\n", cmd, username)
+		return nil
+
+	case "delete":
+		username, err := oneArg(cmd, rest)
+		if err != nil {
+			return err
+		}
+		if err := users.Delete(ctx, username); err != nil {
+			return userCmdErr(err)
+		}
+		fmt.Fprintf(stdout, "deleted %s\n", username)
 		return nil
 
 	case "logout":

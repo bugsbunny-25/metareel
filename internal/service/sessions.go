@@ -32,6 +32,7 @@ const (
 
 var (
 	ErrSessionInvalid   = errors.New("invalid or expired session")
+	ErrSessionNotFound  = errors.New("session not found")
 	ErrInvalidLogin     = errors.New("invalid username or password")
 	ErrLoginRateLimited = errors.New("too many login attempts; try again later")
 )
@@ -217,6 +218,55 @@ func (s *SessionService) RevokeUser(ctx context.Context, username string) (int64
 		s.log.Info("sessions revoked", slog.String("username", username), slog.Int64("sessions", n))
 	}
 	return n, nil
+}
+
+// RevokeUserExcept ends a user's sessions other than keepID (e.g. the one
+// that changed the password).
+func (s *SessionService) RevokeUserExcept(ctx context.Context, username string, keepID int64) (int64, error) {
+	s.forgetUser(username)
+	return s.repo.DeleteUserSessionsExcept(ctx, username, keepID)
+}
+
+// SessionResponse is an active session as listed in the admin API.
+type SessionResponse struct {
+	ID         int64     `json:"id"`
+	UserID     int64     `json:"user_id"`
+	Username   string    `json:"username"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	UserAgent  string    `json:"user_agent"`
+	IP         string    `json:"ip"`
+	Current    bool      `json:"current"` // the session making the request
+}
+
+// List returns every active session, most recently used first.
+func (s *SessionService) List(ctx context.Context) ([]SessionResponse, error) {
+	rows, err := s.repo.ListActiveSessions(ctx, s.cfg.IdleTimeout)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SessionResponse, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, SessionResponse{ID: r.ID, UserID: r.UserID, Username: r.Username, CreatedAt: r.CreatedAt,
+			LastSeenAt: r.LastSeenAt, ExpiresAt: r.ExpiresAt, UserAgent: r.UserAgent, IP: r.IP})
+	}
+	return out, nil
+}
+
+// Revoke ends one session by ID; ErrSessionNotFound if there is none.
+func (s *SessionService) Revoke(ctx context.Context, id int64) error {
+	digest, err := s.repo.DeleteSessionByID(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrSessionNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	s.mu.Lock()
+	delete(s.cache, digest)
+	s.mu.Unlock()
+	return nil
 }
 
 // forgetUser drops a user's cached sessions so the next request rereads them.

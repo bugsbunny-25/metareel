@@ -461,3 +461,13 @@ a.cell-title:hover { color: var(--accent); }
 .summary-strip > div:last-child { border-right: 0; }
 .summary-label { font-size: 11.5px; color: var(--muted); font-weight: 500; }
 .summary-value { font-size: 18px; font-weight: 650; letter-spacing: -0.4px; font-variant-numeric: tabular-nums; }
+
+/* Sign-in screen */
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; background: var(--bg); }
+.login-card { width: 100%; max-width: 360px; padding: 8px 24px 24px; }
+.login-brand { padding: 16px 0 8px; }
+.login-title { font-size: 18px; font-weight: 650; letter-spacing: -0.2px; margin: 8px 0 6px; }
+.login-card .alert { margin-bottom: 12px; }
+.login-submit { width: 100%; justify-content: center; }
+.login-foot { margin: 14px 0 0; text-align: center; }
+.user-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); }

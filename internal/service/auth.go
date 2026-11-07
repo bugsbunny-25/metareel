@@ -20,6 +20,8 @@ type Principal struct {
 	ID   int64  `json:"id,omitempty"`
 	Name string `json:"name,omitempty"` // API key name or username
 	Role string `json:"role,omitempty"` // users only
+	// SessionID is the user's session making the request (not returned).
+	SessionID int64 `json:"-"`
 }
 
 // Credentials are what a request presented. At most one of APIKey and
@@ -67,7 +69,7 @@ func (s *AuthService) Authenticate(ctx context.Context, cred Credentials) (Princ
 		if err != nil {
 			return Principal{}, err
 		}
-		p = Principal{Kind: PrincipalUser, ID: sess.UserID, Name: sess.Username, Role: sess.Role}
+		p = Principal{Kind: PrincipalUser, ID: sess.UserID, Name: sess.Username, Role: sess.Role, SessionID: sess.ID}
 		limiterKey = "user:" + strconv.FormatInt(sess.UserID, 10)
 	case s.keys.Settings().RequireAPIKey:
 		return Principal{}, ErrAPIKeyMissing
@@ -79,6 +81,20 @@ func (s *AuthService) Authenticate(ctx context.Context, cred Credentials) (Princ
 		return Principal{}, err
 	}
 	return p, nil
+}
+
+// AuthenticateSession returns the user of a session token, without the
+// public rate limit (used by the admin API). Errors: ErrSessionInvalid or a
+// database error.
+func (s *AuthService) AuthenticateSession(ctx context.Context, token string) (Principal, error) {
+	if s.sessions == nil {
+		return Principal{}, ErrSessionInvalid
+	}
+	sess, err := s.sessions.Lookup(ctx, strings.TrimSpace(token))
+	if err != nil {
+		return Principal{}, err
+	}
+	return Principal{Kind: PrincipalUser, ID: sess.UserID, Name: sess.Username, Role: sess.Role, SessionID: sess.ID}, nil
 }
 
 // IsUnauthorized reports whether err from Authenticate means 401.

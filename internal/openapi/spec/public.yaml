@@ -115,6 +115,36 @@ paths:
       responses:
         "204":
           description: Signed out
+  /api/v1/auth/session:
+    get:
+      operationId: authSession
+      security: []
+      summary: Whether the admin console needs a sign-in, and who is signed in
+      description: >
+        Used by the admin console. Never 401: user is null without a valid
+        session cookie or Bearer session token.
+      responses:
+        "200":
+          description: Sign-in state
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  admin_login_required:
+                    type: boolean
+                    description: The server runs with AUTH_REQUIRE_ADMIN_LOGIN
+                  user:
+                    type: object
+                    nullable: true
+                    additionalProperties: false
+                    properties:
+                      id: { type: integer, format: int64 }
+                      username: { type: string }
+                      role: { type: string, enum: [admin, reader] }
+                    required: [id, username, role]
+                required: [admin_login_required, user]
   /api/v1/auth/me:
     get:
       operationId: me

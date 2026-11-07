@@ -66,3 +66,28 @@ WHERE user_id = (SELECT id FROM users WHERE username = sqlc.arg(username));
 DELETE FROM sessions
 WHERE expires_at <= datetime('now')
    OR last_seen_at <= datetime('now', CAST(sqlc.arg(idle) AS TEXT));
+
+-- name: CountEnabledAdmins :one
+SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled = 0;
+
+-- name: DeleteUser :execrows
+DELETE FROM users WHERE username = sqlc.arg(username);
+
+-- ListActiveSessions lists unexpired sessions used within the idle window
+-- (idle is a negative modifier, e.g. '-604800 seconds'), newest use first.
+-- name: ListActiveSessions :many
+SELECT s.id, s.user_id, u.username, s.created_at, s.last_seen_at, s.expires_at, s.user_agent, s.ip
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.expires_at > datetime('now')
+  AND s.last_seen_at > datetime('now', CAST(sqlc.arg(idle) AS TEXT))
+ORDER BY s.last_seen_at DESC, s.id DESC;
+
+-- name: DeleteSessionByID :one
+DELETE FROM sessions WHERE id = sqlc.arg(id)
+RETURNING token_hash;
+
+-- name: DeleteUserSessionsExcept :execrows
+DELETE FROM sessions
+WHERE user_id = (SELECT u.id FROM users u WHERE u.username = sqlc.arg(username))
+  AND sessions.id <> sqlc.arg(keep_id);

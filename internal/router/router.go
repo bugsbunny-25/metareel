@@ -45,6 +45,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	auth.POST("/login", h.Login)
 	auth.POST("/logout", h.Logout)
 	auth.GET("/me", h.Me, h.Authenticate)
+	auth.GET("/session", h.AuthSession)
 
 	// Public API: needs an API key or a user's session (unless keys are
 	// made optional in the admin settings) and is rate limited per caller.
@@ -52,10 +53,11 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	registerReadRoutes(public, h)
 
 	// Admin API and UI. The UI reads the same data through these admin
-	// copies of the public routes, so it needs no API key. The admin API is
-	// not authenticated: keep it off the public internet (e.g. expose only
-	// /api/v1 except /api/v1/admin through your reverse proxy).
-	admin := e.Group("/api/v1/admin", handler.SameOriginWrites, handler.ETag)
+	// copies of the public routes, so it needs no API key. With
+	// AUTH_REQUIRE_ADMIN_LOGIN only signed-in admins may use it; without, it
+	// is open: keep it off the public internet (e.g. expose only /api/v1
+	// except /api/v1/admin through your reverse proxy).
+	admin := e.Group("/api/v1/admin", handler.SameOriginWrites, h.AdminAuth, handler.ETag)
 	registerReadRoutes(admin, h)
 	admin.GET("/stats", h.GetAdminStats)
 	admin.PATCH("/titles/:id", h.PatchTitle)
@@ -103,6 +105,13 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.GET("/webhooks/:id/deliveries", h.ListWebhookDeliveries)
 	admin.GET("/webhook-deliveries/:id", h.GetWebhookDelivery)
 	admin.POST("/webhook-deliveries/:id/retry", h.RetryWebhookDelivery)
+	admin.GET("/users", h.ListUsers)
+	admin.POST("/users", h.CreateUser)
+	admin.PATCH("/users/:username", h.PatchUser)
+	admin.DELETE("/users/:username", h.DeleteUser)
+	admin.POST("/users/:username/logout", h.LogoutUser)
+	admin.GET("/sessions", h.ListSessions)
+	admin.DELETE("/sessions/:id", h.RevokeSession)
 	admin.GET("/settings", h.GetSettings)
 	admin.PATCH("/settings", h.PatchSettings)
 
