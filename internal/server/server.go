@@ -102,12 +102,16 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		LogLevel:    scheduler.AsynqLogLevel(cfg.Log.Level),
 	})
 
-	workerErr := make(chan error, 1)
-	go func() {
-		if err := worker.Run(taskBootstrap.Mux); err != nil {
-			workerErr <- err
-		}
-		close(workerErr)
+	// Start, not Run: Run installs asynq's own SIGTERM handler and shuts the
+	// worker down itself. metareel handles signals once, below, and every
+	// component is shut down exactly once by these defers, which run on any
+	// return before the database closes.
+	if err := worker.Start(taskBootstrap.Mux); err != nil {
+		return fmt.Errorf("start asynq worker: %w", err)
+	}
+	defer func() {
+		worker.Shutdown() // waits for active tasks (asynq's ShutdownTimeout)
+		log.Info("asynq worker stopped")
 	}()
 
 	go failStaleRuns(ctx, log, taskScheduleRepo)
@@ -116,12 +120,14 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("create periodic task manager: %w", err)
 	}
-	schedulerErr := make(chan error, 1)
-	go func() {
-		if err := periodicManager.Run(); err != nil {
-			schedulerErr <- err
-		}
-		close(schedulerErr)
+	// PeriodicTaskManager.Shutdown closes a channel, so it must run once only
+	// (Run would call it on SIGTERM as well).
+	if err := periodicManager.Start(); err != nil {
+		return fmt.Errorf("start periodic task manager: %w", err)
+	}
+	defer func() {
+		periodicManager.Shutdown()
+		log.Info("scheduler stopped")
 	}()
 
 	titlesAdmin := service.NewTitleAdminService(flixRepo, taskBootstrap.Writer).WithMapping(taskBootstrap.Mapping)
@@ -228,32 +234,29 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	var runErr error
 	select {
 	case <-sigCtx.Done():
 		log.Info("shutdown signal received")
 	case err := <-serverErr:
 		if err != nil {
-			return fmt.Errorf("server error: %w", err)
-		}
-	case err := <-workerErr:
-		if err != nil {
-			return fmt.Errorf("asynq worker error: %w", err)
-		}
-	case err := <-schedulerErr:
-		if err != nil {
-			return fmt.Errorf("asynq scheduler error: %w", err)
+			runErr = fmt.Errorf("server error: %w", err)
 		}
 	}
+	// A second signal now ends the process at once.
+	stop()
 
-	periodicManager.Shutdown()
-	worker.Shutdown()
-
+	// Stop taking requests first; the deferred shutdowns then stop webhooks,
+	// the scheduler, the worker and the database, in that order.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("graceful shutdown: %w", err)
+	if err := httpServer.Shutdown(shutdownCtx); err != nil && runErr == nil {
+		runErr = fmt.Errorf("graceful shutdown: %w", err)
 	}
-	log.Info("server stopped cleanly")
+	if runErr != nil {
+		return runErr
+	}
+	log.Info("http server stopped")
 	return nil
 }
 
