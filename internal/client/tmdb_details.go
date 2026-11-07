@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // TMDBFullDetails is a TMDB movie or TV show with its external IDs, watch
@@ -35,9 +39,33 @@ type TMDBFullDetails struct {
 	WikidataID          string
 	// DigitalReleaseDates maps country → first digital (type 4) release date.
 	DigitalReleaseDates map[string]string
+	// ReleaseDates: the earliest date of each release type per country
+	// (movies only; nil when TMDB lists none).
+	ReleaseDates []TMDBReleaseDate
+	// ReleaseDatesFetched: the response had a release_dates block (an empty
+	// one means none); without it stored release dates are kept.
+	ReleaseDatesFetched bool
 	WatchProviders      []TMDBWatchProvider
 	// Seasons of a TV show (season 0 = specials); nil for movies.
 	Seasons []TMDBSeason
+}
+
+// TMDB release types.
+const (
+	ReleasePremiere          = 1
+	ReleaseTheatricalLimited = 2
+	ReleaseTheatrical        = 3
+	ReleaseDigital           = 4
+	ReleasePhysical          = 5
+	ReleaseTV                = 6
+)
+
+// TMDBReleaseDate is a movie's earliest release of one type in a country.
+type TMDBReleaseDate struct {
+	Country string
+	Type    int    // ReleasePremiere … ReleaseTV
+	Date    string // YYYY-MM-DD
+	Note    string
 }
 
 // TMDBSeason is one season of a TV show.
@@ -120,6 +148,7 @@ type tmdbFullResp struct {
 			ReleaseDates []struct {
 				ReleaseDate string `json:"release_date"`
 				Type        int    `json:"type"`
+				Note        string `json:"note"`
 			} `json:"release_dates"`
 		} `json:"results"`
 	} `json:"release_dates"`
@@ -209,20 +238,52 @@ func (r *tmdbFullResp) toDetails(kind, id string) *TMDBFullDetails {
 			}
 		}
 	}
+	d.ReleaseDatesFetched = r.ReleaseDates.Results != nil
+	type releaseKey struct {
+		country string
+		typ     int
+	}
+	earliest := map[releaseKey]int{} // index into d.ReleaseDates
 	for _, rd := range r.ReleaseDates.Results {
+		country := strings.ToUpper(strings.TrimSpace(rd.ISO))
+		if len(country) != 2 || country[0] < 'A' || country[0] > 'Z' || country[1] < 'A' || country[1] > 'Z' {
+			continue
+		}
 		for _, x := range rd.ReleaseDates {
-			if x.Type != 4 || len(x.ReleaseDate) < 10 {
+			if x.Type < ReleasePremiere || x.Type > ReleaseTV || len(x.ReleaseDate) < 10 {
 				continue
 			}
 			date := x.ReleaseDate[:10]
-			if d.DigitalReleaseDates == nil {
-				d.DigitalReleaseDates = map[string]string{}
+			if _, err := time.Parse("2006-01-02", date); err != nil {
+				continue
 			}
-			if cur, ok := d.DigitalReleaseDates[rd.ISO]; !ok || date < cur {
-				d.DigitalReleaseDates[rd.ISO] = date
+			k := releaseKey{country, x.Type}
+			note := cleanNote(x.Note)
+			if i, ok := earliest[k]; ok {
+				if date < d.ReleaseDates[i].Date {
+					d.ReleaseDates[i].Date, d.ReleaseDates[i].Note = date, note
+				}
+			} else {
+				earliest[k] = len(d.ReleaseDates)
+				d.ReleaseDates = append(d.ReleaseDates, TMDBReleaseDate{Country: country, Type: x.Type, Date: date, Note: note})
+			}
+			if x.Type == ReleaseDigital {
+				if d.DigitalReleaseDates == nil {
+					d.DigitalReleaseDates = map[string]string{}
+				}
+				if cur, ok := d.DigitalReleaseDates[country]; !ok || date < cur {
+					d.DigitalReleaseDates[country] = date
+				}
 			}
 		}
 	}
+	sort.Slice(d.ReleaseDates, func(i, j int) bool {
+		a, b := d.ReleaseDates[i], d.ReleaseDates[j]
+		if a.Country != b.Country {
+			return a.Country < b.Country
+		}
+		return a.Type < b.Type
+	})
 	return d
 }
 
@@ -296,4 +357,24 @@ func (c *TMDBClient) TVSeasonEpisodes(ctx context.Context, tvID string, seasons 
 		}
 	}
 	return out, nil
+}
+
+// cleanNote makes TMDB's free-text release note safe to store: no control
+// or invalid characters, at most 200 bytes, cut on a character boundary.
+func cleanNote(s string) string {
+	s = strings.ToValidUTF8(s, "")
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) {
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.TrimSpace(s)
+	if len(s) > 200 {
+		s = s[:200]
+		for !utf8.ValidString(s) {
+			s = s[:len(s)-1] // drop a character cut in half
+		}
+	}
+	return strings.TrimSpace(s)
 }

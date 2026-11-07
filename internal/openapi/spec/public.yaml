@@ -1272,6 +1272,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/titles/tmdb/{kind}/{id}/releases:
+    get:
+      operationId: getTitleReleases
+      summary: A movie's theatrical, digital, physical, TV and streaming dates per country, and the windows between them
+      description: >-
+        Release dates from TMDB (earliest of each type per country, refreshed
+        with the title's metadata): premiere (1), theatrical_limited (2),
+        theatrical (3), digital (4, PVOD / EST), physical (5), tv (6). TMDB has
+        no streaming type, so `streaming` is observed: the first time a
+        subscription, free or ads offer was seen arriving (`offer_added`,
+        between two metadata refreshes; offers already there at a title's
+        first refresh have no arrival) or the movie's first FlixPatrol chart
+        day in the country when that chart was stored on most of the 14 days
+        before (`first_chart`), whichever is earlier and not before the
+        theatrical release. Both are upper bounds. `streaming_now` lists the
+        current offers. Windows (days) start at the wide theatrical date, or
+        the limited one without it. Movies only (kind=tv is a 400).
+      parameters:
+        - $ref: "#/components/parameters/TmdbKindParam"
+        - $ref: "#/components/parameters/TmdbIDParam"
+        - name: country
+          in: query
+          description: One country (ISO 3166-1 alpha-2); default every country with a date or an offer
+          schema: { type: string, example: US }
+      responses:
+        "200":
+          description: Releases per country
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleReleasesResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/titles/tmdb/{kind}/{id}/timeline:
     get:
       operationId: getTitleTimeline
@@ -1725,6 +1759,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SpreadLagResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/analytics/release-windows:
+    get:
+      operationId: getReleaseWindows
+      summary: How long after a theatrical release movies reach digital (PVOD) and streaming
+      description: >-
+        Movies metareel knows (charting or Netflix titles) released in
+        theaters in `country` (default US) between `from` and `to` (default:
+        the last 365 days; the wide date, or the limited one without it).
+        Summaries of the theatrical-to-digital, theatrical-to-streaming and
+        digital-to-streaming windows (median and quartiles in days, how many
+        were at most 17 / 31 / 45 / 90 days, and movies without the later
+        date), theatrical-to-streaming per first service, and each movie's
+        dates (as in /titles/tmdb/movie/{id}/releases). Streaming dates are
+        observed (offer arrivals since metareel started following offers,
+        and first chart days), so many movies have none.
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsFrom"
+        - $ref: "#/components/parameters/AnalyticsTo"
+        - name: country
+          in: query
+          schema: { type: string, default: US }
+        - name: limit
+          in: query
+          description: Movies to list (default and at most 500); `items_total` counts all
+          schema: { type: integer, minimum: 1, maximum: 500 }
+      responses:
+        "200":
+          description: Release windows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleaseWindowsResponse"
         "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/analytics/netflix-calibration:
@@ -2280,6 +2348,91 @@ components:
                   arrivals: { type: array, items: { $ref: "#/components/schemas/SpreadArrival" } }
                   not_reached: { type: array, items: { type: string } }
                   pending: { type: array, items: { type: string }, description: Not charted yet; the window is not over }
+    CountryReleases:
+      type: object
+      properties:
+        country: { type: string }
+        premiere: { type: string, format: date, nullable: true }
+        theatrical_limited: { type: string, format: date, nullable: true }
+        theatrical: { type: string, format: date, nullable: true }
+        digital: { type: string, format: date, nullable: true, description: PVOD / EST }
+        physical: { type: string, format: date, nullable: true }
+        tv: { type: string, format: date, nullable: true }
+        notes: { type: object, additionalProperties: { type: string }, description: TMDB notes by release kind (e.g. a festival) }
+        streaming:
+          type: object
+          nullable: true
+          description: First observed streaming arrival (an upper bound)
+          properties:
+            date: { type: string, format: date }
+            basis: { type: string, enum: [offer_added, first_chart] }
+            provider: { type: string, description: TMDB provider name (offer_added) or FlixPatrol service (first_chart) }
+            provider_id: { type: integer, description: TMDB provider id (offer_added) }
+            monetization: { type: string, enum: [flatrate, free, ads] }
+        streaming_now:
+          type: array
+          items:
+            type: object
+            properties:
+              provider_id: { type: integer }
+              provider_name: { type: string }
+              monetization: { type: string, enum: [flatrate, free, ads] }
+        windows:
+          type: object
+          description: Days between releases (null when a date is missing; negative when the later one came first)
+          properties:
+            theatrical_basis: { type: string, enum: [wide, limited], nullable: true }
+            theatrical_to_digital: { type: integer, nullable: true }
+            theatrical_to_streaming: { type: integer, nullable: true }
+            digital_to_streaming: { type: integer, nullable: true }
+    TitleReleasesResponse:
+      type: object
+      properties:
+        kind: { type: string, enum: [movie] }
+        tmdb_id: { type: string }
+        title: { type: string, nullable: true }
+        release_date: { type: string, format: date, nullable: true, description: "TMDB's primary release date" }
+        countries: { type: array, items: { $ref: "#/components/schemas/CountryReleases" } }
+    WindowStats:
+      allOf:
+        - $ref: "#/components/schemas/LagSummary"
+        - type: object
+          properties:
+            within_days:
+              type: object
+              description: Movies whose window was at most N days (keys 17, 31, 45, 90)
+              additionalProperties: { type: integer }
+            missing: { type: integer, description: Movies in the range without the later date }
+    ReleaseWindowsResponse:
+      type: object
+      properties:
+        country: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        movies: { type: integer }
+        theatrical_to_digital: { $ref: "#/components/schemas/WindowStats" }
+        theatrical_to_streaming: { $ref: "#/components/schemas/WindowStats" }
+        digital_to_streaming: { $ref: "#/components/schemas/WindowStats" }
+        streaming_by_provider:
+          type: array
+          items:
+            type: object
+            properties:
+              provider: { type: string }
+              basis: { type: string, enum: [offer_added, first_chart] }
+              lag: { $ref: "#/components/schemas/LagSummary" }
+        items_total: { type: integer }
+        items:
+          type: array
+          description: Newest theatrical release first
+          items:
+            allOf:
+              - $ref: "#/components/schemas/CountryReleases"
+              - type: object
+                properties:
+                  tmdb_id: { type: string }
+                  title: { type: string }
+                  poster_path: { type: string, nullable: true }
     OriginsResponse:
       type: object
       properties:

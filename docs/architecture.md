@@ -496,6 +496,26 @@ usually the original network or service release, not per country.
   premiere from `rankings` (tagged with the season, or untagged), counting a
   chart only when `chart_snapshots` cover the whole window.
 
+## Release windows (`service/release_dates.go`)
+
+`titles.metadata` already asks TMDB for `release_dates` with every movie's
+details; `SaveDetails` now keeps the earliest date of each type per country in
+`tmdb_release_dates` (replacing the movie's rows). TMDB has no streaming
+type, so the streaming arrival per country is observed, as the earlier of:
+
+- the first `added` subscription / free / ads offer in `watch_provider_events`
+  (seen at a metadata refresh, so up to a few days late; offers already there
+  at a title's first refresh have no event);
+- the movie's first FlixPatrol chart day in the country, when that chart was
+  stored on at least 80% of the 14 days before (not the chart's first days or
+  right after a gap).
+
+Observations before the theatrical release are ignored. Windows start at the
+wide theatrical date (type 3), else the limited one (type 2).
+`GET /api/v1/titles/tmdb/movie/{id}/releases` shows one movie per country;
+`GET /api/v1/analytics/release-windows` sums up the movies released in theaters
+in a country in a range.
+
 ## Breakouts and spread lag (`service/breakouts.go`, `service/analytics_spread.go`)
 
 - `GET /api/v1/breakouts` (`service/breakouts.go`) reads `rankings` for the
@@ -650,6 +670,7 @@ Added since the diagram below:
 | `imdb_ratings` | IMDb dataset ratings (known IMDb IDs by default) |
 | `imdb_rating_history`, `title_rating_history` | Rating history (migration 17): IMDb dataset rating + votes per day, and each provider's rating sources (from `SaveTitleRatings`), written only when the value changed since the previous row (step series; `/history` adds the point in effect at `from`) |
 | `tmdb_popularity_history` | TMDB popularity per title per day from the daily exports |
+| `tmdb_release_dates` | Movies' TMDB release dates: earliest date (and note) per country and type 1-6 (premiere, theatrical limited, theatrical, digital, physical, TV), replaced on every details refresh; migration 24 seeded type 4 from `tmdb_titles.digital_release_dates`, which is still written |
 | `tmdb_episodes`, `tmdb_titles.episodes_fetched_at` | TV episodes per show / season / episode: name, air date (TMDB's, NULL = TBA), `episode_type` (standard / finale / mid_season), runtime (migration 23); read by the episode calendar and release patterns |
 | `tmdb_titles.enwiki_title`, `wikipedia_pageviews` | English Wikipedia article from Wikidata (sitelink, looked up monthly by `titles.metadata`, migration 20) and its daily user pageviews per project |
 | `tmdb_titles.netflix_premiere`, `netflix_premiere_source` | Earliest Netflix premiere of a Netflix-branded title per the engagement reports (`linked` through a Netflix Top 10 title, or `name`), migration 22; marks Netflix originals for the origin classifier |
@@ -922,6 +943,7 @@ metareel/
 │   │   ├── analytics_release_patterns.go # binge / batch / weekly seasons and their chart runs
 │   │   ├── analytics_spread.go    # spread lag: days from a title's first country to the others
 │   │   ├── breakouts.go           # titles rising in several countries at once (+ title.breakout webhooks)
+│   │   ├── release_dates.go       # movie release dates per country, streaming arrivals, release windows
 │   │   ├── timeline.go            # title timeline: events from charts, availability, ratings, pageviews, Netflix, TMDB dates
 │   │   ├── title_offers.go        # watch provider URLs from JustWatch offers (metadata refresh)
 │   │   ├── analytics.go           # decay, similarity, release lag, ratings vs popularity, genres, Netflix calibration

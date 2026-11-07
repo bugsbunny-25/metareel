@@ -27,16 +27,17 @@ type Handler struct {
 	APIKeys    *service.APIKeyService
 	Health     *service.HealthService
 
-	Charts      *service.ChartsService
-	Overview    *service.TitleOverviewService
-	Analytics   *service.AnalyticsService
-	DataQuality *service.DataQualityService
-	History     *service.HistoryService
-	Timeline    *service.TimelineService
-	Calendar    *service.CalendarService
-	Breakouts   *service.BreakoutService
-	Search      *service.SearchService
-	Webhooks    *service.WebhookService
+	Charts         *service.ChartsService
+	Overview       *service.TitleOverviewService
+	Analytics      *service.AnalyticsService
+	DataQuality    *service.DataQualityService
+	History        *service.HistoryService
+	Timeline       *service.TimelineService
+	Calendar       *service.CalendarService
+	Breakouts      *service.BreakoutService
+	ReleaseWindows *service.ReleaseWindowsService
+	Search         *service.SearchService
+	Webhooks       *service.WebhookService
 }
 
 // Live is a lightweight liveness endpoint.

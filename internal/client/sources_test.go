@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestTMDBFullDetailsMapping(t *testing.T) {
@@ -26,7 +27,13 @@ func TestTMDBFullDetailsMapping(t *testing.T) {
 	  "release_dates": {"results": [{"iso_3166_1": "US", "release_dates": [
 	    {"release_date": "2025-10-24T00:00:00.000Z", "type": 3},
 	    {"release_date": "2025-12-09T00:00:00.000Z", "type": 4},
-	    {"release_date": "2025-12-01T00:00:00.000Z", "type": 4}]}]}
+	    {"release_date": "2025-12-01T00:00:00.000Z", "type": 4},
+	    {"release_date": "2025-08-28T00:00:00.000Z", "type": 1, "note": "Venice Film Festival"},
+	    {"release_date": "2025-10-17T00:00:00.000Z", "type": 2},
+	    {"release_date": "bad", "type": 5},
+	    {"release_date": "2026-01-10T00:00:00.000Z", "type": 9}]},
+	    {"iso_3166_1": "gb", "release_dates": [{"release_date": "2025-11-07T00:00:00.000Z", "type": 3}]},
+	    {"iso_3166_1": "", "release_dates": [{"release_date": "2025-11-07T00:00:00.000Z", "type": 3}]}]}
 	}`
 	var r tmdbFullResp
 	if err := json.Unmarshal([]byte(body), &r); err != nil {
@@ -41,6 +48,23 @@ func TestTMDBFullDetailsMapping(t *testing.T) {
 	}
 	if d.DigitalReleaseDates["US"] != "2025-12-01" {
 		t.Fatalf("digital release = %v (want earliest type-4 date)", d.DigitalReleaseDates)
+	}
+	// Every valid type, earliest per country and type, sorted; bad dates,
+	// unknown types and bad countries are dropped.
+	want := []TMDBReleaseDate{
+		{Country: "GB", Type: ReleaseTheatrical, Date: "2025-11-07"},
+		{Country: "US", Type: ReleasePremiere, Date: "2025-08-28", Note: "Venice Film Festival"},
+		{Country: "US", Type: ReleaseTheatricalLimited, Date: "2025-10-17"},
+		{Country: "US", Type: ReleaseTheatrical, Date: "2025-10-24"},
+		{Country: "US", Type: ReleaseDigital, Date: "2025-12-01"},
+	}
+	if len(d.ReleaseDates) != len(want) {
+		t.Fatalf("release dates = %+v", d.ReleaseDates)
+	}
+	for i := range want {
+		if d.ReleaseDates[i] != want[i] {
+			t.Fatalf("release dates[%d] = %+v, want %+v", i, d.ReleaseDates[i], want[i])
+		}
 	}
 	if len(d.WatchProviders) != 2 || d.WatchProviders[0].Country != "US" {
 		t.Fatalf("providers = %+v", d.WatchProviders)
@@ -289,5 +313,33 @@ func TestWikidataLookupEnwiki(t *testing.T) {
 	}
 	if got["Q19865"] != "Stranger Things" || len(got) != 1 {
 		t.Fatalf("got = %v", got)
+	}
+}
+
+func TestReleaseNotesAndCountries(t *testing.T) {
+	long := strings.Repeat("é", 150) // 300 bytes
+	if got := cleanNote(" a\u0007b‮c\n "); got != "abc" {
+		t.Fatalf("cleanNote = %q", got)
+	}
+	if got := cleanNote(long); len(got) > 200 || !utf8.ValidString(got) || got != strings.Repeat("é", 100) {
+		t.Fatalf("cleanNote(long) = %d bytes, valid %v", len(got), utf8.ValidString(got))
+	}
+	var r tmdbFullResp
+	_ = json.Unmarshal([]byte(`{"release_dates": {"results": [
+	  {"iso_3166_1": "1@", "release_dates": [{"release_date": "2025-11-07T00:00:00.000Z", "type": 3}]},
+	  {"iso_3166_1": "DE", "release_dates": [{"release_date": "2025-11-07T00:00:00.000Z", "type": 3}]}]}}`), &r)
+	d := r.toDetails("movie", "1")
+	if !d.ReleaseDatesFetched || len(d.ReleaseDates) != 1 || d.ReleaseDates[0].Country != "DE" {
+		t.Fatalf("release dates = %+v", d.ReleaseDates)
+	}
+	var none tmdbFullResp
+	_ = json.Unmarshal([]byte(`{"title": "x"}`), &none)
+	if none.toDetails("movie", "1").ReleaseDatesFetched {
+		t.Fatal("no release_dates block counted as fetched")
+	}
+	var empty tmdbFullResp
+	_ = json.Unmarshal([]byte(`{"release_dates": {"results": []}}`), &empty)
+	if !empty.toDetails("movie", "1").ReleaseDatesFetched {
+		t.Fatal("an empty release_dates block (none) not counted as fetched")
 	}
 }

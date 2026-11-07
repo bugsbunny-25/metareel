@@ -314,6 +314,34 @@ func (h *Handler) GetTitleTimeline(c *echo.Context) error {
 	return writeData(c, out, err)
 }
 
+// GetTitleReleases returns a movie's release dates and windows per country:
+// GET /api/v1/titles/tmdb/movie/{id}/releases[?country=]
+func (h *Handler) GetTitleReleases(c *echo.Context) error {
+	ref, err := h.parseRef(c)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	out, err := h.ReleaseWindows.TitleReleases(c.Request().Context(), ref, c.QueryParam("country"))
+	return writeData(c, out, err)
+}
+
+// GetReleaseWindows: GET /api/v1/analytics/release-windows[?from=&to=&country=&limit=]
+func (h *Handler) GetReleaseWindows(c *echo.Context) error {
+	from, to, err := parseRange(c)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	limit, err := parseIntParam(c, "limit", 0)
+	if err != nil {
+		return badRequest(c, err)
+	}
+	if c.QueryParam("limit") != "" && limit == 0 {
+		return badRequest(c, errors.New("invalid limit, expected a positive integer"))
+	}
+	out, err := h.ReleaseWindows.Windows(c.Request().Context(), service.ReleaseWindowsQuery{From: from, To: to, Country: c.QueryParam("country"), Limit: limit})
+	return writeData(c, out, err)
+}
+
 // GetTitleAvailabilityHistory: GET /api/v1/titles/tmdb/{kind}/{id}/availability/history[?country=]
 func (h *Handler) GetTitleAvailabilityHistory(c *echo.Context) error {
 	ref, err := h.parseRef(c)

@@ -59,6 +59,9 @@ type Querier interface {
 	// Netflix matches made through a FlixPatrol title (whose match was cleared).
 	DeleteNetflixEvidenceVia(ctx context.Context, titleID sql.NullInt64) ([]int64, error)
 	DeleteNetflixMostPopular(ctx context.Context) error
+	// TMDB release dates of movies (migration 000024) and the observations of
+	// when a movie reached streaming, for release windows.
+	DeleteReleaseDates(ctx context.Context, arg DeleteReleaseDatesParams) error
 	DeleteSeasonEpisodes(ctx context.Context, arg DeleteSeasonEpisodesParams) error
 	// Retention: drop logs of runs that started before the cutoff.
 	DeleteTaskRunLogsBefore(ctx context.Context, olderThan string) (int64, error)
@@ -123,6 +126,7 @@ type Querier interface {
 	InsertNetflixEngagement(ctx context.Context, arg InsertNetflixEngagementParams) error
 	InsertNetflixMostPopular(ctx context.Context, arg InsertNetflixMostPopularParams) error
 	InsertRanking(ctx context.Context, arg InsertRankingParams) error
+	InsertReleaseDate(ctx context.Context, arg InsertReleaseDateParams) error
 	InsertTitleLink(ctx context.Context, arg InsertTitleLinkParams) error
 	InsertTitleRatingSource(ctx context.Context, arg InsertTitleRatingSourceParams) error
 	InsertTmdbWatchProvider(ctx context.Context, arg InsertTmdbWatchProviderParams) error
@@ -173,6 +177,15 @@ type Querier interface {
 	// TV shows with a TMDB season list, the last episode fetch and whether a
 	// stored episode airs in a window (an "airing" show is refreshed daily).
 	ListEpisodeTargets(ctx context.Context, arg ListEpisodeTargetsParams) ([]ListEpisodeTargetsRow, error)
+	// Each movie's first FlixPatrol chart date per country and provider
+	// (country '' = every country), with how many of the 14 days before it the
+	// chart was stored (to tell a real chart debut from a chart that wasn't
+	// stored yet, or had a gap).
+	ListFirstMovieCharts(ctx context.Context, arg ListFirstMovieChartsParams) ([]ListFirstMovieChartsRow, error)
+	// The first time each subscription / free / ads offer of the movies was
+	// seen arriving (watch_provider_events; offers present at a title's first
+	// refresh have no event), per country (country '' = every country).
+	ListFirstStreamingOffers(ctx context.Context, arg ListFirstStreamingOffersParams) ([]ListFirstStreamingOffersRow, error)
 	// FlixPatrol titles on Netflix charts with the Netflix lists (movies |
 	// tv_shows) and Netflix weeks (ending on Sunday) they charted in.
 	ListFlixPatrolNetflixWeeks(ctx context.Context) ([]ListFlixPatrolNetflixWeeksRow, error)
@@ -209,6 +222,10 @@ type Querier interface {
 	ListMappingReviewFlixPatrol(ctx context.Context) ([]ListMappingReviewFlixPatrolRow, error)
 	// The same for Netflix Top 10 titles (points = weeks in the global Top 10).
 	ListMappingReviewNetflix(ctx context.Context) ([]ListMappingReviewNetflixRow, error)
+	ListMovieReleaseDates(ctx context.Context, tmdbID string) ([]ListMovieReleaseDatesRow, error)
+	// Current subscription / free / ads offers of the movies (country '' =
+	// every country).
+	ListMovieStreamingOffers(ctx context.Context, arg ListMovieStreamingOffersParams) ([]ListMovieStreamingOffersRow, error)
 	ListNetflixCountriesByTmdb(ctx context.Context, arg ListNetflixCountriesByTmdbParams) ([]ListNetflixCountriesByTmdbRow, error)
 	ListNetflixCountrySeasonRanks(ctx context.Context, fromWeek string) ([]ListNetflixCountrySeasonRanksRow, error)
 	ListNetflixCountryWeek(ctx context.Context, arg ListNetflixCountryWeekParams) ([]ListNetflixCountryWeekRow, error)
@@ -301,6 +318,9 @@ type Querier interface {
 	ListTaskScheduleRunTimesByScheduleID(ctx context.Context, scheduleID int64) ([]TaskScheduleRunTime, error)
 	ListTaskScheduleTargetsByScheduleID(ctx context.Context, scheduleID int64) ([]TaskScheduleTarget, error)
 	ListTaskSchedules(ctx context.Context, arg ListTaskSchedulesParams) ([]TaskSchedule, error)
+	// Every release date in a country of the movies with a theatrical release
+	// (type 2 or 3) there between two dates, with the movie's title.
+	ListTheatricalReleaseDates(ctx context.Context, arg ListTheatricalReleaseDatesParams) ([]ListTheatricalReleaseDatesRow, error)
 	ListTitleIDsOnRef(ctx context.Context, arg ListTitleIDsOnRefParams) ([]int64, error)
 	ListTitleLinks(ctx context.Context) ([]ListTitleLinksRow, error)
 	ListTitleLinksForFlixPatrolIDs(ctx context.Context, ids []int64) ([]ListTitleLinksForFlixPatrolIDsRow, error)

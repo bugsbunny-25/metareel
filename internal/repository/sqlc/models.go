@@ -344,6 +344,15 @@ type TmdbPopularityHistory struct {
 	Popularity float64 `json:"popularity"`
 }
 
+type TmdbReleaseDate struct {
+	TmdbKind    string         `json:"tmdb_kind"`
+	TmdbID      string         `json:"tmdb_id"`
+	Country     string         `json:"country"`
+	ReleaseType int64          `json:"release_type"`
+	ReleaseDate string         `json:"release_date"`
+	Note        sql.NullString `json:"note"`
+}
+
 type TmdbTitle struct {
 	TmdbKind              string          `json:"tmdb_kind"`
 	TmdbID                string          `json:"tmdb_id"`

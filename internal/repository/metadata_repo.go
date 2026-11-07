@@ -74,6 +74,9 @@ func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFull
 	if err := saveTmdbIDs(ctx, q, TmdbRef{Kind: d.Kind, ID: d.ID}, TmdbIDs{IMDbID: d.IMDbID, WikidataID: d.WikidataID}, IDSourceTMDB); err != nil {
 		return err
 	}
+	if err := saveReleaseDates(ctx, q, TmdbRef{Kind: d.Kind, ID: d.ID}, d.ReleaseDatesFetched, d.ReleaseDates); err != nil {
+		return err
+	}
 	if err := q.DeleteTmdbWatchProviders(ctx, sqlc.DeleteTmdbWatchProvidersParams{TmdbKind: d.Kind, TmdbID: d.ID}); err != nil {
 		return fmt.Errorf("delete watch providers: %w", err)
 	}
