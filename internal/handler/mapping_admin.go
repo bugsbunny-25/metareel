@@ -29,6 +29,9 @@ func (h *Handler) ReviewMappings(c *echo.Context) error {
 	if err != nil {
 		return badRequest(c, err)
 	}
+	if limit > 500 || offset > 1_000_000 { // bounded before narrowing to int
+		return badRequest(c, errors.New("limit must be at most 500 and offset at most 1000000"))
+	}
 	q := service.MappingReviewQuery{Subject: c.QueryParam("subject"), Reason: c.QueryParam("reason")}
 	if raw := c.QueryParam("min_risk"); raw != "" {
 		v, err := strconv.Atoi(raw)
