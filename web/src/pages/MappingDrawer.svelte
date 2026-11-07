@@ -14,13 +14,16 @@
   import ChartHistoryTab from '../components/ChartHistoryTab.svelte'
   import NetflixHistoryTab from '../components/NetflixHistoryTab.svelte'
   import RatingsTab from '../components/RatingsTab.svelte'
+  import TimelineTab from '../components/TimelineTab.svelte'
+  import CreditsTab from '../components/CreditsTab.svelte'
+  import ReleasesTab from '../components/ReleasesTab.svelte'
 
   // refKey is "movie:123" / "tv:456".
   let { refKey, onclose, onchanged } = $props()
 
   const MATCH_BADGE = { matched: 'badge-success', manual: 'badge-accent', unmatched: 'badge-warning', pending: '' }
 
-  const TABS = [['mapping', 'Mapping'], ['details', 'Details'], ['top10', 'Top 10 history'], ['netflix', 'Netflix history'], ['ratings', 'Ratings']]
+  const TABS = [['mapping', 'Mapping'], ['details', 'Details'], ['top10', 'Top 10 history'], ['netflix', 'Netflix history'], ['ratings', 'Ratings'], ['timeline', 'Timeline'], ['credits', 'Credits'], ['releases', 'Releases']]
 
   let entry = $state(null)
   let loadError = $state('')
@@ -177,6 +180,12 @@
       <ChartHistoryTab tmdbKind={entry.tmdb_kind} tmdbId={entry.tmdb_id} />
     {:else if tab === 'netflix'}
       <NetflixHistoryTab tmdbKind={entry.tmdb_kind} tmdbId={entry.tmdb_id} />
+    {:else if tab === 'timeline'}
+      <TimelineTab tmdbKind={entry.tmdb_kind} tmdbId={entry.tmdb_id} />
+    {:else if tab === 'credits'}
+      <CreditsTab tmdbKind={entry.tmdb_kind} tmdbId={entry.tmdb_id} />
+    {:else if tab === 'releases'}
+      <ReleasesTab tmdbKind={entry.tmdb_kind} tmdbId={entry.tmdb_id} />
     {:else}
       <RatingsTab tmdbKind={entry.tmdb_kind} tmdbId={entry.tmdb_id} />
     {/if}

@@ -200,3 +200,12 @@ func (r *CreditsRepository) CreditsOfType(ctx context.Context, creditType string
 	}
 	return out, nil
 }
+
+// PruneOrphanPeople deletes people without any credit left.
+func (r *CreditsRepository) PruneOrphanPeople(ctx context.Context) (int64, error) {
+	n, err := r.q.PruneOrphanPeople(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("prune orphan people: %w", err)
+	}
+	return n, nil
+}

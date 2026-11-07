@@ -430,6 +430,9 @@ type Querier interface {
 	MarkWebhookDelivered(ctx context.Context, arg MarkWebhookDeliveredParams) error
 	MaxChartChangedAt(ctx context.Context) (MaxChartChangedAtRow, error)
 	MaxOfferEventID(ctx context.Context) (int64, error)
+	// People left without any credit (their titles' credits were replaced or
+	// the titles deleted).
+	PruneOrphanPeople(ctx context.Context) (int64, error)
 	// Deletes finished deliveries older than a window ('-30 days').
 	PruneWebhookDeliveries(ctx context.Context, window string) (int64, error)
 	// Queues an event for a webhook once (a repeated event_id is ignored).

@@ -14,6 +14,9 @@
   import ChartHistoryTab from '../components/ChartHistoryTab.svelte'
   import NetflixHistoryTab from '../components/NetflixHistoryTab.svelte'
   import RatingsTab from '../components/RatingsTab.svelte'
+  import TimelineTab from '../components/TimelineTab.svelte'
+  import CreditsTab from '../components/CreditsTab.svelte'
+  import ReleasesTab from '../components/ReleasesTab.svelte'
 
   let { id, onclose, onsaved } = $props()
 
@@ -33,7 +36,7 @@
   const showSeasons = $derived(title?.kind === 'tv_show' && title?.tmdb_kind !== 'movie')
   const tmdbId = $derived(title?.tmdb_id ?? '')
   const tmdbKind = $derived(title?.tmdb_kind ?? listTmdbKind)
-  const tabs = $derived([['mapping', 'Mapping'], ...(showSeasons ? [['seasons', 'Seasons']] : []), ['details', 'Details'], ['top10', 'Top 10 history'], ['netflix', 'Netflix history'], ['ratings', 'Ratings']])
+  const tabs = $derived([['mapping', 'Mapping'], ...(showSeasons ? [['seasons', 'Seasons']] : []), ['details', 'Details'], ['top10', 'Top 10 history'], ['netflix', 'Netflix history'], ['ratings', 'Ratings'], ['timeline', 'Timeline'], ['credits', 'Credits'], ['releases', 'Releases']])
 
   // Candidate search (Netflix gives no year; a year narrows Rotten Tomatoes only).
   let search = $state({ name: '', year: '', kind: 'movie' })
@@ -356,6 +359,12 @@
       <ChartHistoryTab {tmdbKind} {tmdbId} />
     {:else if tab === 'netflix'}
       <NetflixHistoryTab netflixTitle={title} />
+    {:else if tab === 'timeline'}
+      <TimelineTab {tmdbKind} {tmdbId} />
+    {:else if tab === 'credits'}
+      <CreditsTab {tmdbKind} {tmdbId} />
+    {:else if tab === 'releases'}
+      <ReleasesTab {tmdbKind} {tmdbId} />
     {:else}
       <RatingsTab {tmdbKind} {tmdbId} />
     {/if}

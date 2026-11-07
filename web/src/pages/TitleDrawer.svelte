@@ -14,13 +14,16 @@
   import ChartHistoryTab from '../components/ChartHistoryTab.svelte'
   import NetflixHistoryTab from '../components/NetflixHistoryTab.svelte'
   import RatingsTab from '../components/RatingsTab.svelte'
+  import TimelineTab from '../components/TimelineTab.svelte'
+  import CreditsTab from '../components/CreditsTab.svelte'
+  import ReleasesTab from '../components/ReleasesTab.svelte'
 
   let { id, onclose, onsaved } = $props()
 
   let title = $state(null)
   let loadError = $state('')
   let tab = $state('mapping')
-  const TABS = [['mapping', 'Mapping'], ['details', 'Details'], ['top10', 'Top 10 history'], ['netflix', 'Netflix history'], ['ratings', 'Ratings']]
+  const TABS = [['mapping', 'Mapping'], ['details', 'Details'], ['top10', 'Top 10 history'], ['netflix', 'Netflix history'], ['ratings', 'Ratings'], ['timeline', 'Timeline'], ['credits', 'Credits'], ['releases', 'Releases']]
   const MATCH_BADGE = { matched: 'badge-success', manual: 'badge-accent', unmatched: 'badge-warning', pending: '' }
   // The TMDB title (movie | tv) whose details, ratings and IDs every tab shows.
   const tmdbKind = $derived(title?.kind === 'tv_show' ? 'tv' : 'movie')
@@ -283,6 +286,12 @@
       <ChartHistoryTab titleId={title.id} />
     {:else if tab === 'netflix'}
       <NetflixHistoryTab {tmdbKind} {tmdbId} />
+    {:else if tab === 'timeline'}
+      <TimelineTab {tmdbKind} {tmdbId} />
+    {:else if tab === 'credits'}
+      <CreditsTab {tmdbKind} {tmdbId} />
+    {:else if tab === 'releases'}
+      <ReleasesTab {tmdbKind} {tmdbId} />
     {:else}
       <RatingsTab {tmdbKind} {tmdbId} />
     {/if}

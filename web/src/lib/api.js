@@ -65,6 +65,17 @@ export const syncMappings = () => req('/mappings/sync', { method: 'POST' })
 export const listMappingEvents = (q) => req('/mapping-events', { query: q })
 export const listMappingRefs = (q) => req('/mapping-refs', { query: q })
 export const reviewMappings = (q) => req('/mappings/review', { query: q })
+
+// ── Roadmap views: breakouts, discovery, people, calendar, timeline ───
+export const getBreakouts = (q) => req('/breakouts', { query: q })
+export const getHiddenGems = (country, q) => req(`/discover/${country}/hidden-gems`, { query: q })
+export const getElsewhere = (country, q) => req(`/discover/${country}/elsewhere`, { query: q })
+export const getRotation = (country, q) => req(`/discover/${country}/rotation`, { query: q })
+export const getPerson = (id) => req(`/people/${id}`)
+export const getCalendar = (country, q) => req(`/calendar/${country}`, { query: q })
+export const getTimeline = (kind, tmdbId, q) => req(`/titles/tmdb/${kind}/${tmdbId}/timeline`, { query: q })
+export const getCredits = (kind, tmdbId) => req(`/titles/tmdb/${kind}/${tmdbId}/credits`)
+export const getTitleReleases = (kind, tmdbId, q) => req(`/titles/tmdb/${kind}/${tmdbId}/releases`, { query: q })
 export const getReviewSuggestions = (subject, id) => req(`/mappings/review/${subject}/${id}/suggestions`)
 
 // ── Top 10 ──────────────────────────────────────────────────────────

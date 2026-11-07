@@ -348,6 +348,21 @@ func (q *Queries) ListTitleCredits(ctx context.Context, arg ListTitleCreditsPara
 	return items, nil
 }
 
+const pruneOrphanPeople = `-- name: PruneOrphanPeople :execrows
+DELETE FROM tmdb_people
+WHERE NOT EXISTS (SELECT 1 FROM tmdb_credits c WHERE c.person_id = tmdb_people.person_id)
+`
+
+// People left without any credit (their titles' credits were replaced or
+// the titles deleted).
+func (q *Queries) PruneOrphanPeople(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneOrphanPeople)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const setCreditsFetched = `-- name: SetCreditsFetched :exec
 UPDATE tmdb_titles SET credits_fetched_at = CURRENT_TIMESTAMP
 WHERE tmdb_kind = ?1 AND tmdb_id = ?2

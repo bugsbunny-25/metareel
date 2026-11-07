@@ -67,3 +67,9 @@ SELECT c.tmdb_kind, c.tmdb_id, c.person_id, p.name, CAST(COALESCE(p.profile_path
 FROM tmdb_credits c
 JOIN tmdb_people p ON p.person_id = c.person_id
 WHERE c.credit_type = sqlc.arg(credit_type);
+
+-- name: PruneOrphanPeople :execrows
+-- People left without any credit (their titles' credits were replaced or
+-- the titles deleted).
+DELETE FROM tmdb_people
+WHERE NOT EXISTS (SELECT 1 FROM tmdb_credits c WHERE c.person_id = tmdb_people.person_id);

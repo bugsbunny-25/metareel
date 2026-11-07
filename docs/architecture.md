@@ -163,7 +163,7 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | `netflix.engagement.import` | `NetflixEngagementImporter` | "What We Watched" `.xlsx` reports from `app_settings` `netflix.engagement.urls` (defaults in code; a run's `url` adds one), parsed by `internal/xlsx`; each period replaced in one transaction, rows linked by name to Netflix Top 10 titles / season titles |
 | `tmdb.popularity.import` | `TMDBPopularityImporter` | TMDB daily ID exports (`movie_ids_MM_DD_YYYY.json.gz`, `tv_series_ids_…`): popularity of known TMDB titles into `tmdb_popularity_history`; yesterday's file until today's is out |
 | `mapping.refresh` | `TitleMappingService.Refresh` | Queued by the mapping writer after mapping changes (payload: `tmdb_refs`, `netflix_title_ids`; not unique): TMDB details (skipped if fetched within 24 h and an IMDb ID is known) + Wikidata IDs (titles never looked up; the metadata job rechecks the rest) of the TMDB titles now mapped to, seasons of the Netflix titles that changed or sit on those TMDB titles, ranking season tags. Run by hand (empty payload) it first runs a mapping sync |
-| `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, `PRAGMA optimize` |
+| `maintenance` | `MaintenanceService` | Retention, stale-chart alerts, deletes `tmdb_people` without any `tmdb_credits` left, `PRAGMA optimize` |
 
 FlixPatrol fetches from every job go through one `flixpatrol.SerialFetcher`:
 one page at a time, `SCRAPER_MIN_INTERVAL` apart.
@@ -550,6 +550,15 @@ wide theatrical date (type 3), else the limited one (type 2).
 `GET /api/v1/titles/tmdb/movie/{id}/releases` shows one movie per country;
 `GET /api/v1/analytics/release-windows` sums up the movies released in theaters
 in a country in a range.
+
+## Admin UI for the newer data
+
+The admin console shows the newer endpoints through their admin copies:
+Insights → Analytics (release patterns, release windows, spread lag below the
+older cards), Insights → Breakouts, Discover (hidden gems, trending elsewhere,
+rotation) and People (people analytics, with a person drawer); New & upcoming
+→ Episodes (the episode calendar); and the title drawers' Timeline, Credits
+and Releases tabs.
 
 ## Discovery (`service/discover.go`)
 

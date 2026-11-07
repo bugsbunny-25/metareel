@@ -146,4 +146,28 @@ func TestCreditsRefreshAndPeople(t *testing.T) {
 	if _, err := an.People(ctx, AnalyticsQuery{Role: "gaffer"}); !errors.As(err, &v) {
 		t.Fatalf("bad role: %v", err)
 	}
+
+	// Cy leaves the show's credits: maintenance deletes people without any.
+	src["tv:2"] = &client.TMDBCredits{Cast: []client.TMDBCredit{actor(10, 1, "Host")}}
+	if _, err := r.Run(ctx, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	m := NewMaintenanceService(slog.New(slog.NewTextHandler(io.Discard, nil)), repository.NewOpsRepository(db),
+		repository.NewTaskScheduleRepository(db), nil, 0, 0).WithCredits(repo)
+	mr, err := m.Run(ctx, nil)
+	if err != nil || mr.PeopleDeleted != 1 {
+		t.Fatalf("maintenance = %+v, %v", mr, err)
+	}
+	if _, err := svc.Person(ctx, 12); !errors.Is(err, ErrPersonNotFound) {
+		t.Fatalf("Cy still there: %v", err)
+	}
+
+	// Release lag lists at most `limit` items; the summary covers all.
+	if err := meta.SaveDetails(ctx, &client.TMDBFullDetails{Kind: "tv", ID: "2", Title: "Show", ReleaseDate: d(30)}, false); err != nil {
+		t.Fatal(err)
+	}
+	lag, err := an.ReleaseLag(ctx, AnalyticsQuery{Limit: 1})
+	if err != nil || len(lag.Items) != 1 || lag.ItemsTotal < 2 || lag.Summary.Titles != lag.ItemsTotal {
+		t.Fatalf("release lag = %+v, %v", lag, err)
+	}
 }

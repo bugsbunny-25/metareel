@@ -74,7 +74,8 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 	metadata := service.NewTitleMetadataService(log, metadataRepo, tmdbClient, client.NewWikidataSPARQL(cfg.HTTP.Timeout), justWatchClient)
 	downloader := client.NewDownloader(cfg.Imports.DownloadTimeout, "")
 	alerts := service.NewAlertService(log, opsRepo, cfg.Alerts.WebhookURL, cfg.Alerts.Format, cfg.Alerts.Cooldown)
-	maintenance := service.NewMaintenanceService(log, opsRepo, taskScheduleRepo, alerts, cfg.Maintenance.RunRetentionDays, cfg.Alerts.StaleChartHours)
+	maintenance := service.NewMaintenanceService(log, opsRepo, taskScheduleRepo, alerts, cfg.Maintenance.RunRetentionDays, cfg.Alerts.StaleChartHours).
+		WithCredits(repository.NewCreditsRepository(db))
 
 	seasons := service.NewSeasonMapper(log, importsRepo)
 	mappingRepo := repository.NewMappingRepository(db)

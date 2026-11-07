@@ -301,7 +301,8 @@ type ReleaseLagResponse struct {
 	AnalyticsEcho
 	Summary    LagSummary            `json:"summary"`
 	ByProvider map[string]LagSummary `json:"by_provider"`
-	Items      []ReleaseLagItem      `json:"items"`
+	ItemsTotal int                   `json:"items_total"`
+	Items      []ReleaseLagItem      `json:"items"` // newest first chart first, at most `limit` (default 500)
 }
 
 // ReleaseLag measures days from a title's release (its digital release in
@@ -310,6 +311,10 @@ type ReleaseLagResponse struct {
 // year (catalog titles resurfacing) are left out.
 func (s *AnalyticsService) ReleaseLag(ctx context.Context, q AnalyticsQuery) (*ReleaseLagResponse, error) {
 	f, err := s.filter(q, 90)
+	if err != nil {
+		return nil, err
+	}
+	limit, err := intRange("limit", q.Limit, 500, 1, 5000)
 	if err != nil {
 		return nil, err
 	}
@@ -374,6 +379,8 @@ func (s *AnalyticsService) ReleaseLag(ctx context.Context, q AnalyticsQuery) (*R
 		byProvider[it.Provider] = append(byProvider[it.Provider], float64(lag))
 	}
 	sort.SliceStable(out.Items, func(i, j int) bool { return out.Items[i].FirstChart > out.Items[j].FirstChart })
+	out.ItemsTotal = len(out.Items)
+	out.Items = out.Items[:min(len(out.Items), limit)] // the summaries cover every item
 	out.Summary = lagSummary(all)
 	for p, v := range byProvider {
 		out.ByProvider[p] = lagSummary(v)
