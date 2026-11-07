@@ -959,6 +959,79 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/admin/mappings/review/{subject}/{id}/suggestions:
+    get:
+      operationId: getReviewSuggestions
+      summary: Other TMDB titles a mapping in the review queue could be, ranked
+      description: >-
+        Searches JustWatch and TMDB (live) for the chart title's name (and
+        its base name without a season), in its kind and the other, and ranks
+        TMDB titles other than the current mapping: same name (+40) or a
+        similar one (+15), the chart's kind (+10), when it came out against
+        when it first charted (TMDB's release date: up to 18 months before
+        +15, up to three years +5, after it -50; without a date by year: the
+        year before +15, the same year or up to three years +5, later -50),
+        FlixPatrol's premiere year (+20), and, for the best five, an offer of
+        the service it charted on in any country (+35; `on_provider`). Up to
+        five suggestions. Apply one (or keep the current mapping) with
+        PATCH /api/v1/admin/titles/{id} (`kind`, `tmdb_id`) or
+        PATCH /api/v1/admin/netflix/titles/{id} (`tmdb_kind`, `tmdb_id`); both
+        are manual fixes, so the title leaves the queue. `errors` names
+        searches that failed. Calls run one at a time (searches 500 ms
+        apart); a result without errors is kept for 5 minutes.
+      parameters:
+        - name: subject
+          in: path
+          required: true
+          schema: { type: string, enum: [flixpatrol, netflix] }
+        - name: id
+          in: path
+          required: true
+          description: The FlixPatrol title id or Netflix title id (as in the queue)
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject: { type: string, enum: [flixpatrol, netflix] }
+                  id: { type: integer }
+                  name: { type: string }
+                  kind: { type: string, enum: [movie, tv_show] }
+                  tmdb_kind: { type: string, description: The current mapping }
+                  tmdb_id: { type: string }
+                  first_charted: { type: string, format: date }
+                  providers: { type: array, items: { type: string } }
+                  errors: { type: object, additionalProperties: { type: string } }
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tmdb_kind: { type: string, enum: [movie, tv] }
+                        tmdb_id: { type: string }
+                        title: { type: string }
+                        year: { type: integer, nullable: true }
+                        on_provider: { type: boolean, nullable: true, description: An offer of the charted service on TMDB (null = not checked) }
+                        score: { type: integer }
+                        reasons: { type: array, items: { type: string } }
+                        url: { type: string }
+        "400":
+          description: Invalid subject or id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not an automatic mapping (unmapped, or fixed by hand)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/v1/admin/mappings/sync:
     post:
       operationId: syncMappings

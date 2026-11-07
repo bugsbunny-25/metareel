@@ -1,0 +1,408 @@
+{
+  "flixpatrol": [
+    {
+      "slug": "1000-lb-sisters",
+      "chart_name": "1000-lb Sisters",
+      "chart_kind": "tv_show",
+      "provider": "hbo-max",
+      "country": "US",
+      "note": "digits and a hyphen in the name",
+      "want": {
+        "kind": "tv",
+        "tmdb_id": "98410"
+      }
+    },
+    {
+      "slug": "90-day-hunt-for-love",
+      "chart_name": "90 Day: Hunt For Love",
+      "chart_kind": "tv_show",
+      "provider": "hbo-max",
+      "country": "US",
+      "note": "franchise spin-off with a colon",
+      "want": {
+        "kind": "tv",
+        "tmdb_id": "290564"
+      }
+    },
+    {
+      "slug": "1000-lb-roomies",
+      "chart_name": "1000-lb Roomies",
+      "chart_kind": "tv_show",
+      "provider": "hbo-max",
+      "country": "US",
+      "note": "spin-off sharing words with 1000-lb Sisters",
+      "want": {
+        "kind": "tv",
+        "tmdb_id": "291934"
+      }
+    },
+    {
+      "slug": "epic-first-semester",
+      "chart_name": "Epic - First Semester",
+      "chart_kind": "movie",
+      "provider": "netflix",
+      "country": "IN",
+      "note": "Indian film, punctuation in the name",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1408158"
+      }
+    },
+    {
+      "slug": "khalifa-the-ruler",
+      "chart_name": "Khalifa: The Ruler",
+      "chart_kind": "movie",
+      "provider": "amazon-prime",
+      "country": "IN",
+      "note": "Indian film with a subtitle",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1036081"
+      }
+    },
+    {
+      "slug": "love-in-disguise",
+      "chart_name": "Love in Disguise",
+      "chart_kind": "tv_show",
+      "details": {
+        "name": "Love in Disguise",
+        "kind": "tv_show",
+        "premiere": "2026-10-19"
+      },
+      "provider": "amazon-prime",
+      "country": "US",
+      "note": "K-drama",
+      "want": {
+        "kind": "tv",
+        "tmdb_id": "303745"
+      }
+    },
+    {
+      "slug": "the-paradise",
+      "chart_name": "The Paradise",
+      "chart_kind": "movie",
+      "details": {
+        "name": "The Paradise",
+        "kind": "movie",
+        "premiere": "2014-05-24"
+      },
+      "provider": "netflix",
+      "country": "IN",
+      "note": "FlixPatrol's premiere (2014, UK) is another 'The Paradise'; the 2026 film charted",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1376856"
+      },
+      "known_miss": {
+        "got": null,
+        "why": "FlixPatrol's premiere (2014) is another 'The Paradise'; a conflicting year is never accepted"
+      }
+    },
+    {
+      "slug": "dont-trust-the-couple-upstairs",
+      "chart_name": "Don't Trust the Couple Upstairs",
+      "chart_kind": "movie",
+      "details": {
+        "name": "Don&#39;t Trust the Couple Upstairs",
+        "kind": "movie",
+        "premiere": "2026-04-03"
+      },
+      "provider": "netflix",
+      "country": "US",
+      "note": "FlixPatrol's page name has an HTML entity (Don&#39;t)",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1664420"
+      }
+    },
+    {
+      "slug": "comrade-kalyan",
+      "chart_name": "Comrade Kalyan",
+      "chart_kind": "movie",
+      "details": {
+        "name": "Comrade Kalyan",
+        "kind": "movie",
+        "premiere": "2026-10-09"
+      },
+      "provider": "amazon-prime",
+      "country": "IN",
+      "note": "regional Indian film",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1428295"
+      }
+    },
+    {
+      "slug": "borat-subsequent-moviefilm",
+      "chart_name": "Borat Subsequent Moviefilm",
+      "chart_kind": "movie",
+      "details": {
+        "name": "Borat Subsequent Moviefilm",
+        "kind": "movie",
+        "premiere": "2020-10-23"
+      },
+      "provider": "amazon-prime",
+      "country": "GB",
+      "note": "TMDB's title is the long 'Borat Subsequent Moviefilm: Delivery of Prodigious Bribe...'",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "740985"
+      },
+      "known_miss": {
+        "got": null,
+        "why": "TMDB and JustWatch use the full title ('...: Delivery of Prodigious Bribe to American Regime...'); names must match exactly"
+      }
+    },
+    {
+      "slug": "avaraachan-sons",
+      "chart_name": "Avaraachan & Sons",
+      "chart_kind": "movie",
+      "details": {
+        "name": "Avaraachan & Sons",
+        "kind": "movie",
+        "premiere": "2026-10-02"
+      },
+      "provider": "netflix",
+      "country": "IN",
+      "note": "ampersand in the name",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1290035"
+      }
+    },
+    {
+      "slug": "apocalypse-z-new-world",
+      "chart_name": "Apocalypse Z: New World",
+      "chart_kind": "movie",
+      "details": {
+        "name": "Apocalypse Z: New World",
+        "kind": "movie",
+        "premiere": "2026-10-09"
+      },
+      "provider": "amazon-prime",
+      "country": "US",
+      "note": "Spanish film, English title",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1507696"
+      }
+    },
+    {
+      "slug": "meethe-mein-kya-hai",
+      "chart_name": "Meethe Mein Kya Hai",
+      "chart_kind": "movie",
+      "details": {
+        "name": "Meethe Mein Kya Hai",
+        "kind": "movie",
+        "premiere": "2026-10-30"
+      },
+      "provider": "netflix",
+      "country": "IN",
+      "note": "recent Hindi film",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1802464"
+      }
+    },
+    {
+      "slug": "the-remarried-empress",
+      "chart_name": "The Remarried Empress",
+      "chart_kind": "tv_show",
+      "details": {
+        "name": "The Remarried Empress",
+        "kind": "tv_show",
+        "premiere": "2026-11-04"
+      },
+      "provider": "disney",
+      "country": "US",
+      "note": "K-drama, new season",
+      "want": {
+        "kind": "tv",
+        "tmdb_id": "279246"
+      }
+    },
+    {
+      "slug": "the-divergent-series-allegiant",
+      "chart_name": "The Divergent Series: Allegiant",
+      "chart_kind": "movie",
+      "details": {
+        "name": "The Divergent Series: Allegiant",
+        "kind": "movie",
+        "premiere": "2016-03-09"
+      },
+      "provider": "hbo-max",
+      "country": "GB",
+      "note": "TMDB's title is 'Allegiant'",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "262504"
+      },
+      "known_miss": {
+        "got": null,
+        "why": "TMDB's title is 'Allegiant'; names must match exactly"
+      }
+    },
+    {
+      "slug": "big-johns-bosh-family",
+      "chart_name": "Big John&#39;s Bosh! Family",
+      "chart_kind": "tv_show",
+      "details": {
+        "name": "Big John&#39;s Bosh! Family",
+        "kind": "tv_show",
+        "premiere": "1900-01-01"
+      },
+      "provider": "paramount-plus",
+      "country": "GB",
+      "note": "HTML entity in the chart and page names, and a 1900-01-01 placeholder premiere",
+      "want": {
+        "kind": "tv",
+        "tmdb_id": "341198"
+      }
+    }
+  ],
+  "netflix": [
+    {
+      "name": "Beast (English)",
+      "list": "movie",
+      "chart_year": 2024,
+      "note": "Netflix adds '(English)' for the dub",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "760741"
+      },
+      "known_miss": {
+        "got": null,
+        "why": "Netflix's '(English)' dub suffix finds nothing on TMDB"
+      }
+    },
+    {
+      "name": "Acid",
+      "list": "movie",
+      "chart_year": 2026,
+      "note": "short, common name",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "852445"
+      }
+    },
+    {
+      "name": "Enna Vilai : The Price of Dignity",
+      "list": "movie",
+      "chart_year": 2026,
+      "note": "Netflix's name has a subtitle after ' : '",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1686999"
+      }
+    },
+    {
+      "name": "Roadies Rebirth",
+      "list": "tv_show",
+      "chart_year": 2026,
+      "note": "a new season of MTV Roadies under a new name",
+      "want": {
+        "kind": "tv",
+        "tmdb_id": "8426"
+      },
+      "known_miss": {
+        "got": null,
+        "why": "TMDB lists the season under the show's name, MTV Roadies"
+      }
+    },
+    {
+      "name": "Ocean's Eleven",
+      "list": "movie",
+      "chart_year": 2026,
+      "note": "remake shares the name (1960 / 2001)",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "161"
+      }
+    },
+    {
+      "name": "Speak No Evil",
+      "list": "movie",
+      "chart_year": 2026,
+      "note": "remake shares the name (2022 / 2024)",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1114513"
+      },
+      "known_miss": {
+        "got": null,
+        "why": "the 2022 and 2024 films are both on Netflix and neither came out in the chart year or the year before"
+      }
+    },
+    {
+      "name": "Swindlers",
+      "list": "tv_show",
+      "chart_year": 2026,
+      "note": "common name, a 2026 series",
+      "want": {
+        "kind": "tv",
+        "tmdb_id": "314965"
+      }
+    },
+    {
+      "name": "The Fall Guy",
+      "list": "movie",
+      "chart_year": 2026,
+      "note": "remake shares the name (1980s TV / 2024 film)",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "746036"
+      }
+    },
+    {
+      "name": "Joyride",
+      "list": "movie",
+      "chart_year": 2024,
+      "note": "several films called Joyride; the 2022 one is on Netflix",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "762361"
+      },
+      "known_miss": {
+        "got": null,
+        "why": "the 2022 film has left Netflix since it charted, so no same-name film is on Netflix now"
+      }
+    },
+    {
+      "name": "Mine",
+      "list": "movie",
+      "chart_year": 2022,
+      "note": "Netflix's film list; TMDB also has a TV show 'Mine'",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "345009"
+      },
+      "known_miss": {
+        "got": {
+          "kind": "tv",
+          "tmdb_id": "124426"
+        },
+        "why": "WRONG MATCH: the 2016 film has left Netflix, so the TV show 'Mine' (on Netflix) is taken from the other list"
+      }
+    },
+    {
+      "name": "Avarachan & Sons",
+      "list": "movie",
+      "chart_year": 2026,
+      "note": "Netflix spells it 'Avarachan', TMDB 'Avaraachan'",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1290035"
+      }
+    },
+    {
+      "name": "Sub-Inspector Yugandhar",
+      "list": "movie",
+      "chart_year": 2026,
+      "note": "TMDB's title is the abbreviation 'SI Yugandhar'",
+      "want": {
+        "kind": "movie",
+        "tmdb_id": "1811964"
+      }
+    }
+  ]
+}

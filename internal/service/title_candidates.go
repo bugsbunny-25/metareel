@@ -49,12 +49,13 @@ type CandidateQuery struct {
 }
 
 type MappingCandidate struct {
-	Title  string  `json:"title"`
-	Year   *int    `json:"year"`
-	Kind   string  `json:"kind"` // movie | tv_show
-	TmdbID *string `json:"tmdb_id"`
-	ImdbID *string `json:"imdb_id"`
-	URL    *string `json:"url"`
+	Title       string  `json:"title"`
+	Year        *int    `json:"year"`
+	ReleaseDate *string `json:"release_date,omitempty"` // YYYY-MM-DD (TMDB candidates)
+	Kind        string  `json:"kind"`                   // movie | tv_show
+	TmdbID      *string `json:"tmdb_id"`
+	ImdbID      *string `json:"imdb_id"`
+	URL         *string `json:"url"`
 }
 
 type RTCandidate struct {
@@ -202,6 +203,10 @@ func (s *TitleCandidatesService) searchTMDB(ctx context.Context, q CandidateQuer
 		if r.Year > 0 {
 			y := r.Year
 			mc.Year = &y
+		}
+		if r.ReleaseDate != "" {
+			d := r.ReleaseDate
+			mc.ReleaseDate = &d
 		}
 		out = append(out, mc)
 	}

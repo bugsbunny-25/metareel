@@ -41,6 +41,17 @@ func (h *Handler) ReviewMappings(c *echo.Context) error {
 	return writeData(c, out, err)
 }
 
+// GetReviewSuggestions ranks other TMDB titles for a mapping in the review
+// queue: GET /api/v1/admin/mappings/review/{subject}/{id}/suggestions
+func (h *Handler) GetReviewSuggestions(c *echo.Context) error {
+	id, err := parseID(c.Param("id"), "id")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.ReviewFix.Suggestions(c.Request().Context(), c.Param("subject"), id)
+	return writeData(c, out, err)
+}
+
 // GetMapping: GET /api/v1/admin/mappings/{kind}/{id}
 func (h *Handler) GetMapping(c *echo.Context) error {
 	ref, err := h.parseRef(c)

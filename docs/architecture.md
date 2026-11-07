@@ -440,6 +440,30 @@ than a year off), `no_offers` (+15), `name_differs` (+15: the chart name,
 without season suffixes, neither is nor contains TMDB's title), `no_details`
 (+5). Computed on request; nothing is stored.
 
+Each queue row has two one-click fixes in the admin UI: **Looks right** saves
+the current TMDB title by hand, and **Find fix** loads
+`GET /admin/mappings/review/{subject}/{id}/suggestions`
+(`service/mapping_review_fix.go`), then **Use this** saves a suggestion by
+hand. Both saves use the title / Netflix title PATCH, so the title leaves
+the queue. Suggestions come from a live JustWatch + TMDB search of the name
+(and its base without a season) in both kinds, scored on the same signals
+as the queue; the best five are checked for an offer of the charted service.
+Calls run one at a time with searches 500 ms apart (up to 8 searches and 5
+offer lookups each), results without search errors are kept for 5 minutes,
+and only numeric TMDB IDs are suggested.
+
+### Golden mappings (`service/golden_mappings_test.go`)
+
+`testdata/golden_mappings/cases.json` holds chart titles that were hard to
+map (each fixed or confirmed by hand on the deployed instance), and
+`http.json` holds the JustWatch and TMDB responses recorded for them. The
+test runs `TitleMatcher.Match` (FlixPatrol) and the Netflix TMDB step against
+the recordings. Each case must reach its `want`, or match its `known_miss`
+(the current wrong or missing result, with why), so any change in matching
+shows up. After a matcher change, or to add a case, re-record with
+`GOLDEN_RECORD=1 TMDB_API_KEY=... go test -run TestGoldenMappings ./internal/service/`,
+which makes live requests and drops `api_key` from the recorded keys.
+
 ## Title origins (`service/origins.go`)
 
 `ClassifyOrigin(provider, movie, metadata)` says where a title on a

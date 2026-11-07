@@ -28,7 +28,8 @@ func writeData(c *echo.Context, out any, err error) error {
 		return c.JSON(http.StatusConflict, map[string]any{"error": conflictErr.Error()})
 	case errors.Is(err, service.ErrTitleNotFound), errors.Is(err, service.ErrTop10NotFound),
 		errors.Is(err, service.ErrNoMetadata), errors.Is(err, service.ErrNetflixTitleNotFound),
-		errors.Is(err, service.ErrNetflixSeasonNotFound), errors.Is(err, service.ErrWebhookNotFound):
+		errors.Is(err, service.ErrNetflixSeasonNotFound), errors.Is(err, service.ErrWebhookNotFound),
+		errors.Is(err, service.ErrReviewSubjectNotFound):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": err.Error()})
 	case errors.Is(err, sql.ErrNoRows):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": "not found"})

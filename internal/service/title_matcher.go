@@ -21,10 +21,13 @@ type TitleMatcher struct {
 	tmdb      *client.TMDBClient
 	justWatch *client.JustWatchClient
 	rt        *client.RottenTomatoesClient
+	// jwDelay spaces JustWatch requests (tests replaying recorded responses
+	// set it to 0).
+	jwDelay time.Duration
 }
 
 func NewTitleMatcher(log *slog.Logger, fetcher flixpatrol.Fetcher, tmdbClient *client.TMDBClient, justWatchClient *client.JustWatchClient, rtClient *client.RottenTomatoesClient) *TitleMatcher {
-	return &TitleMatcher{log: log, fetcher: fetcher, tmdb: tmdbClient, justWatch: justWatchClient, rt: rtClient}
+	return &TitleMatcher{log: log, fetcher: fetcher, tmdb: tmdbClient, justWatch: justWatchClient, rt: rtClient, jwDelay: time.Second}
 }
 
 // FetchOptions controls FlixPatrol page fetches.
@@ -74,7 +77,7 @@ type TitleMatch struct {
 func (in MatchInput) query() titleQuery {
 	q := titleQuery{Year: flixpatrol.YearFromSlug(in.Slug)}
 	add := func(name string) {
-		name = strings.TrimSpace(name)
+		name = strings.TrimSpace(decodeEntities(name)) // FlixPatrol names can carry entities ("Big John&#39;s")
 		if name == "" {
 			return
 		}
@@ -87,7 +90,8 @@ func (in MatchInput) query() titleQuery {
 	}
 	if in.Details != nil {
 		add(in.Details.Name)
-		if in.Details.Year != 0 {
+		// FlixPatrol shows 1900-01-01 when it doesn't know the premiere.
+		if in.Details.Year > 1900 {
 			q.Year = in.Details.Year
 		}
 		q.Kind = in.Details.TitleKind
@@ -194,14 +198,14 @@ func (m *TitleMatcher) matchJustWatch(ctx context.Context, in MatchInput, kind f
 		m.log.Debug("justwatch mapping failed by path lookup", slog.String("slug", in.Slug), slog.Any("err", err))
 	}
 
-	if err := sleepCtx(ctx, time.Second); err != nil {
+	if err := sleepCtx(ctx, m.jwDelay); err != nil {
 		return titleCandidate{}, false, err
 	}
 
 	var candidates []titleCandidate
 	for i, name := range q.Names {
 		if i > 0 {
-			if err := sleepCtx(ctx, time.Second); err != nil {
+			if err := sleepCtx(ctx, m.jwDelay); err != nil {
 				return titleCandidate{}, false, err
 			}
 		}
@@ -215,11 +219,11 @@ func (m *TitleMatcher) matchJustWatch(ctx context.Context, in MatchInput, kind f
 			candidates = append(candidates, justWatchCandidate(edge.Node, "justwatch_search"))
 		}
 		if c, ok := pick(candidates); ok {
-			return c, true, sleepCtx(ctx, time.Second)
+			return c, true, sleepCtx(ctx, m.jwDelay)
 		}
 		m.log.Debug("justwatch search found no match", slog.String("query", name), slog.String("kind", string(kind)), slog.Int("query_year", q.Year), slog.Int("results", len(candidates)))
 	}
-	return titleCandidate{}, false, sleepCtx(ctx, time.Second)
+	return titleCandidate{}, false, sleepCtx(ctx, m.jwDelay)
 }
 
 func justWatchCandidate(f client.MovieOrShowFragment, source string) titleCandidate {

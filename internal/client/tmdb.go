@@ -41,7 +41,8 @@ type TMDBSearchResult struct {
 	ID            int
 	Title         string
 	OriginalTitle string
-	Year          int // 0 if TMDB has no release / first-air date
+	Year          int    // 0 if TMDB has no release / first-air date
+	ReleaseDate   string // YYYY-MM-DD release / first-air date, "" if none
 }
 
 // SearchMovie returns TMDB movie search results for query, most relevant first.
@@ -76,9 +77,12 @@ func (c *TMDBClient) search(ctx context.Context, kind string, query string) ([]T
 
 	results := make([]TMDBSearchResult, 0, len(out.Results))
 	for _, r := range out.Results {
-		res := TMDBSearchResult{ID: r.ID, Title: r.Title, OriginalTitle: r.OriginalTitle, Year: yearFromDate(r.ReleaseDate)}
+		res := TMDBSearchResult{ID: r.ID, Title: r.Title, OriginalTitle: r.OriginalTitle, Year: yearFromDate(r.ReleaseDate), ReleaseDate: r.ReleaseDate}
 		if kind == "tv" {
-			res.Title, res.OriginalTitle, res.Year = r.Name, r.OriginalName, yearFromDate(r.FirstAirDate)
+			res.Title, res.OriginalTitle, res.Year, res.ReleaseDate = r.Name, r.OriginalName, yearFromDate(r.FirstAirDate), r.FirstAirDate
+		}
+		if len(res.ReleaseDate) != 10 {
+			res.ReleaseDate = ""
 		}
 		results = append(results, res)
 	}

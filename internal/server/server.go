@@ -168,11 +168,13 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Ratings:    ratings,
 		Releases:   service.NewReleasesService(log, justWatch),
 		Candidates: candidates,
-		Netflix:    service.NewNetflixAdminService(log, importsRepo, taskBootstrap.Writer, metadataRepo, taskBootstrap.Metadata, taskBootstrap.Seasons, candidates).WithMapping(taskBootstrap.Mapping),
-		Mapping:    taskBootstrap.Mapping,
-		Stats:      service.NewAdminStatsService(taskScheduleRepo, flixRepo),
-		APIKeys:    apiKeys,
-		Health:     service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
+		ReviewFix: service.NewReviewFixService(log, repository.NewMappingRepository(db), candidates,
+			client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
+		Netflix: service.NewNetflixAdminService(log, importsRepo, taskBootstrap.Writer, metadataRepo, taskBootstrap.Metadata, taskBootstrap.Seasons, candidates).WithMapping(taskBootstrap.Mapping),
+		Mapping: taskBootstrap.Mapping,
+		Stats:   service.NewAdminStatsService(taskScheduleRepo, flixRepo),
+		APIKeys: apiKeys,
+		Health:  service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
 
 		Charts: service.NewChartsService(analyticsRepo),
 		Overview: service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping).
