@@ -86,6 +86,8 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	me.POST("/venues/:id/screens", h.CreateScreen)
 	me.PUT("/venues/:id/screens/:screen_id", h.UpdateScreen)
 	me.DELETE("/venues/:id/screens/:screen_id", h.DeleteScreen)
+	me.GET("/shows", h.ShowQueue)
+	me.GET("/upcoming", h.Upcoming)
 	me.GET("/shows/:id", h.GetShow)
 	me.POST("/shows/:id/watched", h.MarkEpisodes)
 	me.DELETE("/shows/:id/watched", h.UnmarkEpisodes)

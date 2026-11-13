@@ -11,7 +11,7 @@
   import Poster from './Poster.svelte'
 
   /**
-   * target: null when closed, else { kind: 'movie'|'tv', id, name, poster?, season?,
+   * target: null when closed, else { kind: 'movie'|'tv', id, name, poster?, season?, episode?,
    *   watch?: an existing WatchEntry to edit, onsaved?: (entry) => void }
    */
   let { target = $bindable(null) } = $props()
@@ -47,7 +47,7 @@
       tagText = (w?.tags ?? []).join(', ')
       venue = w?.venue_kind ?? ''
       season = w?.season_number ?? target.season ?? 1
-      episode = w?.episode_number ?? 1
+      episode = w?.episode_number ?? target.episode ?? 1
       error = ''
       key = crypto.randomUUID()
       dialog.showModal()

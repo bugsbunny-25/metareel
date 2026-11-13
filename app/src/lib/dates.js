@@ -40,3 +40,38 @@ export const clock = (ts) => {
   const d = fromUTC(ts)
   return d ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : ''
 }
+
+const rel = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+/** "3 days ago", "last week", "in 2 months" for a UTC timestamp or a YYYY-MM-DD. */
+export function ago(ts, now = new Date()) {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(ts ?? '') ? new Date(ts + 'T12:00:00Z') : fromUTC(ts)
+  if (!d) return ''
+  const days = (d - now) / 86400000
+  const abs = Math.abs(days)
+  if (abs < 1) return Math.abs((d - now) / 3600000) < 1 ? 'just now' : rel.format(Math.round((d - now) / 3600000), 'hour')
+  if (abs < 14) return rel.format(Math.round(days), 'day')
+  if (abs < 60) return rel.format(Math.round(days / 7), 'week')
+  if (abs < 730) return rel.format(Math.round(days / 30.44), 'month')
+  return rel.format(Math.round(days / 365.25), 'year')
+}
+
+/** Whole days from today (local) to a YYYY-MM-DD: 0 today, 1 tomorrow, -1 yesterday. */
+export const daysUntil = (day, today = localDay()) => Math.round((new Date(day + 'T12:00:00Z') - new Date(today + 'T12:00:00Z')) / 86400000)
+
+/** Minutes as "9 h 40 m", "45 m" or "3 h". */
+export function hm(min) {
+  const m = Math.round(min ?? 0)
+  if (m < 60) return `${m} m`
+  return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} m` : `${m / 60} h`
+}
+
+/**
+ * How long ago, by local day: "today", "yesterday", "5 days ago", then weeks and months.
+ * For watches, whose time may only be known to the day (stored as local midnight).
+ */
+export function sinceDay(ts, now = new Date()) {
+  const d = fromUTC(ts)
+  if (!d) return ''
+  const n = daysUntil(localDay(d), localDay(now))
+  return n > -14 ? rel.format(n, 'day') : ago(localDay(d), now)
+}

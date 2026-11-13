@@ -377,6 +377,22 @@ func TestShowProgressAndUpNextEndpoints(t *testing.T) {
 		t.Errorf("show_title = %q", next.Episodes[0].ShowTitle)
 	}
 
+	// The queue sorts it into a stage, with its next episode.
+	rec = a.do(http.MethodGet, "/api/v1/me/shows", "", alice)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"stage":"watching"`) ||
+		!strings.Contains(rec.Body.String(), `"next_episode":{"season_number":1,"episode_number":2`) {
+		t.Fatalf("show queue: %d %s", rec.Code, rec.Body)
+	}
+	rec = a.do(http.MethodGet, "/api/v1/me/upcoming?days=30", "", alice)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"days":30`) {
+		t.Fatalf("upcoming: %d %s", rec.Code, rec.Body)
+	}
+	for _, path := range []string{"/api/v1/me/shows?stale_days=2", "/api/v1/me/shows?stale_days=x", "/api/v1/me/upcoming?days=0x"} {
+		if rec := a.do(http.MethodGet, path, "", alice); rec.Code != http.StatusBadRequest {
+			t.Errorf("GET %s: %d, want 400", path, rec.Code)
+		}
+	}
+
 	// Unmarking takes it back off.
 	rec = a.do(http.MethodDelete, "/api/v1/me/shows/1396/watched?scope=season&season=1", "", alice)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"removed":1`) {
@@ -388,7 +404,7 @@ func TestShowProgressAndUpNextEndpoints(t *testing.T) {
 	}
 
 	// Episode routes need a signed-in user too.
-	for _, path := range []string{"/api/v1/me/shows/1396", "/api/v1/me/up-next"} {
+	for _, path := range []string{"/api/v1/me/shows/1396", "/api/v1/me/up-next", "/api/v1/me/shows", "/api/v1/me/upcoming"} {
 		if rec := a.do(http.MethodGet, path, "", map[string]string{"X-API-Key": a.apiKey}); rec.Code != http.StatusUnauthorized {
 			t.Errorf("GET %s with an api key: %d, want 401", path, rec.Code)
 		}

@@ -20,6 +20,8 @@
   import Watchlist from './pages/Watchlist.svelte'
   import Library from './pages/Library.svelte'
   import Stats from './pages/Stats.svelte'
+  import UpNext from './pages/UpNext.svelte'
+  import Show from './pages/Show.svelte'
 
   let logTarget = $state(null)
   let confirmRequest = $state(null)
@@ -54,13 +56,20 @@
   })
 
   const titleMatch = $derived(route.path.match(/^\/title\/(movie|tv)\/(\d+)$/))
-  const PAGES = { '/': 'home', '/charts': 'charts', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/stats': 'stats' }
-  const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : 'missing'))
+  const showMatch = $derived(route.path.match(/^\/show\/(\d+)$/))
+  const PAGES = { '/': 'home', '/charts': 'charts', '/up-next': 'upnext', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/stats': 'stats' }
+  const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : 'missing'))
   const providers = $derived(reference.providers.filter((p) => p.countries.includes(scope.country)))
 
   $effect(() => {
-    const NAMES = { charts: 'Top 10', title: 'Title', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', missing: 'Not found' }
+    const NAMES = { charts: 'Top 10', title: 'Title', upnext: 'Up next', show: 'Episodes', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', missing: 'Not found' }
     document.title = NAMES[page] ? `${NAMES[page]} · metareel` : 'metareel'
+  })
+  // On a phone the nav scrolls sideways; keep the current page's link in view.
+  let nav = $state(null)
+  $effect(() => {
+    page
+    nav?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   })
 </script>
 
@@ -73,10 +82,11 @@
 {:else}
   <header class="bar">
     <a class="brand" href="#/">metareel</a>
-    <nav class="primary" aria-label="Primary">
+    <nav class="primary" aria-label="Primary" bind:this={nav}>
       <a href="#/" aria-current={page === 'home' ? 'page' : undefined}>Home</a>
       <a href="#/charts" aria-current={page === 'charts' ? 'page' : undefined}>Charts</a>
       <span class="sep" aria-hidden="true"></span>
+      <a href="#/up-next" aria-current={page === 'upnext' || page === 'show' ? 'page' : undefined}>Up next</a>
       <a href="#/watchlist" aria-current={page === 'watchlist' ? 'page' : undefined}>Watchlist</a>
       <a href="#/library" aria-current={page === 'library' ? 'page' : undefined}>Library</a>
       <a href="#/diary" aria-current={page === 'diary' ? 'page' : undefined}>Diary</a>
@@ -125,6 +135,10 @@
       <Watchlist {onlog} />
     {:else if page === 'library'}
       <Library {onlog} />
+    {:else if page === 'upnext'}
+      <UpNext {onlog} />
+    {:else if page === 'show'}
+      {#key route.path}<Show id={showMatch[1]} {onlog} {onconfirm} />{/key}
     {:else if page === 'stats'}
       <Stats />
     {:else if page === 'diary'}
@@ -187,7 +201,7 @@
     .bar { gap: 14px; height: auto; min-height: 56px; flex-wrap: wrap; padding-block: 8px; }
     .tools { margin-left: 0; width: 100%; }
     .search .label, .search kbd { display: none; }
-    .primary { max-width: 100%; gap: 14px; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+    .primary { max-width: 100%; gap: 14px; overflow-x: auto; white-space: nowrap; scrollbar-width: none; padding-right: 20px; mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
     .search { width: 32px; padding: 0; justify-content: center; }
   }
 </style>

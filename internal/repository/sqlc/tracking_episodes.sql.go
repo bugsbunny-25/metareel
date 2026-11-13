@@ -272,6 +272,261 @@ func (q *Queries) ListShowEpisodes(ctx context.Context, arg ListShowEpisodesPara
 	return items, nil
 }
 
+const listShowQueue = `-- name: ListShowQueue :many
+WITH shows AS (
+    SELECT u.tmdb_id, u.status, u.favorite, u.watchlist_position, u.last_watched_at,
+           u.created_at, u.updated_at
+    FROM user_titles u
+    WHERE u.user_id = ?1 AND u.tmdb_kind = 'tv' AND u.status <> 'not_interested'
+),
+eps AS (
+    SELECT e.tmdb_id, e.season_number, e.episode_number, e.name, e.air_date, e.runtime, e.episode_type,
+           CASE WHEN EXISTS (SELECT 1 FROM watch_entries w
+                             WHERE w.user_id = ?1 AND w.tmdb_kind = 'tv'
+                               AND w.tmdb_id = e.tmdb_id AND w.season_number = e.season_number
+                               AND w.episode_number = e.episode_number) THEN 1 ELSE 0 END AS seen,
+           CASE WHEN e.air_date IS NOT NULL AND e.air_date <> ''
+                 AND e.air_date <= CAST(?2 AS TEXT) THEN 1 ELSE 0 END AS aired
+    FROM tracked_episodes e
+    JOIN shows s ON s.tmdb_id = e.tmdb_id
+    WHERE e.season_number > 0
+),
+agg AS (
+    SELECT tmdb_id,
+           COUNT(*) AS total,
+           SUM(aired) AS aired,
+           SUM(aired * seen) AS watched,
+           SUM(CASE WHEN aired = 1 AND seen = 0 THEN COALESCE(runtime, 0) ELSE 0 END) AS minutes_left,
+           MIN(CASE WHEN aired = 0 AND air_date IS NOT NULL AND air_date <> '' THEN air_date END) AS next_air_date
+    FROM eps
+    GROUP BY tmdb_id
+),
+nxt AS (
+    SELECT tmdb_id, season_number, episode_number, name, air_date, runtime, episode_type,
+           ROW_NUMBER() OVER (PARTITION BY tmdb_id ORDER BY season_number, episode_number) AS rn
+    FROM eps
+    WHERE aired = 1 AND seen = 0
+)
+SELECT s.tmdb_id, s.status, s.favorite,
+    CAST(COALESCE(s.watchlist_position, -1) AS INTEGER) AS watchlist_position,
+    CAST(COALESCE(s.last_watched_at, '') AS TEXT) AS last_watched_at,
+    CAST(s.created_at AS TEXT) AS created_at,
+    CAST(s.updated_at AS TEXT) AS updated_at,
+    CAST(COALESCE(NULLIF(t.title, ''), NULLIF(tr.title, ''), '') AS TEXT) AS title,
+    CAST(COALESCE(t.poster_path, tr.poster_path, '') AS TEXT) AS poster_path,
+    CAST(COALESCE(a.total, 0) AS INTEGER) AS total_episodes,
+    CAST(COALESCE(a.aired, 0) AS INTEGER) AS aired_episodes,
+    CAST(COALESCE(a.watched, 0) AS INTEGER) AS watched_episodes,
+    CAST(COALESCE(a.minutes_left, 0) AS INTEGER) AS minutes_left,
+    CAST(COALESCE(a.next_air_date, '') AS TEXT) AS next_air_date,
+    CAST(COALESCE(n.season_number, -1) AS INTEGER) AS next_season,
+    CAST(COALESCE(n.episode_number, 0) AS INTEGER) AS next_episode,
+    CAST(COALESCE(n.name, '') AS TEXT) AS next_name,
+    CAST(COALESCE(n.air_date, '') AS TEXT) AS next_episode_air_date,
+    CAST(COALESCE(n.runtime, 0) AS INTEGER) AS next_runtime,
+    CAST(COALESCE(n.episode_type, '') AS TEXT) AS next_episode_type
+FROM shows s
+LEFT JOIN agg a ON a.tmdb_id = s.tmdb_id
+LEFT JOIN nxt n ON n.tmdb_id = s.tmdb_id AND n.rn = 1
+LEFT JOIN tmdb_titles t ON t.tmdb_kind = 'tv' AND t.tmdb_id = s.tmdb_id
+LEFT JOIN tracked_titles tr ON tr.tmdb_kind = 'tv' AND tr.tmdb_id = s.tmdb_id
+ORDER BY s.tmdb_id
+`
+
+type ListShowQueueParams struct {
+	UserID int64  `json:"user_id"`
+	Today  string `json:"today"`
+}
+
+type ListShowQueueRow struct {
+	TmdbID             string `json:"tmdb_id"`
+	Status             string `json:"status"`
+	Favorite           int64  `json:"favorite"`
+	WatchlistPosition  int64  `json:"watchlist_position"`
+	LastWatchedAt      string `json:"last_watched_at"`
+	CreatedAt          string `json:"created_at"`
+	UpdatedAt          string `json:"updated_at"`
+	Title              string `json:"title"`
+	PosterPath         string `json:"poster_path"`
+	TotalEpisodes      int64  `json:"total_episodes"`
+	AiredEpisodes      int64  `json:"aired_episodes"`
+	WatchedEpisodes    int64  `json:"watched_episodes"`
+	MinutesLeft        int64  `json:"minutes_left"`
+	NextAirDate        string `json:"next_air_date"`
+	NextSeason         int64  `json:"next_season"`
+	NextEpisode        int64  `json:"next_episode"`
+	NextName           string `json:"next_name"`
+	NextEpisodeAirDate string `json:"next_episode_air_date"`
+	NextRuntime        int64  `json:"next_runtime"`
+	NextEpisodeType    string `json:"next_episode_type"`
+}
+
+// Every show in the user's library with its progress (seasons 1+ only):
+// episodes listed, aired and watched, minutes left of aired unwatched ones,
+// the first aired unwatched episode and the next air date.
+func (q *Queries) ListShowQueue(ctx context.Context, arg ListShowQueueParams) ([]ListShowQueueRow, error) {
+	rows, err := q.db.QueryContext(ctx, listShowQueue, arg.UserID, arg.Today)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListShowQueueRow{}
+	for rows.Next() {
+		var i ListShowQueueRow
+		if err := rows.Scan(
+			&i.TmdbID,
+			&i.Status,
+			&i.Favorite,
+			&i.WatchlistPosition,
+			&i.LastWatchedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Title,
+			&i.PosterPath,
+			&i.TotalEpisodes,
+			&i.AiredEpisodes,
+			&i.WatchedEpisodes,
+			&i.MinutesLeft,
+			&i.NextAirDate,
+			&i.NextSeason,
+			&i.NextEpisode,
+			&i.NextName,
+			&i.NextEpisodeAirDate,
+			&i.NextRuntime,
+			&i.NextEpisodeType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listShowRefreshCandidates = `-- name: ListShowRefreshCandidates :many
+SELECT u.tmdb_id,
+    CAST(COALESCE(tr.episodes_fetched_at, '') AS TEXT) AS fetched_at
+FROM user_titles u
+LEFT JOIN tracked_titles tr ON tr.tmdb_kind = 'tv' AND tr.tmdb_id = u.tmdb_id
+WHERE u.user_id = ?1 AND u.tmdb_kind = 'tv' AND u.status <> 'not_interested'
+ORDER BY tr.episodes_fetched_at IS NOT NULL, tr.episodes_fetched_at, u.tmdb_id
+`
+
+type ListShowRefreshCandidatesRow struct {
+	TmdbID    string `json:"tmdb_id"`
+	FetchedAt string `json:"fetched_at"`
+}
+
+// The user's shows with when their episodes were last cached; never-fetched
+// first, then oldest. Shows they are not interested in are left out.
+func (q *Queries) ListShowRefreshCandidates(ctx context.Context, userID int64) ([]ListShowRefreshCandidatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listShowRefreshCandidates, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListShowRefreshCandidatesRow{}
+	for rows.Next() {
+		var i ListShowRefreshCandidatesRow
+		if err := rows.Scan(&i.TmdbID, &i.FetchedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUpcomingEpisodes = `-- name: ListUpcomingEpisodes :many
+SELECT e.tmdb_id, e.season_number, e.episode_number, e.name, e.runtime, e.episode_type,
+    CAST(e.air_date AS TEXT) AS air_date,
+    u.status,
+    CAST(COALESCE(NULLIF(t.title, ''), NULLIF(tr.title, ''), '') AS TEXT) AS show_title,
+    CAST(COALESCE(t.poster_path, tr.poster_path, '') AS TEXT) AS poster_path
+FROM user_titles u
+JOIN tracked_episodes e ON e.tmdb_id = u.tmdb_id
+LEFT JOIN tmdb_titles t ON t.tmdb_kind = 'tv' AND t.tmdb_id = u.tmdb_id
+LEFT JOIN tracked_titles tr ON tr.tmdb_kind = 'tv' AND tr.tmdb_id = u.tmdb_id
+WHERE u.user_id = ?1 AND u.tmdb_kind = 'tv'
+  AND u.status NOT IN ('on_hold', 'dropped', 'not_interested')
+  AND e.season_number > 0
+  AND e.air_date > CAST(?2 AS TEXT)
+  AND e.air_date <= CAST(?3 AS TEXT)
+ORDER BY e.air_date, show_title, e.tmdb_id, e.season_number, e.episode_number
+LIMIT ?4
+`
+
+type ListUpcomingEpisodesParams struct {
+	UserID int64  `json:"user_id"`
+	After  string `json:"after"`
+	Until  string `json:"until"`
+	Limit  int64  `json:"limit"`
+}
+
+type ListUpcomingEpisodesRow struct {
+	TmdbID        string         `json:"tmdb_id"`
+	SeasonNumber  int64          `json:"season_number"`
+	EpisodeNumber int64          `json:"episode_number"`
+	Name          string         `json:"name"`
+	Runtime       sql.NullInt64  `json:"runtime"`
+	EpisodeType   sql.NullString `json:"episode_type"`
+	AirDate       string         `json:"air_date"`
+	Status        string         `json:"status"`
+	ShowTitle     string         `json:"show_title"`
+	PosterPath    string         `json:"poster_path"`
+}
+
+// Episodes airing after today and up to a day of shows in the user's
+// library, except the ones on hold, dropped or not wanted.
+func (q *Queries) ListUpcomingEpisodes(ctx context.Context, arg ListUpcomingEpisodesParams) ([]ListUpcomingEpisodesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUpcomingEpisodes,
+		arg.UserID,
+		arg.After,
+		arg.Until,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUpcomingEpisodesRow{}
+	for rows.Next() {
+		var i ListUpcomingEpisodesRow
+		if err := rows.Scan(
+			&i.TmdbID,
+			&i.SeasonNumber,
+			&i.EpisodeNumber,
+			&i.Name,
+			&i.Runtime,
+			&i.EpisodeType,
+			&i.AirDate,
+			&i.Status,
+			&i.ShowTitle,
+			&i.PosterPath,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setTrackedEpisodesFetched = `-- name: SetTrackedEpisodesFetched :exec
 UPDATE tracked_titles SET episodes_fetched_at = CURRENT_TIMESTAMP
 WHERE tmdb_kind = 'tv' AND tmdb_id = ?1

@@ -319,6 +319,28 @@ func (h *Handler) UpNext(c *echo.Context) error {
 	return h.writeTracking(c, http.StatusOK, out, err)
 }
 
+// ShowQueue: GET /api/v1/me/shows?stale_days=
+// Every show in the library sorted into stages, with progress and the next episode.
+func (h *Handler) ShowQueue(c *echo.Context) error {
+	days, err := optionalInt(c.QueryParam("stale_days"), "stale_days")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Tracking.ShowQueue(c.Request().Context(), userID(c), int(days))
+	return h.writeTracking(c, http.StatusOK, out, err)
+}
+
+// Upcoming: GET /api/v1/me/upcoming?days=
+// Episodes that have not aired yet of the shows being followed.
+func (h *Handler) Upcoming(c *echo.Context) error {
+	days, err := optionalInt(c.QueryParam("days"), "days")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Tracking.Upcoming(c.Request().Context(), userID(c), int(days))
+	return h.writeTracking(c, http.StatusOK, out, err)
+}
+
 // optionalInt64Ptr reads an optional integer query param, nil when absent.
 func optionalInt64Ptr(v, name string) (*int64, error) {
 	if strings.TrimSpace(v) == "" {

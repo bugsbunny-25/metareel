@@ -256,6 +256,8 @@ make reports-open
 | GET/PUT/DELETE | `/api/v1/me/watches/:id`            | One watch: read, replace, or delete it for good |
 | GET    | `/api/v1/me/tags`                           | The user's tags with how many watches carry each |
 | DELETE | `/api/v1/me/tags/:id`                       | Delete a tag and detach it from every watch |
+| GET    | `/api/v1/me/shows`                          | Every show you track, sorted into stages (`watching`, `stalled` after `stale_days` (30) without a watch, `not_started`, `on_hold`, `dropped`, `caught_up`) with progress, the next episode and the next air date |
+| GET    | `/api/v1/me/upcoming`                       | Episodes still to air of your shows, soonest first (`days`: 90, ≤ 365); on hold, dropped and unwanted shows left out |
 | GET    | `/api/v1/me/shows/:id`                      | A show with the user's progress: seasons, episodes, watch counts (`include_specials`) |
 | POST   | `/api/v1/me/shows/:id/watched`              | Mark episodes watched: `scope` = `episode` / `season` / `up_to` / `all` |
 | DELETE | `/api/v1/me/shows/:id/watched`              | Unmark episodes (`scope`, `season`, `episode`, `include_specials`); deletes their watches |
@@ -564,6 +566,17 @@ counts distinct episodes, so a rewatch is not extra progress.
 `GET /api/v1/me/up-next` is the first aired, unwatched episode of every show
 you have started and not finished, most recently aired first.
 
+`GET /api/v1/me/shows` puts every show you track into one stage, in this
+order: `watching` (part way through and watched within `stale_days`, 30 by
+default), `stalled` (part way through, nothing watched for longer),
+`not_started`, `on_hold`, `dropped` and `caught_up` (every aired episode
+seen). A status you chose -- on hold, dropped -- decides the stage;
+otherwise the episodes do, so a completed show whose new episode has aired
+is back to `watching`. `GET /api/v1/me/upcoming` lists the episodes still to
+air of every show that is not on hold, dropped or unwanted. Both refresh
+episode lists older than a day from TMDB on the way, at most 12 shows a
+request, and fall back to the cache if TMDB fails.
+
 ### Time
 
 Clients send UTC instants, and the server stores UTC. What a client logs is
@@ -758,7 +771,13 @@ favourites, a poster grid or a list, and a per-title menu that sets the
 status or favourite through `PUT /me/titles/{kind}/{id}` or clears it) and
 Diary (every watch grouped by its
 local day, this year's totals, a year heatmap from `/me/stats/calendar`, and
-edit and delete; deletes are permanent and ask first) and Stats (one year at a
+edit and delete; deletes are permanent and ask first), Up next (shows by
+stage from `/me/shows` -- continue watching, haven't watched in a while, not
+started, on hold, dropped -- each with its next episode, progress and a
+one-click "Watched", then an Upcoming timeline from `/me/upcoming` with
+episodes per week; a Movies tab lists released watchlist movies and ones not
+out yet), a show page (`#/show/:id`: a map of every episode, season tabs,
+tick to mark, untick to delete after asking, "watched up to here") and Stats (one year at a
 time from `/me/stats/year` and `/me/stats/ratings`: watches, hours, titles and
 streaks; watches per month, weekday and hour; your rating spread and how far
 you sit from TMDB, IMDb and RT, overall and per title; genres, decades,

@@ -786,6 +786,23 @@ Progress is counted, not stored: the denominator is the episodes that have
 aired, and it moves as a show airs. `UpNext` picks the first aired, unwatched
 episode per show with a `ROW_NUMBER()` window, skipping specials.
 
+`ShowQueue` (`GET /me/shows`) is one query, `ListShowQueue`: per show, the
+cached episodes (seasons 1+) flagged aired and seen, aggregated into counts,
+minutes left and the next air date, joined to the first aired unseen episode.
+`stageOf` then sorts each show into a stage in Go: a chosen `on_hold` or
+`dropped` wins, else no episode seen is `not_started` (a `completed` with
+nothing logged is `caught_up`), else no aired episode left is `caught_up`,
+else `last_watched_at` against `stale_days` picks `watching` or `stalled`.
+Stages come from episodes rather than the stored status because a new episode
+can air after `advanceShowStatus` last ran. `Upcoming` (`GET /me/upcoming`)
+lists cached episodes after today for shows not on hold, dropped or unwanted.
+
+Both first call `refreshShowEpisodes`, because the queue is only as good as
+the cache and nothing else refreshes `tracked_episodes`: it re-fetches up to
+12 shows whose lists are missing or older than `trackedEpisodesTTL`
+(never-fetched first, four at a time), logs failures and carries on. A
+package mutex makes the two calls a page makes together share one refresh.
+
 ### Where and how a watch happened
 
 `SetWatchEntryContext` writes the ~36 context columns in one statement,

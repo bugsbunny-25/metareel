@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,9 +23,13 @@ type fakeTitleSource struct {
 	calls        int
 	episodeCalls int
 	err          error
+	// mu guards the counters: queue reads refresh several shows at once.
+	mu sync.Mutex
 }
 
 func (f *fakeTitleSource) TVSeasonEpisodes(_ context.Context, tvID string, seasons []int) (map[int][]client.TMDBEpisode, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.episodeCalls++
 	if f.err != nil {
 		return nil, f.err
@@ -53,6 +58,8 @@ func (f *fakeTitleSource) SearchTV(context.Context, string) ([]client.TMDBSearch
 }
 
 func (f *fakeTitleSource) TitleDetails(_ context.Context, kind, id string) (client.TMDBTitleDetails, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls++
 	if f.err != nil {
 		return client.TMDBTitleDetails{}, f.err

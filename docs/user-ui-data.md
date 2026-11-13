@@ -264,12 +264,13 @@ names inside them come from §4.2 and are more settled than the routes.
 
 | Endpoint | Purpose / shape |
 |---|---|
-| `GET /me/shows/{id}` | A show's tracking state with per-season and per-episode progress: `{ title, state, progress: { watched, total, percent, include_specials }, seasons: [{ season_number, name, air_date, episode_count, watched_count, episodes: [{ episode_number, name, air_date, runtime, episode_type, watched_count, last_watched_at? }] }] }` |
-| `POST /me/watches` | Extended, not new: `subject_kind: "episode"` plus `season_number`, `episode_number` |
-| `POST /me/shows/{id}/episodes/watched` | Bulk mark, one transaction. Body selects a scope — `{ season_number }`, `{ up_to: { season_number, episode_number } }` ("everything up to here"), or `{ episodes: [{ season_number, episode_number }] }` — plus `ended_at`, `tz`, optional `rating`, `tags`, `include_specials`. → `{ created, skipped, entries[] }` |
-| `DELETE /me/shows/{id}/episodes/watched` | Bulk unmark, same scope selectors |
-| `GET /me/up-next?limit=` | `{ items: [{ title, state, progress, next_episode: { season_number, episode_number, name, air_date, runtime } }] }` — the next unwatched episode per in-progress show |
-| `GET /me/calendar?from=&to=&country=` | The personalised episode calendar: `/api/v1/calendar/{country}` filtered to tracked shows, with each item's watched state |
+| `GET /me/shows` | Every tracked show sorted into stages (`watching`, `stalled`, `not_started`, `on_hold`, `dropped`, `caught_up`; `stale_days`, default 30, splits watching from stalled): `{ stale_days, today, counts: {stage: n}, shows: [{ tmdb_id, title, poster_path, status, favorite, stage, total_episodes, aired_episodes, watched_episodes, remaining_episodes, minutes_left, percent, last_watched_at?, added_at, watchlist_position?, next_episode?: { season_number, episode_number, name, air_date, runtime, episode_type }, next_air_date? }] }` |
+| `GET /me/upcoming?days=` | Episodes still to air (next `days`, default 90, max 365) of shows not on hold, dropped or unwanted: `{ from, to, days, truncated, episodes: [{ tmdb_id, show_title, poster_path, status, season_number, episode_number, name, air_date, runtime, episode_type }] }`. Replaces the planned personalised `/me/calendar` |
+| `GET /me/shows/{id}?include_specials=` | One show with your progress: `{ title, state, progress: { total_episodes, aired_episodes, watched_episodes, percent, include_specials, next_air_date? }, seasons: [{ season_number, total_episodes, watched_episodes, episodes: [{ season_number, episode_number, name, air_date, runtime, episode_type, watch_count, last_watched_at? }] }] }` |
+| `POST /me/watches` | Extended, not new: shows need `season_number` and `episode_number` |
+| `POST /me/shows/{id}/watched` | Bulk mark: `{ scope: episode \| season \| up_to \| all, season_number, episode_number, ended_at, tz, time_precision (default day), rating?, include_specials? }`; only aired, unseen episodes. → the show payload plus `marked` |
+| `DELETE /me/shows/{id}/watched?scope=&season=&episode=` | Bulk unmark (deletes those watches for good). → the show payload plus `removed` |
+| `GET /me/up-next?limit=` | `{ episodes: [{ tmdb_id, show_title, poster_path, season_number, episode_number, name, air_date, runtime, episode_type }], limit }`: the next aired, unseen episode per show in progress. `/me/shows` carries the same plus progress and stages |
 
 #### Phase 3 — venues, formats, money
 

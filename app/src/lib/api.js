@@ -99,6 +99,15 @@ export const api = {
   deleteWatch: (id) => request('DELETE', `/me/watches/${id}`),
   tags: (signal) => request('GET', '/me/tags', { signal }),
 
+  // Shows: every show sorted into stages, episodes still to air, one show's episodes, and
+  // marking runs of episodes watched (scope: episode | season | up_to | all) or unwatched.
+  showQueue: (staleDays, signal) => request('GET', `/me/shows${qs({ stale_days: staleDays })}`, { signal }),
+  upcoming: (days, signal) => request('GET', `/me/upcoming${qs({ days })}`, { signal }),
+  show: (id, includeSpecials, signal) => request('GET', `/me/shows/${id}${qs({ include_specials: includeSpecials ? 'true' : undefined })}`, { signal }),
+  markEpisodes: (id, body) => request('POST', `/me/shows/${id}/watched`, { body }),
+  // Deletes the watches of those episodes for good. params: { scope, season, episode, include_specials }
+  unmarkEpisodes: (id, params) => request('DELETE', `/me/shows/${id}/watched${qs(params)}`),
+
   // Stats over local days (YYYY-MM-DD).
   statsSummary: (from, to, signal) => request('GET', `/me/stats/summary${qs({ from, to })}`, { signal }),
   statsCalendar: (from, to, signal) => request('GET', `/me/stats/calendar${qs({ from, to })}`, { signal }),

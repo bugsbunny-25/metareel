@@ -105,6 +105,7 @@
           <button class="btn-secondary" type="button" aria-pressed={state?.status === 'watchlist'} onclick={toggleWatchlist}>
             <Icon name={state?.status === 'watchlist' ? 'bookmark-fill' : 'bookmark'} size={16} />{state?.status === 'watchlist' ? 'On your Watchlist' : 'Add to Watchlist'}
           </button>
+          {#if kind === 'tv'}<a class="btn-secondary" href="#/show/{id}"><Icon name="list" size={16} />Episodes</a>{/if}
           {#if state?.watch_count > 0}
             <span class="yours"><Icon name="check" size={15} />Watched {state.watch_count > 1 ? `${state.watch_count} times` : ''}{#if state.rating}{' · '}<span class="stars" aria-label="rated {state.rating / 2} of 5">{stars(state.rating)}</span>{/if}</span>
           {/if}

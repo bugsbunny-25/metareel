@@ -2595,6 +2595,80 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/TrackingUnauthorized" }
 
+  /api/v1/me/shows:
+    get:
+      operationId: showQueue
+      tags: [Tracking]
+      summary: Every show in the library, sorted into stages
+      description: >
+        Each show the user tracks (except ones they are not interested in)
+        with its progress, the next aired episode they have not seen and the
+        next air date, in stage order: watching, stalled, not_started,
+        on_hold, dropped, caught_up. A status the user chose (on hold,
+        dropped) decides the stage; otherwise the episodes do, so a
+        "completed" show with a new episode out is back to watching. Counts
+        leave specials out. Episode lists missing or older than a day are
+        re-fetched from TMDB on the way, up to 12 shows per request; a TMDB
+        failure leaves those shows on cached data instead of failing the call.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: stale_days, in: query, required: false, schema: { type: integer, default: 30, minimum: 7, maximum: 365 }, description: "Days without a watch after which a show part way through is stalled rather than watching" }
+      responses:
+        "200":
+          description: The shows, ordered by stage and then within it
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stale_days: { type: integer }
+                  today: { type: string, format: date, description: The UTC day aired-ness is measured against }
+                  counts:
+                    type: object
+                    description: Shows per stage, every stage present
+                    additionalProperties: { type: integer }
+                  shows:
+                    type: array
+                    items: { $ref: "#/components/schemas/ShowQueueItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/upcoming:
+    get:
+      operationId: upcomingEpisodes
+      tags: [Tracking]
+      summary: Episodes still to air of the shows the user follows
+      description: >
+        Episodes airing after today and within `days` of the user's shows,
+        soonest first, leaving out shows on hold, dropped or not wanted.
+        Today's episodes count as aired, so they are in the queue instead.
+        Specials are left out. At most 500 episodes; `truncated` says when
+        the window held more.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer, default: 90, minimum: 1, maximum: 365 } }
+      responses:
+        "200":
+          description: The episodes, soonest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from: { type: string, format: date }
+                  to: { type: string, format: date }
+                  days: { type: integer }
+                  truncated: { type: boolean }
+                  episodes:
+                    type: array
+                    items: { $ref: "#/components/schemas/UpcomingEpisode" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
   /api/v1/me/formats:
     get:
       operationId: listTrackingFormats
@@ -3746,6 +3820,49 @@ components:
         air_date: { type: string, nullable: true }
         episode_type: { type: string, nullable: true }
         runtime: { type: integer, nullable: true }
+    QueueEpisode:
+      type: object
+      properties:
+        season_number: { type: integer }
+        episode_number: { type: integer }
+        name: { type: string }
+        air_date: { type: string, format: date, nullable: true }
+        runtime: { type: integer, nullable: true }
+        episode_type: { type: string, nullable: true, description: "TMDB's type, e.g. standard, finale, mid_season" }
+    ShowQueueItem:
+      type: object
+      properties:
+        tmdb_id: { type: string }
+        title: { type: string }
+        poster_path: { type: string }
+        status: { $ref: "#/components/schemas/TrackingStatus" }
+        favorite: { type: boolean }
+        stage:
+          type: string
+          enum: [watching, stalled, not_started, on_hold, dropped, caught_up]
+        total_episodes: { type: integer, description: Episodes TMDB lists, aired or not }
+        aired_episodes: { type: integer }
+        watched_episodes: { type: integer, description: Distinct aired episodes seen at least once }
+        remaining_episodes: { type: integer, description: Aired episodes not seen yet }
+        minutes_left: { type: integer, description: Runtime of the aired episodes not seen yet }
+        percent: { type: integer, description: Watched of aired, rounded down }
+        last_watched_at: { type: string, nullable: true, description: "UTC; a watch logged to the day is stored as local midnight" }
+        added_at: { type: string }
+        watchlist_position: { type: integer, nullable: true }
+        next_episode:
+          allOf: [{ $ref: "#/components/schemas/QueueEpisode" }]
+          nullable: true
+          description: The first aired episode not seen yet
+        next_air_date: { type: string, format: date, nullable: true, description: The next episode still to air }
+    UpcomingEpisode:
+      allOf:
+        - $ref: "#/components/schemas/QueueEpisode"
+        - type: object
+          properties:
+            tmdb_id: { type: string, description: The show }
+            show_title: { type: string }
+            poster_path: { type: string }
+            status: { $ref: "#/components/schemas/TrackingStatus" }
     TrackingStatus:
       type: string
       description: >

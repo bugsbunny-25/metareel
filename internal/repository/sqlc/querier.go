@@ -400,6 +400,13 @@ type Querier interface {
 	// ListShowEpisodes is a show's episodes with how often the user has watched
 	// each, for the show page.
 	ListShowEpisodes(ctx context.Context, arg ListShowEpisodesParams) ([]ListShowEpisodesRow, error)
+	// Every show in the user's library with its progress (seasons 1+ only):
+	// episodes listed, aired and watched, minutes left of aired unwatched ones,
+	// the first aired unwatched episode and the next air date.
+	ListShowQueue(ctx context.Context, arg ListShowQueueParams) ([]ListShowQueueRow, error)
+	// The user's shows with when their episodes were last cached; never-fetched
+	// first, then oldest. Shows they are not interested in are left out.
+	ListShowRefreshCandidates(ctx context.Context, userID int64) ([]ListShowRefreshCandidatesRow, error)
 	// First air date of each regular season of the shows with a season
 	// premiering after a date (to cut a season's window at the next season).
 	ListShowSeasonPremieres(ctx context.Context, fromDate string) ([]ListShowSeasonPremieresRow, error)
@@ -487,6 +494,9 @@ type Querier interface {
 	ListTop10ByProvider(ctx context.Context, arg ListTop10ByProviderParams) ([]ListTop10ByProviderRow, error)
 	// Report rows of Netflix originals not linked to a Netflix Top 10 title.
 	ListUnlinkedNetflixOriginals(ctx context.Context) ([]ListUnlinkedNetflixOriginalsRow, error)
+	// Episodes airing after today and up to a day of shows in the user's
+	// library, except the ones on hold, dropped or not wanted.
+	ListUpcomingEpisodes(ctx context.Context, arg ListUpcomingEpisodesParams) ([]ListUpcomingEpisodesRow, error)
 	ListUserTags(ctx context.Context, userID int64) ([]ListUserTagsRow, error)
 	// ListUserTitles lists a user's tracked titles with their display metadata.
 	// An empty status lists every tracked title. The sort key is passed through a
