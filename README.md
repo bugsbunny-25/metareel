@@ -754,8 +754,12 @@ where to watch), Watchlist (your list joined with `/me/watchlist/insights`:
 charting in a 30-day, 90-day or one-year window, streaming on a subscription
 now, or recently gone from a service) and Diary (every watch grouped by its
 local day, this year's totals, a year heatmap from `/me/stats/calendar`, and
-edit and delete; deletes are permanent and ask first). Watchlist toggles and
-"Log a watch" write through `/api/v1/me`.
+edit and delete; deletes are permanent and ask first). Search (⌘K / Ctrl K
+or `/`) keeps two result lists apart: titles with chart data (`/api/v1/search`,
+with when they last charted) and all of TMDB (`/me/titles/search`, for logging
+anything); a pasted IMDb ID or an IMDb, TMDB or Netflix link resolves through
+`/titles/lookup`. ↵ opens, ⌘/Ctrl ↵ logs a watch, ⇧ ↵ toggles the watchlist.
+Watchlist toggles and "Log a watch" write through `/api/v1/me`.
 
 ```bash
 make dev-ui      # admin console at http://localhost:5173/admin/

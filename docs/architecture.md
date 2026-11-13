@@ -578,7 +578,10 @@ user's `/me/titles` map. Chart screens therefore cost a fixed handful of
 requests, not one per title. The Watchlist page reads that same map (so a
 toggle anywhere shows at once) plus one `/me/watchlist/insights` call; the
 Diary pages `/me/watches` by cursor and groups by `watched_on`, never
-`ended_at`.
+`ended_at`. Search queries both search endpoints in parallel (debounced, older
+requests aborted) and drops TMDB hits already listed as charted; an ID or link
+skips text search and goes to `/titles/lookup`, which only knows titles in
+metareel's catalogue.
 
 ## Admin UI for the newer data
 

@@ -65,7 +65,9 @@ export function sampleColor(src) {
     };
     img.onerror = () => resolve(null);
     // Cross-origin artwork (image.tmdb.org) needs a CORS request or the canvas is tainted;
-    // if CORS is refused we resolve null and the hero stays untinted.
+    // if CORS is refused we resolve null and the hero stays untinted. Callers sample a size the
+    // app never shows (w154): Chrome reuses an image already loaded without CORS from its memory
+    // cache, and that copy fails the CORS check.
     img.crossOrigin = 'anonymous';
     img.src = src;
   });

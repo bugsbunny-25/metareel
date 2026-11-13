@@ -10,6 +10,8 @@
   import { toasts } from './lib/toast.svelte.js'
   import LogWatch from './components/LogWatch.svelte'
   import ConfirmDialog from './components/ConfirmDialog.svelte'
+  import SearchPalette from './components/SearchPalette.svelte'
+  import Icon from './components/Icon.svelte'
   import Login from './pages/Login.svelte'
   import Home from './pages/Home.svelte'
   import Charts from './pages/Charts.svelte'
@@ -19,6 +21,20 @@
 
   let logTarget = $state(null)
   let confirmRequest = $state(null)
+  let searchOpen = $state(false)
+
+  // ⌘K / Ctrl K anywhere; "/" when not typing in a field.
+  function onWindowKey(e) {
+    if (!session.user) return
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault()
+      searchOpen = !searchOpen
+    } else if (e.key === '/' && !searchOpen && !e.target.closest?.('input, textarea, select, [contenteditable="true"], dialog')) {
+      e.preventDefault()
+      searchOpen = true
+    }
+  }
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform)
   const onconfirm = (r) => (confirmRequest = r)
   let bootError = $state('')
   const onlog = (t) => (logTarget = t)
@@ -46,6 +62,8 @@
   })
 </script>
 
+<svelte:window onkeydown={onWindowKey} />
+
 {#if !session.ready}
   <div class="boot" aria-busy="true" aria-label="Loading"></div>
 {:else if !session.user}
@@ -61,6 +79,9 @@
       <a href="#/diary" aria-current={page === 'diary' ? 'page' : undefined}>Diary</a>
     </nav>
     <div class="tools">
+      <button class="search" type="button" onclick={() => (searchOpen = true)} aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}>
+        <Icon name="search" size={15} /><span class="label">Search</span><kbd>{mac ? '⌘' : 'Ctrl'} K</kbd>
+      </button>
       <label class="pick">
         <span class="sr">Country</span>
         <select value={scope.country} onchange={(e) => setScope({ country: e.currentTarget.value })} disabled={!reference.loaded}>
@@ -112,6 +133,7 @@
 
   <LogWatch bind:target={logTarget} />
   <ConfirmDialog bind:request={confirmRequest} />
+  <SearchPalette bind:open={searchOpen} {onlog} />
 {/if}
 
 <div class="toasts" role="status" aria-live="polite">
@@ -132,6 +154,10 @@
     background: var(--bg-elevated) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a1a1a8' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 11px center;
     color: var(--text-primary); font: 600 13px/1 var(--font-sans);
   }
+  .search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--bg-elevated); color: var(--text-muted); font: 500 13px/1 var(--font-sans); cursor: pointer; }
+  .search:hover { color: var(--text-primary); }
+  .search .label { min-width: 90px; text-align: left; }
+  .search kbd { padding: 3px 6px; border-radius: 5px; background: var(--bg-surface); color: var(--text-muted); font: 600 11px/1 var(--font-sans); }
   .icon-btn { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--bg-elevated); color: var(--text-primary); cursor: pointer; font-size: 15px; }
   .account { position: relative; }
   .account summary { list-style: none; cursor: pointer; border-radius: 50%; }
@@ -152,5 +178,7 @@
   @media (max-width: 760px) {
     .bar { gap: 14px; height: auto; min-height: 56px; flex-wrap: wrap; padding-block: 8px; }
     .tools { margin-left: 0; width: 100%; }
+    .search .label, .search kbd { display: none; }
+    .search { width: 32px; padding: 0; justify-content: center; }
   }
 </style>

@@ -68,6 +68,11 @@ export const api = {
   breakouts: (date, signal) => request('GET', `/breakouts${qs({ date })}`, { signal }),
   availabilityChanges: (country, signal) => request('GET', `/availability/changes${qs({ country, limit: 200 })}`, { signal }),
 
+  // Search: charted titles only (with last_charted), all of TMDB (needs a TMDB key), and ID lookup.
+  searchCharted: (q, kind, signal) => request('GET', `/search${qs({ q, kind, limit: 8 })}`, { signal }),
+  searchTMDB: (q, kind, signal) => request('GET', `/me/titles/search${qs({ q, kind, limit: 10 })}`, { signal }),
+  lookup: (params, signal) => request('GET', `/titles/lookup${qs(params)}`, { signal }),
+
   // Titles
   ratingsBatch: (ids, signal) => request('GET', `/titles/tmdb/ratings${qs({ ids: ids.join(',') })}`, { signal }),
   overview: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}`, { signal }),

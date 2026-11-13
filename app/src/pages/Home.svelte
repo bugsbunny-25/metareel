@@ -69,7 +69,7 @@
 
   $effect(() => {
     tint = null
-    if (data?.hero?.poster) sampleColor(`https://image.tmdb.org/t/p/w92${data.hero.poster}`).then((c) => (tint = c))
+    if (data?.hero?.poster) sampleColor(`https://image.tmdb.org/t/p/w154${data.hero.poster}`).then((c) => (tint = c))
   })
 
   // KPI: new entries per day, both charts, from the 14-day histories.

@@ -52,7 +52,7 @@
   const m = $derived(d?.ov.metadata ?? d?.mine?.title ?? {})
   const errs = $derived(d?.ov.errors ?? {})
   const state = $derived(d ? library.get(kind, id) ?? d.mine?.state ?? null : null)
-  $effect(() => { if (m.poster_path) sampleColor(`https://image.tmdb.org/t/p/w92${m.poster_path}`).then((c) => (tint = c)) })
+  $effect(() => { if (m.poster_path) sampleColor(`https://image.tmdb.org/t/p/w154${m.poster_path}`).then((c) => (tint = c)) })
 
   const LABEL = { season_premiere: 'Season premiere', chart_debut: 'Debut', chart_peak: 'Peak', release: 'Release', netflix_premiere: 'Premiere' }
   const TYPE = { chart_debut: 'Chart', chart_peak: 'Chart', chart_number_one: 'Chart', chart_reentry: 'Chart', season_premiere: 'Release', release: 'Release',
