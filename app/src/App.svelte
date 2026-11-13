@@ -19,6 +19,7 @@
   import Diary from './pages/Diary.svelte'
   import Watchlist from './pages/Watchlist.svelte'
   import Library from './pages/Library.svelte'
+  import Stats from './pages/Stats.svelte'
 
   let logTarget = $state(null)
   let confirmRequest = $state(null)
@@ -53,12 +54,12 @@
   })
 
   const titleMatch = $derived(route.path.match(/^\/title\/(movie|tv)\/(\d+)$/))
-  const PAGES = { '/': 'home', '/charts': 'charts', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary' }
+  const PAGES = { '/': 'home', '/charts': 'charts', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/stats': 'stats' }
   const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : 'missing'))
   const providers = $derived(reference.providers.filter((p) => p.countries.includes(scope.country)))
 
   $effect(() => {
-    const NAMES = { charts: 'Top 10', title: 'Title', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', missing: 'Not found' }
+    const NAMES = { charts: 'Top 10', title: 'Title', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', missing: 'Not found' }
     document.title = NAMES[page] ? `${NAMES[page]} · metareel` : 'metareel'
   })
 </script>
@@ -79,6 +80,7 @@
       <a href="#/watchlist" aria-current={page === 'watchlist' ? 'page' : undefined}>Watchlist</a>
       <a href="#/library" aria-current={page === 'library' ? 'page' : undefined}>Library</a>
       <a href="#/diary" aria-current={page === 'diary' ? 'page' : undefined}>Diary</a>
+      <a href="#/stats" aria-current={page === 'stats' ? 'page' : undefined}>Stats</a>
     </nav>
     <div class="tools">
       <button class="search" type="button" onclick={() => (searchOpen = true)} aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}>
@@ -123,6 +125,8 @@
       <Watchlist {onlog} />
     {:else if page === 'library'}
       <Library {onlog} />
+    {:else if page === 'stats'}
+      <Stats />
     {:else if page === 'diary'}
       <Diary {onlog} {onconfirm} />
     {:else if page === 'title'}
@@ -149,7 +153,7 @@
   .bar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 26px; height: 64px; padding: 0 var(--gutter); background: color-mix(in srgb, var(--bg-canvas) 92%, transparent); backdrop-filter: saturate(140%) blur(10px); }
   .brand { font: 700 23px/1 var(--font-display); letter-spacing: -0.02em; text-decoration: none; }
   .primary { display: flex; align-items: center; gap: 20px; font-size: 15px; font-weight: 600; }
-  .primary .sep { width: 1px; height: 16px; background: var(--border-subtle); }
+  .primary .sep { flex: none; width: 1px; height: 16px; background: var(--border-subtle); }
   .primary a { color: var(--text-muted); text-decoration: none; }
   .primary a:hover, .primary a[aria-current='page'] { color: var(--text-primary); }
   .tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
@@ -183,6 +187,7 @@
     .bar { gap: 14px; height: auto; min-height: 56px; flex-wrap: wrap; padding-block: 8px; }
     .tools { margin-left: 0; width: 100%; }
     .search .label, .search kbd { display: none; }
+    .primary { max-width: 100%; gap: 14px; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
     .search { width: 32px; padding: 0; justify-content: center; }
   }
 </style>

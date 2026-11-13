@@ -758,7 +758,12 @@ favourites, a poster grid or a list, and a per-title menu that sets the
 status or favourite through `PUT /me/titles/{kind}/{id}` or clears it) and
 Diary (every watch grouped by its
 local day, this year's totals, a year heatmap from `/me/stats/calendar`, and
-edit and delete; deletes are permanent and ask first). Search (⌘K / Ctrl K
+edit and delete; deletes are permanent and ask first) and Stats (one year at a
+time from `/me/stats/year` and `/me/stats/ratings`: watches, hours, titles and
+streaks; watches per month, weekday and hour; your rating spread and how far
+you sit from TMDB, IMDb and RT, overall and per title; genres, decades,
+countries and languages; most watched; where you watched; and people and spend
+once there is data for them). Search (⌘K / Ctrl K
 or `/`) keeps two result lists apart: titles with chart data (`/api/v1/search`,
 with when they last charted) and all of TMDB (`/me/titles/search`, for logging
 anything); a pasted IMDb ID or an IMDb, TMDB or Netflix link resolves through

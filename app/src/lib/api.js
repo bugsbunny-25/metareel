@@ -102,4 +102,6 @@ export const api = {
   // Stats over local days (YYYY-MM-DD).
   statsSummary: (from, to, signal) => request('GET', `/me/stats/summary${qs({ from, to })}`, { signal }),
   statsCalendar: (from, to, signal) => request('GET', `/me/stats/calendar${qs({ from, to })}`, { signal }),
+  statsYear: (year, signal) => request('GET', `/me/stats/year${qs({ year })}`, { signal }),
+  statsRatings: (from, to, signal) => request('GET', `/me/stats/ratings${qs({ from, to })}`, { signal }),
 }

@@ -581,6 +581,10 @@ Diary pages `/me/watches` by cursor and groups by `watched_on`, never
 `ended_at`. The Library page is the same map filtered and sorted client-side;
 its menu writes status and favourite with `PUT /me/titles/{kind}/{id}` and
 clears them with `DELETE` (watches stay; a title with none leaves the map).
+Stats makes two calls per year (`/me/stats/year`, `/me/stats/ratings` for that
+calendar year) and joins posters from the map; panels with no data behind them
+(people before credits are fetched, spend without ticket prices) are left out
+rather than shown empty, and amounts are never converted between currencies.
 Search queries both search endpoints in parallel (debounced, older
 requests aborted) and drops TMDB hits already listed as charted; an ID or link
 skips text search and goes to `/titles/lookup`, which only knows titles in
