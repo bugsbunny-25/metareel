@@ -575,7 +575,10 @@ session cookie set by `/api/v1/auth/login`, so it needs a signed-in user and
 never holds an API key. Its view model joins three things client-side: the
 Top 10 (which carries `poster_path`), the batch ratings endpoint, and the
 user's `/me/titles` map. Chart screens therefore cost a fixed handful of
-requests, not one per title.
+requests, not one per title. The Watchlist page reads that same map (so a
+toggle anywhere shows at once) plus one `/me/watchlist/insights` call; the
+Diary pages `/me/watches` by cursor and groups by `watched_on`, never
+`ended_at`.
 
 ## Admin UI for the newer data
 

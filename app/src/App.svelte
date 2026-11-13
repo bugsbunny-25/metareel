@@ -9,12 +9,17 @@
   import { theme, toggleTheme } from './lib/theme.svelte.js'
   import { toasts } from './lib/toast.svelte.js'
   import LogWatch from './components/LogWatch.svelte'
+  import ConfirmDialog from './components/ConfirmDialog.svelte'
   import Login from './pages/Login.svelte'
   import Home from './pages/Home.svelte'
   import Charts from './pages/Charts.svelte'
   import Title from './pages/Title.svelte'
+  import Diary from './pages/Diary.svelte'
+  import Watchlist from './pages/Watchlist.svelte'
 
   let logTarget = $state(null)
+  let confirmRequest = $state(null)
+  const onconfirm = (r) => (confirmRequest = r)
   let bootError = $state('')
   const onlog = (t) => (logTarget = t)
 
@@ -31,11 +36,13 @@
   })
 
   const titleMatch = $derived(route.path.match(/^\/title\/(movie|tv)\/(\d+)$/))
-  const page = $derived(route.path === '/' ? 'home' : route.path === '/charts' ? 'charts' : titleMatch ? 'title' : 'missing')
+  const PAGES = { '/': 'home', '/charts': 'charts', '/watchlist': 'watchlist', '/diary': 'diary' }
+  const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : 'missing'))
   const providers = $derived(reference.providers.filter((p) => p.countries.includes(scope.country)))
 
   $effect(() => {
-    document.title = page === 'charts' ? 'Top 10 · metareel' : page === 'title' ? 'Title · metareel' : 'metareel'
+    const NAMES = { charts: 'Top 10', title: 'Title', watchlist: 'Watchlist', diary: 'Diary', missing: 'Not found' }
+    document.title = NAMES[page] ? `${NAMES[page]} · metareel` : 'metareel'
   })
 </script>
 
@@ -49,6 +56,9 @@
     <nav class="primary" aria-label="Primary">
       <a href="#/" aria-current={page === 'home' ? 'page' : undefined}>Home</a>
       <a href="#/charts" aria-current={page === 'charts' ? 'page' : undefined}>Charts</a>
+      <span class="sep" aria-hidden="true"></span>
+      <a href="#/watchlist" aria-current={page === 'watchlist' ? 'page' : undefined}>Watchlist</a>
+      <a href="#/diary" aria-current={page === 'diary' ? 'page' : undefined}>Diary</a>
     </nav>
     <div class="tools">
       <label class="pick">
@@ -86,6 +96,10 @@
       <Home {onlog} />
     {:else if page === 'charts'}
       <Charts {onlog} />
+    {:else if page === 'watchlist'}
+      <Watchlist {onlog} />
+    {:else if page === 'diary'}
+      <Diary {onlog} {onconfirm} />
     {:else if page === 'title'}
       {#key route.path}<Title kind={titleMatch[1]} id={titleMatch[2]} {onlog} />{/key}
     {:else}
@@ -97,6 +111,7 @@
   </main>
 
   <LogWatch bind:target={logTarget} />
+  <ConfirmDialog bind:request={confirmRequest} />
 {/if}
 
 <div class="toasts" role="status" aria-live="polite">
@@ -107,7 +122,8 @@
   .boot { min-height: 100vh; }
   .bar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 26px; height: 64px; padding: 0 var(--gutter); background: color-mix(in srgb, var(--bg-canvas) 92%, transparent); backdrop-filter: saturate(140%) blur(10px); }
   .brand { font: 700 23px/1 var(--font-display); letter-spacing: -0.02em; text-decoration: none; }
-  .primary { display: flex; gap: 20px; font-size: 15px; font-weight: 600; }
+  .primary { display: flex; align-items: center; gap: 20px; font-size: 15px; font-weight: 600; }
+  .primary .sep { width: 1px; height: 16px; background: var(--border-subtle); }
   .primary a { color: var(--text-muted); text-decoration: none; }
   .primary a:hover, .primary a[aria-current='page'] { color: var(--text-primary); }
   .tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }

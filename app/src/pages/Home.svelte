@@ -260,7 +260,7 @@
       </section>
 
       <section class="panel">
-        <div class="panel-h"><h2>Your list today</h2><span class="hint">Joined with today’s charts and availability</span></div>
+        <div class="panel-h"><h2>Your list today</h2><span class="hint">Joined with today’s charts and availability</span><a class="see-all" href="#/watchlist">Watchlist</a></div>
         {#if myList.length}
           <table class="tbl">
             <thead><tr><th scope="col">Title</th><th scope="col">Status</th><th scope="col">Today</th></tr></thead>
@@ -359,6 +359,8 @@
   .code b { color: var(--text-primary); font-weight: 700; }
   .new { color: var(--delta-debut); font-weight: 700; font-size: 12px; }
   .empty-note { margin: 4px 12px 10px; color: var(--text-muted); }
+  .see-all { margin-left: auto; color: var(--text-muted); font-size: 13.5px; text-decoration: none; }
+  .see-all:hover { color: var(--text-primary); text-decoration: underline; }
 
   @media (max-width: 1100px) {
     .hero { grid-template-columns: auto 1fr; }

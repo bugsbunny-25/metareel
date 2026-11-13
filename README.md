@@ -749,8 +749,13 @@ in `app/src/tokens.css`. Colour roles are fixed: white for the primary action,
 green and red for movement, blue for new entries, orange for your own titles,
 and tan for stale data. It has Home (breakout, KPIs with 14-day trends, the
 Top 10, movement, your list, breakouts), Charts (Top 10 with trend, days,
-IMDb, RT and origin) and title pages (attention, timeline, In numbers, positions,
-where to watch). Watchlist toggles and "Log a watch" write through `/api/v1/me`.
+IMDb, RT and origin), title pages (attention, timeline, In numbers, positions,
+where to watch), Watchlist (your list joined with `/me/watchlist/insights`:
+charting in a 30-day, 90-day or one-year window, streaming on a subscription
+now, or recently gone from a service) and Diary (every watch grouped by its
+local day, this year's totals, a year heatmap from `/me/stats/calendar`, and
+edit and delete; deletes are permanent and ask first). Watchlist toggles and
+"Log a watch" write through `/api/v1/me`.
 
 ```bash
 make dev-ui      # admin console at http://localhost:5173/admin/

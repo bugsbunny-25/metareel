@@ -80,5 +80,17 @@ export const api = {
   myTitle: (kind, id, signal) => request('GET', `/me/titles/${kind}/${id}`, { signal }),
   addToWatchlist: (kind, id) => request('PUT', `/me/watchlist/${kind}/${id}`, { body: {} }),
   removeFromWatchlist: (kind, id) => request('DELETE', `/me/watchlist/${kind}/${id}`),
+  watchlistInsights: (country, days, signal) => request('GET', `/me/watchlist/insights${qs({ country, days })}`, { signal }),
+
+  // The diary: one row per watch, newest local day first, cursor-paged.
+  diary: ({ kind, rated, from, to, cursor, limit = 60 } = {}, signal) =>
+    request('GET', `/me/watches${qs({ tmdb_kind: kind, rated: rated ? 'true' : undefined, from, to, cursor, limit })}`, { signal }),
   logWatch: (input) => request('POST', '/me/watches', { body: input }),
+  updateWatch: (id, input) => request('PUT', `/me/watches/${id}`, { body: input }),
+  deleteWatch: (id) => request('DELETE', `/me/watches/${id}`),
+  tags: (signal) => request('GET', '/me/tags', { signal }),
+
+  // Stats over local days (YYYY-MM-DD).
+  statsSummary: (from, to, signal) => request('GET', `/me/stats/summary${qs({ from, to })}`, { signal }),
+  statsCalendar: (from, to, signal) => request('GET', `/me/stats/calendar${qs({ from, to })}`, { signal }),
 }
