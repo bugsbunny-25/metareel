@@ -194,13 +194,13 @@ make reports-open
 | POST   | `/api/v1/auth/login`, `/api/v1/auth/logout` | Sign a user in (session cookie + token) or out ([access](#public-api-access)) |
 | GET    | `/api/v1/auth/me`                           | Who the request is authenticated as (user or API key) |
 | GET    | `/api/v1/auth/session`                      | For the console: whether admin sign-in is required and who is signed in |
-| GET    | `/api/v1/top10/{movies\|tv-shows}/:country[/:provider]` | Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`, and for TV `season_number` + `season_source` when known) |
+| GET    | `/api/v1/top10/{movies\|tv-shows}/:country[/:provider]` | Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`, the TMDB `poster_path` once the title has metadata, and for TV `season_number` + `season_source` when known) |
 | GET    | `/api/v1/top10/:country`                    | Every provider's movie + TV chart of a country in one call |
 | GET    | `/api/v1/top10/{movies\|tv-shows}/:country/:provider/history` | One chart over a range (`from`, `to`; ≤ 92 days) |
 | GET    | `/api/v1/top10/global/:provider`            | A provider's titles across all countries by points (`date`, `category`, `kind`) |
 | GET    | `/api/v1/charts`, `/api/v1/charts/:country/:provider/dates` | Stored charts with date ranges and freshness; stored dates |
 | GET    | `/api/v1/changes?since=`                    | Charts stored / re-scraped since a time (poll this) |
-| GET    | `/api/v1/movers`                            | Climbers, fallers, debuts, re-entries, exits (`country`, `provider`, `date`) |
+| GET    | `/api/v1/movers`                            | Climbers, fallers, debuts, re-entries, exits (`country`, `provider`, `date`). Like every chart-derived list (history, breakouts, leaderboards, analytics items), each title carries `poster_path` (TMDB path, null until it has metadata) |
 | GET    | `/api/v1/discover/:country/hidden-gems`     | Highly rated titles (IMDb ≥ `min_rating` 7.5 from ≥ `min_votes` 5,000) streamable in the country that weren't in its Top 10 over `days` (90), ranked by a vote-weighted rating (`kind`, `provider_id`, `limit`) |
 | GET    | `/api/v1/discover/:country/elsewhere`       | Titles in other countries' Top 10s over `days` (7) with no subscription / free / ads offer in the country, with where they chart and rent / buy offers here (`kind`, `limit`) |
 | GET    | `/api/v1/discover/:country/rotation`        | Which subscription services to pay for (plans and channels grouped per service; `include_other=true` adds TV bundles and niche services): each scored on its titles' chart points, upcoming episodes, arrivals and top-rated titles over `days` (30), with `subscribe` / `skip` (or `keep` / `pause` / `add` given `subscribed=8,9`) for the best `slots` (2) |
@@ -702,7 +702,7 @@ Instead of polling `/api/v1/changes`, a client can register a URL (admin UI
 
 | Event | When | `data` |
 |---|---|---|
-| `chart.updated` | A chart was stored or its content changed | country, provider, category, date, `entries` (as in `/top10`, with `origin`) |
+| `chart.updated` | A chart was stored or its content changed | country, provider, category, date, `entries` (as in `/top10`, with `origin` and `poster_path`) |
 | `title.entered` | A title is on a chart that it was not on at the chart's previous date (`first_time`: never before) | `chart`, `entry` |
 | `title.number_one` | A new #1 on a chart | `chart`, `entry` |
 | `availability.added` / `availability.removed` | A title arrived on / left a service in a country (between two TMDB refreshes) | as in `/availability/changes` |

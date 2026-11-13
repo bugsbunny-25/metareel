@@ -28,7 +28,8 @@ func NewTop10ReadService(repo *repository.FlixPatrolRepository) *Top10ReadServic
 	return &Top10ReadService{repo: repo}
 }
 
-// WithMetadata adds each entry's origin (original / in-house / licensed).
+// WithMetadata adds each entry's origin (original / in-house / licensed)
+// and TMDB poster_path, from one batch read of stored metadata.
 func (s *Top10ReadService) WithMetadata(metadata *repository.MetadataRepository) *Top10ReadService {
 	s.metadata = metadata
 	return s
@@ -61,6 +62,9 @@ type Top10Result struct {
 	TMDBID            *string `json:"tmdb_id,omitempty"`
 	IMDbID            *string `json:"imdb_id,omitempty"`
 	RottenTomatoesURL *string `json:"rotten_tomatoes_url,omitempty"`
+	// TMDB poster path (build https://image.tmdb.org/t/p/{size}{path}), from
+	// the title's stored TMDB metadata; absent until it has been fetched.
+	PosterPath *string `json:"poster_path,omitempty"`
 	// TV only, when known: the season charting and where that came from
 	// (chart | netflix | tmdb_air_date).
 	SeasonNumber *int64  `json:"season_number,omitempty"`
@@ -100,7 +104,7 @@ func (s *Top10ReadService) getByProvider(ctx context.Context, q Top10Query, cate
 		return nil, ErrTop10NotFound
 	}
 
-	return s.withOrigins(ctx, buildResponse(q.Date, countryCode, category, q.Provider, items))
+	return s.withTitleMetadata(ctx, buildResponse(q.Date, countryCode, category, q.Provider, items))
 }
 
 func (s *Top10ReadService) getAllProviders(ctx context.Context, q Top10Query, category string) (*Top10Response, error) {
@@ -117,7 +121,7 @@ func (s *Top10ReadService) getAllProviders(ctx context.Context, q Top10Query, ca
 		return nil, ErrTop10NotFound
 	}
 
-	return s.withOrigins(ctx, buildResponse(q.Date, countryCode, category, "", items))
+	return s.withTitleMetadata(ctx, buildResponse(q.Date, countryCode, category, "", items))
 }
 
 func validateQuery(q Top10Query, providerRequired bool) (string, error) {
@@ -171,8 +175,9 @@ func buildResponse(date time.Time, countryCode string, category string, provider
 	return out
 }
 
-// withOrigins sets each entry's origin from its TMDB metadata.
-func (s *Top10ReadService) withOrigins(ctx context.Context, out *Top10Response) (*Top10Response, error) {
+// withTitleMetadata fills each item's origin and poster from the titles'
+// stored TMDB metadata, loaded in one batch.
+func (s *Top10ReadService) withTitleMetadata(ctx context.Context, out *Top10Response) (*Top10Response, error) {
 	if s.metadata == nil {
 		return out, nil
 	}
@@ -194,6 +199,9 @@ func (s *Top10ReadService) withOrigins(ctx context.Context, out *Top10Response) 
 		}
 		info := ClassifyOrigin(it.Provider, it.Kind == "movie", m)
 		it.Origin = &info
+		if m != nil {
+			it.PosterPath = nonEmpty(m.PosterPath)
+		}
 	}
 	return out, nil
 }

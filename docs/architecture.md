@@ -845,7 +845,8 @@ sequenceDiagram
     FlixRepo->>SQLite: SELECT rankings JOIN titles WHERE country=? AND category=?\nAND ranked_on = COALESCE(date, each provider's latest date)\n+ previous_rank (rank on the chart's previous scraped date)\n+ days_in_top10 (dates on the chart so far)
     SQLite-->>FlixRepo: rows
     FlixRepo-->>Top10Svc: []Top10Item
-    Top10Svc-->>Handler: *Top10Response{items: [{date, rank, previous_rank, days_in_top10, provider, slug, name, kind, tmdb_id, imdb_id}]}
+    Top10Svc->>Top10Svc: withTitleMetadata — one batch read of tmdb_titles\nfor origin + poster_path
+    Top10Svc-->>Handler: *Top10Response{items: [{date, rank, previous_rank, days_in_top10, provider, slug, name, kind, tmdb_id, imdb_id, poster_path, origin}]}
     Handler-->>Client: 200 JSON
 ```
 

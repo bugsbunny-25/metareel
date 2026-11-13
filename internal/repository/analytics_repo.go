@@ -34,6 +34,7 @@ type ChartEntryRow struct {
 	Kind         string // movie | tv_show
 	TmdbID       *string
 	ImdbID       *string
+	PosterPath   *string // TMDB path (e.g. /abc.jpg); nil until the title has TMDB metadata
 }
 
 // ChartEntryFilter narrows ChartEntries; empty strings match all.
@@ -55,6 +56,7 @@ func (r *AnalyticsRepository) ChartEntries(ctx context.Context, f ChartEntryFilt
 			Date: dateText(row.RankedOn), Country: row.Country, Provider: row.StreamingProvider, Category: row.Category,
 			Rank: row.Rank, SeasonNumber: nullInt64Ptr(row.SeasonNumber), SeasonSource: nullStringPtr(row.SeasonSource), TitleID: row.TitleID, Slug: row.Slug,
 			Name: row.Name, Kind: row.Kind, TmdbID: nullStringPtr(row.TmdbID), ImdbID: nullStringPtr(row.ImdbID),
+			PosterPath: emptyNil(row.PosterPath.String),
 		})
 	}
 	return out, nil

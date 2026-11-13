@@ -3982,6 +3982,14 @@ components:
         kind: { type: string, enum: [movie, tv_show] }
         tmdb_id: { type: string, nullable: true }
         imdb_id: { type: string, nullable: true }
+        poster_path:
+          type: string
+          nullable: true
+          example: /x9a8tZ3cAqkR1sQpQWz6Vt1mJcE.jpg
+          description: >
+            TMDB poster path, not a URL; build one as
+            https://image.tmdb.org/t/p/{size}{poster_path} (e.g. w342). Null
+            until the title has TMDB metadata.
 
     Top10Combined:
       type: object
@@ -5293,6 +5301,13 @@ components:
         rotten_tomatoes_url:
           type: string
           nullable: true
+        poster_path:
+          type: string
+          example: /x9a8tZ3cAqkR1sQpQWz6Vt1mJcE.jpg
+          description: >
+            TMDB poster path, not a URL; build one as
+            https://image.tmdb.org/t/p/{size}{poster_path} (e.g. w342).
+            Omitted until the title has TMDB metadata.
         season_number:
           type: integer
           description: TV only, when known

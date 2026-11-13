@@ -323,7 +323,8 @@ SELECT CAST(r.ranked_on AS TEXT) AS ranked_on,
        t.name,
        t.kind,
        t.tmdb_id,
-       m.imdb_id
+       m.imdb_id,
+       m.poster_path
 FROM rankings r
 JOIN titles t ON t.id = r.title_id
 LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
@@ -357,6 +358,7 @@ type ListChartEntriesRow struct {
 	Kind              string         `json:"kind"`
 	TmdbID            sql.NullString `json:"tmdb_id"`
 	ImdbID            sql.NullString `json:"imdb_id"`
+	PosterPath        sql.NullString `json:"poster_path"`
 }
 
 // Chart entries over a date range, for history, movers, leaderboards and
@@ -390,6 +392,7 @@ func (q *Queries) ListChartEntries(ctx context.Context, arg ListChartEntriesPara
 			&i.Kind,
 			&i.TmdbID,
 			&i.ImdbID,
+			&i.PosterPath,
 		); err != nil {
 			return nil, err
 		}

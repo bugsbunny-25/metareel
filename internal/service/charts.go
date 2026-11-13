@@ -43,10 +43,13 @@ type ChartTitle struct {
 	Kind    string  `json:"kind"` // movie | tv_show
 	TmdbID  *string `json:"tmdb_id"`
 	IMDbID  *string `json:"imdb_id"`
+	// TMDB poster path (build https://image.tmdb.org/t/p/{size}{path});
+	// null until the title has TMDB metadata.
+	PosterPath *string `json:"poster_path"`
 }
 
 func chartTitle(e repository.ChartEntryRow) ChartTitle {
-	return ChartTitle{TitleID: e.TitleID, Slug: e.Slug, Name: e.Name, Kind: e.Kind, TmdbID: e.TmdbID, IMDbID: e.ImdbID}
+	return ChartTitle{TitleID: e.TitleID, Slug: e.Slug, Name: e.Name, Kind: e.Kind, TmdbID: e.TmdbID, IMDbID: e.ImdbID, PosterPath: e.PosterPath}
 }
 
 // --- validation helpers -----------------------------------------------------

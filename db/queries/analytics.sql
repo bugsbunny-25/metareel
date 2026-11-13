@@ -14,7 +14,8 @@ SELECT CAST(r.ranked_on AS TEXT) AS ranked_on,
        t.name,
        t.kind,
        t.tmdb_id,
-       m.imdb_id
+       m.imdb_id,
+       m.poster_path
 FROM rankings r
 JOIN titles t ON t.id = r.title_id
 LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
