@@ -127,6 +127,12 @@ export const listSessions = () => req('/sessions')
 export const revokeSession = (id) => req(`/sessions/${id}`, { method: 'DELETE' })
 
 // ── Settings & API keys ─────────────────────────────────────────────
+// Premium formats a watch can carry (IMAX, Dolby Cinema, 4DX, 70mm, ...).
+// The admin list includes retired ones; the user-facing list does not.
+export const listWatchFormats = () => req('/watch-formats')
+export const createWatchFormat = (body) => req('/watch-formats', { method: 'POST', body })
+export const updateWatchFormat = (id, body) => req(`/watch-formats/${id}`, { method: 'PATCH', body })
+
 export const getSettings = () => req('/settings')
 export const updateSettings = (body) => req('/settings', { method: 'PATCH', body })
 export const listApiKeys = () => req('/api-keys')

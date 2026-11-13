@@ -289,6 +289,7 @@ func (r *tmdbFullResp) toDetails(kind, id string) *TMDBFullDetails {
 
 // TMDBEpisode is one episode of a TV season.
 type TMDBEpisode struct {
+	ID            int    `json:"id"` // TMDB episode ID, stable across renumbering
 	SeasonNumber  int    `json:"season_number"`
 	EpisodeNumber int    `json:"episode_number"`
 	Name          string `json:"name"`

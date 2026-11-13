@@ -552,6 +552,15 @@ wide theatrical date (type 3), else the limited one (type 2).
 `GET /api/v1/analytics/release-windows` sums up the movies released in theaters
 in a country in a range.
 
+## Static UI routes
+
+`registerStatic` serves the built SPA from `UI_STATIC_DIR` (relative to the
+working directory: echo binds its filesystem root at `echo.New()`, so
+`c.File` never resolves an absolute path). The admin console answers on
+`/admin`, `/admin/` and `/admin/*` as well as on the `/*` catch-all. `/admin`
+is its permanent home, so it keeps working when the user-facing app takes
+over `/`; the console uses a hash router, so any of those paths just load it.
+
 ## Admin UI for the newer data
 
 The admin console shows the newer endpoints through their admin copies:
@@ -647,6 +656,174 @@ the self-protection rules) but nothing is refused.
   password keeps the current session (`RevokeUserExcept`).
 - Startup logs `admin console access` with the number of enabled admins, and
   an error when sign-in is required but none exists.
+
+## Tracking (`service/tracking.go`, `service/tracking_titles.go`)
+
+`/api/v1/me/...` is one user's watchlist, statuses, watch log and tags. The
+group is wired in `router.Register` as
+`SameOriginWrites, h.Authenticate, h.RequireUser, handler.NoStore` and is
+deliberately **not** part of `registerReadRoutes`:
+
+- `RequireUser` (`handler/tracking.go`) refuses an `api_key` or `anonymous`
+  principal with 401. An API key identifies an integration, not a person, so
+  it cannot act for a user. `Authenticate` still runs first, so the rate
+  limit applies as usual.
+- `NoStore` replaces `handler.ETag`, which wraps the shared read routes:
+  these responses are per-user and must never be cached or revalidated
+  (`Cache-Control: private, no-store`, `Vary: Authorization, Cookie`).
+- `SameOriginWrites` is required because the session cookie authenticates
+  browser writes here.
+- Every repository method takes the user's id and every statement in
+  `db/queries/tracking.sql` is scoped by it. A row belonging to someone else
+  is reported as missing (404), never as forbidden, so ids do not leak.
+
+Writes go through `TrackingRepository` on the **writer** connection, in one
+transaction each (insert or update, replace tags, recompute the roll-up);
+list and diary reads use a second instance of the same repository on the
+read-only pool, like the other read services.
+
+`TrackedTitleService` searches TMDB (`/search/movie`, `/search/tv`) and
+resolves a `(kind, id)` on demand: it serves the stored snapshot while it is
+fresh, else fetches `TitleDetails` and caches it in `tracked_titles`. A TMDB
+404 becomes `ErrTrackedTitleUnknown` (HTTP 404), so a mistyped id cannot be
+stored; a TMDB outage falls back to the cached snapshot, and with no
+`TMDB_API_KEY` tracking keeps working with empty metadata instead of failing.
+
+### Time
+
+Clients send UTC instants and the server stores UTC text in
+`CURRENT_TIMESTAMP` format (`repository.FormatTimestamp`), so stored values
+compare against `datetime('now')`. `ended_at` is what a client logs;
+`started_at` is stored only when sent.
+
+`tz` is an IANA zone name, validated with `time.LoadLocation` (which works in
+the `scratch` image because `cmd/server/main.go` imports `_ "time/tzdata"`).
+The offset in force at that instant is derived from it and stored in
+`utc_offset_minutes`. Both are kept: the name so an edit crossing a DST
+change can be recomputed, the offset so SQLite can do date arithmetic without
+a zone database, and so a later tzdata revision of historical rules cannot
+move stored days.
+
+`watched_on` is the local day of the watch's **start** (`started_at`, else
+`ended_at` minus the title's runtime). It is computed once at write time and
+then fixed, so a TMDB runtime revision cannot move an entry to another day;
+`runtime_minutes_used` / `runtime_source` record which runtime was used. An
+imprecise `time_precision` (`day` / `month` / `year`) is normalised to the
+earliest instant it could mean, local midnight on the 1st of January as
+needed, and no runtime is subtracted.
+
+Because clients send instants rather than local wall-clock times, the two
+ambiguous local times cannot arise: the repeated hour each autumn is two
+distinct instants, and the skipped hour each spring is none. This is covered
+by `TestLogWatchHandlesDSTEdges`.
+
+### Ratings and rewatches
+
+A rating belongs to a watch. "My rating" for a title is the rating of the
+most recent rated watch, maintained on `user_titles.rating` by
+`RollupUserTitle`; `SetTitleState` refuses a rating outright so there is only
+one place one can come from. Ratings are integers 1-10, half-stars out of
+five, with no zero (as on Letterboxd).
+
+`client_key` is the client's idempotency key: a replay returns the stored
+watch with 200 instead of creating a duplicate. Deletes are permanent.
+
+### Episodes
+
+A show is watched one episode at a time: `LogWatch` refuses a `tv` title
+without `season_number` and `episode_number`, and resolves the episode (for
+its own runtime and TMDB episode ID) before storing the watch.
+
+`TrackedTitleService.ResolveEpisodes` caches every season of a show from
+TMDB, reusing `client.TVSeasonEpisodes`, which batches up to 20 seasons per
+request through `append_to_response`. The season list comes from the show's
+own details, which include season 0; `number_of_seasons` does not.
+`trackedEpisodesTTL` is a day, shorter than the title TTL, because an episode
+missing from the cache is an episode missing from up-next.
+
+Bulk marking (`POST /me/shows/{id}/watched`) selects episodes with
+`ListMarkableEpisodes`, whose `scope` is `episode`, `season`, `up_to` or
+`all`. Marking sets `AiredOnly` and `OnlyUnwatched`, so it never rewatches
+what the user has already seen and never marks an unaired episode; unmarking
+sets neither. All the episodes in one mark share a time, which is why the
+precision defaults to a day.
+
+`advanceShowStatus` moves a show between `watching` and `completed` as
+episodes are marked and unmarked, so the up-next queue works without a status
+being set by hand. It only ever changes a status that is empty, `watchlist`,
+`watching` or `completed`; one the user chose is left alone.
+
+Progress is counted, not stored: the denominator is the episodes that have
+aired, and it moves as a show airs. `UpNext` picks the first aired, unwatched
+episode per show with a `ROW_NUMBER()` window, skipping specials.
+
+### Where and how a watch happened
+
+`SetWatchEntryContext` writes the ~36 context columns in one statement,
+separate from `InsertWatchEntry`, so the insert keeps a readable parameter
+list; both run inside the same transaction as the tags, formats and roll-up.
+
+`TrackingService.resolveContext` validates the enums in Go (not by CHECK
+constraints, so a new value needs no table rebuild), normalises what should
+be normalised and fills in what the venue and screen already know:
+
+- the venue's name and city are **snapshotted onto the watch**, so a later
+  rename or closure cannot rewrite what the diary says you went to;
+- the venue's IANA `timezone` becomes the watch's zone when the client sends
+  none, which is what makes the local day right when you are away;
+- the screen's aspect ratio and geometry fill in anything the watch did not
+  carry;
+- aspect ratios are parsed from what the viewer wrote (`1.43:1`, `16:9`,
+  `1.9`) into a number as well as the text, because TMDB has no
+  aspect-ratio data at all;
+- screen sizes are stored as entered **and** normalised to metres, so a
+  screen measured in feet still compares with one measured in metres;
+- money is integer minor units with an ISO 4217 currency that is required
+  whenever an amount is given, so nothing is ever a float.
+
+Formats are referenced by slug and resolved to ids, refusing unknown or
+retired ones. `venue_refs` follows the same multi-source pattern as the title
+mapping. Only Google's place id may be stored indefinitely under their terms,
+which is why no other Google place data is kept.
+
+A venue watches point at cannot be deleted (409); its status is set to closed
+instead, so the diary keeps its meaning.
+
+### Stats (`service/tracking_stats.go`)
+
+The `/me/stats/...` endpoints aggregate one user's log. They add no tables:
+everything is computed from `watch_entries` and the chart-side tables, read
+through the read-only pool.
+
+- **Time watched** is not a stored column. `runtime_minutes_used` is only set
+  when a start was derived from it, so every aggregate resolves minutes as
+  `COALESCE(runtime_minutes_used, episode runtime, title runtime, 0)` through
+  left joins to `tracked_episodes`, `tmdb_titles` and `tracked_titles`.
+- **Hour of day** uses the offset stored with the watch:
+  `strftime('%H', datetime(ended_at, utc_offset_minutes || ' minutes'))`.
+  Only minute-precision watches are bucketed, since an imprecise one has no
+  meaningful hour.
+- **Streaks** are computed in Go from the per-day rows rather than in SQL. A
+  streak that ran to yesterday counts as current.
+- **Genres, countries, decades and languages** are decoded in Go from
+  `tmdb_titles`' JSON columns, following the same approach as the chart-side
+  genre analytics rather than relying on SQLite's JSON functions.
+- **Ratings against the crowd** compare a 1-10 half-star rating directly with
+  TMDB and IMDb (both 0-10) and with a Rotten Tomatoes percentage divided by
+  ten. TMDB and IMDb come back nullable; the Rotten Tomatoes value arrives
+  through a scalar subquery, which sqlc types as non-null, so it carries -1
+  as its "unknown" sentinel and the repository turns that back into nil. A
+  missing score is excluded from the average gap rather than treated as zero.
+- **Watchlist insights** join `user_titles` to `rankings`,
+  `tmdb_watch_providers` and `watch_provider_events`. These are read-only
+  joins by `(tmdb_kind, tmdb_id)`; tracking still holds no foreign key into
+  the chart domain. `watch_provider_events` records changes already observed,
+  so there is no "leaving soon" to offer -- only what has gone.
+
+Not yet available: the Letterboxd / TV Time imports. Venue data is entered by
+hand or by outside id for now; a bulk seed from Overture or Foursquare OS
+Places, and Wikidata enrichment for historic cinemas, would land on the
+existing schema without changing it.
 
 ## Read API Flow
 
@@ -788,6 +965,16 @@ Added since the diagram below:
 | `tmdb_popularity_history` | TMDB popularity per title per day from the daily exports |
 | `tmdb_release_dates` | Movies' TMDB release dates: earliest date (and note) per country and type 1-6 (premiere, theatrical limited, theatrical, digital, physical, TV), replaced on every details refresh; migration 24 seeded type 4 from `tmdb_titles.digital_release_dates`, which is still written |
 | `tmdb_people`, `tmdb_credits`, `tmdb_titles.credits_fetched_at` | TMDB people (name, profile, known-for department) and their cast / crew credits per title (job, character, billing order, TV episodes), migration 25; read by title credits, people and people analytics |
+| `users`, `sessions` | Accounts that can sign in (argon2id hashes) and their sessions (PBKDF2 token digests) |
+| `tracked_titles` | On-demand TMDB snapshot (title, year, poster, runtime, season / episode counts) of titles a user tracks. Display only, refreshed after `trackedTitleTTL`. Deliberately NOT `tmdb_titles`: a user can track anything on TMDB, and those rows must never be picked up by the mapping, metadata, credits or ratings jobs. Reads prefer the richer `tmdb_titles` row when the title has charted |
+| `user_titles` | One user's state per title: `status` (watchlist / watching / completed / dropped / on_hold / not_interested, validated in Go), `favorite`, `watchlist_position` / `watchlist_note`, and the roll-up of their watches (`watch_count`, `first_watched_at`, `last_watched_at`, `rating` = the most recent rated watch), recomputed by `RollupUserTitle` on every write |
+| `watch_entries` | One row per watch, so a rewatch is another row with its own rating and tags (`watch_number`, `is_rewatch`). Instants are UTC text in `CURRENT_TIMESTAMP` format; `watched_on` is the frozen local day. `UNIQUE(user_id, client_key)` makes logging idempotent. Season / episode columns exist but are unused until episode tracking lands |
+| `user_tags`, `watch_entry_tags` | A user's tags (unique per user, `NOCASE`) attached per watch, not per title |
+| `tracked_episodes`, `tracked_titles.episodes_fetched_at` | Every season's episodes of a tracked show (migration 28), fetched on demand. Separate from `tmdb_episodes`, which `tmdb.episodes.refresh` fills with recent / upcoming / latest seasons only: that is right for the calendar but cannot answer "have I seen all of season 2". Carries TMDB's episode ID, which survives renumbering |
+| `user_titles.episodes_watched` | Distinct episodes of a show seen at least once, so progress ignores rewatches; maintained by `RollupUserTitle` next to `watch_count` |
+| `watch_formats`, `watch_entry_formats` | The premium-format taxonomy admins maintain (migration 29), seeded with 19 rows. `category` (brand / projection / sound / motion / dimension) separates the independent axes a cinema format mixes, which is what keeps "all my 70mm screenings" answerable. Rows are deactivated, never deleted, because watches reference them for good |
+| `venues`, `venue_aliases`, `venue_refs`, `venue_screens` | Cinemas as shared reference data, their former names, their ids in outside catalogues (`google_place_id`, `osm_id`, `wikidata_id`, `fsq_id`, `overture_id`) and their auditoriums. Screen geometry lives on the screen, normalised to metres (`width_m`) so screens compare; `effective_from` / `effective_to` cover a retrofit |
+| `watch_entries` (context columns) | Where and how a watch happened: venue and screen plus a snapshot of the venue's name and city on the night, seat, screening type, money in minor units with an ISO 4217 currency, streaming provider, physical media and edition, dimension / resolution / HDR / audio, and both aspect ratios as written and as numbers |
 | `tmdb_episodes`, `tmdb_titles.episodes_fetched_at` | TV episodes per show / season / episode: name, air date (TMDB's, NULL = TBA), `episode_type` (standard / finale / mid_season), runtime (migration 23); read by the episode calendar and release patterns |
 | `tmdb_titles.enwiki_title`, `wikipedia_pageviews` | English Wikipedia article from Wikidata (sitelink, looked up monthly by `titles.metadata`, migration 20) and its daily user pageviews per project |
 | `tmdb_titles.netflix_premiere`, `netflix_premiere_source` | Earliest Netflix premiere of a Netflix-branded title per the engagement reports (`linked` through a Netflix Top 10 title, or `name`), migration 22; marks Netflix originals for the origin classifier |
@@ -886,6 +1073,11 @@ Key constraints:
 - `titles` is keyed on `slug` (FlixPatrol URL slug). Its TMDB ID is computed from evidence; other IDs live on `tmdb_titles` and are only replaced by an equal or stronger source.
 - `task_schedules.name` is unique — the admin API returns `409 Conflict` on duplicates.
 - The writer pool is capped at 1 (`SetMaxOpenConns(1)`) to serialize writes; a separate read-only pool (`DATABASE_READ_CONNS`, `query_only`) serves the read API alongside it (WAL).
+- The tracking tables have no foreign keys into the chart domain: they
+  reference TMDB by `(tmdb_kind, tmdb_id)` text, so a user can log a title
+  metareel has never charted, and nothing a job does to `titles` /
+  `tmdb_titles` can touch user data. Their only foreign key is `users(id)`,
+  `ON DELETE CASCADE`, so deleting a user takes their tracking data with it.
 
 ---
 

@@ -52,6 +52,52 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	public := e.Group("/api/v1", h.Authenticate, handler.ETag)
 	registerReadRoutes(public, h)
 
+	// Tracking API: one user's watchlist, statuses, watch log and tags.
+	// Deliberately NOT in registerReadRoutes, which wraps the shared data
+	// routes in ETag: these responses are per-user and must never be cached
+	// or revalidated, so NoStore replaces it. SameOriginWrites is needed
+	// because the session cookie authenticates browser writes here, and
+	// RequireUser refuses API keys, which identify an integration, not a
+	// person.
+	me := e.Group("/api/v1/me", handler.SameOriginWrites, h.Authenticate, h.RequireUser, handler.NoStore)
+	me.GET("/titles", h.ListTrackedTitles)
+	me.GET("/titles/search", h.SearchTrackedTitles)
+	me.GET("/titles/:kind/:id", h.GetTrackedTitle)
+	me.PUT("/titles/:kind/:id", h.SetTrackedTitle)
+	me.DELETE("/titles/:kind/:id", h.DeleteTrackedTitle)
+	me.GET("/watchlist", h.GetWatchlist)
+	me.PUT("/watchlist/:kind/:id", h.AddToWatchlist)
+	me.DELETE("/watchlist/:kind/:id", h.RemoveFromWatchlist)
+	me.GET("/watches", h.ListWatches)
+	me.POST("/watches", h.LogWatch)
+	me.GET("/watches/:id", h.GetWatch)
+	me.PUT("/watches/:id", h.UpdateWatch)
+	me.DELETE("/watches/:id", h.DeleteWatch)
+	me.GET("/tags", h.ListWatchTags)
+	me.DELETE("/tags/:id", h.DeleteWatchTag)
+	me.GET("/formats", h.ListTrackingFormats)
+	me.GET("/venues", h.ListVenues)
+	me.POST("/venues", h.CreateVenue)
+	me.GET("/venues/:id", h.GetVenue)
+	me.PUT("/venues/:id", h.UpdateVenue)
+	me.DELETE("/venues/:id", h.DeleteVenue)
+	me.POST("/venues/:id/aliases", h.AddVenueAlias)
+	me.DELETE("/venues/:id/aliases/:alias_id", h.DeleteVenueAlias)
+	me.POST("/venues/:id/screens", h.CreateScreen)
+	me.PUT("/venues/:id/screens/:screen_id", h.UpdateScreen)
+	me.DELETE("/venues/:id/screens/:screen_id", h.DeleteScreen)
+	me.GET("/shows/:id", h.GetShow)
+	me.POST("/shows/:id/watched", h.MarkEpisodes)
+	me.DELETE("/shows/:id/watched", h.UnmarkEpisodes)
+	me.GET("/up-next", h.UpNext)
+	me.GET("/stats/summary", h.GetStatsSummary)
+	me.GET("/stats/calendar", h.GetStatsCalendar)
+	me.GET("/stats/year", h.GetStatsYear)
+	me.GET("/stats/ratings", h.GetStatsRatings)
+	me.GET("/stats/spend", h.GetStatsSpend)
+	me.GET("/stats/people", h.GetStatsPeople)
+	me.GET("/watchlist/insights", h.GetWatchlistInsights)
+
 	// Admin API and UI. The UI reads the same data through these admin
 	// copies of the public routes, so it needs no API key. With
 	// AUTH_REQUIRE_ADMIN_LOGIN only signed-in admins may use it; without, it
@@ -112,6 +158,9 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.POST("/users/:username/logout", h.LogoutUser)
 	admin.GET("/sessions", h.ListSessions)
 	admin.DELETE("/sessions/:id", h.RevokeSession)
+	admin.GET("/watch-formats", h.ListWatchFormatsAdmin)
+	admin.POST("/watch-formats", h.CreateWatchFormat)
+	admin.PATCH("/watch-formats/:id", h.UpdateWatchFormat)
 	admin.GET("/settings", h.GetSettings)
 	admin.PATCH("/settings", h.PatchSettings)
 
@@ -234,12 +283,22 @@ func registerOpenAPI(e *echo.Echo) {
 // registerStatic serves the built SPA from `dir`.
 // Real asset files (JS, CSS, etc.) are served directly; any other path falls
 // back to index.html so client-side routing works.
+//
+// The admin console answers on /admin as well as on the catch-all. /admin is
+// its permanent home: the user-facing app will take over `/` when it lands,
+// and the console keeps working at the same URL across that change. The
+// console uses a hash router, so /admin and /admin/... both just load it.
 func registerStatic(e *echo.Echo, dir string) {
 	if _, err := os.Stat(dir); err != nil {
 		return
 	}
 
 	indexPath := filepath.Join(dir, "index.html")
+	index := func(c *echo.Context) error { return c.File(indexPath) }
+
+	e.GET("/admin", index)
+	e.GET("/admin/", index)
+	e.GET("/admin/*", index)
 
 	e.GET("/*", func(c *echo.Context) error {
 		filePath := filepath.Join(dir, filepath.Clean("/"+c.Param("*")))

@@ -453,6 +453,32 @@ type TmdbWatchProvider struct {
 	Url             sql.NullString `json:"url"`
 }
 
+type TrackedEpisode struct {
+	TmdbID        string         `json:"tmdb_id"`
+	SeasonNumber  int64          `json:"season_number"`
+	EpisodeNumber int64          `json:"episode_number"`
+	TmdbEpisodeID sql.NullString `json:"tmdb_episode_id"`
+	Name          string         `json:"name"`
+	AirDate       sql.NullString `json:"air_date"`
+	EpisodeType   sql.NullString `json:"episode_type"`
+	Runtime       sql.NullInt64  `json:"runtime"`
+}
+
+type TrackedTitle struct {
+	TmdbKind          string         `json:"tmdb_kind"`
+	TmdbID            string         `json:"tmdb_id"`
+	Title             string         `json:"title"`
+	OriginalTitle     string         `json:"original_title"`
+	ReleaseDate       sql.NullString `json:"release_date"`
+	Year              sql.NullInt64  `json:"year"`
+	PosterPath        sql.NullString `json:"poster_path"`
+	Runtime           sql.NullInt64  `json:"runtime"`
+	NumberOfSeasons   sql.NullInt64  `json:"number_of_seasons"`
+	NumberOfEpisodes  sql.NullInt64  `json:"number_of_episodes"`
+	FetchedAt         string         `json:"fetched_at"`
+	EpisodesFetchedAt sql.NullString `json:"episodes_fetched_at"`
+}
+
 type User struct {
 	ID           int64        `json:"id"`
 	Username     string       `json:"username"`
@@ -462,6 +488,171 @@ type User struct {
 	CreatedAt    time.Time    `json:"created_at"`
 	UpdatedAt    time.Time    `json:"updated_at"`
 	LastLoginAt  sql.NullTime `json:"last_login_at"`
+}
+
+type UserTag struct {
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+}
+
+type UserTitle struct {
+	UserID            int64          `json:"user_id"`
+	TmdbKind          string         `json:"tmdb_kind"`
+	TmdbID            string         `json:"tmdb_id"`
+	Status            string         `json:"status"`
+	Rating            sql.NullInt64  `json:"rating"`
+	Favorite          int64          `json:"favorite"`
+	WatchlistPosition sql.NullInt64  `json:"watchlist_position"`
+	WatchlistNote     sql.NullString `json:"watchlist_note"`
+	FirstWatchedAt    sql.NullString `json:"first_watched_at"`
+	LastWatchedAt     sql.NullString `json:"last_watched_at"`
+	WatchCount        int64          `json:"watch_count"`
+	CreatedAt         string         `json:"created_at"`
+	UpdatedAt         string         `json:"updated_at"`
+	EpisodesWatched   int64          `json:"episodes_watched"`
+}
+
+type Venue struct {
+	ID                int64           `json:"id"`
+	Name              string          `json:"name"`
+	Chain             sql.NullString  `json:"chain"`
+	Address           sql.NullString  `json:"address"`
+	City              sql.NullString  `json:"city"`
+	Region            sql.NullString  `json:"region"`
+	Country           sql.NullString  `json:"country"`
+	Latitude          sql.NullFloat64 `json:"latitude"`
+	Longitude         sql.NullFloat64 `json:"longitude"`
+	Timezone          sql.NullString  `json:"timezone"`
+	OpenedOn          sql.NullString  `json:"opened_on"`
+	ClosedOn          sql.NullString  `json:"closed_on"`
+	Status            string          `json:"status"`
+	ReplacedByVenueID sql.NullInt64   `json:"replaced_by_venue_id"`
+	Note              sql.NullString  `json:"note"`
+	CreatedBy         sql.NullInt64   `json:"created_by"`
+	CreatedAt         string          `json:"created_at"`
+	UpdatedAt         string          `json:"updated_at"`
+}
+
+type VenueAlias struct {
+	ID       int64          `json:"id"`
+	VenueID  int64          `json:"venue_id"`
+	Name     string         `json:"name"`
+	FromDate sql.NullString `json:"from_date"`
+	ToDate   sql.NullString `json:"to_date"`
+}
+
+type VenueRef struct {
+	VenueID int64  `json:"venue_id"`
+	Source  string `json:"source"`
+	Ref     string `json:"ref"`
+}
+
+type VenueScreen struct {
+	ID            int64           `json:"id"`
+	VenueID       int64           `json:"venue_id"`
+	Name          string          `json:"name"`
+	Number        sql.NullInt64   `json:"number"`
+	Seats         sql.NullInt64   `json:"seats"`
+	Width         sql.NullFloat64 `json:"width"`
+	Height        sql.NullFloat64 `json:"height"`
+	DimUnit       sql.NullString  `json:"dim_unit"`
+	WidthM        sql.NullFloat64 `json:"width_m"`
+	HeightM       sql.NullFloat64 `json:"height_m"`
+	AspectRatio   sql.NullFloat64 `json:"aspect_ratio"`
+	EffectiveFrom sql.NullString  `json:"effective_from"`
+	EffectiveTo   sql.NullString  `json:"effective_to"`
+	Note          sql.NullString  `json:"note"`
+	CreatedAt     string          `json:"created_at"`
+	UpdatedAt     string          `json:"updated_at"`
+}
+
+type WatchEntry struct {
+	ID                     int64           `json:"id"`
+	UserID                 int64           `json:"user_id"`
+	ClientKey              sql.NullString  `json:"client_key"`
+	SubjectKind            string          `json:"subject_kind"`
+	TmdbKind               string          `json:"tmdb_kind"`
+	TmdbID                 string          `json:"tmdb_id"`
+	SeasonNumber           sql.NullInt64   `json:"season_number"`
+	EpisodeNumber          sql.NullInt64   `json:"episode_number"`
+	TmdbEpisodeID          sql.NullString  `json:"tmdb_episode_id"`
+	EndedAt                string          `json:"ended_at"`
+	StartedAt              sql.NullString  `json:"started_at"`
+	RuntimeMinutesUsed     sql.NullInt64   `json:"runtime_minutes_used"`
+	RuntimeSource          sql.NullString  `json:"runtime_source"`
+	Tz                     sql.NullString  `json:"tz"`
+	UtcOffsetMinutes       sql.NullInt64   `json:"utc_offset_minutes"`
+	WatchedOn              string          `json:"watched_on"`
+	TimePrecision          string          `json:"time_precision"`
+	Rating                 sql.NullInt64   `json:"rating"`
+	Liked                  int64           `json:"liked"`
+	IsRewatch              int64           `json:"is_rewatch"`
+	WatchNumber            int64           `json:"watch_number"`
+	Notes                  sql.NullString  `json:"notes"`
+	VenueKind              sql.NullString  `json:"venue_kind"`
+	Source                 string          `json:"source"`
+	CreatedAt              string          `json:"created_at"`
+	UpdatedAt              string          `json:"updated_at"`
+	VenueID                sql.NullInt64   `json:"venue_id"`
+	ScreenID               sql.NullInt64   `json:"screen_id"`
+	VenueNameAtWatch       sql.NullString  `json:"venue_name_at_watch"`
+	VenueCityAtWatch       sql.NullString  `json:"venue_city_at_watch"`
+	Seat                   sql.NullString  `json:"seat"`
+	ScreeningType          sql.NullString  `json:"screening_type"`
+	EventName              sql.NullString  `json:"event_name"`
+	WithQa                 int64           `json:"with_qa"`
+	PriceMinor             sql.NullInt64   `json:"price_minor"`
+	FeesMinor              sql.NullInt64   `json:"fees_minor"`
+	ConcessionsMinor       sql.NullInt64   `json:"concessions_minor"`
+	Currency               sql.NullString  `json:"currency"`
+	TicketsCount           sql.NullInt64   `json:"tickets_count"`
+	BookingSource          sql.NullString  `json:"booking_source"`
+	ProviderID             sql.NullInt64   `json:"provider_id"`
+	ProviderName           sql.NullString  `json:"provider_name"`
+	Monetization           sql.NullString  `json:"monetization"`
+	Media                  sql.NullString  `json:"media"`
+	Edition                sql.NullString  `json:"edition"`
+	Device                 sql.NullString  `json:"device"`
+	Dimension              sql.NullString  `json:"dimension"`
+	Resolution             sql.NullString  `json:"resolution"`
+	Hdr                    sql.NullString  `json:"hdr"`
+	AudioFormat            sql.NullString  `json:"audio_format"`
+	FrameRate              sql.NullFloat64 `json:"frame_rate"`
+	AudioLanguage          sql.NullString  `json:"audio_language"`
+	SubtitleLanguage       sql.NullString  `json:"subtitle_language"`
+	ContentAspectRatioText sql.NullString  `json:"content_aspect_ratio_text"`
+	ContentAspectRatio     sql.NullFloat64 `json:"content_aspect_ratio"`
+	ContentAspectVariable  int64           `json:"content_aspect_variable"`
+	ScreenAspectRatio      sql.NullFloat64 `json:"screen_aspect_ratio"`
+	ScreenWidth            sql.NullFloat64 `json:"screen_width"`
+	ScreenHeight           sql.NullFloat64 `json:"screen_height"`
+	ScreenDimUnit          sql.NullString  `json:"screen_dim_unit"`
+	ScreenWidthM           sql.NullFloat64 `json:"screen_width_m"`
+	ScreenHeightM          sql.NullFloat64 `json:"screen_height_m"`
+}
+
+type WatchEntryFormat struct {
+	EntryID  int64 `json:"entry_id"`
+	FormatID int64 `json:"format_id"`
+}
+
+type WatchEntryTag struct {
+	EntryID int64 `json:"entry_id"`
+	TagID   int64 `json:"tag_id"`
+}
+
+type WatchFormat struct {
+	ID        int64          `json:"id"`
+	Slug      string         `json:"slug"`
+	Label     string         `json:"label"`
+	Category  string         `json:"category"`
+	Note      sql.NullString `json:"note"`
+	SortOrder int64          `json:"sort_order"`
+	Active    int64          `json:"active"`
+	CreatedAt string         `json:"created_at"`
+	UpdatedAt string         `json:"updated_at"`
 }
 
 type WatchProviderEvent struct {

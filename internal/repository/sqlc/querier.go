@@ -10,6 +10,9 @@ import (
 )
 
 type Querier interface {
+	AddVenueAlias(ctx context.Context, arg AddVenueAliasParams) (VenueAlias, error)
+	AddWatchEntryFormat(ctx context.Context, arg AddWatchEntryFormatParams) error
+	AddWatchEntryTag(ctx context.Context, arg AddWatchEntryTagParams) error
 	// Stores a Netflix title's computed mapping (see ApplyTitleMapping); title_id
 	// is the FlixPatrol title it was matched through, if any.
 	ApplyNetflixMapping(ctx context.Context, arg ApplyNetflixMappingParams) (NetflixTitle, error)
@@ -23,6 +26,8 @@ type Querier interface {
 	// IDs cleared by hand (1 = clear): they are filled again from TMDB,
 	// Wikidata or matching.
 	ClearTmdbTitleIDs(ctx context.Context, arg ClearTmdbTitleIDsParams) error
+	ClearWatchEntryFormats(ctx context.Context, entryID int64) error
+	ClearWatchEntryTags(ctx context.Context, entryID int64) error
 	CompleteTaskRun(ctx context.Context, arg CompleteTaskRunParams) error
 	// Stored dates of one chart strictly between two dates (YYYY-MM-DD): tells a
 	// title that left a chart apart from a chart that was not scraped.
@@ -43,8 +48,12 @@ type Querier interface {
 	CountTitles(ctx context.Context, arg CountTitlesParams) (int64, error)
 	CountTitlesByMatchStatus(ctx context.Context) ([]CountTitlesByMatchStatusRow, error)
 	CountTmdbTitles(ctx context.Context) (CountTmdbTitlesRow, error)
+	CountUserTitles(ctx context.Context, arg CountUserTitlesParams) (int64, error)
 	// User accounts and their sign-in sessions.
 	CountUsers(ctx context.Context) (int64, error)
+	// CountVenueWatches reports how many watches point at a venue, so one that
+	// is in use is never deleted out from under them.
+	CountVenueWatches(ctx context.Context, venueID sql.NullInt64) (int64, error)
 	CountWebhookDeliveriesByStatus(ctx context.Context) ([]CountWebhookDeliveriesByStatusRow, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
@@ -54,9 +63,19 @@ type Querier interface {
 	CreateTaskScheduleRunTime(ctx context.Context, arg CreateTaskScheduleRunTimeParams) error
 	CreateTaskScheduleTarget(ctx context.Context, arg CreateTaskScheduleTargetParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	CreateVenue(ctx context.Context, arg CreateVenueParams) (int64, error)
+	CreateVenueScreen(ctx context.Context, arg CreateVenueScreenParams) (int64, error)
+	CreateWatchFormat(ctx context.Context, arg CreateWatchFormatParams) (WatchFormat, error)
 	CreateWebhook(ctx context.Context, arg CreateWebhookParams) (Webhook, error)
 	DeleteAPIKey(ctx context.Context, id int64) (int64, error)
 	DeleteChartRankings(ctx context.Context, arg DeleteChartRankingsParams) error
+	// DeleteEmptyUserTitle removes a state row that holds nothing worth keeping
+	// (no status, no rating, not a favourite, no watches), so clearing a
+	// watchlist entry does not leave a dangling row behind.
+	DeleteEmptyUserTitle(ctx context.Context, arg DeleteEmptyUserTitleParams) (int64, error)
+	// DeleteEpisodeWatches removes every watch of the chosen episodes. scope is
+	// as for ListMarkableEpisodes.
+	DeleteEpisodeWatches(ctx context.Context, arg DeleteEpisodeWatchesParams) (int64, error)
 	DeleteExpiredSessions(ctx context.Context, idle string) (int64, error)
 	// One kind of a title's evidence, or all of it (kind '').
 	DeleteMappingEvidence(ctx context.Context, arg DeleteMappingEvidenceParams) (int64, error)
@@ -80,9 +99,16 @@ type Querier interface {
 	DeleteTitleLink(ctx context.Context, arg DeleteTitleLinkParams) error
 	DeleteTitleRatingSourcesByProvider(ctx context.Context, arg DeleteTitleRatingSourcesByProviderParams) error
 	DeleteTmdbWatchProviders(ctx context.Context, arg DeleteTmdbWatchProvidersParams) error
+	DeleteTrackedSeason(ctx context.Context, arg DeleteTrackedSeasonParams) error
 	DeleteUser(ctx context.Context, username string) (int64, error)
 	DeleteUserSessions(ctx context.Context, username string) (int64, error)
 	DeleteUserSessionsExcept(ctx context.Context, arg DeleteUserSessionsExceptParams) (int64, error)
+	DeleteUserTag(ctx context.Context, arg DeleteUserTagParams) (int64, error)
+	DeleteUserTitle(ctx context.Context, arg DeleteUserTitleParams) (int64, error)
+	DeleteVenue(ctx context.Context, id int64) (int64, error)
+	DeleteVenueAlias(ctx context.Context, arg DeleteVenueAliasParams) (int64, error)
+	DeleteVenueScreen(ctx context.Context, arg DeleteVenueScreenParams) (int64, error)
+	DeleteWatchEntry(ctx context.Context, arg DeleteWatchEntryParams) (int64, error)
 	DeleteWebhook(ctx context.Context, id int64) (int64, error)
 	// One netflix_seasons row per season title a TV title charted with.
 	EnsureNetflixSeasons(ctx context.Context) error
@@ -93,6 +119,8 @@ type Querier interface {
 	EnsureTitle(ctx context.Context, arg EnsureTitleParams) (Title, error)
 	// Every TMDB title anything is mapped to has a row (filled by the refresh).
 	EnsureTmdbTitle(ctx context.Context, arg EnsureTmdbTitleParams) error
+	// EnsureUserTitle creates an empty state row so a watch can roll up into it.
+	EnsureUserTitle(ctx context.Context, arg EnsureUserTitleParams) error
 	// Runs still "started" long after the task timeout were interrupted (e.g. the
 	// server restarted mid-run); asynq retries the task as a new run.
 	FailStaleTaskRuns(ctx context.Context, olderThan string) (int64, error)
@@ -112,6 +140,7 @@ type Querier interface {
 	// any_source = 0 leaves out IDs copied from a Netflix title mapped here
 	// (source netflix): they only repeat that title's own mapping.
 	FindTmdbRefsByNetflixID(ctx context.Context, arg FindTmdbRefsByNetflixIDParams) ([]FindTmdbRefsByNetflixIDRow, error)
+	FindVenueByRef(ctx context.Context, arg FindVenueByRefParams) (int64, error)
 	// GetActiveSession returns a session that has not expired, was used within
 	// the idle window (idle is a negative modifier, e.g. '-604800 seconds') and
 	// belongs to an enabled user.
@@ -135,8 +164,20 @@ type Querier interface {
 	GetTitleBySlug(ctx context.Context, slug string) (Title, error)
 	// On-demand ratings cache, keyed by TMDB namespace ('movie' | 'tv') + ID.
 	GetTitleRatings(ctx context.Context, arg GetTitleRatingsParams) (TitleRating, error)
+	// GetTitleSnapshot returns one title for display, preferring the rich
+	// tmdb_titles row of a charted title over the on-demand tracked_titles cache.
+	GetTitleSnapshot(ctx context.Context, arg GetTitleSnapshotParams) (GetTitleSnapshotRow, error)
 	GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (TmdbTitle, error)
+	GetTrackedEpisode(ctx context.Context, arg GetTrackedEpisodeParams) (TrackedEpisode, error)
+	GetTrackedEpisodesFetchedAt(ctx context.Context, tmdbID string) (string, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
+	GetUserTitle(ctx context.Context, arg GetUserTitleParams) (GetUserTitleRow, error)
+	GetVenue(ctx context.Context, id int64) (Venue, error)
+	GetVenueScreen(ctx context.Context, id int64) (VenueScreen, error)
+	GetWatchEntry(ctx context.Context, arg GetWatchEntryParams) (WatchEntry, error)
+	GetWatchEntryByClientKey(ctx context.Context, arg GetWatchEntryByClientKeyParams) (WatchEntry, error)
+	GetWatchFormat(ctx context.Context, id int64) (WatchFormat, error)
+	GetWatchFormatBySlug(ctx context.Context, slug string) (WatchFormat, error)
 	GetWebhook(ctx context.Context, id int64) (Webhook, error)
 	GetWebhookDeliveryPayload(ctx context.Context, id int64) (string, error)
 	InsertCredit(ctx context.Context, arg InsertCreditParams) error
@@ -149,6 +190,7 @@ type Querier interface {
 	InsertTitleLink(ctx context.Context, arg InsertTitleLinkParams) error
 	InsertTitleRatingSource(ctx context.Context, arg InsertTitleRatingSourceParams) error
 	InsertTmdbWatchProvider(ctx context.Context, arg InsertTmdbWatchProviderParams) error
+	InsertWatchEntry(ctx context.Context, arg InsertWatchEntryParams) (int64, error)
 	InsertWatchProviderEvent(ctx context.Context, arg InsertWatchProviderEventParams) error
 	// A delivery recorded as it happens (test pings).
 	InsertWebhookDelivery(ctx context.Context, arg InsertWebhookDeliveryParams) (WebhookDelivery, error)
@@ -226,6 +268,9 @@ type Querier interface {
 	// FlixPatrol titles mapped to these TMDB IDs (either kind; callers filter),
 	// with their last Netflix-or-other ranking date.
 	ListFlixPatrolTitlesByTmdbIDs(ctx context.Context, tmdbIds []sql.NullString) ([]ListFlixPatrolTitlesByTmdbIDsRow, error)
+	// ListFormatsForWatchEntries hydrates a page of watches with their formats.
+	// The slice is the last parameter, as sqlc requires.
+	ListFormatsForWatchEntries(ctx context.Context, arg ListFormatsForWatchEntriesParams) ([]ListFormatsForWatchEntriesRow, error)
 	// Titles whose deciding evidence came with an IMDb ID other than their TMDB
 	// title's: the match or TMDB's IMDb ID is wrong.
 	ListIMDbMismatches(ctx context.Context, limit int64) ([]ListIMDbMismatchesRow, error)
@@ -260,6 +305,11 @@ type Querier interface {
 	ListMappingReviewFlixPatrol(ctx context.Context) ([]ListMappingReviewFlixPatrolRow, error)
 	// The same for Netflix Top 10 titles (points = weeks in the global Top 10).
 	ListMappingReviewNetflix(ctx context.Context) ([]ListMappingReviewNetflixRow, error)
+	// ListMarkableEpisodes picks the episodes a bulk mark or unmark applies to.
+	// scope is one of: episode (just this one), season (all of this season),
+	// up_to (everything up to and including this one, across earlier seasons),
+	// all (the whole show).
+	ListMarkableEpisodes(ctx context.Context, arg ListMarkableEpisodesParams) ([]ListMarkableEpisodesRow, error)
 	ListMovieReleaseDates(ctx context.Context, tmdbID string) ([]ListMovieReleaseDatesRow, error)
 	// Current subscription / free / ads offers of the movies (country '' =
 	// every country).
@@ -347,12 +397,18 @@ type Querier interface {
 	// Every episode of the regular seasons whose first episode aired between
 	// two dates, with the show's title.
 	ListSeasonEpisodes(ctx context.Context, arg ListSeasonEpisodesParams) ([]ListSeasonEpisodesRow, error)
+	// ListShowEpisodes is a show's episodes with how often the user has watched
+	// each, for the show page.
+	ListShowEpisodes(ctx context.Context, arg ListShowEpisodesParams) ([]ListShowEpisodesRow, error)
 	// First air date of each regular season of the shows with a season
 	// premiering after a date (to cut a season's window at the next season).
 	ListShowSeasonPremieres(ctx context.Context, fromDate string) ([]ListShowSeasonPremieresRow, error)
 	// Season numbers of FlixPatrol TV rankings.
 	// TV rankings whose season was not given by the chart itself, from a date.
 	ListTVRankingsForSeasons(ctx context.Context, fromDate string) ([]ListTVRankingsForSeasonsRow, error)
+	// ListTagsForWatchEntries hydrates a page of diary entries with their tags.
+	// The slice is the last parameter, as sqlc requires.
+	ListTagsForWatchEntries(ctx context.Context, arg ListTagsForWatchEntriesParams) ([]ListTagsForWatchEntriesRow, error)
 	ListTaskRunLogsByRunID(ctx context.Context, runID int64) ([]TaskRunLog, error)
 	// Empty / zero filters match everything.
 	ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]TaskRun, error)
@@ -431,7 +487,23 @@ type Querier interface {
 	ListTop10ByProvider(ctx context.Context, arg ListTop10ByProviderParams) ([]ListTop10ByProviderRow, error)
 	// Report rows of Netflix originals not linked to a Netflix Top 10 title.
 	ListUnlinkedNetflixOriginals(ctx context.Context) ([]ListUnlinkedNetflixOriginalsRow, error)
+	ListUserTags(ctx context.Context, userID int64) ([]ListUserTagsRow, error)
+	// ListUserTitles lists a user's tracked titles with their display metadata.
+	// An empty status lists every tracked title. The sort key is passed through a
+	// one-row subquery because sqlc does not rewrite params inside ORDER BY.
+	ListUserTitles(ctx context.Context, arg ListUserTitlesParams) ([]ListUserTitlesRow, error)
 	ListUsers(ctx context.Context) ([]User, error)
+	ListVenueAliases(ctx context.Context, venueID int64) ([]VenueAlias, error)
+	ListVenueRefs(ctx context.Context, venueID int64) ([]VenueRef, error)
+	ListVenueScreens(ctx context.Context, venueID int64) ([]VenueScreen, error)
+	// ListVenues searches the shared venue list by name, chain or city.
+	ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListVenuesRow, error)
+	// ListWatchEntries is the diary, newest local day first. Paging is by the
+	// (watched_on, id) cursor; an empty cursor_on starts at the newest entry.
+	ListWatchEntries(ctx context.Context, arg ListWatchEntriesParams) ([]ListWatchEntriesRow, error)
+	// The premium-format taxonomy admins maintain, the venues and screens a
+	// watch can point at, and the context columns on a watch.
+	ListWatchFormats(ctx context.Context, activeOnly int64) ([]WatchFormat, error)
 	// Changes across titles since a time (observed_at >= since, a
 	// 'YYYY-MM-DD HH:MM:SS' UTC string), newest first, with the TMDB title.
 	ListWatchProviderEvents(ctx context.Context, arg ListWatchProviderEventsParams) ([]ListWatchProviderEventsRow, error)
@@ -450,6 +522,10 @@ type Querier interface {
 	MarkWebhookDelivered(ctx context.Context, arg MarkWebhookDeliveredParams) error
 	MaxChartChangedAt(ctx context.Context) (MaxChartChangedAtRow, error)
 	MaxOfferEventID(ctx context.Context) (int64, error)
+	// NextWatchNumber is the 1-based ordinal of the next watch of a title (or of
+	// one episode of it), used to stamp watch_number and is_rewatch.
+	NextWatchNumber(ctx context.Context, arg NextWatchNumberParams) (int64, error)
+	NextWatchlistPosition(ctx context.Context, userID int64) (int64, error)
 	// People left without any credit (their titles' credits were replaced or
 	// the titles deleted).
 	PruneOrphanPeople(ctx context.Context) (int64, error)
@@ -482,6 +558,15 @@ type Querier interface {
 	// Hands a season back to automatic mapping.
 	ResetNetflixSeason(ctx context.Context, id int64) (NetflixSeason, error)
 	RetryWebhookDelivery(ctx context.Context, id int64) (int64, error)
+	// RollupUserTitle recomputes the watch roll-up of one title from the log:
+	// watch count, distinct episodes seen, first and last watch, and the rating
+	// of the most recent watch that carries one ("my rating" = latest watch's).
+	//
+	// episodes_watched counts distinct episodes rather than watches, so a
+	// rewatched episode still counts once towards progress. The season and
+	// episode numbers are folded into one value because SQLite cannot correlate
+	// a FROM-clause subquery with the row being updated.
+	RollupUserTitle(ctx context.Context, arg RollupUserTitleParams) error
 	RotateAPIKey(ctx context.Context, arg RotateAPIKeyParams) (ApiKey, error)
 	SaveDataImport(ctx context.Context, arg SaveDataImportParams) error
 	SaveFlixPatrolDetails(ctx context.Context, arg SaveFlixPatrolDetailsParams) error
@@ -501,18 +586,76 @@ type Querier interface {
 	SetNetflixSeasonManual(ctx context.Context, arg SetNetflixSeasonManualParams) (NetflixSeason, error)
 	SetNetflixSeasonNetflixID(ctx context.Context, arg SetNetflixSeasonNetflixIDParams) error
 	SetNetflixTitleNetflixID(ctx context.Context, arg SetNetflixTitleNetflixIDParams) error
+	SetTrackedEpisodesFetched(ctx context.Context, tmdbID string) error
 	SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) (int64, error)
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) (int64, error)
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) (int64, error)
+	// SetUserTitleState creates or updates the parts of a user's title state that
+	// the client owns. The watch roll-up columns are left alone.
+	SetUserTitleState(ctx context.Context, arg SetUserTitleStateParams) error
+	// SetWatchEntryContext writes the where-and-how columns of a watch. They are
+	// set apart from the insert so the insert keeps a readable parameter list.
+	SetWatchEntryContext(ctx context.Context, arg SetWatchEntryContextParams) (int64, error)
 	SetWebhookSecret(ctx context.Context, arg SetWebhookSecretParams) (Webhook, error)
+	// ShowProgress counts a show's episodes, how many have aired and how many the
+	// user has seen at least once. The denominator moves as episodes air, so it
+	// is computed rather than stored.
+	ShowProgress(ctx context.Context, arg ShowProgressParams) (ShowProgressRow, error)
+	// StatsByFormat counts watches and time per premium format.
+	StatsByFormat(ctx context.Context, arg StatsByFormatParams) ([]StatsByFormatRow, error)
+	// StatsByHour buckets watching by the local hour it ended, using the offset
+	// stored with each watch rather than UTC.
+	StatsByHour(ctx context.Context, arg StatsByHourParams) ([]StatsByHourRow, error)
+	StatsByMonth(ctx context.Context, arg StatsByMonthParams) ([]StatsByMonthRow, error)
+	// StatsByVenueKind splits watching between the cinema, streaming and home.
+	StatsByVenueKind(ctx context.Context, arg StatsByVenueKindParams) ([]StatsByVenueKindRow, error)
+	// StatsByWeekday buckets by the local day of the week (0 = Sunday).
+	StatsByWeekday(ctx context.Context, arg StatsByWeekdayParams) ([]StatsByWeekdayRow, error)
+	// StatsPerDay is the calendar heatmap, and what streaks are counted from.
+	StatsPerDay(ctx context.Context, arg StatsPerDayParams) ([]StatsPerDayRow, error)
+	// StatsRatingComparison puts a user's rating next to the crowd's for every
+	// title they rated. All three outside scores are normalised to 0-10, the
+	// same scale as a rating in half-stars out of five.
+	StatsRatingComparison(ctx context.Context, userID int64) ([]StatsRatingComparisonRow, error)
+	StatsRatingDistribution(ctx context.Context, arg StatsRatingDistributionParams) ([]StatsRatingDistributionRow, error)
+	// StatsSpendByCurrency totals money per currency. Amounts are never
+	// converted between currencies: there is no rate to do it honestly with.
+	StatsSpendByCurrency(ctx context.Context, arg StatsSpendByCurrencyParams) ([]StatsSpendByCurrencyRow, error)
+	StatsSpendByVenue(ctx context.Context, arg StatsSpendByVenueParams) ([]StatsSpendByVenueRow, error)
+	// StatsTopPeople ranks the people behind what a user watched. job '' counts
+	// cast; any other value matches that crew job (Director, Screenplay, ...).
+	// Only titles metareel has credits for can appear.
+	StatsTopPeople(ctx context.Context, arg StatsTopPeopleParams) ([]StatsTopPeopleRow, error)
+	// Aggregates over one user's watch log: totals, the calendar, time of day,
+	// ratings against the crowd, spend, formats, and what their watchlist is
+	// doing on the charts.
+	//
+	// How long a watch was is not stored on every row: runtime_minutes_used is
+	// only set when a start was derived from it. These queries fall back to the
+	// episode's runtime, then the title's, so an imprecise watch still counts.
+	// Every statement is scoped by user_id.
+	StatsTotals(ctx context.Context, arg StatsTotalsParams) (StatsTotalsRow, error)
+	// StatsWatchedTitles lists the distinct titles watched in a range with the
+	// metadata the genre, decade and country breakdowns are built from in Go
+	// (genres and origin countries are JSON arrays on tmdb_titles).
+	StatsWatchedTitles(ctx context.Context, arg StatsWatchedTitlesParams) ([]StatsWatchedTitlesRow, error)
 	TitleMappingStats(ctx context.Context) (TitleMappingStatsRow, error)
 	TouchAPIKey(ctx context.Context, id int64) error
 	TouchSession(ctx context.Context, id int64) error
 	// Unmatched titles per country they charted in, from a date on.
 	UnmatchedTitlesByCountry(ctx context.Context, since string) ([]UnmatchedTitlesByCountryRow, error)
+	// UpNext is the next aired, unwatched episode of each show the user is part
+	// way through, most recently aired first. Specials are left out.
+	UpNext(ctx context.Context, arg UpNextParams) ([]UpNextRow, error)
 	UpdateNetflixSeasonMapping(ctx context.Context, arg UpdateNetflixSeasonMappingParams) error
 	UpdateRankingSeason(ctx context.Context, arg UpdateRankingSeasonParams) error
 	UpdateTaskSchedule(ctx context.Context, arg UpdateTaskScheduleParams) (TaskSchedule, error)
+	UpdateVenue(ctx context.Context, arg UpdateVenueParams) (int64, error)
+	UpdateVenueScreen(ctx context.Context, arg UpdateVenueScreenParams) (int64, error)
+	UpdateWatchEntry(ctx context.Context, arg UpdateWatchEntryParams) (int64, error)
+	// UpdateWatchFormat changes a format in place. A format is deactivated
+	// rather than deleted, because watches reference it for good.
+	UpdateWatchFormat(ctx context.Context, arg UpdateWatchFormatParams) (int64, error)
 	UpdateWebhook(ctx context.Context, arg UpdateWebhookParams) (Webhook, error)
 	UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) error
 	UpsertChartSnapshot(ctx context.Context, arg UpsertChartSnapshotParams) error
@@ -531,6 +674,27 @@ type Querier interface {
 	// or a higher-ranked source: manual > tmdb > wikidata > match > netflix
 	// (netflix, like any unknown source, ranks 0).
 	UpsertTmdbTitleIDs(ctx context.Context, arg UpsertTmdbTitleIDsParams) error
+	// Episode tracking: the cached episodes of tracked shows, a user's progress
+	// through them, and the up-next queue. Every statement that touches a user's
+	// watches is scoped by user_id.
+	UpsertTrackedEpisode(ctx context.Context, arg UpsertTrackedEpisodeParams) error
+	// User tracking: watchlist and statuses (user_titles), the watch log
+	// (watch_entries), per-watch tags and the on-demand TMDB title cache.
+	// Every statement is scoped by user_id; nothing here may read another
+	// user's rows.
+	UpsertTrackedTitle(ctx context.Context, arg UpsertTrackedTitleParams) error
+	UpsertUserTag(ctx context.Context, arg UpsertUserTagParams) (UserTag, error)
+	UpsertVenueRef(ctx context.Context, arg UpsertVenueRefParams) error
+	// WatchlistInCharts finds watchlist titles on a Top 10 right now. This is
+	// the join that only works because the charts and the watchlist live in one
+	// database.
+	WatchlistInCharts(ctx context.Context, arg WatchlistInChartsParams) ([]WatchlistInChartsRow, error)
+	// WatchlistRecentlyLeft finds watchlist titles that came off a service in a
+	// country. metareel records what has happened, not what is scheduled, so
+	// this is what has already gone, not what is leaving soon.
+	WatchlistRecentlyLeft(ctx context.Context, arg WatchlistRecentlyLeftParams) ([]WatchlistRecentlyLeftRow, error)
+	// WatchlistStreamingNow finds watchlist titles available in a country.
+	WatchlistStreamingNow(ctx context.Context, arg WatchlistStreamingNowParams) ([]WatchlistStreamingNowRow, error)
 	// Share of chart entries whose title has a TMDB ID, per ISO week, from a date on.
 	WeeklyMappingCoverage(ctx context.Context, since string) ([]WeeklyMappingCoverageRow, error)
 }

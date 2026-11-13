@@ -33,6 +33,7 @@ type tmdbSearchResp struct {
 		Name          string `json:"name"`           // tv
 		OriginalName  string `json:"original_name"`  // tv
 		FirstAirDate  string `json:"first_air_date"` // tv, YYYY-MM-DD
+		PosterPath    string `json:"poster_path"`
 	} `json:"results"`
 }
 
@@ -43,6 +44,7 @@ type TMDBSearchResult struct {
 	OriginalTitle string
 	Year          int    // 0 if TMDB has no release / first-air date
 	ReleaseDate   string // YYYY-MM-DD release / first-air date, "" if none
+	PosterPath    string // TMDB poster path, "" if none
 }
 
 // SearchMovie returns TMDB movie search results for query, most relevant first.
@@ -77,7 +79,7 @@ func (c *TMDBClient) search(ctx context.Context, kind string, query string) ([]T
 
 	results := make([]TMDBSearchResult, 0, len(out.Results))
 	for _, r := range out.Results {
-		res := TMDBSearchResult{ID: r.ID, Title: r.Title, OriginalTitle: r.OriginalTitle, Year: yearFromDate(r.ReleaseDate), ReleaseDate: r.ReleaseDate}
+		res := TMDBSearchResult{ID: r.ID, Title: r.Title, OriginalTitle: r.OriginalTitle, Year: yearFromDate(r.ReleaseDate), ReleaseDate: r.ReleaseDate, PosterPath: r.PosterPath}
 		if kind == "tv" {
 			res.Title, res.OriginalTitle, res.Year, res.ReleaseDate = r.Name, r.OriginalName, yearFromDate(r.FirstAirDate), r.FirstAirDate
 		}
@@ -176,6 +178,90 @@ func (c *TMDBClient) Details(ctx context.Context, kind string, tmdbID string) (s
 		return out.Name, yearFromDate(out.FirstAirDate), nil
 	}
 	return out.Title, yearFromDate(out.ReleaseDate), nil
+}
+
+// TMDBTitleDetails is the display metadata tracking caches for a title that
+// never appeared on a chart, so a diary page needs no TMDB call per row.
+type TMDBTitleDetails struct {
+	Title            string
+	OriginalTitle    string
+	ReleaseDate      string // YYYY-MM-DD release / first-air date, "" if none
+	Year             int
+	PosterPath       string
+	Runtime          int // minutes; TV: the first of episode_run_time
+	NumberOfSeasons  int
+	NumberOfEpisodes int
+	// Seasons is TMDB's season list for a show, season 0 (specials)
+	// included. number_of_seasons leaves season 0 out, so tracking uses this
+	// to know which seasons to fetch.
+	Seasons []TMDBSeason
+	Found   bool // false when TMDB has no such title (404)
+}
+
+// TitleDetails fetches the display metadata of one TMDB movie or TV show.
+// A 404 returns Found false and no error, so a wrong ID is a 404 from the
+// API rather than a 502.
+func (c *TMDBClient) TitleDetails(ctx context.Context, kind, tmdbID string) (TMDBTitleDetails, error) {
+	if !c.Enabled() {
+		return TMDBTitleDetails{}, nil
+	}
+	if kind != "movie" && kind != "tv" {
+		return TMDBTitleDetails{}, fmt.Errorf("invalid tmdb kind %q", kind)
+	}
+	var out struct {
+		Title            string `json:"title"`
+		OriginalTitle    string `json:"original_title"`
+		ReleaseDate      string `json:"release_date"`
+		Name             string `json:"name"`
+		OriginalName     string `json:"original_name"`
+		FirstAirDate     string `json:"first_air_date"`
+		PosterPath       string `json:"poster_path"`
+		Runtime          int    `json:"runtime"`
+		EpisodeRunTime   []int  `json:"episode_run_time"`
+		NumberOfSeasons  int    `json:"number_of_seasons"`
+		NumberOfEpisodes int    `json:"number_of_episodes"`
+		Seasons          []struct {
+			Number       int    `json:"season_number"`
+			Name         string `json:"name"`
+			AirDate      string `json:"air_date"`
+			EpisodeCount int    `json:"episode_count"`
+		} `json:"seasons"`
+	}
+	resp, err := c.http.R().
+		SetContext(ctx).
+		SetQueryParams(map[string]string{"api_key": c.apiKey}).
+		SetResult(&out).
+		Get(fmt.Sprintf("https://api.themoviedb.org/3/%s/%s", kind, tmdbID))
+	if err != nil {
+		return TMDBTitleDetails{}, fmt.Errorf("tmdb %s title details: %w", kind, redactErr(err))
+	}
+	if resp.StatusCode() == 404 {
+		return TMDBTitleDetails{}, nil
+	}
+	if resp.IsError() {
+		return TMDBTitleDetails{}, fmt.Errorf("tmdb %s title details status %d", kind, resp.StatusCode())
+	}
+	d := TMDBTitleDetails{
+		Title: out.Title, OriginalTitle: out.OriginalTitle, ReleaseDate: out.ReleaseDate,
+		PosterPath: out.PosterPath, Runtime: out.Runtime,
+		NumberOfSeasons: out.NumberOfSeasons, NumberOfEpisodes: out.NumberOfEpisodes,
+		Found: true,
+	}
+	if kind == "tv" {
+		d.Title, d.OriginalTitle, d.ReleaseDate = out.Name, out.OriginalName, out.FirstAirDate
+		if len(out.EpisodeRunTime) > 0 {
+			d.Runtime = out.EpisodeRunTime[0]
+		}
+		for _, s := range out.Seasons {
+			d.Seasons = append(d.Seasons, TMDBSeason{
+				Number: s.Number, Name: s.Name, AirDate: s.AirDate, EpisodeCount: s.EpisodeCount})
+		}
+	}
+	if len(d.ReleaseDate) != 10 {
+		d.ReleaseDate = ""
+	}
+	d.Year = yearFromDate(d.ReleaseDate)
+	return d, nil
 }
 
 // TMDBFound is a TMDB title found by an external ID.

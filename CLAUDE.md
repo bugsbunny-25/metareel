@@ -19,6 +19,8 @@ Consumed by the user's other project, "tides".
 - Never edit `internal/repository/sqlc/*` or `.env` (hooks block it); change `db/queries` and run `make sqlc`.
 - Keep API keys out of logs, run logs and errors (`redactErr` for keyed upstreams).
 - Public data routes go in `registerReadRoutes`; admin-only routes on the admin group.
+  Per-user tracking routes are the exception: they go on the `/api/v1/me` group
+  (`RequireUser` + `NoStore`, never `ETag`) because those responses must not be cached.
 - Update OpenAPI specs, README and `docs/architecture.md` with API/config changes.
 - Verify for real before saying done: `go build ./... && go vet ./... && go test -race -count=1 ./internal/...`, `cd web && npm run build`, then the `local-verification` flow for user-facing changes. Say what was verified live vs. only in tests.
 - Never run tests or servers against `data/metareel.db`; use a copy.
