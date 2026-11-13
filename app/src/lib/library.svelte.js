@@ -47,12 +47,28 @@ class Library {
     const res = on ? await api.removeFromWatchlist(kind, id) : await api.addToWatchlist(kind, id)
     if (on && !res) {
       const prev = this.get(kind, id)
-      if (prev?.watch_count > 0) this.byKey.set(libKey(kind, id), { ...prev, status: '' })
+      // The server keeps the row while it has watches or is a favourite.
+      if (prev?.watch_count > 0 || prev?.favorite) this.byKey.set(libKey(kind, id), { ...prev, status: '', watchlist_position: null })
       else this.byKey.delete(libKey(kind, id))
     } else {
       this.#apply(kind, id, res)
     }
     return !on
+  }
+
+  /** Set status and/or favourite. Returns the stored state. */
+  async setState(kind, id, patch) {
+    const res = await api.setTitle(kind, id, patch)
+    this.#apply(kind, id, res)
+    return res?.state ?? null
+  }
+
+  /** Clear status, favourite and note. Titles with watches stay (as "Watched"); others leave the library. */
+  async clear(kind, id) {
+    await api.clearTitle(kind, id)
+    const prev = this.get(kind, id)
+    if (prev?.watch_count > 0) this.byKey.set(libKey(kind, id), { ...prev, status: '', favorite: false, watchlist_note: null, watchlist_position: null })
+    else this.byKey.delete(libKey(kind, id))
   }
 
   /** Re-read one title after a write that changes derived fields (rating, watch count). */

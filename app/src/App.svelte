@@ -18,6 +18,7 @@
   import Title from './pages/Title.svelte'
   import Diary from './pages/Diary.svelte'
   import Watchlist from './pages/Watchlist.svelte'
+  import Library from './pages/Library.svelte'
 
   let logTarget = $state(null)
   let confirmRequest = $state(null)
@@ -52,12 +53,12 @@
   })
 
   const titleMatch = $derived(route.path.match(/^\/title\/(movie|tv)\/(\d+)$/))
-  const PAGES = { '/': 'home', '/charts': 'charts', '/watchlist': 'watchlist', '/diary': 'diary' }
+  const PAGES = { '/': 'home', '/charts': 'charts', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary' }
   const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : 'missing'))
   const providers = $derived(reference.providers.filter((p) => p.countries.includes(scope.country)))
 
   $effect(() => {
-    const NAMES = { charts: 'Top 10', title: 'Title', watchlist: 'Watchlist', diary: 'Diary', missing: 'Not found' }
+    const NAMES = { charts: 'Top 10', title: 'Title', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', missing: 'Not found' }
     document.title = NAMES[page] ? `${NAMES[page]} · metareel` : 'metareel'
   })
 </script>
@@ -76,6 +77,7 @@
       <a href="#/charts" aria-current={page === 'charts' ? 'page' : undefined}>Charts</a>
       <span class="sep" aria-hidden="true"></span>
       <a href="#/watchlist" aria-current={page === 'watchlist' ? 'page' : undefined}>Watchlist</a>
+      <a href="#/library" aria-current={page === 'library' ? 'page' : undefined}>Library</a>
       <a href="#/diary" aria-current={page === 'diary' ? 'page' : undefined}>Diary</a>
     </nav>
     <div class="tools">
@@ -119,6 +121,8 @@
       <Charts {onlog} />
     {:else if page === 'watchlist'}
       <Watchlist {onlog} />
+    {:else if page === 'library'}
+      <Library {onlog} />
     {:else if page === 'diary'}
       <Diary {onlog} {onconfirm} />
     {:else if page === 'title'}

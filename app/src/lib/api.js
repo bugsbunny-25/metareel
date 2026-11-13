@@ -83,6 +83,10 @@ export const api = {
   // The signed-in user's library
   myTitles: (offset = 0, signal) => request('GET', `/me/titles${qs({ limit: 200, offset })}`, { signal }),
   myTitle: (kind, id, signal) => request('GET', `/me/titles/${kind}/${id}`, { signal }),
+  // Status, favourite or watchlist note (a rating comes from the latest rated watch, not from here).
+  setTitle: (kind, id, patch) => request('PUT', `/me/titles/${kind}/${id}`, { body: patch }),
+  // Clears status, favourite and note; watches are kept.
+  clearTitle: (kind, id) => request('DELETE', `/me/titles/${kind}/${id}`),
   addToWatchlist: (kind, id) => request('PUT', `/me/watchlist/${kind}/${id}`, { body: {} }),
   removeFromWatchlist: (kind, id) => request('DELETE', `/me/watchlist/${kind}/${id}`),
   watchlistInsights: (country, days, signal) => request('GET', `/me/watchlist/insights${qs({ country, days })}`, { signal }),

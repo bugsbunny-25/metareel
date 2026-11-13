@@ -752,7 +752,11 @@ Top 10, movement, your list, breakouts), Charts (Top 10 with trend, days,
 IMDb, RT and origin), title pages (attention, timeline, In numbers, positions,
 where to watch), Watchlist (your list joined with `/me/watchlist/insights`:
 charting in a 30-day, 90-day or one-year window, streaming on a subscription
-now, or recently gone from a service) and Diary (every watch grouped by its
+now, or recently gone from a service), Library (everything you track, with
+status chips that filter, your average rating and its half-star spread,
+favourites, a poster grid or a list, and a per-title menu that sets the
+status or favourite through `PUT /me/titles/{kind}/{id}` or clears it) and
+Diary (every watch grouped by its
 local day, this year's totals, a year heatmap from `/me/stats/calendar`, and
 edit and delete; deletes are permanent and ask first). Search (⌘K / Ctrl K
 or `/`) keeps two result lists apart: titles with chart data (`/api/v1/search`,

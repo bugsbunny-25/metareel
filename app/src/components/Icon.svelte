@@ -13,6 +13,9 @@
     trash: 'M4.5 6h11M8 6V4.5h4V6M6 6l.8 10h6.4L14 6',
     repeat: 'M5 9V7.5A2.5 2.5 0 017.5 5H15l-2-2M15 11v1.5A2.5 2.5 0 0112.5 15H5l2 2',
     search: 'M8.5 14a5.5 5.5 0 100-11 5.5 5.5 0 000 11zM12.5 12.5l4 4',
+    more: 'M5 10h.01M10 10h.01M15 10h.01',
+    grid: 'M3.5 3.5h5v5h-5zM11.5 3.5h5v5h-5zM3.5 11.5h5v5h-5zM11.5 11.5h5v5h-5z',
+    list: 'M7 5h10M7 10h10M7 15h10M3.5 5h.01M3.5 10h.01M3.5 15h.01',
   };
 </script>
 
@@ -21,7 +24,7 @@
     d={PATHS[name]}
     fill={name.endsWith('-fill') ? 'currentColor' : 'none'}
     stroke="currentColor"
-    stroke-width="1.6"
+    stroke-width={name === 'more' ? 3 : 1.6}
     stroke-linejoin="round"
     stroke-linecap="round"
   />
