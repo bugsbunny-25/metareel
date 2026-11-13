@@ -447,8 +447,12 @@ dev-asynqmon-status: ## Show status of background Asynq monitor
 	fi
 
 .PHONY: dev-ui
-dev-ui: ## Run Vite dev server for the admin UI (http://localhost:5173); proxies /api to :{SERVER_PORT}
+dev-ui: ## Run Vite dev server for the admin UI (http://localhost:5173/admin/); proxies /api to :{SERVER_PORT}
 	npm run dev --prefix web
+
+.PHONY: dev-app
+dev-app: ## Run Vite dev server for the user app (http://localhost:5174); proxies /api to :{SERVER_PORT}
+	npm run dev --prefix app
 
 ## ------- Codegen / DB -------
 

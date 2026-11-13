@@ -273,8 +273,8 @@ make reports-open
 | GET    | `/api/v1/me/stats/spend`                    | Money per currency, per cinema, per format |
 | GET    | `/api/v1/me/stats/people`                   | Top cast or crew (`job=Director`, `limit`) |
 | GET    | `/api/v1/me/watchlist/insights`             | What your watchlist is doing on the charts and on streaming (`country`, `days`) |
-| GET    | `/admin` (and `/admin/...`)                 | The admin console SPA from `web/dist/` |
-| GET    | `/` (and any unmatched path)                | Serves `web/dist/` SPA if present (the user-facing app will take over `/`) |
+| GET    | `/admin` (and `/admin/...`)                 | The admin console SPA from `web/dist/` (`UI_STATIC_DIR`) |
+| GET    | `/` (and any unmatched path)                | The user app SPA from `app/dist/` (`APP_STATIC_DIR`); redirects to `/admin/` when the app isn't built |
 
 GET responses under `/api/v1` carry an `ETag`; send it back as
 `If-None-Match` to get `304 Not Modified` when nothing changed. The one
@@ -733,19 +733,33 @@ refuses requests that change data when a browser marks them as coming from
 another site (`Sec-Fetch-Site` / `Origin`), so a web page a LAN user opens
 can't drive it; curl and scripts are unaffected.
 
-## Adding a future UI
+## Web apps
 
-Build your SPA (Vite, Next export, SvelteKit static, etc.) into static files
-and either:
+Two Svelte 5 + Vite single-page apps ship with the server:
 
-1. **Copy into `web/dist/`** in the repo – the Dockerfile doesn't bake UI
-   files in, so mount them via the `./web/dist:/app/web/dist:ro` volume
-   commented out in `docker-compose.yml`, or
-2. **Bake them into the image** – uncomment a `COPY web/dist /app/web/dist`
-   line in the Dockerfile runtime stage.
+| App | Source | Served at | Talks to |
+|---|---|---|---|
+| Admin console | `web/` → `web/dist` (`UI_STATIC_DIR`) | `/admin` (Vite `base: '/admin/'`) | `/api/v1/admin` |
+| User app | `app/` → `app/dist` (`APP_STATIC_DIR`) | `/` | the public API and `/api/v1/me`, with the session cookie |
 
-`internal/router/router.go` already serves `/` from `UI_STATIC_DIR` and falls
-back to `index.html` for unknown paths (standard SPA history routing).
+The user app needs a signed-in user (accounts are created in the admin console)
+and never sends an API key. Its design system is **Screening Room**: dark first
+with a light mode, artwork-led, with the analytics on every screen. Tokens live
+in `app/src/tokens.css`. Colour roles are fixed: white for the primary action,
+green and red for movement, blue for new entries, orange for your own titles,
+and tan for stale data. It has Home (breakout, KPIs with 14-day trends, the
+Top 10, movement, your list, breakouts), Charts (Top 10 with trend, days,
+IMDb, RT and origin) and title pages (attention, timeline, In numbers, positions,
+where to watch). Watchlist toggles and "Log a watch" write through `/api/v1/me`.
+
+```bash
+make dev-ui      # admin console at http://localhost:5173/admin/
+make dev-app     # user app at http://localhost:5174
+(cd web && npm run build) && (cd app && npm run build)   # production builds
+```
+
+The Docker image builds both. `UI_SERVE_STATIC=false` turns static serving
+off (for example when a reverse proxy serves the files).
 
 ## Migrations
 

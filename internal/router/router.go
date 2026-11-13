@@ -165,7 +165,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.PATCH("/settings", h.PatchSettings)
 
 	if cfg.UI.ServeStatic {
-		registerStatic(e, cfg.UI.StaticDir)
+		registerStatic(e, cfg.UI.StaticDir, cfg.UI.AppStaticDir)
 	}
 }
 
@@ -280,31 +280,44 @@ func registerOpenAPI(e *echo.Echo) {
 	})
 }
 
-// registerStatic serves the built SPA from `dir`.
-// Real asset files (JS, CSS, etc.) are served directly; any other path falls
-// back to index.html so client-side routing works.
+// registerStatic serves the two single-page apps.
 //
-// The admin console answers on /admin as well as on the catch-all. /admin is
-// its permanent home: the user-facing app will take over `/` when it lands,
-// and the console keeps working at the same URL across that change. The
-// console uses a hash router, so /admin and /admin/... both just load it.
-func registerStatic(e *echo.Echo, dir string) {
-	if _, err := os.Stat(dir); err != nil {
-		return
+// The admin console (adminDir, built with base /admin/) lives under /admin:
+// its assets are /admin/assets/..., and any other /admin path loads its
+// index.html (it uses a hash router). The user app (appDir) owns the rest of
+// the site: real files are served as they are and any other path falls back
+// to its index.html. Without a user app build, / redirects to the console so
+// a deployment that only built the admin UI still opens somewhere useful.
+//
+// Paths stay relative to the working directory: echo binds its filesystem
+// root at echo.New(), so c.File never resolves an absolute path.
+func registerStatic(e *echo.Echo, adminDir, appDir string) {
+	adminOK := isDir(adminDir)
+	if adminOK {
+		e.GET("/admin", spa(adminDir))
+		e.GET("/admin/*", spa(adminDir))
 	}
+	switch {
+	case isDir(appDir):
+		e.GET("/*", spa(appDir))
+	case adminOK:
+		e.GET("/", func(c *echo.Context) error { return c.Redirect(http.StatusFound, "/admin/") })
+	}
+}
 
+// spa serves a file from dir when the wildcard names one, else dir/index.html.
+func spa(dir string) echo.HandlerFunc {
 	indexPath := filepath.Join(dir, "index.html")
-	index := func(c *echo.Context) error { return c.File(indexPath) }
-
-	e.GET("/admin", index)
-	e.GET("/admin/", index)
-	e.GET("/admin/*", index)
-
-	e.GET("/*", func(c *echo.Context) error {
+	return func(c *echo.Context) error {
 		filePath := filepath.Join(dir, filepath.Clean("/"+c.Param("*")))
 		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
 			return c.File(filePath)
 		}
 		return c.File(indexPath)
-	})
+	}
+}
+
+func isDir(dir string) bool {
+	info, err := os.Stat(dir)
+	return err == nil && info.IsDir()
 }

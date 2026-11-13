@@ -24,7 +24,8 @@ new/upcoming releases over a public API plus an admin API + Svelte admin UI.
 | `internal/scraper/flixpatrol` | FlixPatrol parsing behind the `Fetcher` interface (`CollyFetcher` or `FlareSolverrFetcher`, wrapped in `LoggingFetcher`). |
 | `internal/tasks`, `internal/scheduler` | Task types (`tasks.Types`), payloads and `tasks.ForSchedule` (task + options incl. `asynq.Unique`); `handlers.Runner` records runs for every job; DB-driven periodic schedules for every type. |
 | `internal/config` | Env config (caarlos0/env). Every new var → `config.go`, `.env.example`, `docs/architecture.md` table. |
-| `web/` | Svelte 5 admin UI, built to `web/dist`, served by the Go server. See `admin-ui`. |
+| `web/` | Svelte 5 admin UI, built to `web/dist` with Vite base `/admin/`, served at /admin. See `admin-ui`. |
+| `app/` | Svelte 5 user app (Screening Room design: dark, artwork-led, analytics on every screen), built to `app/dist`, served at /. Uses the public API and `/api/v1/me` with the session cookie, never an API key. |
 
 ## Rules
 
@@ -59,5 +60,5 @@ new/upcoming releases over a public API plus an admin API + Svelte admin UI.
 
 - `go build ./... && go vet ./... && go test -race -count=1 ./internal/...`
 - `make sqlc` (needs `make tools` once: sqlc v1.31.1, goose v3.28.0)
-- UI: `cd web && npm run build`
+- UI: `cd web && npm run build` (admin) and `cd app && npm run build` (user app)
 - A PostToolUse hook gofmts edited Go files and vets their package; fix what it reports.

@@ -101,8 +101,11 @@ type FlareSolverr struct {
 }
 
 type UI struct {
-	StaticDir   string `env:"UI_STATIC_DIR" envDefault:"web/dist"`
-	ServeStatic bool   `env:"UI_SERVE_STATIC" envDefault:"true"`
+	// StaticDir is the admin console build, served at /admin.
+	StaticDir string `env:"UI_STATIC_DIR" envDefault:"web/dist"`
+	// AppStaticDir is the user app build, served at /.
+	AppStaticDir string `env:"APP_STATIC_DIR" envDefault:"app/dist"`
+	ServeStatic  bool   `env:"UI_SERVE_STATIC" envDefault:"true"`
 }
 
 type TMDB struct {

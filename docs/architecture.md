@@ -554,12 +554,28 @@ in a country in a range.
 
 ## Static UI routes
 
-`registerStatic` serves the built SPA from `UI_STATIC_DIR` (relative to the
-working directory: echo binds its filesystem root at `echo.New()`, so
-`c.File` never resolves an absolute path). The admin console answers on
-`/admin`, `/admin/` and `/admin/*` as well as on the `/*` catch-all. `/admin`
-is its permanent home, so it keeps working when the user-facing app takes
-over `/`; the console uses a hash router, so any of those paths just load it.
+`registerStatic` serves two SPAs, with paths relative to the working
+directory (echo binds its filesystem root at `echo.New()`, so `c.File` never
+resolves an absolute path):
+
+- **Admin console** from `UI_STATIC_DIR` (`web/dist`) on `/admin` and
+  `/admin/*`. It is built with Vite `base: '/admin/'`, so its assets are
+  `/admin/assets/...`; any other path under `/admin` loads its `index.html`
+  (hash router).
+- **User app** from `APP_STATIC_DIR` (`app/dist`) on the `/*` catch-all: real
+  files are served as they are, anything else loads its `index.html` (hash
+  router). Without a user app build, `/` redirects to `/admin/`.
+
+`filepath.Clean("/"+param)` keeps every lookup inside its app directory (`..`
+can't climb out); `internal/router/static_test.go` covers both apps, the
+fallbacks and traversal.
+
+The user app (`app/`) calls the public routes and `/api/v1/me` with the
+session cookie set by `/api/v1/auth/login`, so it needs a signed-in user and
+never holds an API key. Its view model joins three things client-side: the
+Top 10 (which carries `poster_path`), the batch ratings endpoint, and the
+user's `/me/titles` map. Chart screens therefore cost a fixed handful of
+requests, not one per title.
 
 ## Admin UI for the newer data
 
@@ -1170,7 +1186,8 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `FLARESOLVERR_MAX_TIMEOUT` | `60s` | Max time FlareSolverr may spend on one page |
 | `FLARESOLVERR_SESSION` | `metareel` | FlareSolverr browser session reused across requests (blank = new browser per page) |
 | `FLARESOLVERR_SESSION_TTL` | `30m` | FlareSolverr recreates the session after this long |
-| `UI_STATIC_DIR` | `web/dist` | Directory to serve the SPA from |
+| `UI_STATIC_DIR` | `web/dist` | Admin console build, served at `/admin` |
+| `APP_STATIC_DIR` | `app/dist` | User app build, served at `/` |
 | `UI_SERVE_STATIC` | `true` | Enable / disable static file serving |
 | `TMDB_API_KEY` | _(empty)_ | TMDB v3 API key — ID enrichment disabled when blank |
 | `RATINGS_TTL` | `12h` | How long stored ratings are served before a request refreshes them |

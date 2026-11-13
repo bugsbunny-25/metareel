@@ -1,14 +1,23 @@
 # syntax=docker/dockerfile:1.7
 
 # -----------------------------------------------------------------------------
-# Stage 0: frontend
+# Stage 0: frontends
 # -----------------------------------------------------------------------------
+# The admin console (web/, served at /admin) and the user app (app/, served at /).
 FROM node:24-alpine AS frontend
 
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --prefer-offline
 COPY web/ ./
+RUN npm run build
+
+FROM node:24-alpine AS appfrontend
+
+WORKDIR /userapp
+COPY app/package.json app/package-lock.json ./
+RUN npm ci --prefer-offline
+COPY app/ ./
 RUN npm run build
 
 # -----------------------------------------------------------------------------
@@ -61,6 +70,7 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /out/metareel        /app/metareel
 COPY --from=builder /src/db/migrations   /app/db/migrations
 COPY --from=frontend /web/dist           /app/web/dist
+COPY --from=appfrontend /userapp/dist    /app/app/dist
 
 # A writable directory for the SQLite database file. When running under an
 # unprivileged user, mount a named volume onto /app/data.

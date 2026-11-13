@@ -306,7 +306,7 @@ func TestAdminConsoleIsServedUnderAdmin(t *testing.T) {
 	e := echo.New()
 	Register(e, &handler.Handler{}, cfg)
 
-	for _, path := range []string{"/admin", "/admin/", "/admin/anything", "/"} {
+	for _, path := range []string{"/admin", "/admin/", "/admin/anything"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
@@ -315,12 +315,21 @@ func TestAdminConsoleIsServedUnderAdmin(t *testing.T) {
 		}
 	}
 
-	// Real asset files still come from disk rather than the SPA fallback.
-	req := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+	// The console is built with base /admin/, so its real asset files come from
+	// disk under /admin rather than the SPA fallback.
+	req := httptest.NewRequest(http.MethodGet, "/admin/assets/app.js", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "bundle") {
-		t.Errorf("GET /assets/app.js: %d %q", rec.Code, rec.Body.String())
+		t.Errorf("GET /admin/assets/app.js: %d %q", rec.Code, rec.Body.String())
+	}
+
+	// No user app is built here (APP_STATIC_DIR is unset), so / sends people to the console.
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/admin/" {
+		t.Errorf("GET /: %d Location %q, want 302 /admin/", rec.Code, rec.Header().Get("Location"))
 	}
 }
 

@@ -5,8 +5,8 @@ description: Structure and conventions of the metareel Svelte 5 admin console in
 
 # Admin UI (web/)
 
-Svelte 5 (runes) + Vite, no UI framework. Built to `web/dist` (`npm run build`) and
-served by the Go server; the dev server proxies `/api` (`npm run dev`).
+Svelte 5 (runes) + Vite, no UI framework. Built to `web/dist` (`npm run build`) with
+Vite `base: '/admin/'` and served by the Go server at /admin (the user app in `app/` owns /); the dev server proxies `/api` (`npm run dev`).
 
 ## Layout
 
