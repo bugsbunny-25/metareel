@@ -241,16 +241,35 @@ WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id);
 -- name: DeleteWatchEntry :execrows
 DELETE FROM watch_entries WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id);
 
--- NextWatchNumber is the 1-based ordinal of the next watch of a title (or of
--- one episode of it), used to stamp watch_number and is_rewatch.
--- name: NextWatchNumber :one
-SELECT CAST(COALESCE(MAX(watch_number), 0) + 1 AS INTEGER) AS next_number
-FROM watch_entries
+-- RenumberWatches stamps each of one title's watches with its chronological
+-- ordinal: per episode for a show, per title for a movie, ordered by ended_at
+-- and then id. A watch logged late for an earlier date therefore counts as
+-- the first viewing, and an edit or delete that reorders watches renumbers
+-- the rest. Run it in the same transaction as any write that adds, removes or
+-- moves a watch, then SyncRewatchFlags. ended_at is UTC text in
+-- "YYYY-MM-DD HH:MM:SS", so text order is time order.
+-- name: RenumberWatches :exec
+UPDATE watch_entries
+SET watch_number = (
+    SELECT COUNT(*) FROM watch_entries o
+    WHERE o.user_id = watch_entries.user_id
+      AND o.tmdb_kind = watch_entries.tmdb_kind
+      AND o.tmdb_id = watch_entries.tmdb_id
+      AND COALESCE(o.season_number, -1) = COALESCE(watch_entries.season_number, -1)
+      AND COALESCE(o.episode_number, -1) = COALESCE(watch_entries.episode_number, -1)
+      AND (o.ended_at < watch_entries.ended_at OR (o.ended_at = watch_entries.ended_at AND o.id <= watch_entries.id))
+)
+WHERE watch_entries.user_id = sqlc.arg(user_id)
+  AND watch_entries.tmdb_kind = sqlc.arg(tmdb_kind)
+  AND watch_entries.tmdb_id = sqlc.arg(tmdb_id);
+
+-- SyncRewatchFlags sets is_rewatch from watch_number for one title's watches.
+-- name: SyncRewatchFlags :exec
+UPDATE watch_entries
+SET is_rewatch = CASE WHEN watch_number > 1 THEN 1 ELSE 0 END
 WHERE user_id = sqlc.arg(user_id)
   AND tmdb_kind = sqlc.arg(tmdb_kind)
-  AND tmdb_id = sqlc.arg(tmdb_id)
-  AND COALESCE(season_number, -1) = COALESCE(sqlc.narg(season_number), -1)
-  AND COALESCE(episode_number, -1) = COALESCE(sqlc.narg(episode_number), -1);
+  AND tmdb_id = sqlc.arg(tmdb_id);
 
 -- name: UpsertUserTag :one
 INSERT INTO user_tags (user_id, name)

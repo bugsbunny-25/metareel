@@ -522,9 +522,6 @@ type Querier interface {
 	MarkWebhookDelivered(ctx context.Context, arg MarkWebhookDeliveredParams) error
 	MaxChartChangedAt(ctx context.Context) (MaxChartChangedAtRow, error)
 	MaxOfferEventID(ctx context.Context) (int64, error)
-	// NextWatchNumber is the 1-based ordinal of the next watch of a title (or of
-	// one episode of it), used to stamp watch_number and is_rewatch.
-	NextWatchNumber(ctx context.Context, arg NextWatchNumberParams) (int64, error)
 	NextWatchlistPosition(ctx context.Context, userID int64) (int64, error)
 	// People left without any credit (their titles' credits were replaced or
 	// the titles deleted).
@@ -552,6 +549,14 @@ type Querier interface {
 	RecordUserLogin(ctx context.Context, id int64) error
 	RecordWebhookResult(ctx context.Context, arg RecordWebhookResultParams) error
 	RenameAPIKey(ctx context.Context, arg RenameAPIKeyParams) (ApiKey, error)
+	// RenumberWatches stamps each of one title's watches with its chronological
+	// ordinal: per episode for a show, per title for a movie, ordered by ended_at
+	// and then id. A watch logged late for an earlier date therefore counts as
+	// the first viewing, and an edit or delete that reorders watches renumbers
+	// the rest. Run it in the same transaction as any write that adds, removes or
+	// moves a watch, then SyncRewatchFlags. ended_at is UTC text in
+	// "YYYY-MM-DD HH:MM:SS", so text order is time order.
+	RenumberWatches(ctx context.Context, arg RenumberWatchesParams) error
 	RequeueNetflixTitleMatch(ctx context.Context, arg RequeueNetflixTitleMatchParams) error
 	// Due for matching now; clear also forgets the attempts and matched name.
 	RequeueTitleMatch(ctx context.Context, arg RequeueTitleMatchParams) error
@@ -639,6 +644,8 @@ type Querier interface {
 	// metadata the genre, decade and country breakdowns are built from in Go
 	// (genres and origin countries are JSON arrays on tmdb_titles).
 	StatsWatchedTitles(ctx context.Context, arg StatsWatchedTitlesParams) ([]StatsWatchedTitlesRow, error)
+	// SyncRewatchFlags sets is_rewatch from watch_number for one title's watches.
+	SyncRewatchFlags(ctx context.Context, arg SyncRewatchFlagsParams) error
 	TitleMappingStats(ctx context.Context) (TitleMappingStatsRow, error)
 	TouchAPIKey(ctx context.Context, id int64) error
 	TouchSession(ctx context.Context, id int64) error

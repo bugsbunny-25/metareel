@@ -3937,8 +3937,15 @@ components:
         time_precision: { type: string, enum: [minute, day, month, year] }
         rating: { type: integer, nullable: true, minimum: 1, maximum: 10 }
         liked: { type: boolean }
-        is_rewatch: { type: boolean }
-        watch_number: { type: integer, description: 1 for the first watch of this title, 2 for the next, and so on }
+        is_rewatch: { type: boolean, description: "watch_number > 1" }
+        watch_number:
+          type: integer
+          description: >
+            Where this watch falls in time among the user's watches of the same
+            title (of the same episode, for a show): 1 for the earliest, then
+            2, 3 … ordered by ended_at and then id. Not the order they were
+            logged: a watch logged late for an earlier date takes its place,
+            and creating, editing or deleting a watch renumbers the rest.
         notes: { type: string, nullable: true }
         venue_kind: { type: string, nullable: true }
         source: { type: string, description: How the watch got here, e.g. manual }

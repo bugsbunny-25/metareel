@@ -863,39 +863,6 @@ func (q *Queries) ListWatchEntries(ctx context.Context, arg ListWatchEntriesPara
 	return items, nil
 }
 
-const nextWatchNumber = `-- name: NextWatchNumber :one
-SELECT CAST(COALESCE(MAX(watch_number), 0) + 1 AS INTEGER) AS next_number
-FROM watch_entries
-WHERE user_id = ?1
-  AND tmdb_kind = ?2
-  AND tmdb_id = ?3
-  AND COALESCE(season_number, -1) = COALESCE(?4, -1)
-  AND COALESCE(episode_number, -1) = COALESCE(?5, -1)
-`
-
-type NextWatchNumberParams struct {
-	UserID        int64         `json:"user_id"`
-	TmdbKind      string        `json:"tmdb_kind"`
-	TmdbID        string        `json:"tmdb_id"`
-	SeasonNumber  sql.NullInt64 `json:"season_number"`
-	EpisodeNumber sql.NullInt64 `json:"episode_number"`
-}
-
-// NextWatchNumber is the 1-based ordinal of the next watch of a title (or of
-// one episode of it), used to stamp watch_number and is_rewatch.
-func (q *Queries) NextWatchNumber(ctx context.Context, arg NextWatchNumberParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, nextWatchNumber,
-		arg.UserID,
-		arg.TmdbKind,
-		arg.TmdbID,
-		arg.SeasonNumber,
-		arg.EpisodeNumber,
-	)
-	var next_number int64
-	err := row.Scan(&next_number)
-	return next_number, err
-}
-
 const nextWatchlistPosition = `-- name: NextWatchlistPosition :one
 SELECT CAST(COALESCE(MAX(watchlist_position), 0) + 1 AS INTEGER) AS next_position
 FROM user_titles
@@ -907,6 +874,40 @@ func (q *Queries) NextWatchlistPosition(ctx context.Context, userID int64) (int6
 	var next_position int64
 	err := row.Scan(&next_position)
 	return next_position, err
+}
+
+const renumberWatches = `-- name: RenumberWatches :exec
+UPDATE watch_entries
+SET watch_number = (
+    SELECT COUNT(*) FROM watch_entries o
+    WHERE o.user_id = watch_entries.user_id
+      AND o.tmdb_kind = watch_entries.tmdb_kind
+      AND o.tmdb_id = watch_entries.tmdb_id
+      AND COALESCE(o.season_number, -1) = COALESCE(watch_entries.season_number, -1)
+      AND COALESCE(o.episode_number, -1) = COALESCE(watch_entries.episode_number, -1)
+      AND (o.ended_at < watch_entries.ended_at OR (o.ended_at = watch_entries.ended_at AND o.id <= watch_entries.id))
+)
+WHERE watch_entries.user_id = ?1
+  AND watch_entries.tmdb_kind = ?2
+  AND watch_entries.tmdb_id = ?3
+`
+
+type RenumberWatchesParams struct {
+	UserID   int64  `json:"user_id"`
+	TmdbKind string `json:"tmdb_kind"`
+	TmdbID   string `json:"tmdb_id"`
+}
+
+// RenumberWatches stamps each of one title's watches with its chronological
+// ordinal: per episode for a show, per title for a movie, ordered by ended_at
+// and then id. A watch logged late for an earlier date therefore counts as
+// the first viewing, and an edit or delete that reorders watches renumbers
+// the rest. Run it in the same transaction as any write that adds, removes or
+// moves a watch, then SyncRewatchFlags. ended_at is UTC text in
+// "YYYY-MM-DD HH:MM:SS", so text order is time order.
+func (q *Queries) RenumberWatches(ctx context.Context, arg RenumberWatchesParams) error {
+	_, err := q.db.ExecContext(ctx, renumberWatches, arg.UserID, arg.TmdbKind, arg.TmdbID)
+	return err
 }
 
 const rollupUserTitle = `-- name: RollupUserTitle :exec
@@ -995,6 +996,26 @@ func (q *Queries) SetUserTitleState(ctx context.Context, arg SetUserTitleStatePa
 		arg.WatchlistPosition,
 		arg.WatchlistNote,
 	)
+	return err
+}
+
+const syncRewatchFlags = `-- name: SyncRewatchFlags :exec
+UPDATE watch_entries
+SET is_rewatch = CASE WHEN watch_number > 1 THEN 1 ELSE 0 END
+WHERE user_id = ?1
+  AND tmdb_kind = ?2
+  AND tmdb_id = ?3
+`
+
+type SyncRewatchFlagsParams struct {
+	UserID   int64  `json:"user_id"`
+	TmdbKind string `json:"tmdb_kind"`
+	TmdbID   string `json:"tmdb_id"`
+}
+
+// SyncRewatchFlags sets is_rewatch from watch_number for one title's watches.
+func (q *Queries) SyncRewatchFlags(ctx context.Context, arg SyncRewatchFlagsParams) error {
+	_, err := q.db.ExecContext(ctx, syncRewatchFlags, arg.UserID, arg.TmdbKind, arg.TmdbID)
 	return err
 }
 

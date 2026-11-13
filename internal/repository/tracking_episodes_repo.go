@@ -166,17 +166,6 @@ func (r *TrackingRepository) MarkEpisodes(ctx context.Context, userID int64, tmd
 	}
 	for _, e := range episodes {
 		season, episode := e.SeasonNumber, e.EpisodeNumber
-		number, err := q.NextWatchNumber(ctx, sqlc.NextWatchNumberParams{
-			UserID: userID, TmdbKind: "tv", TmdbID: tmdbID,
-			SeasonNumber:  sql.NullInt64{Int64: season, Valid: true},
-			EpisodeNumber: sql.NullInt64{Int64: episode, Valid: true}})
-		if err != nil {
-			return 0, fmt.Errorf("next watch number for S%dE%d: %w", season, episode, err)
-		}
-		rewatch := int64(0)
-		if number > 1 {
-			rewatch = 1
-		}
 		// runtime_minutes_used records the runtime a start was derived
 		// from. An imprecise mark derives no start, so it stays empty
 		// rather than implying one.
@@ -197,7 +186,8 @@ func (r *TrackingRepository) MarkEpisodes(ctx context.Context, userID int64, tmd
 			RuntimeMinutesUsed: toNullInt64(runtime), RuntimeSource: toNullString(runtimeSource),
 			Tz: toNullString(w.Tz), UtcOffsetMinutes: toNullInt64(w.UTCOffsetMinutes),
 			WatchedOn: w.WatchedOn, TimePrecision: w.TimePrecision,
-			Rating: toNullInt64(w.Rating), Liked: liked, IsRewatch: rewatch, WatchNumber: number,
+			// Placeholder numbering; rollup renumbers the show in time order.
+			Rating: toNullInt64(w.Rating), Liked: liked, IsRewatch: 0, WatchNumber: 1,
 			Notes: toNullString(w.Notes), VenueKind: toNullString(w.VenueKind), Source: w.Source,
 		}); err != nil {
 			return 0, fmt.Errorf("mark S%dE%d of tv %s: %w", season, episode, tmdbID, err)

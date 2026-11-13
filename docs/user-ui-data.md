@@ -181,8 +181,8 @@ One row **per watch**: a rewatch is another row with its own rating and tags.
 | `time_precision` | `minute \| day \| month \| year` | imprecise times are stored at the earliest instant they could mean |
 | `rating` | int? 1–10 | half-stars |
 | `liked` | bool | separate from the rating |
-| `is_rewatch` | bool | derived |
-| `watch_number` | int | 1 = first time |
+| `is_rewatch` | bool | derived: `watch_number > 1` |
+| `watch_number` | int | 1 = earliest watch of this title (or episode) by `ended_at`, not log order; renumbered on every create, edit and delete |
 | `notes` | string? | private; there are no reviews |
 | `venue_kind` | `theater \| streaming \| physical \| broadcast \| other`? | detail fields come in Phase 3 |
 | `source` | `manual \| api \| import:*` | |

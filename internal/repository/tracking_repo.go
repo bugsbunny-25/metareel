@@ -325,8 +325,8 @@ type NewWatch struct {
 	FormatIDs          []int64
 }
 
-// CreateWatch records a watch, stamps its watch number, attaches its tags and
-// refreshes the title's roll-up, all in one transaction.
+// CreateWatch records a watch, attaches its tags and refreshes the title's
+// roll-up (watch numbers included), all in one transaction.
 func (r *TrackingRepository) CreateWatch(ctx context.Context, userID int64, w NewWatch) (int64, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -335,18 +335,9 @@ func (r *TrackingRepository) CreateWatch(ctx context.Context, userID int64, w Ne
 	defer func() { _ = tx.Rollback() }()
 	q := r.q.WithTx(tx)
 
-	number, err := q.NextWatchNumber(ctx, sqlc.NextWatchNumberParams{
-		UserID: userID, TmdbKind: w.Kind, TmdbID: w.TmdbID,
-		SeasonNumber: toNullInt64(w.SeasonNumber), EpisodeNumber: toNullInt64(w.EpisodeNumber)})
-	if err != nil {
-		return 0, fmt.Errorf("next watch number: %w", err)
-	}
-	liked, rewatch := int64(0), int64(0)
+	liked := int64(0)
 	if w.Liked {
 		liked = 1
-	}
-	if number > 1 {
-		rewatch = 1
 	}
 	id, err := q.InsertWatchEntry(ctx, sqlc.InsertWatchEntryParams{
 		UserID: userID, ClientKey: toNullString(w.ClientKey), SubjectKind: w.SubjectKind,
@@ -357,7 +348,8 @@ func (r *TrackingRepository) CreateWatch(ctx context.Context, userID int64, w Ne
 		RuntimeMinutesUsed: toNullInt64(w.RuntimeMinutesUsed), RuntimeSource: toNullString(w.RuntimeSource),
 		Tz: toNullString(w.Tz), UtcOffsetMinutes: toNullInt64(w.UTCOffsetMinutes),
 		WatchedOn: w.WatchedOn, TimePrecision: w.TimePrecision,
-		Rating: toNullInt64(w.Rating), Liked: liked, IsRewatch: rewatch, WatchNumber: number,
+		// Placeholder numbering; rollup renumbers the title in time order below.
+		Rating: toNullInt64(w.Rating), Liked: liked, IsRewatch: 0, WatchNumber: 1,
 		Notes: toNullString(w.Notes), VenueKind: toNullString(w.VenueKind), Source: w.Source,
 	})
 	if err != nil {
@@ -648,8 +640,20 @@ func setTags(ctx context.Context, q *sqlc.Queries, userID, entryID int64, names 
 	return nil
 }
 
-// rollup makes sure a state row exists and recomputes its watch roll-up.
+// rollup recomputes everything derived from one title's watches. It runs in
+// the transaction of every write that adds, removes or moves a watch:
+//   - watch_number and is_rewatch, renumbered in time order (per episode for a
+//     show), so a watch logged late for an earlier date is still the first
+//     viewing and a delete or edit closes the gaps;
+//   - the user's state row (created if missing) and its roll-up: rating,
+//     first/last watched, watch count.
 func rollup(ctx context.Context, q *sqlc.Queries, userID int64, kind, tmdbID string) error {
+	if err := q.RenumberWatches(ctx, sqlc.RenumberWatchesParams{UserID: userID, TmdbKind: kind, TmdbID: tmdbID}); err != nil {
+		return fmt.Errorf("renumber watches %s/%s: %w", kind, tmdbID, err)
+	}
+	if err := q.SyncRewatchFlags(ctx, sqlc.SyncRewatchFlagsParams{UserID: userID, TmdbKind: kind, TmdbID: tmdbID}); err != nil {
+		return fmt.Errorf("sync rewatch flags %s/%s: %w", kind, tmdbID, err)
+	}
 	if err := q.EnsureUserTitle(ctx, sqlc.EnsureUserTitleParams{UserID: userID, TmdbKind: kind, TmdbID: tmdbID}); err != nil {
 		return fmt.Errorf("ensure user title %s/%s: %w", kind, tmdbID, err)
 	}
