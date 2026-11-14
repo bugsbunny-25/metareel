@@ -182,7 +182,7 @@ func (s *TrackingService) YearInReview(ctx context.Context, userID int64, year i
 
 	people := map[string]any{}
 	for key, job := range map[string]string{"cast": "", "directors": jobDirector, "writers": jobWriter} {
-		rows, err := s.read.StatsTopPeople(ctx, userID, rng, job, 10)
+		rows, err := s.read.StatsTopPeople(ctx, userID, rng, "", job, 10)
 		if err != nil {
 			return nil, err
 		}
@@ -271,7 +271,7 @@ func (s *TrackingService) TopPeople(ctx context.Context, userID int64, from, to,
 	if limit > maxTopPeople {
 		limit = maxTopPeople
 	}
-	rows, err := s.read.StatsTopPeople(ctx, userID, rng, job, limit)
+	rows, err := s.read.StatsTopPeople(ctx, userID, rng, "", job, limit)
 	if err != nil {
 		return nil, err
 	}

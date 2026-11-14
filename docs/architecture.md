@@ -1133,6 +1133,16 @@ through the read-only pool.
 - **Genres, countries, decades and languages** are decoded in Go from
   `tmdb_titles`' JSON columns, following the same approach as the chart-side
   genre analytics rather than relying on SQLite's JSON functions.
+- **Detailed stats** (`/me/stats/detailed`, `tracking_stats_detailed.go`)
+  read one row per watch of a kind (`StatsWatchRows`, with its minutes,
+  title, poster and genres) and group them in Go: totals, top titles by
+  time, 12 weekly (Monday-start) and monthly trends plus every year, the day
+  of the week, ratings, genres by titles, binges (most episodes of one show
+  on one local day) and streaks. Actors and directors come from
+  `StatsTopPeople`, now filtered by kind. For shows it adds stages (the
+  queue's `stageOf`), time left (aired, unseen episodes of shows being
+  watched, stalled or not started), upcoming runtime by month for six
+  months, and a catch-up date from the last eight weeks' pace.
 - **Ratings against the crowd** compare a 1-10 half-star rating directly with
   TMDB and IMDb (both 0-10) and with a Rotten Tomatoes percentage divided by
   ten. TMDB and IMDb come back nullable; the Rotten Tomatoes value arrives

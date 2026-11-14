@@ -37,6 +37,13 @@ func (h *Handler) GetStatsRatings(c *echo.Context) error {
 	return h.writeTracking(c, http.StatusOK, out, err)
 }
 
+// GetStatsDetailed: GET /api/v1/me/stats/detailed?kind=tv|movie
+// The app's profile and detailed statistics for shows, films or both.
+func (h *Handler) GetStatsDetailed(c *echo.Context) error {
+	out, err := h.Tracking.DetailedStats(c.Request().Context(), userID(c), c.QueryParam("kind"))
+	return h.writeTracking(c, http.StatusOK, out, err)
+}
+
 // GetStatsPeople: GET /api/v1/me/stats/people?job=&limit=&from=&to=
 // job is empty for cast, or a crew job such as Director.
 func (h *Handler) GetStatsPeople(c *echo.Context) error {

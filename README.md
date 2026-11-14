@@ -291,6 +291,7 @@ make reports-open
 | GET    | `/api/v1/me/stats/ratings`                  | Your rating distribution and how it compares with TMDB, IMDb and RT |
 | GET    | `/api/v1/me/stats/spend`                    | Money per currency, per cinema, per format |
 | GET    | `/api/v1/me/stats/people`                   | Top cast or crew (`job=Director`, `limit`) |
+| GET    | `/api/v1/me/stats/detailed`                 | Everything about your shows or films (`kind=tv\|movie`, empty for both): time, trends, top titles, streak, genres, people, binges; for shows also stages, time left, upcoming and a catch-up date |
 | GET    | `/api/v1/me/watchlist/insights`             | What your watchlist is doing on the charts and on streaming (`country`, `days`) |
 | GET    | `/admin` (and `/admin/...`)                 | The admin console SPA from `web/dist/` (`UI_STATIC_DIR`) |
 | GET    | `/` (and any unmatched path)                | The user app SPA from `app/dist/` (`APP_STATIC_DIR`); redirects to `/admin/` when the app isn't built |

@@ -3697,6 +3697,35 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/TrackingUnauthorized" }
 
+  /api/v1/me/stats/detailed:
+    get:
+      operationId: getStatsDetailed
+      tags: [Tracking]
+      summary: Everything about the shows or the films you watched
+      description: >
+        All-time figures for one kind (tv or movie; empty for both): watch
+        time, watches, rewatches, distinct titles, this year / month / week,
+        the current and longest streak, the five titles you spent the most
+        time on, weekly (12), monthly (12) and yearly trends, the day of the
+        week, ratings, genres (by titles), the top five actors and directors,
+        and the biggest binges (most episodes of one show in a day). For tv
+        it adds your shows by stage, the time left on the ones in progress,
+        the episodes still to air in the next six months by month, your
+        pace over the last eight weeks and the date you'd catch up at it.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: kind, in: query, required: false, schema: { type: string, enum: ["", tv, movie] } }
+      responses:
+        "200":
+          description: The statistics
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DetailedStats" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
   /api/v1/me/stats/spend:
     get:
       operationId: getStatsSpend
@@ -3993,6 +4022,91 @@ components:
         currency: { type: string }
         watches: { type: integer }
         total_minor: { type: integer }
+    PeriodStat:
+      type: object
+      properties:
+        label: { type: string, description: "YYYY-MM-DD (a week's Monday), YYYY-MM, YYYY or a weekday's name" }
+        watches: { type: integer }
+        minutes: { type: integer }
+    DetailedStats:
+      type: object
+      properties:
+        kind: { type: string }
+        minutes: { type: integer, description: Watch time, from each watch's runtime }
+        watches: { type: integer }
+        rewatches: { type: integer }
+        titles: { type: integer }
+        episodes: { type: integer }
+        movies: { type: integer }
+        shows: { type: integer, description: Distinct shows with a watch }
+        films: { type: integer, description: Distinct films watched }
+        this_year: { $ref: "#/components/schemas/PeriodStat" }
+        this_year_episodes: { type: integer }
+        this_year_movies: { type: integer }
+        this_week: { $ref: "#/components/schemas/PeriodStat" }
+        this_month: { $ref: "#/components/schemas/PeriodStat" }
+        streak:
+          type: object
+          properties:
+            current: { type: integer }
+            longest: { type: integer }
+        top_titles:
+          type: array
+          items:
+            type: object
+            properties:
+              tmdb_kind: { type: string }
+              tmdb_id: { type: string }
+              title: { type: string }
+              poster_path: { type: string }
+              watches: { type: integer }
+              minutes: { type: integer }
+        trend:
+          type: object
+          properties:
+            weeks: { type: array, items: { $ref: "#/components/schemas/PeriodStat" } }
+            months: { type: array, items: { $ref: "#/components/schemas/PeriodStat" } }
+            years: { type: array, items: { $ref: "#/components/schemas/PeriodStat" } }
+        by_weekday: { type: array, items: { $ref: "#/components/schemas/PeriodStat" }, description: Sunday first }
+        ratings:
+          type: object
+          properties:
+            rated: { type: integer }
+            average: { type: number, description: "1-10 half-stars; absent with nothing rated" }
+            distribution: { type: object, additionalProperties: { type: integer }, description: Rating (1-10) to watches }
+        genres:
+          type: array
+          items:
+            type: object
+            properties:
+              label: { type: string }
+              count: { type: integer, description: Titles }
+        actors: { type: array, items: { $ref: "#/components/schemas/PersonStat" } }
+        directors: { type: array, items: { $ref: "#/components/schemas/PersonStat" } }
+        binges:
+          type: array
+          items:
+            type: object
+            properties:
+              tmdb_id: { type: string }
+              title: { type: string }
+              poster_path: { type: string }
+              day: { type: string, format: date }
+              episodes: { type: integer }
+              minutes: { type: integer }
+        shows_by_stage:
+          type: array
+          description: tv only
+          items:
+            type: object
+            properties:
+              key: { type: string, enum: [watching, stalled, not_started, on_hold, caught_up, dropped] }
+              label: { type: string }
+              count: { type: integer }
+        minutes_left: { type: integer, description: "tv only: aired episodes not seen yet, of shows you're watching, stalled on or haven't started" }
+        upcoming_by_month: { type: array, items: { $ref: "#/components/schemas/PeriodStat" }, description: "tv only: episodes still to air and their runtime, by month" }
+        catch_up_date: { type: string, format: date, description: "tv only: when minutes_left runs out at pace_minutes_per_week; absent with no recent watching" }
+        pace_minutes_per_week: { type: integer, description: Average over the last eight weeks }
     PersonStat:
       type: object
       properties:

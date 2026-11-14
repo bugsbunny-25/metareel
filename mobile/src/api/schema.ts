@@ -2131,6 +2131,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/stats/detailed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Everything about the shows or the films you watched
+         * @description All-time figures for one kind (tv or movie; empty for both): watch time, watches, rewatches, distinct titles, this year / month / week, the current and longest streak, the five titles you spent the most time on, weekly (12), monthly (12) and yearly trends, the day of the week, ratings, genres (by titles), the top five actors and directors, and the biggest binges (most episodes of one show in a day). For tv it adds your shows by stage, the time left on the ones in progress, the episodes still to air in the next six months by month, your pace over the last eight weeks and the date you'd catch up at it.
+         */
+        get: operations["getStatsDetailed"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/stats/spend": {
         parameters: {
             query?: never;
@@ -2244,6 +2264,93 @@ export interface components {
             currency?: string;
             watches?: number;
             total_minor?: number;
+        };
+        PeriodStat: {
+            /** @description YYYY-MM-DD (a week's Monday), YYYY-MM, YYYY or a weekday's name */
+            label?: string;
+            watches?: number;
+            minutes?: number;
+        };
+        DetailedStats: {
+            kind?: string;
+            /** @description Watch time */
+            minutes?: number;
+            watches?: number;
+            rewatches?: number;
+            titles?: number;
+            episodes?: number;
+            movies?: number;
+            /** @description Distinct shows with a watch */
+            shows?: number;
+            /** @description Distinct films watched */
+            films?: number;
+            this_year?: components["schemas"]["PeriodStat"];
+            this_year_episodes?: number;
+            this_year_movies?: number;
+            this_week?: components["schemas"]["PeriodStat"];
+            this_month?: components["schemas"]["PeriodStat"];
+            streak?: {
+                current?: number;
+                longest?: number;
+            };
+            top_titles?: {
+                tmdb_kind?: string;
+                tmdb_id?: string;
+                title?: string;
+                poster_path?: string;
+                watches?: number;
+                minutes?: number;
+            }[];
+            trend?: {
+                weeks?: components["schemas"]["PeriodStat"][];
+                months?: components["schemas"]["PeriodStat"][];
+                years?: components["schemas"]["PeriodStat"][];
+            };
+            /** @description Sunday first */
+            by_weekday?: components["schemas"]["PeriodStat"][];
+            ratings?: {
+                rated?: number;
+                /** @description 1-10 half-stars; absent with nothing rated */
+                average?: number;
+                /** @description Rating (1-10) to watches */
+                distribution?: {
+                    [key: string]: number;
+                };
+            };
+            genres?: {
+                label?: string;
+                /** @description Titles */
+                count?: number;
+            }[];
+            actors?: components["schemas"]["PersonStat"][];
+            directors?: components["schemas"]["PersonStat"][];
+            binges?: {
+                tmdb_id?: string;
+                title?: string;
+                poster_path?: string;
+                /** Format: date */
+                day?: string;
+                episodes?: number;
+                minutes?: number;
+            }[];
+            /** @description tv only */
+            shows_by_stage?: {
+                /** @enum {string} */
+                key?: "watching" | "stalled" | "not_started" | "on_hold" | "caught_up" | "dropped";
+                label?: string;
+                count?: number;
+            }[];
+            /** @description tv only: aired episodes not seen yet, of shows you're watching, stalled on or haven't started */
+            minutes_left?: number;
+            /** @description tv only: episodes still to air and their runtime, by month */
+            upcoming_by_month?: components["schemas"]["PeriodStat"][];
+            /**
+             * Format: date
+             * @description tv only: when minutes_left runs out at pace_minutes_per_week; absent with no recent watching
+             */
+            catch_up_date?: string;
+            /** @description Average over the last eight weeks */
+            pace_minutes_per_week?: number;
         };
         PersonStat: {
             person_id?: number;
@@ -8573,6 +8680,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatsRatings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+        };
+    };
+    getStatsDetailed: {
+        parameters: {
+            query?: {
+                kind?: "" | "tv" | "movie";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The statistics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DetailedStats"];
                 };
             };
             400: components["responses"]["BadRequest"];

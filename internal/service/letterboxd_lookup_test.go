@@ -14,7 +14,9 @@ type fakeLetterboxd struct {
 	err error
 }
 
-func (f fakeLetterboxd) Resolve(context.Context, string) (client.LetterboxdRef, error) { return f.ref, f.err }
+func (f fakeLetterboxd) Resolve(context.Context, string) (client.LetterboxdRef, error) {
+	return f.ref, f.err
+}
 
 func TestLookupLetterboxd(t *testing.T) {
 	ctx := context.Background()

@@ -236,9 +236,10 @@ type PersonStat struct {
 
 // StatsTopPeople ranks people by how many of a user's titles they worked on.
 // job "" counts cast; anything else matches that crew job.
-func (r *TrackingRepository) StatsTopPeople(ctx context.Context, userID int64, rng StatsRange, job string, limit int64) ([]PersonStat, error) {
+// kind ("movie", "tv") limits it to one kind of title; "" counts both.
+func (r *TrackingRepository) StatsTopPeople(ctx context.Context, userID int64, rng StatsRange, kind, job string, limit int64) ([]PersonStat, error) {
 	rows, err := r.q.StatsTopPeople(ctx, sqlc.StatsTopPeopleParams{
-		UserID: userID, Job: job, FromDay: rng.From, ToDay: rng.To, Limit: limit})
+		UserID: userID, Kind: kind, Job: job, FromDay: rng.From, ToDay: rng.To, Limit: limit})
 	if err != nil {
 		return nil, fmt.Errorf("stats top people: %w", err)
 	}
@@ -424,6 +425,40 @@ func (r *TrackingRepository) WatchlistRecentlyLeft(ctx context.Context, userID i
 			Kind: row.TmdbKind, TmdbID: row.TmdbID, Title: row.DisplayTitle,
 			ProviderName: row.ProviderName, Monetization: row.Monetization,
 			Country: row.Country, ObservedAt: row.ObservedAt,
+		})
+	}
+	return out, nil
+}
+
+// WatchRow is one watch with what the detailed stats group it by.
+type WatchRow struct {
+	Kind          string
+	TmdbID        string
+	SubjectKind   string
+	WatchedOn     string
+	SeasonNumber  int64 // -1 for a movie
+	EpisodeNumber int64
+	Minutes       int64
+	Rewatch       bool
+	Rating        int64 // 0 when unrated
+	Title         string
+	PosterPath    string
+	Genres        []string
+}
+
+// StatsWatchRows returns every watch of a kind ("" for both), oldest first.
+func (r *TrackingRepository) StatsWatchRows(ctx context.Context, userID int64, kind string) ([]WatchRow, error) {
+	rows, err := r.q.StatsWatchRows(ctx, sqlc.StatsWatchRowsParams{UserID: userID, Kind: kind})
+	if err != nil {
+		return nil, fmt.Errorf("stats watch rows: %w", err)
+	}
+	out := make([]WatchRow, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, WatchRow{
+			Kind: row.TmdbKind, TmdbID: row.TmdbID, SubjectKind: row.SubjectKind, WatchedOn: row.WatchedOn,
+			SeasonNumber: row.SeasonNumber, EpisodeNumber: row.EpisodeNumber, Minutes: row.Minutes,
+			Rewatch: row.IsRewatch != 0, Rating: row.Rating, Title: row.DisplayTitle, PosterPath: row.PosterPath,
+			Genres: decodeStringList(row.Genres),
 		})
 	}
 	return out, nil

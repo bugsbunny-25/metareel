@@ -127,6 +127,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	me.GET("/stats/ratings", h.GetStatsRatings)
 	me.GET("/stats/spend", h.GetStatsSpend)
 	me.GET("/stats/people", h.GetStatsPeople)
+	me.GET("/stats/detailed", h.GetStatsDetailed)
 	me.GET("/watchlist/insights", h.GetWatchlistInsights)
 
 	// Admin API and UI. The UI reads the same data through these admin

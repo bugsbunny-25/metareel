@@ -715,6 +715,10 @@ type Querier interface {
 	// episode's runtime, then the title's, so an imprecise watch still counts.
 	// Every statement is scoped by user_id.
 	StatsTotals(ctx context.Context, arg StatsTotalsParams) (StatsTotalsRow, error)
+	// StatsWatchRows lists every watch of a kind ('' for both) with how long it
+	// was, its title, poster and genres: the detailed stats (time per title,
+	// trends, binges, genres) are grouped from these in Go.
+	StatsWatchRows(ctx context.Context, arg StatsWatchRowsParams) ([]StatsWatchRowsRow, error)
 	// StatsWatchedTitles lists the distinct titles watched in a range with the
 	// metadata the genre, decade and country breakdowns are built from in Go
 	// (genres and origin countries are JSON arrays on tmdb_titles).
