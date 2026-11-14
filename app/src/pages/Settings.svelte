@@ -59,6 +59,7 @@
     saving = true
     try {
       const v = await savePrefs({
+        ...prefs.values, // keeps what this form doesn't edit (the services you pay for)
         country: draft.country, provider: draft.provider, currency: cur || null,
         screen_unit: draft.screen_unit, stale_days: days,
       })

@@ -68,6 +68,12 @@ export const api = {
   breakouts: (date, signal) => request('GET', `/breakouts${qs({ date })}`, { signal }),
   availabilityChanges: (country, signal) => request('GET', `/availability/changes${qs({ country, limit: 200 })}`, { signal }),
 
+  // Discover, per country: highly rated titles not charting here, titles charting abroad you
+  // can't stream here, and which subscriptions earn their keep (subscribed = TMDB provider ids).
+  hiddenGems: (country, params, signal) => request('GET', `/discover/${country}/hidden-gems${qs(params)}`, { signal }),
+  elsewhere: (country, params, signal) => request('GET', `/discover/${country}/elsewhere${qs(params)}`, { signal }),
+  rotation: (country, params, signal) => request('GET', `/discover/${country}/rotation${qs(params)}`, { signal }),
+
   // Search: charted titles only (with last_charted), all of TMDB (needs a TMDB key), and ID lookup.
   searchCharted: (q, kind, signal) => request('GET', `/search${qs({ q, kind, limit: 8 })}`, { signal }),
   searchTMDB: (q, kind, signal) => request('GET', `/me/titles/search${qs({ q, kind, limit: 10 })}`, { signal }),

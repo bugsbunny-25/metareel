@@ -126,6 +126,13 @@ func TestAccountEndpoints(t *testing.T) {
 	if rec := a.do(http.MethodGet, "/api/v1/me/shows", "", laptop); !strings.Contains(rec.Body.String(), `"stale_days":60`) {
 		t.Errorf("queue ignores the stale_days preference: %s", rec.Body)
 	}
+	rec = a.do(http.MethodPut, "/api/v1/me/preferences", `{"services":[8,9,8]}`, laptop)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"services":[8,9]`) {
+		t.Errorf("services (deduplicated): %d %s", rec.Code, rec.Body)
+	}
+	if rec := a.do(http.MethodPut, "/api/v1/me/preferences", `{"services":[0]}`, laptop); rec.Code != http.StatusBadRequest {
+		t.Errorf("services [0]: %d, want 400", rec.Code)
+	}
 	rec = a.do(http.MethodPut, "/api/v1/me/preferences", `{"currency":"USD"}`, laptop)
 	if strings.Contains(rec.Body.String(), `"country"`) {
 		t.Errorf("a PUT keeps fields it didn't send: %s", rec.Body)

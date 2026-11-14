@@ -23,3 +23,6 @@ export async function savePrefs(values) {
   prefs.updatedAt = r.updated_at ?? null
   return prefs.values
 }
+
+/** Change some preferences, keeping the rest (PUT replaces them as a whole). */
+export const updatePrefs = (patch) => savePrefs({ ...prefs.values, ...patch })

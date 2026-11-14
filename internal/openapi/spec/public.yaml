@@ -4004,6 +4004,11 @@ components:
         currency: { type: string, description: "ISO 4217; prefilled for ticket and rental prices" }
         screen_unit: { type: string, enum: [m, ft] }
         stale_days: { type: integer, minimum: 7, maximum: 365, description: "Default stale_days for GET /api/v1/me/shows" }
+        services:
+          type: array
+          maxItems: 20
+          items: { type: integer }
+          description: "TMDB provider IDs of the streaming services the user pays for (the rotation's subscribed)"
     QueueEpisode:
       type: object
       properties:

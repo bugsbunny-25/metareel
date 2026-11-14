@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -22,7 +23,12 @@ type Preferences struct {
 	// StaleDays is how long without a watch moves a show part way through
 	// from "watching" to "stalled" in GET /me/shows (7-365, default 30).
 	StaleDays *int `json:"stale_days,omitempty"`
+	// Services are the TMDB provider IDs of the streaming services the user
+	// pays for (at most 20): Discover's rotation reads them as subscribed.
+	Services []int64 `json:"services,omitempty"`
 }
+
+const maxPreferredServices = 20
 
 var providerSlugRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
@@ -66,6 +72,17 @@ func (s *TrackingService) SetPreferences(ctx context.Context, userID int64, in P
 	}
 	p := Preferences{Country: upper(in.Country), Currency: upper(in.Currency), Provider: trimmedPtr(in.Provider),
 		ScreenUnit: trimmedPtr(in.ScreenUnit), StaleDays: in.StaleDays}
+	if len(in.Services) > maxPreferredServices {
+		return nil, &ValidationError{Message: "at most 20 services"}
+	}
+	for _, id := range in.Services {
+		if id <= 0 {
+			return nil, &ValidationError{Message: "services must be TMDB provider IDs"}
+		}
+		if !slices.Contains(p.Services, id) {
+			p.Services = append(p.Services, id)
+		}
+	}
 	switch {
 	case p.Country != nil && !countryRe.MatchString(*p.Country):
 		return nil, &ValidationError{Message: "country must be a 2-letter ISO 3166-1 code"}

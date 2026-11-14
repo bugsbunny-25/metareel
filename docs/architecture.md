@@ -597,6 +597,13 @@ typed in major units and sent as minor units using the currency's fraction
 digits (`Intl.NumberFormat`). Streaming services are stored by name
 (`provider_name`), suggested from `/services/{country}`; a stored
 `provider_id` is kept only while the name is unchanged.
+Discover reads the three `/discover/:country/*` routes. The page loads
+`/rotation` once (with the user's `services` preference as `subscribed`) and
+shares its services: their `provider_ids` map plan and channel offers
+("HBO Max Amazon Channel") to the service you'd pay for, on every tab, with a
+name-tidying fallback for providers outside the main services. Hidden gems
+fetches the best 200 once and filters client-side, so filters are instant
+and the per-service tally shows what each service would leave.
 Settings splits what follows the user from what belongs to a device.
 Preferences are one JSON object per user in `user_preferences` (validated in
 `TrackingService.SetPreferences`, so a new key needs no table rebuild); the

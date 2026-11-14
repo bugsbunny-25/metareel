@@ -23,6 +23,7 @@
   import Stats from './pages/Stats.svelte'
   import UpNext from './pages/UpNext.svelte'
   import Settings from './pages/Settings.svelte'
+  import Discover from './pages/Discover.svelte'
   import Show from './pages/Show.svelte'
 
   let logTarget = $state(null)
@@ -60,12 +61,12 @@
 
   const titleMatch = $derived(route.path.match(/^\/title\/(movie|tv)\/(\d+)$/))
   const showMatch = $derived(route.path.match(/^\/show\/(\d+)$/))
-  const PAGES = { '/': 'home', '/charts': 'charts', '/up-next': 'upnext', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/stats': 'stats', '/settings': 'settings' }
+  const PAGES = { '/': 'home', '/charts': 'charts', '/discover': 'discover', '/up-next': 'upnext', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/stats': 'stats', '/settings': 'settings' }
   const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : 'missing'))
   const providers = $derived(reference.providers.filter((p) => p.countries.includes(scope.country)))
 
   $effect(() => {
-    const NAMES = { charts: 'Top 10', title: 'Title', upnext: 'Up next', show: 'Episodes', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', settings: 'Settings', missing: 'Not found' }
+    const NAMES = { charts: 'Top 10', title: 'Title', upnext: 'Up next', show: 'Episodes', discover: 'Discover', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', settings: 'Settings', missing: 'Not found' }
     document.title = NAMES[page] ? `${NAMES[page]} · metareel` : 'metareel'
   })
   // On a phone the nav scrolls sideways; keep the current page's link in view.
@@ -88,6 +89,7 @@
     <nav class="primary" aria-label="Primary" bind:this={nav}>
       <a href="#/" aria-current={page === 'home' ? 'page' : undefined}>Home</a>
       <a href="#/charts" aria-current={page === 'charts' ? 'page' : undefined}>Charts</a>
+      <a href="#/discover" aria-current={page === 'discover' ? 'page' : undefined}>Discover</a>
       <span class="sep" aria-hidden="true"></span>
       <a href="#/up-next" aria-current={page === 'upnext' || page === 'show' ? 'page' : undefined}>Up next</a>
       <a href="#/watchlist" aria-current={page === 'watchlist' ? 'page' : undefined}>Watchlist</a>
@@ -139,6 +141,8 @@
       <Watchlist {onlog} />
     {:else if page === 'library'}
       <Library {onlog} />
+    {:else if page === 'discover'}
+      <Discover {onlog} />
     {:else if page === 'settings'}
       <Settings {onconfirm} />
     {:else if page === 'upnext'}
