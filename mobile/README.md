@@ -13,11 +13,11 @@ cookies. An optional home-network address is used over plain HTTP only after
 
 | Path | What |
 |---|---|
-| `src/app/` | Routes (Expo Router): `sign-in`, `search` and the `log` sheet (full screen), and the tab shell `(tabs)/` (Tonight, Diary, Up next, Watchlist, Settings) |
+| `src/app/` | Routes (Expo Router): `sign-in`, `search` and the `log` sheet (full screen), and the tab shell `(tabs)/` (Tonight, TV, Movies, Diary, Settings) |
 | `src/app/(tabs)/_layout.tsx` | Android: one navigator for every window size, a bottom bar on compact windows and a rail on medium/expanded ones |
 | `src/app/(tabs)/_layout.ios.tsx` | iOS: the system tab bar (`NativeTabs`), which iOS places itself (side strip on iPhone Duo, sidebar on iPad) |
 | `src/layout/root-header.tsx` | Tab-root titles and actions: native large-title bar and toolbar buttons on iOS, a title row on Android |
-| `src/app/(tabs)/(home,diary,up-next,watchlist,settings)/` | Each tab is its own stack; Title, Show, Watch and Subscriptions are shared routes inside every tab, so the bar or rail stays on screen and Back returns within the tab |
+| `src/app/(tabs)/(home,diary,tv,movies,settings)/` | Each tab is its own stack; Title, Show, Watch and Subscriptions are shared routes inside every tab, so the bar or rail stays on screen and Back returns within the tab |
 | `src/auth/` | Session store (Keychain/Keystore), sign-in, the home-URL probe, address validation |
 | `src/net/endpoint.ts` | Picks the public or verified home URL per request; drops the home URL on a network error |
 | `src/api/` | `schema.ts` (generated from `internal/openapi/spec/public.yaml`) and the typed client |
@@ -28,7 +28,9 @@ cookies. An optional home-network address is used over plain HTTP only after
 | `src/nowshowing/` | "Now showing": iOS Live Activity / Android ongoing notification for the film you're watching, ending with a pre-filled log |
 | `plugins/with-unique-extension-plists.js` | Gives the share and widget extensions their own `Info.plist` reference (both plugins would share one, which Xcode rejects) |
 | `src/layout/window-class.ts` | Material window size classes (compact < 600 dp ≤ medium < 840 dp ≤ expanded) |
-| `src/layout/ListDetail.tsx` | List and detail side by side on medium/expanded windows (Diary, Up next, Watchlist); on a half-open book foldable (Android, or iPhone Duo via UIKit's division region) the split sits on the fold |
+| `src/layout/CollectionScreen.tsx` | The TV and Movies tabs: a pinned To watch / Upcoming switch, list cards or a poster grid (kept per tab), collapsible groups, a summary line; grouping in `src/data/collections.ts` |
+| `src/log/` | The log sheet's form (`form.ts`: one form for new and edited watches, every field, tested), zones and sections |
+| `src/layout/ListDetail.tsx` | List and detail side by side on medium/expanded windows (Diary, TV, Movies); on a half-open book foldable (Android, or iPhone Duo via UIKit's division region) the split sits on the fold |
 | `src/screens/` | Title, Show and Watch views, used as screens and in the detail pane |
 | `modules/fold-info/` | Local Expo module: the fold's bounds, orientation, posture (`useFold`, `isTabletop`, `isBookSplit`) from Jetpack WindowManager (Android) and UIKit reserved regions (iPhone Duo, iOS 27.1+); `expo-hinge` gives the angle and status on both platforms |
 | `plugins/with-home-http.js` | Config plugin: HTTP only to the home hosts (`HOME_HTTP_HOSTS`), HTTPS everywhere else |

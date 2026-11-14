@@ -452,6 +452,17 @@ flows (the CLI isn't installed; the offline check was run by hand), the
 side-panel log sheet on wide windows (phase 4), and logos for IMDb / RT /
 TMDB scores (the web app is getting them; reuse when they land).
 
+**Review changes (2026-11-14):** Up next and Watchlist became **TV** and
+**Movies**, each with To watch / Upcoming (list cards or a poster grid):
+TV is the show queue by stage plus `/me/upcoming` by day; Movies is the
+watchlist split by release date. Tonight has a Top 10 shows rail under the
+films (same country/service). Search is in every tab's header. The show page
+has the film page's hero, scores, where to watch, charts and facts. The log
+sheet edits every field (exact time in the watch's zone, cinema details,
+plan, money, disc type, label, picture and sound), with format and disc
+logos. The Diary leads with recent films and shows, the ratings chart and
+totals, then a month timeline.
+
 **Phase 4 status (2026-11-14):** Diary, Up next and Watchlist are
 list–detail on medium and expanded windows (the detail views are shared with
 the full screens); the log sheet is a side panel beside the dimmed content on
