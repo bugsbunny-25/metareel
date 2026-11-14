@@ -12,7 +12,7 @@ export const unstable_settings = {
   diary: { anchor: 'diary' },
   tv: { anchor: 'tv' },
   movies: { anchor: 'movies' },
-  settings: { anchor: 'settings' },
+  you: { anchor: 'you' },
 };
 
 const ROOT_TITLES: Record<string, string> = {
@@ -20,7 +20,7 @@ const ROOT_TITLES: Record<string, string> = {
   diary: 'Diary',
   tv: 'TV',
   movies: 'Movies',
-  settings: 'Settings',
+  you: 'You',
 };
 
 const PINNED = new Set(['tv', 'movies']);

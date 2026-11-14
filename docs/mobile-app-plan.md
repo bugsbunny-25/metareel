@@ -463,6 +463,10 @@ plan, money, disc type, label, picture and sound), with format and disc
 logos. The Diary leads with recent films and shows, the ratings chart and
 totals, then a month timeline.
 
+Settings became **You** (profile, statistics, this year, cinema plans,
+genres, your shows and films, Detailed stats for shows and films, backed by
+`GET /me/stats/detailed`); Settings moved behind its gear.
+
 **Phase 4 status (2026-11-14):** Diary, Up next and Watchlist are
 list–detail on medium and expanded windows (the detail views are shared with
 the full screens); the log sheet is a side panel beside the dimmed content on

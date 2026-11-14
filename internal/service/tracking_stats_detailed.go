@@ -104,7 +104,7 @@ type DetailedStats struct {
 
 var stageLabels = []struct{ key, label string }{
 	{StageWatching, "Watching"},
-	{StageStalled, "Not watched in a while"},
+	{StageStalled, "Not watched lately"},
 	{StageNotStarted, "Not started"},
 	{StageOnHold, "On hold"},
 	{StageCaughtUp, "Up to date"},

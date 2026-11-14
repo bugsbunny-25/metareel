@@ -214,3 +214,12 @@ export function useEpisode(show: string, season: number, episode: number) {
       unwrap(await api.GET('/api/v1/me/shows/{id}/episodes/{season}/{episode}', { params: { path: { id: show, season, episode } }, signal })),
   });
 }
+
+/** The profile's statistics for shows ('tv'), films ('movie') or both (''). */
+export function useDetailedStats(kind: '' | 'tv' | 'movie') {
+  return useQuery({
+    queryKey: ['stats', 'detailed', kind],
+    staleTime: 5 * 60_000,
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/stats/detailed', { params: { query: { kind } }, signal })),
+  });
+}

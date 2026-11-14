@@ -1,3 +1,4 @@
+import { Stack } from 'expo-router';
 import type { PropsWithChildren } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -82,3 +83,22 @@ const styles = StyleSheet.create({
   },
   panel: { padding: 16, gap: 10 },
 });
+
+/**
+ * A pushed screen (not a tab root): the stack's own header carries the
+ * title, and the content scrolls on the canvas.
+ */
+export function DetailScreen({ title, children, refreshing, onRefresh }: PropsWithChildren<{ title: string; refreshing?: boolean; onRefresh?: () => void }>) {
+  const { colors, gutter } = useTheme();
+  return (
+    <ScrollView
+      style={{ backgroundColor: colors.bgCanvas }}
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={[styles.content, { padding: gutter.compact }]}
+      refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.textMuted} /> : undefined}
+    >
+      <Stack.Screen options={{ headerTitle: title }} />
+      <View style={styles.column}>{children}</View>
+    </ScrollView>
+  );
+}

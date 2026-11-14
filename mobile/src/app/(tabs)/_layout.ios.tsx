@@ -29,9 +29,9 @@ export default function TabsLayout() {
         <NativeTabs.Trigger.Label>Diary</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'book.closed', selected: 'book.closed.fill' }} />
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="(settings)">
-        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
+      <NativeTabs.Trigger name="(you)">
+        <NativeTabs.Trigger.Label>You</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'person.crop.circle', selected: 'person.crop.circle.fill' }} />
       </NativeTabs.Trigger>
     </NativeTabs>
   );

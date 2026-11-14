@@ -7,7 +7,7 @@ import { endpoint, setHomeURL, signOut, useSignedIn } from '@/auth/session';
 import { normalizeHomeURL, URLError } from '@/auth/urls';
 import { Button } from '@/components/Button';
 import { Field } from '@/components/Field';
-import { Panel, Screen } from '@/components/Screen';
+import { DetailScreen, Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { useAccount, usePreferences } from '@/data/queries';
 import { useAppUpdate } from '@/data/app-update';
@@ -47,7 +47,7 @@ export default function Settings() {
         : 'Checking…';
 
   return (
-    <Screen title="Settings">
+    <DetailScreen title="Settings">
       <Panel title="Account">
         <Row label="Signed in as" value={session.user.username} />
         <Row label="Server" value={session.server} />
@@ -117,7 +117,7 @@ export default function Settings() {
           await signOut();
         }}
       />
-    </Screen>
+    </DetailScreen>
   );
 }
 

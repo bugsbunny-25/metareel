@@ -8,12 +8,12 @@ import { Text } from '@/components/Text';
 import { useWindowClass } from '@/layout/window-class';
 import { useTheme } from '@/theme';
 
-const TABS: { name: string; href: '/' | '/diary' | '/tv' | '/movies' | '/settings'; label: string; icon: IconName }[] = [
+const TABS: { name: string; href: '/' | '/diary' | '/tv' | '/movies' | '/you'; label: string; icon: IconName }[] = [
   { name: '(home)', href: '/', label: 'Tonight', icon: 'tonight' },
   { name: '(tv)', href: '/tv', label: 'TV', icon: 'tv' },
   { name: '(movies)', href: '/movies', label: 'Movies', icon: 'film' },
   { name: '(diary)', href: '/diary', label: 'Diary', icon: 'diary' },
-  { name: '(settings)', href: '/settings', label: 'Settings', icon: 'settings' },
+  { name: '(you)', href: '/you', label: 'You', icon: 'user' },
 ];
 
 /**
