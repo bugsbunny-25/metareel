@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { OutboxBanner } from '@/components/OutboxBanner';
 import { Placeholder } from '@/components/Placeholder';
@@ -12,11 +11,12 @@ import { openTitle } from '@/lib/actions';
 import { year } from '@/lib/format';
 import { ShowView } from '@/screens/ShowView';
 import { TitleView } from '@/screens/TitleView';
+import { RootTitle, useRootScroll } from '@/layout/root-header';
 import { useTheme } from '@/theme';
 
 export default function Watchlist() {
   const { colors, gutter } = useTheme();
-  const insets = useSafeAreaInsets();
+  const scroll = useRootScroll();
   const list = useWatchlist();
   const titles = list.data?.titles ?? [];
   const twoPane = useTwoPane();
@@ -24,15 +24,14 @@ export default function Watchlist() {
   const listView = (
     <FlatList
       style={{ backgroundColor: colors.bgCanvas }}
-      contentContainerStyle={{ paddingTop: insets.top + 12, paddingHorizontal: gutter.compact, paddingBottom: 32, width: '100%', maxWidth: 760, alignSelf: 'center' }}
+      contentInsetAdjustmentBehavior={scroll.contentInsetAdjustmentBehavior}
+      contentContainerStyle={{ paddingTop: scroll.paddingTop, paddingHorizontal: gutter.compact, paddingRight: gutter.compact + scroll.insetRight, paddingBottom: 32, width: '100%', maxWidth: 760, alignSelf: 'center' }}
       data={titles}
       keyExtractor={(t) => `${t?.tmdb_kind}-${t?.tmdb_id}`}
       refreshControl={<RefreshControl refreshing={list.isRefetching} onRefresh={() => void list.refetch()} tintColor={colors.textMuted} />}
       ListHeaderComponent={
         <View style={{ gap: 12, marginBottom: 8 }}>
-          <Text variant="display" accessibilityRole="header">
-            Watchlist
-          </Text>
+          <RootTitle>Watchlist</RootTitle>
           <OutboxBanner kinds={['watchlist']} />
         </View>
       }

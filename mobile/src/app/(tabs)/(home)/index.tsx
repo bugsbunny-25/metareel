@@ -40,11 +40,7 @@ export default function Tonight() {
       title="Tonight"
       refreshing={queue.isRefetching}
       onRefresh={() => void Promise.all([queue.refetch(), top10.refetch(), diary.refetch()])}
-      right={
-        <Pressable onPress={() => router.push('/search')} accessibilityRole="button" accessibilityLabel="Search" style={[styles.round, { backgroundColor: colors.bgElevated }]}>
-          <Icon name="search" color={colors.textPrimary} />
-        </Pressable>
-      }
+      actions={[{ label: 'Search', sf: 'magnifyingglass', icon: 'search', onPress: () => router.push('/search') }]}
     >
       <ConnectionNote />
       <Button title="Log a film" onPress={() => router.push({ pathname: '/search', params: { mode: 'log' } })} />
@@ -223,7 +219,6 @@ function Numeral({ value, size, fill, stroke, font }: { value: number; size: num
 }
 
 const styles = StyleSheet.create({
-  round: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   tick: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   tile: { flexDirection: 'row', alignItems: 'flex-end' },
   tilePoster: { zIndex: 1 },

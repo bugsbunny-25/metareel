@@ -1,0 +1,38 @@
+import { NativeTabs } from 'expo-router/native-tabs';
+
+import { useTheme } from '@/theme';
+
+/**
+ * iOS uses the system tab bar (UITabBarController), so it is placed the way
+ * the platform expects: at the bottom on iPhone, as a sidebar or top bar on
+ * iPad, and in the vertical control strip beside the content on iPhone
+ * Duo's outer display and on its inner display in landscape. Android keeps
+ * the custom bar / rail in _layout.tsx.
+ */
+export default function TabsLayout() {
+  const { colors } = useTheme();
+  return (
+    <NativeTabs tintColor={colors.textPrimary}>
+      <NativeTabs.Trigger name="(home)">
+        <NativeTabs.Trigger.Label>Tonight</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'moon', selected: 'moon.fill' }} />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="(diary)">
+        <NativeTabs.Trigger.Label>Diary</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'book.closed', selected: 'book.closed.fill' }} />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="(up-next)">
+        <NativeTabs.Trigger.Label>Up next</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'play.circle', selected: 'play.circle.fill' }} />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="(watchlist)">
+        <NativeTabs.Trigger.Label>Watchlist</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'bookmark', selected: 'bookmark.fill' }} />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="(settings)">
+        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
+      </NativeTabs.Trigger>
+    </NativeTabs>
+  );
+}

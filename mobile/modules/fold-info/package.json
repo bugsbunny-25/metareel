@@ -2,6 +2,6 @@
   "name": "fold-info",
   "version": "0.1.0",
   "private": true,
-  "description": "Where a foldable's fold is (bounds, orientation, separating, half open), from Jetpack WindowManager",
+  "description": "Where a foldable's fold is (bounds, orientation, separating, half open): Jetpack WindowManager on Android, UIKit reserved regions on iOS",
   "main": "src/index.ts"
 }

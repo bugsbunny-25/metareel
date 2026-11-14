@@ -10,6 +10,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { endpoint, SessionProvider, useSession } from '@/auth/session';
 import { useEndpointRefresh } from '@/net/use-endpoint-refresh';
+import { useSideInsets } from '@/layout/root-header';
 import { useOutboxSync } from '@/offline/use-sync';
 import { persister, persistMaxAge, queryClient } from '@/query/client';
 import { useWindowClass } from '@/layout/window-class';
@@ -44,6 +45,7 @@ function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
   // The log sheet: a bottom sheet on phones, a side panel beside the content
   // on unfolded foldables and tablets (drawn by the log screen itself).
   const sidePanel = useWindowClass() !== 'compact';
+  const side = useSideInsets();
   useEndpointRefresh(endpoint);
   useOutboxSync(session.status === 'signedIn');
 
@@ -76,6 +78,7 @@ function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
                 headerStyle: { backgroundColor: colors.bgCanvas },
                 headerTintColor: colors.textPrimary,
                 headerTitleStyle: { fontFamily: 'SourceSerif4_700Bold', color: colors.textPrimary },
+                contentStyle: { backgroundColor: colors.bgCanvas, ...side },
               }}
             />
           ))}

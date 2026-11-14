@@ -19,7 +19,7 @@ import { Text } from '@/components/Text';
 import { findNearby, type NearbyResult, type NearbyVenue } from '@/data/nearby';
 import { useFormats, useMyTitle, usePreferences, useSubscriptions, useWatch } from '@/data/queries';
 import { useWindowClass } from '@/layout/window-class';
-import { isTabletop, useFold } from 'fold-info';
+import { isBookSplit, isTabletop, useFold } from 'fold-info';
 import { currencyFor, deviceTimeZone, endedAt, episodeCode, toMinor, type When } from '@/lib/format';
 import { enqueue } from '@/offline';
 import { queryClient } from '@/query/client';
@@ -429,6 +429,7 @@ function Sheet({ title, subtitle, poster, action, error, children }: {
   const { width } = useWindowDimensions();
   const sidePanel = useWindowClass() !== 'compact';
   const fold = useFold();
+  const book = isBookSplit(fold) ? fold : null;
   if (isTabletop(fold)) {
     // Tabletop (a half-open foldable on a table): the title and artwork stand
     // up on the top half, the form lies flat below the fold.
@@ -480,7 +481,9 @@ function Sheet({ title, subtitle, poster, action, error, children }: {
   );
   if (!sidePanel) return sheet;
   // Wide windows: the form slides in beside the content, which stays visible
-  // (dimmed) behind it; tapping outside closes it.
+  // (dimmed) behind it; tapping outside closes it. On a half-open book
+  // foldable it takes the whole trailing panel, clear of the fold.
+  const panelWidth = book ? width - (book.left + book.width) : Math.min(480, Math.round(width * 0.5));
   return (
     <View style={styles.overlay}>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]} onPress={() => router.back()} accessibilityLabel="Close" />
@@ -488,8 +491,9 @@ function Sheet({ title, subtitle, poster, action, error, children }: {
         style={[
           styles.panel,
           {
-            width: Math.min(480, Math.round(width * 0.5)),
+            width: panelWidth,
             paddingTop: insets.top,
+            paddingRight: insets.right,
             borderTopLeftRadius: radius.hero,
             borderBottomLeftRadius: radius.hero,
             backgroundColor: colors.bgSurface,

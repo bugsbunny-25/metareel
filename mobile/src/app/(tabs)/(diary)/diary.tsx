@@ -1,7 +1,6 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { components } from '@/api/schema';
 import { OutboxBanner } from '@/components/OutboxBanner';
@@ -13,6 +12,7 @@ import { ListDetail, useTwoPane } from '@/layout/ListDetail';
 import { dayHeading, episodeCode, starText } from '@/lib/format';
 import { useOutbox } from '@/offline';
 import { WatchView } from '@/screens/WatchView';
+import { RootTitle, useRootScroll } from '@/layout/root-header';
 import { useTheme } from '@/theme';
 
 type Entry = components['schemas']['WatchEntry'];
@@ -20,7 +20,7 @@ type Entry = components['schemas']['WatchEntry'];
 /** Your watches, newest day first; logs still waiting to sync sit on top. */
 export default function Diary() {
   const { colors, gutter } = useTheme();
-  const insets = useSafeAreaInsets();
+  const scroll = useRootScroll();
   const diary = useDiary();
   const pending = useOutbox().filter((i) => i.kind === 'watch' && i.status === 'pending');
   const twoPane = useTwoPane();
@@ -40,7 +40,8 @@ export default function Diary() {
   const list = (
     <SectionList
       style={{ backgroundColor: colors.bgCanvas }}
-      contentContainerStyle={{ paddingTop: insets.top + 12, paddingHorizontal: gutter.compact, paddingBottom: 32, width: '100%', maxWidth: 760, alignSelf: 'center' }}
+      contentInsetAdjustmentBehavior={scroll.contentInsetAdjustmentBehavior}
+      contentContainerStyle={{ paddingTop: scroll.paddingTop, paddingHorizontal: gutter.compact, paddingRight: gutter.compact + scroll.insetRight, paddingBottom: 32, width: '100%', maxWidth: 760, alignSelf: 'center' }}
       sections={sections}
       keyExtractor={(w) => String(w.id)}
       stickySectionHeadersEnabled={false}
@@ -48,9 +49,7 @@ export default function Diary() {
       onEndReached={() => diary.hasNextPage && !diary.isFetchingNextPage && void diary.fetchNextPage()}
       ListHeaderComponent={
         <View style={{ gap: 12, marginBottom: 8 }}>
-          <Text variant="display" accessibilityRole="header">
-            Diary
-          </Text>
+          <RootTitle>Diary</RootTitle>
           <OutboxBanner kinds={['watch']} />
           {pending.map((p) => (
             <TitleRow key={`p${p.id}`} poster={p.meta?.poster as string} title={p.label} subtitle="Waiting to sync" />

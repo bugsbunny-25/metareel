@@ -86,10 +86,18 @@ open, split-screen, freeform windows, tablets and iPad:
 
 Rules that make fold/unfold and resizing seamless:
 
-- **One navigator for all sizes.** Expo Router's headless tabs
+- **One navigator for all sizes.** On Android, Expo Router's headless tabs
   (`expo-router/ui`) with our own tab list that renders as a bottom bar or a rail
   depending on width. Swapping between two different navigators at the moment
   of unfolding would remount the tree and lose scroll and form state.
+- **iOS uses the system bars** (changed after the iPhone Duo review): the tab
+  bar is Expo Router's `NativeTabs` (UITabBarController) and the tab roots
+  have a native navigation bar with a large title and toolbar buttons
+  (`Stack.Toolbar`, symbol plus title). Apple's "Designing for iPhone Duo"
+  (HIG, 2026-09-09) moves tab bars, toolbars and Back into a vertical strip
+  beside the content on the outer display and on the inner display in
+  landscape, and system components get that automatically; a custom tab bar
+  and custom title rows don't. Same for iPad (sidebar / top tab bar).
 - **List–detail is a layout, not separate routes.** `diary/_layout.tsx` renders
   the list and, on medium/expanded, the selected entry beside it; on compact
   the same detail route pushes full screen. The URL stays the same either way,
@@ -123,10 +131,10 @@ Rules that make fold/unfold and resizing seamless:
   line is, horizontal or vertical) or **occlusion**. Tabletop posture needs
   them. **Custom:** a small local Expo module (`modules/fold-info`, ~100 lines
   of Kotlin) wrapping `WindowInfoTracker.windowLayoutInfo` → `FoldingFeature`
-  `bounds`, `orientation`, `isSeparating`, `occlusionType`. On iOS, check during
-  phase 4 whether `@expo/ui`'s `onHingeChange` / `ArrangementView` or UIKit
-  gives the fold position on the iPhone Duo; if needed, the same module gets a
-  small Swift side. Dropped if `expo-hinge` exposes bounds by then.
+  `bounds`, `orientation`, `isSeparating`, `occlusionType`. On iOS the same
+  module reads UIKit's reserved regions (`UIView.reservedRegions(kind:
+  .division)`, iOS 27.1+), which give the fold's frame while the iPhone Duo
+  is partially folded; it is re-read on every `UIHingeInteraction` update.
 - Posture use is deliberately small: (1) in a two-pane layout, put the pane
   split on the hinge when it separates; (2) a tabletop layout for "Now showing"
   and the log sheet on a half-open device.

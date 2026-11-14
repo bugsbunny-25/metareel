@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 
+import { nativeRootHeader, useSideInsets } from '@/layout/root-header';
 import { useTheme } from '@/theme';
 
 // Each tab is its own stack, so a title, show or watch opened from a tab
@@ -14,22 +15,57 @@ export const unstable_settings = {
   settings: { anchor: 'settings' },
 };
 
-const ROOTS = new Set(['index', 'diary', 'up-next', 'watchlist', 'settings']);
+const ROOT_TITLES: Record<string, string> = {
+  index: 'Tonight',
+  diary: 'Diary',
+  'up-next': 'Up next',
+  watchlist: 'Watchlist',
+  settings: 'Settings',
+};
 
 export default function TabStack() {
   const { colors } = useTheme();
+  const side = useSideInsets();
   return (
     <Stack
-      screenOptions={({ route }) => ({
-        headerShown: !ROOTS.has(route.name),
-        headerTitle: '',
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-        headerStyle: { backgroundColor: colors.bgCanvas },
-        headerTintColor: colors.textPrimary,
-        headerTitleStyle: { fontFamily: 'SourceSerif4_700Bold', color: colors.textPrimary },
-        contentStyle: { backgroundColor: colors.bgCanvas },
-      })}
+      screenOptions={({ route }) => {
+        const root = ROOT_TITLES[route.name];
+        // On iOS a root's title and actions live in the system bar with a
+        // large title (see layout/root-header); Android roots draw their own.
+        if (root && nativeRootHeader) {
+          return {
+            headerShown: true,
+            title: root,
+            headerLargeTitle: true,
+            headerTransparent: true,
+            headerShadowVisible: false,
+            headerLargeTitleShadowVisible: false,
+            headerTintColor: colors.textPrimary,
+            headerTitleStyle: {
+              fontFamily: 'SourceSerif4_700Bold',
+              color: colors.textPrimary,
+            },
+            headerLargeTitleStyle: {
+              fontFamily: 'SourceSerif4_700Bold',
+              color: colors.textPrimary,
+            },
+            contentStyle: { backgroundColor: colors.bgCanvas },
+          };
+        }
+        return {
+          headerShown: !root,
+          headerTitle: '',
+          headerShadowVisible: false,
+          headerBackButtonDisplayMode: 'minimal',
+          headerStyle: { backgroundColor: colors.bgCanvas },
+          headerTintColor: colors.textPrimary,
+          headerTitleStyle: {
+            fontFamily: 'SourceSerif4_700Bold',
+            color: colors.textPrimary,
+          },
+          contentStyle: { backgroundColor: colors.bgCanvas, ...side },
+        };
+      }}
     />
   );
 }

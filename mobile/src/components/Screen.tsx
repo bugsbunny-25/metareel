@@ -1,7 +1,8 @@
-import type { PropsWithChildren, ReactNode } from 'react';
+import type { PropsWithChildren } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { nativeRootHeader, type RootAction, RootActions, RootTitle, useRootScroll } from '@/layout/root-header';
 import { useWindowClass } from '@/layout/window-class';
 import { useTheme } from '@/theme';
 
@@ -13,28 +14,44 @@ import { Text } from './Text';
  */
 export function Screen({
   title,
-  right,
+  actions = [],
   children,
   refreshing,
   onRefresh,
-}: PropsWithChildren<{ title: string; right?: ReactNode; refreshing?: boolean; onRefresh?: () => void }>) {
+}: PropsWithChildren<{
+  title: string;
+  actions?: RootAction[];
+  refreshing?: boolean;
+  onRefresh?: () => void;
+}>) {
   const { colors, gutter } = useTheme();
   const insets = useSafeAreaInsets();
+  const scroll = useRootScroll();
   const wc = useWindowClass();
   const pad = wc === 'compact' ? gutter.compact : 24;
   return (
     <ScrollView
       style={{ backgroundColor: colors.bgCanvas }}
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + 12, paddingHorizontal: pad, paddingRight: pad + insets.right }]}
+      contentInsetAdjustmentBehavior={scroll.contentInsetAdjustmentBehavior}
+      contentContainerStyle={[
+        styles.content,
+        {
+          paddingTop: scroll.paddingTop,
+          paddingHorizontal: pad,
+          paddingRight: pad + insets.right,
+        },
+      ]}
       refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.textMuted} /> : undefined}
     >
       <View style={styles.column}>
-        <View style={styles.header}>
-          <Text variant="display" accessibilityRole="header" style={{ flex: 1 }}>
-            {title}
-          </Text>
-          {right}
-        </View>
+        {nativeRootHeader ? (
+          <RootActions actions={actions} />
+        ) : (
+          <View style={styles.header}>
+            <RootTitle>{title}</RootTitle>
+            <RootActions actions={actions} />
+          </View>
+        )}
         {children}
       </View>
     </ScrollView>
@@ -57,6 +74,11 @@ const styles = StyleSheet.create({
   // Single-column screens stay readable on unfolded and tablet windows;
   // list-detail screens (phase 4) use the width for a second pane instead.
   column: { gap: 16, width: '100%', maxWidth: 760, alignSelf: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 4,
+  },
   panel: { padding: 16, gap: 10 },
 });

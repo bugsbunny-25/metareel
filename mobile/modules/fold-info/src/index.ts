@@ -2,8 +2,10 @@ import { requireOptionalNativeModule } from 'expo';
 import { useSyncExternalStore } from 'react';
 
 /**
- * A fold the app's window spans, in dp relative to the window. Android only
- * (Jetpack WindowManager); null elsewhere and while no fold is spanned.
+ * A fold the app's window spans, in dp (points) relative to the window:
+ * Jetpack WindowManager on Android, UIKit's division region on iPhone Duo
+ * (iOS 27.1+, only while partially folded). Null elsewhere and while no
+ * fold is spanned.
  */
 export type Fold = {
   left: number;

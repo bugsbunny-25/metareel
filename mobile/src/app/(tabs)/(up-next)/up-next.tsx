@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, SectionList, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { components } from '@/api/schema';
 import { Icon } from '@/components/Icon';
@@ -14,6 +13,7 @@ import { markEpisode, openTitle } from '@/lib/actions';
 import { episodeCode } from '@/lib/format';
 import { useOutbox } from '@/offline';
 import { ShowView } from '@/screens/ShowView';
+import { RootTitle, useRootScroll } from '@/layout/root-header';
 import { useTheme } from '@/theme';
 
 type Item = components['schemas']['ShowQueueItem'];
@@ -28,7 +28,7 @@ const STAGES: { stage: NonNullable<Item['stage']>; title: string }[] = [
 /** Shows by stage, each with its next episode and a tick to mark it watched. */
 export default function UpNext() {
   const { colors, gutter } = useTheme();
-  const insets = useSafeAreaInsets();
+  const scroll = useRootScroll();
   const queue = useShowQueue();
   const queued = useOutbox().filter((i) => i.kind === 'episodes' && i.status === 'pending');
   const sections = STAGES.map((s) => ({
@@ -41,7 +41,8 @@ export default function UpNext() {
   const list = (
     <SectionList
       style={{ backgroundColor: colors.bgCanvas }}
-      contentContainerStyle={{ paddingTop: insets.top + 12, paddingHorizontal: gutter.compact, paddingBottom: 32, width: '100%', maxWidth: 760, alignSelf: 'center' }}
+      contentInsetAdjustmentBehavior={scroll.contentInsetAdjustmentBehavior}
+      contentContainerStyle={{ paddingTop: scroll.paddingTop, paddingHorizontal: gutter.compact, paddingRight: gutter.compact + scroll.insetRight, paddingBottom: 32, width: '100%', maxWidth: 760, alignSelf: 'center' }}
       sections={sections}
       keyExtractor={(x) => x.tmdb_id ?? ''}
       stickySectionHeadersEnabled={false}
@@ -49,9 +50,7 @@ export default function UpNext() {
       refreshing={queue.isRefetching}
       ListHeaderComponent={
         <View style={{ gap: 12, marginBottom: 8 }}>
-          <Text variant="display" accessibilityRole="header">
-            Up next
-          </Text>
+          <RootTitle>Up next</RootTitle>
           <OutboxBanner kinds={['episodes']} />
         </View>
       }
