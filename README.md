@@ -590,6 +590,12 @@ marked, which is why its precision defaults to a whole day; log episodes
 individually when the exact times matter. `DELETE` on the same path takes
 them back, deleting those watches for good.
 
+`GET /api/v1/me/shows/{id}/episodes/{season}/{episode}` is one episode for a
+details screen: TMDB's synopsis, still, score, directors, writers and up to 12
+guest stars, fetched live (not stored), plus your watches of that episode,
+newest first. When TMDB can't be reached it answers with the cached name, air
+date and runtime and `live: false`; an episode TMDB doesn't list is a 404.
+
 Marking and unmarking also move a show between `watching` and `completed`, so
 the up-next queue works without setting a status by hand. A status you chose
 yourself -- `dropped`, `on_hold`, `not_interested` -- is never overwritten.

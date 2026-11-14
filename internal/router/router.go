@@ -116,6 +116,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	me.GET("/shows", h.ShowQueue)
 	me.GET("/upcoming", h.Upcoming)
 	me.GET("/shows/:id", h.GetShow)
+	me.GET("/shows/:id/episodes/:season/:episode", h.GetEpisode)
 	me.POST("/shows/:id/watched", h.MarkEpisodes)
 	me.DELETE("/shows/:id/watched", h.UnmarkEpisodes)
 	me.GET("/up-next", h.UpNext)

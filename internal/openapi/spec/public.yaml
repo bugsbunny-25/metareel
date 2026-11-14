@@ -2667,6 +2667,33 @@ paths:
         "401": { $ref: "#/components/responses/TrackingUnauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/me/shows/{id}/episodes/{season}/{episode}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string }, description: "TMDB TV show ID (numeric)" }
+      - { name: season, in: path, required: true, schema: { type: integer, minimum: 0 }, description: 0 is specials }
+      - { name: episode, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      operationId: getEpisode
+      tags: [Tracking]
+      summary: One episode, with your watches of it
+      description: >
+        TMDB's details for the episode (synopsis, still, score, directors,
+        writers, up to 12 guest stars), fetched live and not stored, and the
+        user's watches of it, newest first. When TMDB can't be reached the
+        cached name, air date and runtime are returned with live false.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The episode
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EpisodeDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/me/shows/{id}/watched:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string }, description: "TMDB TV show ID (numeric)" }
@@ -4624,6 +4651,44 @@ components:
           nullable: true
           description: The first aired episode not seen yet
         next_air_date: { type: string, format: date, nullable: true, description: The next episode still to air }
+    EpisodeDetail:
+      type: object
+      properties:
+        show:
+          type: object
+          properties:
+            tmdb_id: { type: string }
+            title: { type: string }
+            poster_path: { type: string }
+        episode:
+          type: object
+          properties:
+            id: { type: integer, description: TMDB episode ID (0 when only the cached basics are known) }
+            season_number: { type: integer }
+            episode_number: { type: integer }
+            name: { type: string }
+            overview: { type: string }
+            air_date: { type: string, description: "YYYY-MM-DD, empty when TBA" }
+            episode_type: { type: string, description: "standard, finale, mid_season" }
+            runtime: { type: integer, description: Minutes, 0 when unknown }
+            still_path: { type: string, description: "TMDB image path (https://image.tmdb.org/t/p/w780{still_path})" }
+            vote_average: { type: number }
+            vote_count: { type: integer }
+            directors: { type: array, items: { type: string } }
+            writers: { type: array, items: { type: string } }
+            guest_stars:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  name: { type: string }
+                  character: { type: string }
+                  profile_path: { type: string }
+        live: { type: boolean, description: "false: TMDB couldn't be reached, only the cached basics" }
+        watches:
+          type: array
+          items: { $ref: "#/components/schemas/WatchEntry" }
     UpcomingEpisode:
       allOf:
         - $ref: "#/components/schemas/QueueEpisode"

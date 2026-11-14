@@ -282,6 +282,22 @@ func (h *Handler) GetShow(c *echo.Context) error {
 	return h.writeTracking(c, http.StatusOK, out, err)
 }
 
+// GetEpisode: GET /api/v1/me/shows/{id}/episodes/{season}/{episode}
+// One episode's details (TMDB's, else the cached basics) and the user's
+// watches of it.
+func (h *Handler) GetEpisode(c *echo.Context) error {
+	season, err := strconv.ParseInt(c.Param("season"), 10, 64)
+	if err != nil {
+		return badRequest(c, errors.New("season must be an integer"))
+	}
+	episode, err := strconv.ParseInt(c.Param("episode"), 10, 64)
+	if err != nil {
+		return badRequest(c, errors.New("episode must be an integer"))
+	}
+	out, err := h.Tracking.Episode(c.Request().Context(), userID(c), c.Param("id"), season, episode)
+	return h.writeTracking(c, http.StatusOK, out, err)
+}
+
 // MarkEpisodes: POST /api/v1/me/shows/{id}/watched
 // {"scope":"episode|season|up_to|all","season_number":1,"episode_number":3,...}
 func (h *Handler) MarkEpisodes(c *echo.Context) error {

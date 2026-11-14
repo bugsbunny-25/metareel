@@ -204,3 +204,13 @@ export function useStatsSummary(from?: string) {
     queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/stats/summary', { params: { query: from ? { from } : {} }, signal })),
   });
 }
+
+/** One episode's details and your watches of it. */
+export function useEpisode(show: string, season: number, episode: number) {
+  return useQuery({
+    queryKey: ['episode', show, season, episode],
+    enabled: !!show && Number.isFinite(season) && Number.isFinite(episode),
+    queryFn: async ({ signal }) =>
+      unwrap(await api.GET('/api/v1/me/shows/{id}/episodes/{season}/{episode}', { params: { path: { id: show, season, episode } }, signal })),
+  });
+}

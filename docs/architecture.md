@@ -1043,6 +1043,12 @@ own details, which include season 0; `number_of_seasons` does not.
 `trackedEpisodesTTL` is a day, shorter than the title TTL, because an episode
 missing from the cache is an episode missing from up-next.
 
+An episode's details (`GET /me/shows/{id}/episodes/{season}/{episode}`) come
+live from TMDB's episode endpoint (`TMDBClient.TVEpisode`: synopsis, still,
+score, directors, writers, at most 12 guest stars) and are not stored; when
+TMDB fails the cached `tracked_episodes` row answers with `live: false`. The
+user's watches of the episode are read from the diary filtered to the show.
+
 Bulk marking (`POST /me/shows/{id}/watched`) selects episodes with
 `ListMarkableEpisodes`, whose `scope` is `episode`, `season`, `up_to` or
 `all`. Marking sets `AiredOnly` and `OnlyUnwatched`, so it never rewatches

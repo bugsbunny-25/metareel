@@ -24,6 +24,11 @@ export function openTitle(t: Target) {
   else router.push({ pathname: '/title/[kind]/[id]', params: { kind: t.kind, id: t.id } });
 }
 
+/** Opens one episode's details. */
+export function openEpisode(show: string, season: number, episode: number) {
+  router.push({ pathname: '/episode/[show]/[season]/[episode]', params: { show, season: String(season), episode: String(episode) } });
+}
+
 /** Marks one episode watched now (queued; marking skips episodes already watched). */
 export function markEpisode(showId: string, title: string, season: number, episode: number, scope: 'episode' | 'up_to' = 'episode') {
   enqueue({

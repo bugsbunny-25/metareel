@@ -12,7 +12,7 @@ import { Icon } from '@/components/Icon';
 import { Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { useMyTitle, usePreferences, useShow, useTitleOverview } from '@/data/queries';
-import { markEpisode, openLog, setWatchlist } from '@/lib/actions';
+import { markEpisode, openEpisode, openLog, setWatchlist } from '@/lib/actions';
 import { episodeCode, year } from '@/lib/format';
 import { useOutbox } from '@/offline';
 import { queryClient } from '@/query/client';
@@ -117,16 +117,14 @@ export function ShowView({ id, embedded }: { id: string; embedded?: boolean }) {
                   <View key={e.episode_number} style={styles.episode}>
                     <Pressable
                       style={{ flex: 1, gap: 2 }}
-                      onPress={() =>
-                        aired && openLog({ kind: 'tv', id, title, poster: show.data?.title?.poster_path, season: e.season_number, episode: e.episode_number })
-                      }
+                      onPress={() => openEpisode(id, e.season_number!, e.episode_number!)}
                       onLongPress={() =>
                         Alert.alert(`Mark up to ${episodeCode(e.season_number, e.episode_number)}?`, 'Every aired episode before it is marked watched too.', [
                           { text: 'Cancel', style: 'cancel' },
                           { text: 'Mark', onPress: () => markEpisode(id, title, e.season_number!, e.episode_number!, 'up_to') },
                         ])
                       }
-                      accessibilityHint="Opens the log sheet; long-press marks up to here"
+                      accessibilityHint="Opens the episode; long-press marks up to here"
                     >
                       <Text variant="label" numberOfLines={1}>
                         <Text variant="label" num style={{ color: colors.textMuted }}>

@@ -1540,6 +1540,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/shows/{id}/episodes/{season}/{episode}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description TMDB TV show ID (numeric) */
+                id: string;
+                /** @description 0 is specials */
+                season: number;
+                episode: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * One episode, with your watches of it
+         * @description TMDB's details for the episode (synopsis, still, score, directors, writers, up to 12 guest stars), fetched live and not stored, and the user's watches of it, newest first. When TMDB can't be reached the cached name, air date and runtime are returned with live false.
+         */
+        get: operations["getEpisode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/shows/{id}/watched": {
         parameters: {
             query?: never;
@@ -2870,6 +2896,42 @@ export interface components {
              * @description The next episode still to air
              */
             next_air_date?: string | null;
+        };
+        EpisodeDetail: {
+            show?: {
+                tmdb_id?: string;
+                title?: string;
+                poster_path?: string;
+            };
+            episode?: {
+                /** @description TMDB episode ID (0 when only the cached basics are known) */
+                id?: number;
+                season_number?: number;
+                episode_number?: number;
+                name?: string;
+                overview?: string;
+                /** @description YYYY-MM-DD, empty when TBA */
+                air_date?: string;
+                /** @description standard, finale, mid_season */
+                episode_type?: string;
+                /** @description Minutes */
+                runtime?: number;
+                /** @description TMDB image path (https://image.tmdb.org/t/p/w780{still_path}) */
+                still_path?: string;
+                vote_average?: number;
+                vote_count?: number;
+                directors?: string[];
+                writers?: string[];
+                guest_stars?: {
+                    id?: number;
+                    name?: string;
+                    character?: string;
+                    profile_path?: string;
+                }[];
+            };
+            /** @description false: TMDB couldn't be reached, only the cached basics */
+            live?: boolean;
+            watches?: components["schemas"]["WatchEntry"][];
         };
         UpcomingEpisode: components["schemas"]["QueueEpisode"] & {
             /** @description The show */
@@ -7393,6 +7455,35 @@ export interface operations {
                     "application/json": components["schemas"]["ShowPage"];
                 };
             };
+            401: components["responses"]["TrackingUnauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getEpisode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description TMDB TV show ID (numeric) */
+                id: string;
+                /** @description 0 is specials */
+                season: number;
+                episode: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The episode */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["TrackingUnauthorized"];
             404: components["responses"]["NotFound"];
         };
