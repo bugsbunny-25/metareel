@@ -4,6 +4,7 @@
 <script>
   import Poster from '../components/Poster.svelte'
   import Icon from '../components/Icon.svelte'
+  import FormatBadge from '../components/FormatBadge.svelte'
   import YearHeatmap from '../components/YearHeatmap.svelte'
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
@@ -164,10 +165,11 @@
                       {#if w.subject_kind === 'episode'}Season {w.season_number} · Episode {w.episode_number}{:else}Film{#if w.release_date}{' · '}{w.release_date.slice(0, 4)}{/if}{/if}
                       {#if w.time_precision === 'minute'}{' · '}<time datetime={w.ended_at}>{clock(w.ended_at)}</time>{/if}
                     </p>
-                    {#if w.is_rewatch || w.venue_kind || w.tags?.length}
+                    {#if w.is_rewatch || w.venue_kind || w.tags?.length || w.formats?.length}
                       <p class="pills">
                         {#if w.is_rewatch}<span class="pill rewatch"><Icon name="repeat" size={12} />Watch {w.watch_number}</span>{/if}
                         {#if w.venue_kind}<span class="pill">{VENUE[w.venue_kind] ?? w.venue_kind}</span>{/if}
+                        {#each w.formats ?? [] as f (f.slug)}<FormatBadge format={f} />{/each}
                         {#each w.tags ?? [] as t}<span class="pill tag">#{t}</span>{/each}
                       </p>
                     {/if}

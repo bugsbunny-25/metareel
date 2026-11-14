@@ -30,7 +30,7 @@
         <span class="gl">{name}</span>
         <div class="chips">
           {#each list as f (f.slug)}
-            <button type="button" class="chip" aria-pressed={selected.includes(f.slug)} title={f.note ?? f.label} onclick={() => toggle(f.slug)}>{f.label}</button>
+            <button type="button" class="chip" aria-pressed={selected.includes(f.slug)} title={f.note ?? f.label} onclick={() => toggle(f.slug)}>{#if f.logo_url}<span class="plate" aria-hidden="true"><img src={f.logo_url} alt="" /></span>{/if}{f.label}</button>
           {/each}
         </div>
       </div>
@@ -43,9 +43,12 @@
   .g { display: grid; grid-template-columns: 82px 1fr; gap: 10px; align-items: start; }
   .gl { padding-top: 6px; color: var(--text-muted); font-size: 12.5px; font-weight: 600; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { height: 28px; padding: 0 11px; border: 1px solid var(--border-subtle); border-radius: 14px; background: none; color: var(--text-primary); font: 500 13px/1 var(--font-sans); cursor: pointer; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border: 1px solid var(--border-subtle); border-radius: 14px; background: none; color: var(--text-primary); font: 500 13px/1 var(--font-sans); cursor: pointer; }
   .chip:hover { border-color: var(--border-strong); }
   .chip[aria-pressed='true'] { border-color: var(--accent-yours); background: color-mix(in srgb, var(--accent-yours) 16%, transparent); font-weight: 700; }
+  .chip:has(.plate) { padding-left: 4px; }
+  .plate { display: inline-flex; align-items: center; height: 20px; padding: 0 5px; border-radius: 10px; background: #161618; }
+  .plate img { display: block; height: 12px; max-width: 64px; object-fit: contain; }
   .hint { margin: 0; color: var(--text-muted); font-size: 13px; }
   @media (max-width: 480px) { .g { grid-template-columns: 1fr; gap: 4px; } .gl { padding-top: 0; } }
 </style>

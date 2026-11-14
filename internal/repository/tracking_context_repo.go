@@ -22,6 +22,18 @@ type WatchFormat struct {
 	Active    bool    `json:"active"`
 	CreatedAt string  `json:"created_at"`
 	UpdatedAt string  `json:"updated_at"`
+	// LogoURL is where the format's logo is served, versioned by its content
+	// so it can be cached for good; empty when it has none. Under the public
+	// API by default; the admin API rewrites it to its own copy of the route.
+	LogoURL string `json:"logo_url,omitempty"`
+}
+
+// FormatLogoURL is the path a format's logo is served at, or "" without one.
+func FormatLogoURL(slug string, version *string) string {
+	if version == nil || *version == "" {
+		return ""
+	}
+	return "/api/v1/formats/" + slug + "/logo?v=" + *version
 }
 
 func formatFrom(row sqlc.WatchFormat) WatchFormat {
@@ -29,7 +41,66 @@ func formatFrom(row sqlc.WatchFormat) WatchFormat {
 		ID: row.ID, Slug: row.Slug, Label: row.Label, Category: row.Category,
 		Note: nullStringPtr(row.Note), SortOrder: row.SortOrder, Active: row.Active != 0,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		LogoURL: FormatLogoURL(row.Slug, nullStringPtr(row.LogoVersion)),
 	}
+}
+
+// FormatLogo is an uploaded logo image.
+type FormatLogo struct {
+	ContentType string
+	Data        []byte
+	Version     string
+}
+
+// SetFormatLogo stores a format's logo and its version, in one transaction.
+func (r *TrackingRepository) SetFormatLogo(ctx context.Context, id int64, contentType string, data []byte, version string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := r.q.WithTx(tx)
+	n, err := q.SetWatchFormatLogoVersion(ctx, sqlc.SetWatchFormatLogoVersionParams{ID: id, LogoVersion: toNullString(&version)})
+	if err != nil {
+		return fmt.Errorf("set format logo version: %w", err)
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	if err := q.SaveWatchFormatLogo(ctx, sqlc.SaveWatchFormatLogoParams{FormatID: id, ContentType: contentType, Data: data}); err != nil {
+		return fmt.Errorf("save format logo: %w", err)
+	}
+	return tx.Commit()
+}
+
+// ClearFormatLogo removes a format's logo; sql.ErrNoRows for an unknown format.
+func (r *TrackingRepository) ClearFormatLogo(ctx context.Context, id int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := r.q.WithTx(tx)
+	n, err := q.SetWatchFormatLogoVersion(ctx, sqlc.SetWatchFormatLogoVersionParams{ID: id})
+	if err != nil {
+		return fmt.Errorf("clear format logo version: %w", err)
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	if err := q.DeleteWatchFormatLogo(ctx, id); err != nil {
+		return fmt.Errorf("delete format logo: %w", err)
+	}
+	return tx.Commit()
+}
+
+// FormatLogoBySlug returns a format's logo, or sql.ErrNoRows when it has none.
+func (r *TrackingRepository) FormatLogoBySlug(ctx context.Context, slug string) (FormatLogo, error) {
+	row, err := r.q.GetWatchFormatLogo(ctx, slug)
+	if err != nil {
+		return FormatLogo{}, err
+	}
+	return FormatLogo{ContentType: row.ContentType, Data: row.Data, Version: row.LogoVersion}, nil
 }
 
 // ListFormats returns the taxonomy, lowest sort order first.
@@ -98,7 +169,8 @@ func (r *TrackingRepository) formatsFor(ctx context.Context, userID int64, ids [
 	out := make(map[int64][]WatchFormat, len(ids))
 	for _, row := range rows {
 		out[row.EntryID] = append(out[row.EntryID], WatchFormat{
-			ID: row.FormatID, Slug: row.Slug, Label: row.Label, Category: row.Category, Active: true})
+			ID: row.FormatID, Slug: row.Slug, Label: row.Label, Category: row.Category, Active: true,
+			LogoURL: FormatLogoURL(row.Slug, nullStringPtr(row.LogoVersion))})
 	}
 	return out, nil
 }

@@ -132,6 +132,19 @@ export const revokeSession = (id) => req(`/sessions/${id}`, { method: 'DELETE' }
 export const listWatchFormats = () => req('/watch-formats')
 export const createWatchFormat = (body) => req('/watch-formats', { method: 'POST', body })
 export const updateWatchFormat = (id, body) => req(`/watch-formats/${id}`, { method: 'PATCH', body })
+export const deleteWatchFormatLogo = (id) => req(`/watch-formats/${id}/logo`, { method: 'DELETE' })
+// The logo goes up as the raw image (req only sends JSON); the server works out its type.
+export async function uploadWatchFormatLogo(id, file) {
+  const res = await fetch(`${BASE}/watch-formats/${id}/logo`, {
+    method: 'PUT', cache: 'no-store', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file,
+  })
+  if (!res.ok) {
+    if (res.status === 401) onUnauthorized()
+    const data = await res.json().catch(() => ({}))
+    throw new ApiError(data.error ?? `Upload failed (HTTP ${res.status})`, res.status)
+  }
+  return res.json()
+}
 
 export const getSettings = () => req('/settings')
 export const updateSettings = (body) => req('/settings', { method: 'PATCH', body })

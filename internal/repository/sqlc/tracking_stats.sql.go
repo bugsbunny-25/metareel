@@ -12,7 +12,7 @@ import (
 
 const statsByFormat = `-- name: StatsByFormat :many
 SELECT
-    f.slug, f.label, f.category,
+    f.slug, f.label, f.category, f.logo_version,
     CAST(COUNT(*) AS INTEGER) AS watches,
     CAST(COALESCE(SUM(COALESCE(w.runtime_minutes_used, e.runtime, t.runtime, c.runtime, 0)), 0) AS INTEGER) AS minutes
 FROM watch_entry_formats ef
@@ -25,7 +25,7 @@ LEFT JOIN tracked_titles c ON c.tmdb_kind = w.tmdb_kind AND c.tmdb_id = w.tmdb_i
 WHERE w.user_id = ?1
   AND (CAST(?2 AS TEXT) = '' OR w.watched_on >= CAST(?2 AS TEXT))
   AND (CAST(?3 AS TEXT) = '' OR w.watched_on <= CAST(?3 AS TEXT))
-GROUP BY f.slug, f.label, f.category
+GROUP BY f.slug, f.label, f.category, f.logo_version
 ORDER BY minutes DESC, watches DESC
 `
 
@@ -36,11 +36,12 @@ type StatsByFormatParams struct {
 }
 
 type StatsByFormatRow struct {
-	Slug     string `json:"slug"`
-	Label    string `json:"label"`
-	Category string `json:"category"`
-	Watches  int64  `json:"watches"`
-	Minutes  int64  `json:"minutes"`
+	Slug        string         `json:"slug"`
+	Label       string         `json:"label"`
+	Category    string         `json:"category"`
+	LogoVersion sql.NullString `json:"logo_version"`
+	Watches     int64          `json:"watches"`
+	Minutes     int64          `json:"minutes"`
 }
 
 // StatsByFormat counts watches and time per premium format.
@@ -57,6 +58,7 @@ func (q *Queries) StatsByFormat(ctx context.Context, arg StatsByFormatParams) ([
 			&i.Slug,
 			&i.Label,
 			&i.Category,
+			&i.LogoVersion,
 			&i.Watches,
 			&i.Minutes,
 		); err != nil {

@@ -246,6 +246,7 @@ make reports-open
 | GET    | `/api/v1/admin/mapping-events?subject=flixpatrol:12\|netflix:34&tmdb=movie:550&limit=` | History of mapping changes, newest first: action, TMDB title before / after, source and who made it (job, `mapping.sync`, `admin`) |
 | PATCH  | `/api/v1/admin/netflix/seasons/:id`         | Set a Netflix season title's season number by hand (`{"season_number": 2}`) or hand it back (`{"auto": true}`) |
 | GET/POST/PATCH | `/api/v1/admin/watch-formats[/:id]`  | The premium-format taxonomy (console: Premium formats). A format is retired with `active: false`, never deleted |
+| PUT/DELETE | `/api/v1/admin/watch-formats/:id/logo`   | Upload a format's logo (raw image body: PNG, JPEG, WebP or GIF ≤ 4096 px a side, or an SVG of drawing elements only; ≤ 512 KB; type taken from the bytes) or remove it |
 | GET/POST/PATCH/DELETE | `/api/v1/admin/webhooks[/:id[/test\|/rotate-secret\|/deliveries]]`, `/api/v1/admin/webhook-deliveries/:id[/retry]` | Outbound webhooks (see [Webhooks](#webhooks)) |
 | GET    | `/api/v1/me/titles/search?q=&kind=`         | Search TMDB for anything to track (not only titles metareel has charted); needs a signed-in user |
 | GET    | `/api/v1/me/titles`                         | The user's tracked titles (`status`, `kind`, `favorite`, `sort`, `limit`, `offset`) |
@@ -266,7 +267,8 @@ make reports-open
 | POST   | `/api/v1/me/shows/:id/watched`              | Mark episodes watched: `scope` = `episode` / `season` / `up_to` / `all` |
 | DELETE | `/api/v1/me/shows/:id/watched`              | Unmark episodes (`scope`, `season`, `episode`, `include_specials`); deletes their watches |
 | GET    | `/api/v1/me/up-next`                        | The next episode to watch of each show in progress |
-| GET    | `/api/v1/me/formats`                        | The premium formats a watch can carry (IMAX, Dolby Cinema, 4DX, 70mm, Atmos…) |
+| GET    | `/api/v1/me/formats`                        | The premium formats a watch can carry (IMAX, Dolby Cinema, 4DX, 70mm, Atmos…), each with a versioned `logo_url` once it has a logo |
+| GET    | `/api/v1/formats/:slug/logo`                | A format's logo image (use the format's `logo_url`; cached for a year at its current `?v=`, served with a sandboxing CSP) |
 | GET/POST | `/api/v1/me/venues`                       | Search cinemas (`q`, `country`, `include_closed`); add one |
 | GET/PUT/DELETE | `/api/v1/me/venues/:id`             | One cinema with its screens, former names and outside ids; delete is refused while watches point at it |
 | POST/DELETE | `/api/v1/me/venues/:id/aliases[/:alias_id]` | Record or remove a name a cinema used to have |
@@ -795,7 +797,7 @@ Watchlist toggles and "Log a watch" write through `/api/v1/me`. The log
 dialog takes the time to the minute, day, month or year; a rating, tags and
 notes; and where you watched, which opens that place's fields: a cinema
 (searched in `/me/venues` or added there), its screen, seat, screening type,
-premium formats (`/me/formats`) and tickets with fees and snacks in one
+premium formats (`/me/formats`, with their logos) and tickets with fees and snacks in one
 currency; a streaming service and plan, with a price for rentals and
 purchases; a disc's media and edition; a TV channel. Picture and sound
 (3D, resolution, HDR, audio, languages, aspect ratios, screen size) are

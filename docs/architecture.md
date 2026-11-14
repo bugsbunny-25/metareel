@@ -597,6 +597,29 @@ typed in major units and sent as minor units using the currency's fraction
 digits (`Intl.NumberFormat`). Streaming services are stored by name
 (`provider_name`), suggested from `/services/{country}`; a stored
 `provider_id` is kept only while the name is unchanged.
+Premium-format logos are uploaded in the console (Premium formats) as the
+raw image to `PUT /admin/watch-formats/{id}/logo` and kept in SQLite
+(`watch_format_logos`, migration 32), so they're backed up with everything
+else. The type comes from the bytes (`logoType`): PNG, JPEG, WebP or GIF by
+signature, with the dimensions read from the header and capped (a small file
+must not decode to a huge bitmap in every viewer's browser), or an SVG that
+`checkSVG` parses and allow-lists. It must be UTF-8 (UTF-16 or another
+charset could hide markup), have no DOCTYPE or stylesheet instruction, and
+use only drawing elements, matched on local name so a namespace prefix can't
+smuggle a `script`. Attributes are checked after the parser decodes
+character references: no `on*`, no `style`, and `href`/`url()` only to `#`
+ids. The allow-list is one layer; the sandboxing CSP and `<img>`-only
+rendering are the others. `watch_formats.
+logo_version` (a content hash) is put into every format's `logo_url`, so a
+logo URL is immutable and a new upload is a new URL; `GET /formats/{slug}/
+logo` sends `Cache-Control: immutable` only for the current version, plus a
+sandboxing CSP and nosniff, so even an SVG opened directly can't run
+anything. The route sits in `registerReadRoutes`: the user app loads it
+under `/api/v1` with its session, the console under `/api/v1/admin` (list,
+create and update responses there rewrite `logo_url` to that copy). The ETag
+middleware keeps a `Cache-Control` a handler set only when it is `private`
+or `no-store`, so nothing on the keyed API can become shared-cacheable. The apps draw logos on
+a dark plate, since they're usually white on transparent.
 Discover reads the three `/discover/:country/*` routes. The page loads
 `/rotation` once (with the user's `services` preference as `subscribed`) and
 shares its services: their `provider_ids` map plan and channel offers

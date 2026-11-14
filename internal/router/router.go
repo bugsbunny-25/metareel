@@ -169,6 +169,8 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.GET("/watch-formats", h.ListWatchFormatsAdmin)
 	admin.POST("/watch-formats", h.CreateWatchFormat)
 	admin.PATCH("/watch-formats/:id", h.UpdateWatchFormat)
+	admin.PUT("/watch-formats/:id/logo", h.PutWatchFormatLogo)
+	admin.DELETE("/watch-formats/:id/logo", h.DeleteWatchFormatLogo)
 	admin.GET("/settings", h.GetSettings)
 	admin.PATCH("/settings", h.PatchSettings)
 
@@ -227,6 +229,9 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/countries", h.GetCountries)
 	g.GET("/providers", h.GetProviders)
 
+	// Premium-format logos: images, served under both mounts so the user app
+	// and the admin console each load them with their own credentials.
+	g.GET("/formats/:slug/logo", h.GetFormatLogo)
 	g.GET("/netflix/top10", h.GetNetflixTop10)
 	g.GET("/netflix/top10/:country", h.GetNetflixTop10)
 	g.GET("/netflix/most-popular", h.GetNetflixMostPopular)

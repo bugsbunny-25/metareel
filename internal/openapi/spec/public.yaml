@@ -1733,6 +1733,37 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/formats/{slug}/logo:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string }, description: "The format's slug, e.g. imax" }
+      - { name: v, in: query, required: false, schema: { type: string }, description: "The logo version from logo_url; with the current one the response is cacheable for a year" }
+    get:
+      operationId: getFormatLogo
+      tags: [Tracking]
+      summary: A premium format's logo
+      description: >
+        The image an admin uploaded (PNG, JPEG, WebP, GIF or SVG), served
+        with a sandboxing Content-Security-Policy and nosniff. Use the
+        logo_url a format carries rather than building the URL: it includes
+        the version, and the immutable caching that comes with it. Logos are
+        often white on transparent, so show them on a dark background. The
+        same route is under /api/v1/admin for the console.
+      responses:
+        "200":
+          description: The image
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            image/gif: { schema: { type: string, format: binary } }
+            image/svg+xml: { schema: { type: string, format: binary } }
+        "401":
+          description: No API key or session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/netflix/top10:
     get:
       operationId: getNetflixGlobalTop10
@@ -3729,6 +3760,7 @@ components:
         active: { type: boolean, description: Retired formats stay on the watches that carry them but cannot be chosen for new ones }
         created_at: { type: string }
         updated_at: { type: string }
+        logo_url: { type: string, description: "Where its logo is served, versioned (e.g. /api/v1/formats/imax/logo?v=3f2a...); absent without a logo" }
     Venue:
       type: object
       description: A cinema. Shared reference data, not a per-user row.

@@ -1,10 +1,15 @@
 package handler
 
 import (
+	"database/sql"
+	"errors"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/bugsbunny-25/metareel/internal/repository"
 	"github.com/bugsbunny-25/metareel/internal/service"
 )
 
@@ -170,6 +175,13 @@ func venueAndScreen(c *echo.Context) (int64, int64, error) {
 // Shows retired formats too, which the user-facing list leaves out.
 func (h *Handler) ListWatchFormatsAdmin(c *echo.Context) error {
 	out, err := h.Tracking.ListFormats(c.Request().Context(), false)
+	if err == nil {
+		if formats, ok := out["formats"].([]repository.WatchFormat); ok {
+			for i := range formats {
+				formats[i] = adminLogoURL(formats[i])
+			}
+		}
+	}
 	return writeData(c, out, err)
 }
 
@@ -183,7 +195,7 @@ func (h *Handler) CreateWatchFormat(c *echo.Context) error {
 	if err != nil {
 		return writeData(c, nil, err)
 	}
-	return c.JSON(http.StatusCreated, out)
+	return c.JSON(http.StatusCreated, adminLogoURL(out))
 }
 
 // UpdateWatchFormat: PATCH /api/v1/admin/watch-formats/{id}
@@ -199,5 +211,61 @@ func (h *Handler) UpdateWatchFormat(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
 	}
 	out, err := h.Tracking.UpdateFormat(c.Request().Context(), id, req)
-	return writeData(c, out, err)
+	return writeData(c, adminLogoURL(out), err)
+}
+
+// PutWatchFormatLogo: PUT /api/v1/admin/watch-formats/{id}/logo
+// The body is the image itself (PNG, JPEG, WebP, GIF or SVG, at most 512 KB);
+// its type is worked out from the bytes, not the Content-Type header.
+func (h *Handler) PutWatchFormatLogo(c *echo.Context) error {
+	id, err := parseID(c.Param("id"), "format id")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	data, err := io.ReadAll(io.LimitReader(c.Request().Body, service.MaxFormatLogoBytes+1))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "couldn't read the upload"})
+	}
+	out, err := h.Tracking.SetFormatLogo(c.Request().Context(), id, data)
+	return writeData(c, adminLogoURL(out), err)
+}
+
+// DeleteWatchFormatLogo: DELETE /api/v1/admin/watch-formats/{id}/logo
+func (h *Handler) DeleteWatchFormatLogo(c *echo.Context) error {
+	id, err := parseID(c.Param("id"), "format id")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Tracking.ClearFormatLogo(c.Request().Context(), id)
+	return writeData(c, adminLogoURL(out), err)
+}
+
+// GetFormatLogo: GET /api/v1/formats/{slug}/logo[?v=] (and the admin copy)
+// Serves the image with a sandboxing CSP (an SVG opened directly can't run
+// anything) and nosniff. With the current ?v= the URL is immutable, so it is
+// cached for a year; without it, revalidated every time.
+func (h *Handler) GetFormatLogo(c *echo.Context) error {
+	logo, err := h.Tracking.FormatLogo(c.Request().Context(), c.Param("slug"))
+	if errors.Is(err, sql.ErrNoRows) {
+		return c.JSON(http.StatusNotFound, map[string]any{"error": "that format has no logo"})
+	}
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	hd := c.Response().Header()
+	hd.Set("X-Content-Type-Options", "nosniff")
+	hd.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	if v := c.QueryParam("v"); v != "" && v == logo.Version {
+		hd.Set("Cache-Control", "private, max-age=31536000, immutable")
+	} else {
+		hd.Set("Cache-Control", "private, no-cache")
+	}
+	return c.Blob(http.StatusOK, logo.ContentType, logo.Data)
+}
+
+// adminLogoURL points a format's logo at the admin API's copy of the route,
+// which the console can load without a user session.
+func adminLogoURL(f repository.WatchFormat) repository.WatchFormat {
+	f.LogoURL = strings.Replace(f.LogoURL, "/api/v1/formats/", "/api/v1/admin/formats/", 1)
+	return f
 }

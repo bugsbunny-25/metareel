@@ -109,6 +109,7 @@ type Querier interface {
 	DeleteVenueAlias(ctx context.Context, arg DeleteVenueAliasParams) (int64, error)
 	DeleteVenueScreen(ctx context.Context, arg DeleteVenueScreenParams) (int64, error)
 	DeleteWatchEntry(ctx context.Context, arg DeleteWatchEntryParams) (int64, error)
+	DeleteWatchFormatLogo(ctx context.Context, formatID int64) error
 	DeleteWebhook(ctx context.Context, id int64) (int64, error)
 	// One netflix_seasons row per season title a TV title charted with.
 	EnsureNetflixSeasons(ctx context.Context) error
@@ -179,6 +180,7 @@ type Querier interface {
 	GetWatchEntryByClientKey(ctx context.Context, arg GetWatchEntryByClientKeyParams) (WatchEntry, error)
 	GetWatchFormat(ctx context.Context, id int64) (WatchFormat, error)
 	GetWatchFormatBySlug(ctx context.Context, slug string) (WatchFormat, error)
+	GetWatchFormatLogo(ctx context.Context, slug string) (GetWatchFormatLogoRow, error)
 	GetWebhook(ctx context.Context, id int64) (Webhook, error)
 	GetWebhookDeliveryPayload(ctx context.Context, id int64) (string, error)
 	InsertCredit(ctx context.Context, arg InsertCreditParams) error
@@ -591,6 +593,7 @@ type Querier interface {
 	SaveTmdbDistributors(ctx context.Context, arg SaveTmdbDistributorsParams) error
 	SaveTmdbEnwiki(ctx context.Context, arg SaveTmdbEnwikiParams) error
 	SaveUserPreferences(ctx context.Context, arg SaveUserPreferencesParams) error
+	SaveWatchFormatLogo(ctx context.Context, arg SaveWatchFormatLogoParams) error
 	// Changes whenever a name, a mapping or a chart changes, so the index is
 	// rebuilt only then.
 	SearchIndexStamp(ctx context.Context) (string, error)
@@ -613,6 +616,7 @@ type Querier interface {
 	// SetWatchEntryContext writes the where-and-how columns of a watch. They are
 	// set apart from the insert so the insert keeps a readable parameter list.
 	SetWatchEntryContext(ctx context.Context, arg SetWatchEntryContextParams) (int64, error)
+	SetWatchFormatLogoVersion(ctx context.Context, arg SetWatchFormatLogoVersionParams) (int64, error)
 	SetWebhookSecret(ctx context.Context, arg SetWebhookSecretParams) (Webhook, error)
 	// ShowProgress counts a show's episodes, how many have aired and how many the
 	// user has seen at least once. The denominator moves as episodes air, so it

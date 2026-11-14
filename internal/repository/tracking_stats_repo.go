@@ -313,6 +313,7 @@ type FormatStat struct {
 	Category string `json:"category"`
 	Watches  int64  `json:"watches"`
 	Minutes  int64  `json:"minutes"`
+	LogoURL  string `json:"logo_url,omitempty"`
 }
 
 // StatsByFormat counts watches and time per premium format.
@@ -326,7 +327,7 @@ func (r *TrackingRepository) StatsByFormat(ctx context.Context, userID int64, rn
 	for _, row := range rows {
 		out = append(out, FormatStat{
 			Slug: row.Slug, Label: row.Label, Category: row.Category,
-			Watches: row.Watches, Minutes: row.Minutes})
+			Watches: row.Watches, Minutes: row.Minutes, LogoURL: FormatLogoURL(row.Slug, nullStringPtr(row.LogoVersion))})
 	}
 	return out, nil
 }

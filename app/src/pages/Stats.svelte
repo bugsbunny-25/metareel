@@ -63,7 +63,7 @@
   })
   const VENUE = { streaming: 'Streaming', theater: 'Cinema', physical: 'Disc or file', broadcast: 'TV broadcast', other: 'Elsewhere', unspecified: 'Not recorded' }
   const venues = $derived((y?.by_venue ?? []).map((v) => ({ label: VENUE[v.label] ?? v.label, value: v.watches, note: `· ${hours(v.minutes)} h` })))
-  const formats = $derived((y?.formats ?? []).map((f) => ({ label: f.label, value: f.watches, note: `· ${hours(f.minutes)} h` })))
+  const formats = $derived((y?.formats ?? []).map((f) => ({ label: f.label, value: f.watches, note: `· ${hours(f.minutes)} h`, logo: f.logo_url })))
   const people = $derived([
     ['Actors', y?.people?.cast ?? []], ['Directors', y?.people?.directors ?? []], ['Writers', y?.people?.writers ?? []],
   ].filter(([, list]) => list.length))

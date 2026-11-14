@@ -1801,6 +1801,61 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /api/v1/admin/watch-formats/{id}/logo:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      operationId: putWatchFormatLogo
+      tags: [Tracking]
+      summary: Upload or replace a format's logo
+      description: >
+        The body is the image itself, at most 512 KB. Its type is worked out
+        from the bytes, not the Content-Type header: PNG, JPEG, WebP or GIF of
+        at most 4096 pixels a side, or a UTF-8 SVG made only of drawing
+        elements (shapes, text, gradients, filters), with no style, script,
+        embedded image, event handler, DOCTYPE or link outside the file.
+        The returned format's logo_url carries a content hash, so a new
+        upload is a new URL.
+      requestBody:
+        required: true
+        content:
+          image/png: { schema: { type: string, format: binary } }
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/webp: { schema: { type: string, format: binary } }
+          image/gif: { schema: { type: string, format: binary } }
+          image/svg+xml: { schema: { type: string, format: binary } }
+      responses:
+        "200":
+          description: The format, with its new logo_url (pointing at the admin copy of the logo route)
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/WatchFormat" }
+        "400":
+          description: Not an accepted image, or too large
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: No such format
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      operationId: deleteWatchFormatLogo
+      tags: [Tracking]
+      summary: Remove a format's logo
+      responses:
+        "200":
+          description: The format, without a logo_url
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/WatchFormat" }
+        "404":
+          description: No such format
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
 components:
   securitySchemes:
     SessionCookie:

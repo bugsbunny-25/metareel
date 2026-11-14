@@ -650,15 +650,23 @@ type WatchEntryTag struct {
 }
 
 type WatchFormat struct {
-	ID        int64          `json:"id"`
-	Slug      string         `json:"slug"`
-	Label     string         `json:"label"`
-	Category  string         `json:"category"`
-	Note      sql.NullString `json:"note"`
-	SortOrder int64          `json:"sort_order"`
-	Active    int64          `json:"active"`
-	CreatedAt string         `json:"created_at"`
-	UpdatedAt string         `json:"updated_at"`
+	ID          int64          `json:"id"`
+	Slug        string         `json:"slug"`
+	Label       string         `json:"label"`
+	Category    string         `json:"category"`
+	Note        sql.NullString `json:"note"`
+	SortOrder   int64          `json:"sort_order"`
+	Active      int64          `json:"active"`
+	CreatedAt   string         `json:"created_at"`
+	UpdatedAt   string         `json:"updated_at"`
+	LogoVersion sql.NullString `json:"logo_version"`
+}
+
+type WatchFormatLogo struct {
+	FormatID    int64  `json:"format_id"`
+	ContentType string `json:"content_type"`
+	Data        []byte `json:"data"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 type WatchProviderEvent struct {

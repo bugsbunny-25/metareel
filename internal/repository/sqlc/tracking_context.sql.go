@@ -180,7 +180,7 @@ const createWatchFormat = `-- name: CreateWatchFormat :one
 INSERT INTO watch_formats (slug, label, category, note, sort_order, active)
 VALUES (?1, ?2, ?3, ?4,
         ?5, ?6)
-RETURNING id, slug, label, category, note, sort_order, active, created_at, updated_at
+RETURNING id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
 `
 
 type CreateWatchFormatParams struct {
@@ -212,6 +212,7 @@ func (q *Queries) CreateWatchFormat(ctx context.Context, arg CreateWatchFormatPa
 		&i.Active,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LogoVersion,
 	)
 	return i, err
 }
@@ -260,6 +261,15 @@ func (q *Queries) DeleteVenueScreen(ctx context.Context, arg DeleteVenueScreenPa
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const deleteWatchFormatLogo = `-- name: DeleteWatchFormatLogo :exec
+DELETE FROM watch_format_logos WHERE format_id = ?1
+`
+
+func (q *Queries) DeleteWatchFormatLogo(ctx context.Context, formatID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteWatchFormatLogo, formatID)
+	return err
 }
 
 const findVenueByRef = `-- name: FindVenueByRef :one
@@ -342,7 +352,7 @@ func (q *Queries) GetVenueScreen(ctx context.Context, id int64) (VenueScreen, er
 }
 
 const getWatchFormat = `-- name: GetWatchFormat :one
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
 FROM watch_formats WHERE id = ?1
 `
 
@@ -359,12 +369,13 @@ func (q *Queries) GetWatchFormat(ctx context.Context, id int64) (WatchFormat, er
 		&i.Active,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LogoVersion,
 	)
 	return i, err
 }
 
 const getWatchFormatBySlug = `-- name: GetWatchFormatBySlug :one
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
 FROM watch_formats WHERE slug = ?1
 `
 
@@ -381,12 +392,33 @@ func (q *Queries) GetWatchFormatBySlug(ctx context.Context, slug string) (WatchF
 		&i.Active,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LogoVersion,
 	)
 	return i, err
 }
 
+const getWatchFormatLogo = `-- name: GetWatchFormatLogo :one
+SELECT l.content_type, l.data, CAST(COALESCE(f.logo_version, '') AS TEXT) AS logo_version
+FROM watch_formats f
+JOIN watch_format_logos l ON l.format_id = f.id
+WHERE f.slug = ?1
+`
+
+type GetWatchFormatLogoRow struct {
+	ContentType string `json:"content_type"`
+	Data        []byte `json:"data"`
+	LogoVersion string `json:"logo_version"`
+}
+
+func (q *Queries) GetWatchFormatLogo(ctx context.Context, slug string) (GetWatchFormatLogoRow, error) {
+	row := q.db.QueryRowContext(ctx, getWatchFormatLogo, slug)
+	var i GetWatchFormatLogoRow
+	err := row.Scan(&i.ContentType, &i.Data, &i.LogoVersion)
+	return i, err
+}
+
 const listFormatsForWatchEntries = `-- name: ListFormatsForWatchEntries :many
-SELECT ef.entry_id, f.id AS format_id, f.slug, f.label, f.category
+SELECT ef.entry_id, f.id AS format_id, f.slug, f.label, f.category, f.logo_version
 FROM watch_entry_formats ef
 JOIN watch_formats f ON f.id = ef.format_id
 JOIN watch_entries w ON w.id = ef.entry_id
@@ -401,11 +433,12 @@ type ListFormatsForWatchEntriesParams struct {
 }
 
 type ListFormatsForWatchEntriesRow struct {
-	EntryID  int64  `json:"entry_id"`
-	FormatID int64  `json:"format_id"`
-	Slug     string `json:"slug"`
-	Label    string `json:"label"`
-	Category string `json:"category"`
+	EntryID     int64          `json:"entry_id"`
+	FormatID    int64          `json:"format_id"`
+	Slug        string         `json:"slug"`
+	Label       string         `json:"label"`
+	Category    string         `json:"category"`
+	LogoVersion sql.NullString `json:"logo_version"`
 }
 
 // ListFormatsForWatchEntries hydrates a page of watches with their formats.
@@ -436,6 +469,7 @@ func (q *Queries) ListFormatsForWatchEntries(ctx context.Context, arg ListFormat
 			&i.Slug,
 			&i.Label,
 			&i.Category,
+			&i.LogoVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -658,7 +692,7 @@ func (q *Queries) ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListV
 
 const listWatchFormats = `-- name: ListWatchFormats :many
 
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
 FROM watch_formats
 WHERE (CAST(?1 AS INTEGER) = 0 OR active = 1)
 ORDER BY sort_order, label COLLATE NOCASE
@@ -685,6 +719,7 @@ func (q *Queries) ListWatchFormats(ctx context.Context, activeOnly int64) ([]Wat
 			&i.Active,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LogoVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -697,6 +732,24 @@ func (q *Queries) ListWatchFormats(ctx context.Context, activeOnly int64) ([]Wat
 		return nil, err
 	}
 	return items, nil
+}
+
+const saveWatchFormatLogo = `-- name: SaveWatchFormatLogo :exec
+INSERT INTO watch_format_logos (format_id, content_type, data, updated_at)
+VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)
+ON CONFLICT (format_id) DO UPDATE SET
+    content_type = excluded.content_type, data = excluded.data, updated_at = CURRENT_TIMESTAMP
+`
+
+type SaveWatchFormatLogoParams struct {
+	FormatID    int64  `json:"format_id"`
+	ContentType string `json:"content_type"`
+	Data        []byte `json:"data"`
+}
+
+func (q *Queries) SaveWatchFormatLogo(ctx context.Context, arg SaveWatchFormatLogoParams) error {
+	_, err := q.db.ExecContext(ctx, saveWatchFormatLogo, arg.FormatID, arg.ContentType, arg.Data)
+	return err
 }
 
 const setWatchEntryContext = `-- name: SetWatchEntryContext :execrows
@@ -825,6 +878,24 @@ func (q *Queries) SetWatchEntryContext(ctx context.Context, arg SetWatchEntryCon
 		arg.ID,
 		arg.UserID,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setWatchFormatLogoVersion = `-- name: SetWatchFormatLogoVersion :execrows
+UPDATE watch_formats SET logo_version = ?1, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?2
+`
+
+type SetWatchFormatLogoVersionParams struct {
+	LogoVersion sql.NullString `json:"logo_version"`
+	ID          int64          `json:"id"`
+}
+
+func (q *Queries) SetWatchFormatLogoVersion(ctx context.Context, arg SetWatchFormatLogoVersionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setWatchFormatLogoVersion, arg.LogoVersion, arg.ID)
 	if err != nil {
 		return 0, err
 	}

@@ -63,7 +63,11 @@ func ETag(next echo.HandlerFunc) echo.HandlerFunc {
 			etag := `"` + hex.EncodeToString(sum[:12]) + `"`
 			h := orig.Header()
 			h.Set("ETag", etag)
-			h.Set("Cache-Control", "private, no-cache")
+			// A handler may set its own caching (an immutable, versioned logo), but
+			// this API is keyed: anything a shared cache could store is overridden.
+			if cc := strings.ToLower(h.Get("Cache-Control")); !strings.Contains(cc, "private") && !strings.Contains(cc, "no-store") {
+				h.Set("Cache-Control", "private, no-cache")
+			}
 			if matchETag(req.Header.Get("If-None-Match"), etag) {
 				h.Del("Content-Type")
 				h.Del("Content-Length")

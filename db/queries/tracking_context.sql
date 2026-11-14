@@ -2,24 +2,24 @@
 -- watch can point at, and the context columns on a watch.
 
 -- name: ListWatchFormats :many
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
 FROM watch_formats
 WHERE (CAST(sqlc.arg(active_only) AS INTEGER) = 0 OR active = 1)
 ORDER BY sort_order, label COLLATE NOCASE;
 
 -- name: GetWatchFormat :one
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
 FROM watch_formats WHERE id = sqlc.arg(id);
 
 -- name: GetWatchFormatBySlug :one
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
 FROM watch_formats WHERE slug = sqlc.arg(slug);
 
 -- name: CreateWatchFormat :one
 INSERT INTO watch_formats (slug, label, category, note, sort_order, active)
 VALUES (sqlc.arg(slug), sqlc.arg(label), sqlc.arg(category), sqlc.narg(note),
         sqlc.arg(sort_order), sqlc.arg(active))
-RETURNING id, slug, label, category, note, sort_order, active, created_at, updated_at;
+RETURNING id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version;
 
 -- UpdateWatchFormat changes a format in place. A format is deactivated
 -- rather than deleted, because watches reference it for good.
@@ -44,7 +44,7 @@ ON CONFLICT(entry_id, format_id) DO NOTHING;
 -- ListFormatsForWatchEntries hydrates a page of watches with their formats.
 -- The slice is the last parameter, as sqlc requires.
 -- name: ListFormatsForWatchEntries :many
-SELECT ef.entry_id, f.id AS format_id, f.slug, f.label, f.category
+SELECT ef.entry_id, f.id AS format_id, f.slug, f.label, f.category, f.logo_version
 FROM watch_entry_formats ef
 JOIN watch_formats f ON f.id = ef.format_id
 JOIN watch_entries w ON w.id = ef.entry_id
@@ -217,3 +217,22 @@ FROM venue_screens WHERE id = sqlc.arg(id);
 
 -- name: DeleteVenueScreen :execrows
 DELETE FROM venue_screens WHERE id = sqlc.arg(id) AND venue_id = sqlc.arg(venue_id);
+
+-- name: SaveWatchFormatLogo :exec
+INSERT INTO watch_format_logos (format_id, content_type, data, updated_at)
+VALUES (sqlc.arg(format_id), sqlc.arg(content_type), sqlc.arg(data), CURRENT_TIMESTAMP)
+ON CONFLICT (format_id) DO UPDATE SET
+    content_type = excluded.content_type, data = excluded.data, updated_at = CURRENT_TIMESTAMP;
+
+-- name: SetWatchFormatLogoVersion :execrows
+UPDATE watch_formats SET logo_version = sqlc.narg(logo_version), updated_at = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id);
+
+-- name: DeleteWatchFormatLogo :exec
+DELETE FROM watch_format_logos WHERE format_id = sqlc.arg(format_id);
+
+-- name: GetWatchFormatLogo :one
+SELECT l.content_type, l.data, CAST(COALESCE(f.logo_version, '') AS TEXT) AS logo_version
+FROM watch_formats f
+JOIN watch_format_logos l ON l.format_id = f.id
+WHERE f.slug = sqlc.arg(slug);
