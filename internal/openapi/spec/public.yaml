@@ -62,11 +62,22 @@ paths:
       security: []
       summary: Sign in with a username and password
       description: >
-        Starts a session. Sets the metareel_session cookie (HttpOnly,
+        Starts a session. Sets the metareel_session cookie (the admin
+        console's metareel_admin_session with client=admin; HttpOnly,
         SameSite=Strict, Secure over HTTPS) and returns the session token
         once, for clients that send it as a Bearer token. Attempts are rate
         limited per client IP and failed attempts per username (429 with
         Retry-After). Cross-site browser requests are refused (403).
+      parameters:
+        - name: client
+          in: query
+          required: false
+          schema: { type: string, enum: [admin] }
+          description: >
+            "admin" for the admin console, which has its own sign-in and the
+            metareel_admin_session cookie; without it, the user app's
+            metareel_session. The two are separate: one being signed in never
+            signs in the other.
       requestBody:
         required: true
         content:
@@ -78,7 +89,7 @@ paths:
           description: Signed in
           headers:
             Set-Cookie:
-              description: metareel_session=<token>
+              description: metareel_session=<token>, or metareel_admin_session=<token> for client=admin
               schema:
                 type: string
           content:
@@ -110,8 +121,19 @@ paths:
       security: []
       summary: End the current session
       description: >
-        Ends the session of the Bearer session token or cookie sent, and
-        clears the cookie. Succeeds also when there is no session.
+        Ends the session of the Bearer session token or cookie sent (the
+        admin console's with client=admin), and clears that cookie; the other
+        sign-in stays. Succeeds also when there is no session.
+      parameters:
+        - name: client
+          in: query
+          required: false
+          schema: { type: string, enum: [admin] }
+          description: >
+            "admin" for the admin console, which has its own sign-in and the
+            metareel_admin_session cookie; without it, the user app's
+            metareel_session. The two are separate: one being signed in never
+            signs in the other.
       responses:
         "204":
           description: Signed out
@@ -121,8 +143,19 @@ paths:
       security: []
       summary: Whether the admin console needs a sign-in, and who is signed in
       description: >
-        Used by the admin console. Never 401: user is null without a valid
-        session cookie or Bearer session token.
+        Used by the admin console (client=admin) and the user app. Never 401:
+        user is null without a valid session cookie for that client or a
+        Bearer session token.
+      parameters:
+        - name: client
+          in: query
+          required: false
+          schema: { type: string, enum: [admin] }
+          description: >
+            "admin" for the admin console, which has its own sign-in and the
+            metareel_admin_session cookie; without it, the user app's
+            metareel_session. The two are separate: one being signed in never
+            signs in the other.
       responses:
         "200":
           description: Sign-in state

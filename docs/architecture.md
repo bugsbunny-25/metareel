@@ -826,6 +826,11 @@ The public API accepts an API key or a user's session; `handler.Authenticate`
   → session token when it starts with `mrs_`, otherwise API key; else the
   `metareel_session` cookie. Only one credential is checked, and one that is
   sent must be valid (no fallback to the cookie or to anonymous).
+- The admin console has its own sign-in: `/auth/login`, `/auth/logout` and
+  `/auth/session` with `?client=admin` use the `metareel_admin_session`
+  cookie, and `AdminAuth` reads only that cookie (or a Bearer session). The
+  public and `/me` routes read only `metareel_session`. So the app at `/` and
+  the console at `/admin`, same origin, never show each other's sign-in.
 - API keys are looked up in `APIKeyService`'s in-memory digest map (no DB).
   Sessions are looked up by PBKDF2 digest (`hashToken`, its own salt) in
   `SessionService`, which caches active sessions for 30 s; revocations made

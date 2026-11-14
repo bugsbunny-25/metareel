@@ -187,9 +187,23 @@ func (a authEnv) login(t *testing.T, username string) map[string]string {
 	return map[string]string{"Cookie": handler.SessionCookie + "=" + rec.Result().Cookies()[0].Value}
 }
 
+// adminLogin signs a user in to the admin console and returns its cookie header.
+func (a authEnv) adminLogin(t *testing.T, username string) map[string]string {
+	t.Helper()
+	rec := a.do(http.MethodPost, "/api/v1/auth/login?client=admin", `{"username":"`+username+`","password":"long enough pw"}`, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin login %s: %d %s", username, rec.Code, rec.Body)
+	}
+	ck := rec.Result().Cookies()
+	if len(ck) != 1 || ck[0].Name != handler.AdminSessionCookie {
+		t.Fatalf("admin login cookies = %+v", ck)
+	}
+	return map[string]string{"Cookie": handler.AdminSessionCookie + "=" + ck[0].Value}
+}
+
 func TestAdminLoginRequired(t *testing.T) {
 	a := newAuthEnvWith(t, true)
-	admin, reader := a.login(t, "root"), a.login(t, "alice")
+	admin, reader := a.adminLogin(t, "root"), a.adminLogin(t, "alice")
 	for _, tc := range []struct {
 		name    string
 		headers map[string]string
@@ -210,10 +224,46 @@ func TestAdminLoginRequired(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Body.String() != `{"admin_login_required":true,"user":null}`+"\n" {
 		t.Fatalf("session (none): %d %q", rec.Code, rec.Body)
 	}
-	rec = a.do(http.MethodGet, "/api/v1/auth/session", "", admin)
+	rec = a.do(http.MethodGet, "/api/v1/auth/session?client=admin", "", admin)
 	if !strings.Contains(rec.Body.String(), `"username":"root","role":"admin"`) {
 		t.Fatalf("session (admin): %s", rec.Body)
 	}
+	// The app's sign-in and the console's are separate: an admin signed in to
+	// the app at / isn't signed in to /admin, and the other way round.
+	rootApp := a.login(t, "root")
+	if rec := a.do(http.MethodGet, "/api/v1/admin/test", "", rootApp); rec.Code != http.StatusUnauthorized {
+		t.Errorf("app session opened the admin API: %d", rec.Code)
+	}
+	if rec := a.do(http.MethodGet, "/api/v1/auth/session?client=admin", "", rootApp); !strings.Contains(rec.Body.String(), `"user":null`) {
+		t.Errorf("console sees the app's session: %s", rec.Body)
+	}
+	if rec := a.do(http.MethodGet, "/api/v1/auth/session", "", admin); !strings.Contains(rec.Body.String(), `"user":null`) {
+		t.Errorf("app sees the console's session: %s", rec.Body)
+	}
+	if rec := a.do(http.MethodGet, "/api/v1/auth/session?client=admin", "", admin); !strings.Contains(rec.Body.String(), `"username":"root","role":"admin"`) {
+		t.Errorf("console session: %s", rec.Body)
+	}
+	if rec := a.do(http.MethodGet, "/api/v1/me/titles", "", admin); rec.Code != http.StatusUnauthorized {
+		t.Errorf("console session opened the app's /me: %d", rec.Code)
+	}
+	// Signing out of the console keeps the app signed in.
+	both := map[string]string{"Cookie": admin["Cookie"] + "; " + rootApp["Cookie"]}
+	rec = a.do(http.MethodPost, "/api/v1/auth/logout?client=admin", "", both)
+	if c := rec.Result().Cookies(); rec.Code != http.StatusNoContent || len(c) != 1 || c[0].Name != handler.AdminSessionCookie || c[0].MaxAge >= 0 {
+		t.Fatalf("console logout: %d %+v", rec.Code, c)
+	}
+	if rec := a.do(http.MethodGet, "/api/v1/admin/test", "", admin); rec.Code != http.StatusUnauthorized {
+		t.Errorf("console session after its logout: %d", rec.Code)
+	}
+	if rec := a.do(http.MethodGet, "/api/v1/auth/session", "", rootApp); !strings.Contains(rec.Body.String(), `"username":"root"`) {
+		t.Errorf("app session after console logout: %s", rec.Body)
+	}
+	// "client":"admin" in the body works like the query.
+	if rec := a.do(http.MethodPost, "/api/v1/auth/login", `{"username":"root","password":"long enough pw","client":"admin"}`, nil); rec.Code != http.StatusOK ||
+		len(rec.Result().Cookies()) != 1 || rec.Result().Cookies()[0].Name != handler.AdminSessionCookie {
+		t.Errorf("body client=admin login: %d %+v", rec.Code, rec.Result().Cookies())
+	}
+
 	// Sign-in itself stays reachable.
 	if rec := a.do(http.MethodPost, "/api/v1/auth/login", `{"username":"root","password":"nope nope nope"}`, nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("login with admin login required: %d", rec.Code)
@@ -235,7 +285,7 @@ func TestAdminOpenWithoutFlag(t *testing.T) {
 
 func TestAdminUserManagement(t *testing.T) {
 	a := newAuthEnvWith(t, true)
-	admin := a.login(t, "root")
+	admin := a.adminLogin(t, "root")
 	alice := a.login(t, "alice")
 	call := func(method, path, body string) *httptest.ResponseRecorder { return a.do(method, path, body, admin) }
 
@@ -300,11 +350,11 @@ func TestAdminUserManagement(t *testing.T) {
 	if rec := call(http.MethodPatch, "/api/v1/admin/users/alice", `{"role":"admin"}`); rec.Code != http.StatusOK {
 		t.Fatalf("promote alice: %d %s", rec.Code, rec.Body)
 	}
-	alice = a.login(t, "alice")
+	alice = a.adminLogin(t, "alice")
 	if rec := a.do(http.MethodGet, "/api/v1/admin/test", "", alice); rec.Code != http.StatusOK {
 		t.Fatalf("alice as admin: %d", rec.Code)
 	}
-	other := a.login(t, "alice")
+	other := a.adminLogin(t, "alice")
 	if rec := a.do(http.MethodPatch, "/api/v1/admin/users/alice", `{"password":"long enough pw"}`, alice); rec.Code != http.StatusOK {
 		t.Fatalf("alice changes own password: %d %s", rec.Code, rec.Body)
 	}

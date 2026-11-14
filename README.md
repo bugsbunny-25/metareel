@@ -432,7 +432,7 @@ every route. Health checks and `/docs` stay open.
 | --- | --- |
 | API key (`mr_…`) | `X-API-Key: <key>` or `Authorization: Bearer <key>` |
 | Session token (`mrs_…`) | `Authorization: Bearer <token>` (from `POST /api/v1/auth/login`) |
-| Session cookie | `metareel_session`, set by the login response (browsers) |
+| Session cookie | `metareel_session`, set by the login response (browsers); the admin console uses its own `metareel_admin_session` |
 
 A header credential wins over the cookie, and a credential that is sent must be
 valid (a wrong key is rejected even when a valid cookie is present).
@@ -453,6 +453,10 @@ valid (a wrong key is rejected even when a valid cookie is present).
   SameSite=Strict, `Secure` when the request came over HTTPS, including via a
   proxy that sets `X-Forwarded-Proto: https`). `POST /api/v1/auth/logout` ends
   the session; `GET /api/v1/auth/me` says who a request is authenticated as.
+  The admin console signs in separately (`?client=admin` on login, logout and
+  `/auth/session`) with its own `metareel_admin_session` cookie, the only
+  cookie the admin API reads: being signed in to the app at `/` doesn't sign
+  you in to `/admin`, and signing out of one keeps the other.
 - Sessions last `AUTH_SESSION_TTL` (default 30 days) and end after
   `AUTH_SESSION_IDLE_TIMEOUT` (default 7 days) without use. Only a digest of
   each token is stored; the maintenance job deletes expired sessions.
