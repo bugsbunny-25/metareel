@@ -75,3 +75,36 @@ export function sinceDay(ts, now = new Date()) {
   const n = daysUntil(localDay(d), localDay(now))
   return n > -14 ? rel.format(n, 'day') : ago(localDay(d), now)
 }
+
+/** The browser's IANA time zone. */
+export const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+
+/** A Date as "YYYY-MM-DDTHH:MM" wall time in an IANA zone (for datetime-local inputs). */
+export function zonedInput(date, zone) {
+  if (!zone) return localInput(date)
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date).map((x) => [x.type, x.value]))
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`
+}
+
+/**
+ * Wall time "YYYY-MM-DDTHH:MM" in an IANA zone → the instant (Date). Two passes settle the
+ * offset across a DST change; a skipped spring-forward time lands an hour later.
+ */
+export function zonedToDate(wall, zone) {
+  if (!zone) return new Date(wall)
+  const [d, t = '00:00'] = wall.split('T')
+  const [y, mo, da] = d.split('-').map(Number)
+  const [h, mi] = t.split(':').map(Number)
+  const asUTC = Date.UTC(y, mo - 1, da, h, mi)
+  let guess = asUTC
+  for (let i = 0; i < 2; i++) {
+    const shown = zonedInput(new Date(guess), zone)
+    const [sd, st] = shown.split('T')
+    const [sy, smo, sda] = sd.split('-').map(Number)
+    const [sh, smi] = st.split(':').map(Number)
+    guess += asUTC - Date.UTC(sy, smo - 1, sda, sh, smi)
+  }
+  return new Date(guess)
+}

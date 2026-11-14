@@ -585,6 +585,18 @@ Stats makes two calls per year (`/me/stats/year`, `/me/stats/ratings` for that
 calendar year) and joins posters from the map; panels with no data behind them
 (people before credits are fetched, spend without ticket prices) are left out
 rather than shown empty, and amounts are never converted between currencies.
+The log dialog builds the whole `WatchInput`, context included. Because
+`PUT /me/watches/{id}` replaces a watch and the diary list returns a slimmer
+watch (no seat, fees, picture fields), editing first fetches
+`GET /me/watches/{id}` and keeps Save disabled until it has; a watch is
+re-expressed in the zone it was filed in, so an untouched save changes only
+`updated_at`. Times are entered as wall time in one zone -- the chosen
+cinema's (`venues.timezone`), else the watch's own `tz`, else the browser's
+-- converted to an instant client-side and sent with that `tz`. Amounts are
+typed in major units and sent as minor units using the currency's fraction
+digits (`Intl.NumberFormat`). Streaming services are stored by name
+(`provider_name`), suggested from `/services/{country}`; a stored
+`provider_id` is kept only while the name is unchanged.
 Search queries both search endpoints in parallel (debounced, older
 requests aborted) and drops TMDB hits already listed as charted; an ID or link
 skips text search and goes to `/titles/lookup`, which only knows titles in

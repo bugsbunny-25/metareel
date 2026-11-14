@@ -168,7 +168,7 @@
   .brand { font: 700 23px/1 var(--font-display); letter-spacing: -0.02em; text-decoration: none; }
   .primary { display: flex; align-items: center; gap: 20px; font-size: 15px; font-weight: 600; }
   .primary .sep { flex: none; width: 1px; height: 16px; background: var(--border-subtle); }
-  .primary a { color: var(--text-muted); text-decoration: none; }
+  .primary a { color: var(--text-muted); text-decoration: none; white-space: nowrap; }
   .primary a:hover, .primary a[aria-current='page'] { color: var(--text-primary); }
   .tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
   .pick select {
@@ -179,7 +179,7 @@
   .search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--bg-elevated); color: var(--text-muted); font: 500 13px/1 var(--font-sans); cursor: pointer; }
   .search:hover { color: var(--text-primary); }
   .search .label { min-width: 90px; text-align: left; }
-  .search kbd { padding: 3px 6px; border-radius: 5px; background: var(--bg-surface); color: var(--text-muted); font: 600 11px/1 var(--font-sans); }
+  .search kbd { white-space: nowrap; padding: 3px 6px; border-radius: 5px; background: var(--bg-surface); color: var(--text-muted); font: 600 11px/1 var(--font-sans); }
   .icon-btn { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--bg-elevated); color: var(--text-primary); cursor: pointer; font-size: 15px; }
   .account { position: relative; }
   .account summary { list-style: none; cursor: pointer; border-radius: 50%; }
@@ -197,7 +197,12 @@
   .toast { margin: 0; padding: 10px 16px; border-radius: 12px; background: var(--accent-primary); color: var(--accent-on); font-weight: 600; box-shadow: 0 12px 30px -10px rgb(0 0 0 / 0.5); }
   .toast.error { background: var(--delta-down); color: var(--bg-canvas); }
 
-  @media (max-width: 760px) {
+  @media (max-width: 1180px) and (min-width: 1024px) {
+    .bar { gap: 16px; }
+    .primary { gap: 14px; }
+    .search .label { display: none; }
+  }
+  @media (max-width: 1023px) {
     .bar { gap: 14px; height: auto; min-height: 56px; flex-wrap: wrap; padding-block: 8px; }
     .tools { margin-left: 0; width: 100%; }
     .search .label, .search kbd { display: none; }

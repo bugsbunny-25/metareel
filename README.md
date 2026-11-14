@@ -787,7 +787,16 @@ or `/`) keeps two result lists apart: titles with chart data (`/api/v1/search`,
 with when they last charted) and all of TMDB (`/me/titles/search`, for logging
 anything); a pasted IMDb ID or an IMDb, TMDB or Netflix link resolves through
 `/titles/lookup`. ↵ opens, ⌘/Ctrl ↵ logs a watch, ⇧ ↵ toggles the watchlist.
-Watchlist toggles and "Log a watch" write through `/api/v1/me`.
+Watchlist toggles and "Log a watch" write through `/api/v1/me`. The log
+dialog takes the time to the minute, day, month or year; a rating, tags and
+notes; and where you watched, which opens that place's fields: a cinema
+(searched in `/me/venues` or added there), its screen, seat, screening type,
+premium formats (`/me/formats`) and tickets with fees and snacks in one
+currency; a streaming service and plan, with a price for rentals and
+purchases; a disc's media and edition; a TV channel. Picture and sound
+(3D, resolution, HDR, audio, languages, aspect ratios, screen size) are
+optional and folded away. A watch at a cinema is entered and filed in the
+cinema's time zone.
 
 ```bash
 make dev-ui      # admin console at http://localhost:5173/admin/

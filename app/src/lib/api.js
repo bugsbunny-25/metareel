@@ -94,10 +94,19 @@ export const api = {
   // The diary: one row per watch, newest local day first, cursor-paged.
   diary: ({ kind, rated, from, to, cursor, limit = 60 } = {}, signal) =>
     request('GET', `/me/watches${qs({ tmdb_kind: kind, rated: rated ? 'true' : undefined, from, to, cursor, limit })}`, { signal }),
+  watch: (id, signal) => request('GET', `/me/watches/${id}`, { signal }),
   logWatch: (input) => request('POST', '/me/watches', { body: input }),
   updateWatch: (id, input) => request('PUT', `/me/watches/${id}`, { body: input }),
   deleteWatch: (id) => request('DELETE', `/me/watches/${id}`),
   tags: (signal) => request('GET', '/me/tags', { signal }),
+
+  // Where and how a watch happened: premium formats, cinemas and their screens, streaming services.
+  formats: (signal) => request('GET', '/me/formats', { signal }),
+  venues: (q, country, signal) => request('GET', `/me/venues${qs({ q, country, limit: 12 })}`, { signal }),
+  venue: (id, signal) => request('GET', `/me/venues/${id}`, { signal }),
+  createVenue: (body) => request('POST', '/me/venues', { body }),
+  createScreen: (venueId, body) => request('POST', `/me/venues/${venueId}/screens`, { body }),
+  services: (country, signal) => request('GET', `/services/${country}`, { signal }),
 
   // Shows: every show sorted into stages, episodes still to air, one show's episodes, and
   // marking runs of episodes watched (scope: episode | season | up_to | all) or unwatched.
