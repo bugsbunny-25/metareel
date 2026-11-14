@@ -2,24 +2,24 @@
 -- watch can point at, and the context columns on a watch.
 
 -- name: ListWatchFormats :many
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version, logo_display
 FROM watch_formats
 WHERE (CAST(sqlc.arg(active_only) AS INTEGER) = 0 OR active = 1)
 ORDER BY sort_order, label COLLATE NOCASE;
 
 -- name: GetWatchFormat :one
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version, logo_display
 FROM watch_formats WHERE id = sqlc.arg(id);
 
 -- name: GetWatchFormatBySlug :one
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version, logo_display
 FROM watch_formats WHERE slug = sqlc.arg(slug);
 
 -- name: CreateWatchFormat :one
 INSERT INTO watch_formats (slug, label, category, note, sort_order, active)
 VALUES (sqlc.arg(slug), sqlc.arg(label), sqlc.arg(category), sqlc.narg(note),
         sqlc.arg(sort_order), sqlc.arg(active))
-RETURNING id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version;
+RETURNING id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version, logo_display;
 
 -- UpdateWatchFormat changes a format in place. A format is deactivated
 -- rather than deleted, because watches reference it for good.
@@ -30,6 +30,7 @@ UPDATE watch_formats SET
     note = sqlc.narg(note),
     sort_order = sqlc.arg(sort_order),
     active = sqlc.arg(active),
+    logo_display = sqlc.arg(logo_display),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(id);
 
@@ -44,7 +45,7 @@ ON CONFLICT(entry_id, format_id) DO NOTHING;
 -- ListFormatsForWatchEntries hydrates a page of watches with their formats.
 -- The slice is the last parameter, as sqlc requires.
 -- name: ListFormatsForWatchEntries :many
-SELECT ef.entry_id, f.id AS format_id, f.slug, f.label, f.category, f.logo_version
+SELECT ef.entry_id, f.id AS format_id, f.slug, f.label, f.category, f.logo_version, f.logo_display
 FROM watch_entry_formats ef
 JOIN watch_formats f ON f.id = ef.format_id
 JOIN watch_entries w ON w.id = ef.entry_id

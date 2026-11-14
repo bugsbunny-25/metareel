@@ -14,6 +14,8 @@
     { value: 'sound', label: 'Sound', hint: 'Dolby Atmos, DTS:X' },
     { value: 'motion', label: 'Motion', hint: '4DX, D-BOX' },
     { value: 'dimension', label: 'Dimension', hint: 'RealD 3D' },
+    { value: 'disc', label: 'Disc', hint: 'DVD, Blu-ray, 4K UHD Blu-ray (home media)' },
+    { value: 'label', label: 'Label', hint: 'Criterion, Arrow Video, Kino Lorber (who released the disc)' },
   ]
 
   // What the server accepts; it checks the bytes itself, this just saves a round trip.
@@ -45,7 +47,65 @@
   }
   $effect(() => { load() })
 
-  const blank = () => ({ id: null, slug: '', label: '', category: 'brand', note: '', sort_order: 0, active: true, logo_url: '' })
+  const blank = () => ({ id: null, slug: '', label: '', category: 'brand', note: '', sort_order: 0, active: true, logo_url: '', logo_display: 'original' })
+
+  // Dark logos vanish on the apps' dark plate. After an upload the logo's
+  // brightness is measured here, and a dark one is switched to 'mono' (the
+  // apps draw it white; the file is unchanged). The switch can be flipped back.
+  async function isDark(src) {
+    let url = ''
+    try {
+      // Measured on a copy: Chrome refuses to read pixels back from an SVG that
+      // has a <foreignObject> (Illustrator's "preserve editing" data), so that
+      // part, which is never drawn, is cut out first.
+      let blob = await fetch(src, { cache: 'no-store' }).then((r) => r.blob())
+      if (blob.type === 'image/svg+xml') {
+        blob = new Blob([(await blob.text()).replace(/<foreignObject[\s\S]*?<\/foreignObject>/g, '')], { type: 'image/svg+xml' })
+      }
+      url = URL.createObjectURL(blob)
+      // load event + timeout rather than img.decode(), which can wait forever
+      // in a background tab; on timeout the logo just keeps its colours.
+      const img = new Image()
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error('timeout')), 4000)
+        img.onload = () => { clearTimeout(t); resolve() }
+        img.onerror = () => { clearTimeout(t); reject(new Error('load failed')) }
+        img.src = url
+      })
+      const w = 240, h = Math.max(1, Math.round(240 * (img.naturalHeight || 1) / (img.naturalWidth || 2)))
+      const c = document.createElement('canvas')
+      c.width = w
+      c.height = h
+      const g = c.getContext('2d')
+      g.drawImage(img, 0, 0, w, h)
+      const px = g.getImageData(0, 0, w, h).data
+      // A logo with its own opaque background (no transparent corners) would
+      // turn into a solid block if drawn white, so it keeps its colours.
+      const corners = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + w - 1) * 4]
+      if (corners.every((i) => px[i + 3] > 200)) return false
+      // Dark = 40% or more of the visible pixels are dark. An average misses
+      // mixed logos (black lettering over a pale bar, a red mark beside
+      // black text), whose dark part still vanishes on the plate.
+      let n = 0, dark = 0
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] < 40) continue
+        n++
+        if (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2] < 60) dark++
+      }
+      return n > 0 && dark / n >= 0.4
+    } catch {
+      return false
+    } finally {
+      if (url) URL.revokeObjectURL(url)
+    }
+  }
+  /** After an upload: switch a dark logo to mono; returns whether it did. */
+  async function suggestDisplay(format, src) {
+    if (!(await isDark(src))) return false
+    if (format.logo_display === 'mono') return true
+    await updateWatchFormat(format.id, { logo_display: 'mono' })
+    return true
+  }
 
   function open(f) {
     clearPicked()
@@ -69,6 +129,7 @@
         note: editing.note || null,
         sort_order: Number(editing.sort_order) || 0,
         active: editing.active,
+        logo_display: editing.logo_display ?? 'original',
       }
       if (editing.id) {
         await updateWatchFormat(editing.id, body)
@@ -77,7 +138,8 @@
         const created = await createWatchFormat({ ...body, slug: editing.slug })
         if (picked) {
           try {
-            await uploadWatchFormatLogo(created.id, picked.file)
+            const up = await uploadWatchFormatLogo(created.id, picked.file)
+            if (editing.logo_display !== 'mono' && (await suggestDisplay(created, up.logo_url))) toast.success(`${editing.label}'s logo is dark, so the apps show it white`)
           } catch (e) {
             toast.error(`Added ${editing.label}, but the logo didn't upload: ${e.message}`)
             close()
@@ -119,7 +181,12 @@
     try {
       const updated = await uploadWatchFormatLogo(editing.id, file)
       editing.logo_url = updated.logo_url ?? ''
-      toast.success(`Logo saved for ${editing.label}`)
+      if (await suggestDisplay(updated, updated.logo_url)) {
+        editing.logo_display = 'mono'
+        toast.success(`Logo saved for ${editing.label}; it's dark, so the apps show it white`)
+      } else {
+        toast.success(`Logo saved for ${editing.label}`)
+      }
       load()
     } catch (e) {
       toast.error(e.message)
@@ -180,6 +247,38 @@
   }
 
   const withLogo = $derived(formats.filter((f) => f.logo_url).length)
+
+  // Bulk: drop many files named after slugs (imax.svg, criterion.png) and each
+  // goes to its format. Results are listed per file.
+  let bulk = $state([]) // [{ name, slug, status: 'ok' | 'error' | 'skip', message }]
+  let bulkBusy = $state(false)
+  let bulkOver = $state(false)
+  async function uploadMany(files) {
+    const list = [...(files ?? [])]
+    if (!list.length) return
+    bulkBusy = true
+    bulk = list.map((f) => ({ name: f.name, slug: f.name.replace(/\.[^.]+$/, '').trim().toLowerCase(), status: 'pending', message: '' }))
+    for (const [i, file] of list.entries()) {
+      const row = bulk[i]
+      const format = formats.find((f) => f.slug === row.slug)
+      const problem = !format ? 'no format has this slug' : check(file)
+      if (problem) {
+        bulk[i] = { ...row, status: format ? 'error' : 'skip', message: problem }
+        continue
+      }
+      try {
+        const up = await uploadWatchFormatLogo(format.id, file)
+        const mono = await suggestDisplay(up, up.logo_url)
+        bulk[i] = { ...row, status: 'ok', message: format.label + (mono ? ' (dark: shown white)' : '') }
+      } catch (e) {
+        bulk[i] = { ...row, status: 'error', message: e.message }
+      }
+    }
+    bulkBusy = false
+    const ok = bulk.filter((b) => b.status === 'ok').length
+    if (ok) toast.success(`${ok} ${ok === 1 ? 'logo' : 'logos'} uploaded`)
+    load()
+  }
 </script>
 
 <PageHeader
@@ -204,6 +303,29 @@
   <div class="card">No formats yet. Add the first one.</div>
 {:else}
   <p class="muted summary">{formats.length} formats · {withLogo} with a logo · {formats.filter((f) => !f.active).length} retired</p>
+  <div class="card">
+    <label
+      class="drop bulk"
+      class:over={bulkOver}
+      ondragover={(e) => { e.preventDefault(); bulkOver = true }}
+      ondragleave={() => (bulkOver = false)}
+      ondrop={(e) => { e.preventDefault(); bulkOver = false; uploadMany(e.dataTransfer?.files) }}
+    >
+      <input type="file" multiple accept={LOGO_TYPES.join(',')} disabled={bulkBusy} onchange={(e) => { uploadMany(e.currentTarget.files); e.currentTarget.value = '' }} />
+      <span><b>{bulkBusy ? 'Uploading…' : 'Upload logos in bulk'}</b> — drop files named after each format’s slug, e.g. <code>imax.svg</code>, <code>uhd-blu-ray.png</code>, <code>criterion.svg</code></span>
+      <span class="muted">Each file replaces that format’s logo. Files that match no slug are skipped.</span>
+    </label>
+    {#if bulk.length}
+      <ul class="bulk-results">
+        {#each bulk as b}
+          <li class={b.status}>
+            <code>{b.name}</code>
+            <span>{b.status === 'pending' ? 'waiting…' : b.status === 'ok' ? `✓ ${b.message}` : b.status === 'skip' ? `skipped: ${b.message}` : `✗ ${b.message}`}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
   {#each CATEGORIES as cat}
     {@const rows = formats.filter((f) => f.category === cat.value)}
     {#if rows.length}
@@ -225,7 +347,7 @@
               <tr class:dim={!f.active}>
                 <td class="logo-col">
                   {#if f.logo_url}
-                    <span class="thumb"><img src={f.logo_url} alt="{f.label} logo" /></span>
+                    <span class="thumb" title={f.logo_display === 'mono' ? 'Shown white' : 'Original colours'}><img class:mono={f.logo_display === 'mono'} src={f.logo_url} alt="{f.label} logo" /></span>
                   {:else}
                     <button class="add-logo" onclick={() => open(f)} title="Add a logo for {f.label}">+ Logo</button>
                   {/if}
@@ -292,10 +414,15 @@
       <span class="lbl" id="fmt-logo-h">Logo</span>
       {#if shown}
         <div class="previews" aria-labelledby="fmt-logo-h">
-          <span class="pv dark"><img src={shown} alt="{editing.label || 'New format'} logo on a dark background" /></span>
-          <span class="pv light"><img src={shown} alt="{editing.label || 'New format'} logo on a light background" /></span>
+          <button type="button" class="pv dark" class:chosen={editing.logo_display !== 'mono'} aria-pressed={editing.logo_display !== 'mono'} onclick={() => (editing.logo_display = 'original')}>
+            <img src={shown} alt="{editing.label || 'New format'} logo in its original colours" /><span>Original</span>
+          </button>
+          <button type="button" class="pv dark" class:chosen={editing.logo_display === 'mono'} aria-pressed={editing.logo_display === 'mono'} onclick={() => (editing.logo_display = 'mono')}>
+            <img class="mono" src={shown} alt="{editing.label || 'New format'} logo drawn white" /><span>Monochrome (white)</span>
+          </button>
+          <span class="pv light"><img src={shown} alt="{editing.label || 'New format'} logo on white" /><span>Original on white</span></span>
         </div>
-        <div class="muted">{picked ? 'Uploads when you save the format. ' : ''}Left: how the apps show it, on a dark plate in both themes. Right: on white, for clients that don’t add a plate; a white logo disappears there.</div>
+        <div class="muted">{picked ? 'Uploads when you save the format. ' : ''}The apps show it on a dark plate; pick which version (saved with the format). A dark upload is switched to white automatically. The file itself never changes, and other clients get both the file and this choice.</div>
       {/if}
       <label
         class="drop"
@@ -334,7 +461,13 @@
   .thumb img { max-height: 22px; max-width: 90px; object-fit: contain; }
   .add-logo { padding: 3px 8px; border: 1px dashed var(--border, #ccc); border-radius: 6px; background: none; color: var(--muted); font-size: 0.8rem; cursor: pointer; }
   .add-logo:hover { color: inherit; border-style: solid; }
-  .previews { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .previews { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .pv { position: relative; border: 2px solid transparent; cursor: default; }
+  button.pv { cursor: pointer; font: inherit; }
+  .pv span { position: absolute; left: 0; right: 0; bottom: 4px; font-size: 0.7rem; text-align: center; color: #a1a1a8; }
+  .pv.light span { color: #636369; }
+  .pv.chosen { border-color: var(--accent); }
+  img.mono { filter: brightness(0) invert(1); }
   .pv { display: grid; place-items: center; height: 72px; border-radius: 8px; }
   .pv img { max-height: 28px; max-width: 80%; object-fit: contain; }
   .pv.dark { background: #161618; }
@@ -343,4 +476,10 @@
   .drop.over, .drop:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
   .drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
   .remove { justify-self: start; }
+  .bulk { margin: 0; }
+  .bulk-results { list-style: none; margin: 0.75rem 0 0; padding: 0; display: grid; gap: 0.25rem; font-size: 0.85rem; }
+  .bulk-results li { display: flex; gap: 0.75rem; }
+  .bulk-results .ok span { color: var(--success, #1b7530); }
+  .bulk-results .error span { color: var(--danger, #c4281c); }
+  .bulk-results .skip span { color: var(--muted); }
 </style>

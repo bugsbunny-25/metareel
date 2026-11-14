@@ -245,7 +245,8 @@ make reports-open
 | GET    | `/api/v1/admin/mapping-refs?tmdb_kind=movie\|tv&mapped=true` | The mapping reference (view `mapping_refs`): one row per chart title with its TMDB title and every ID (IMDb, Wikidata, RT, Metacritic, Letterboxd, JustWatch, Netflix), FlixPatrol slug / kind and Netflix title / kind |
 | GET    | `/api/v1/admin/mapping-events?subject=flixpatrol:12\|netflix:34&tmdb=movie:550&limit=` | History of mapping changes, newest first: action, TMDB title before / after, source and who made it (job, `mapping.sync`, `admin`) |
 | PATCH  | `/api/v1/admin/netflix/seasons/:id`         | Set a Netflix season title's season number by hand (`{"season_number": 2}`) or hand it back (`{"auto": true}`) |
-| GET/POST/PATCH | `/api/v1/admin/watch-formats[/:id]`  | The premium-format taxonomy (console: Premium formats). A format is retired with `active: false`, never deleted |
+| GET/POST/PATCH | `/api/v1/admin/watch-formats[/:id]`  | The premium-format taxonomy (console: Premium formats): cinema axes (`brand`, `projection`, `sound`, `motion`, `dimension`) plus home media (`disc`: DVD, Blu-ray, 4K UHD Blu-ray; `label`: Criterion, Arrow…). A format is retired with `active: false`, never deleted. `logo_display` is `original` or `mono` (clients draw a dark logo white). Logos to collect: [docs/format-logos.md](docs/format-logos.md) |
+| GET/POST/PUT/DELETE | `/api/v1/admin/venues[/:id[/screens[/:screen_id]\|/aliases[/:alias_id]]]` | Cinemas for the console's Cinemas page: search, add, correct, close (status `closed`), delete one nobody watched at; screens and former names. The same handlers as `/api/v1/me/venues` |
 | PUT/DELETE | `/api/v1/admin/watch-formats/:id/logo`   | Upload a format's logo (raw image body: PNG, JPEG, WebP or GIF ≤ 4096 px a side, or an SVG of drawing elements only; ≤ 512 KB; type taken from the bytes) or remove it |
 | GET/POST/PATCH/DELETE | `/api/v1/admin/webhooks[/:id[/test\|/rotate-secret\|/deliveries]]`, `/api/v1/admin/webhook-deliveries/:id[/retry]` | Outbound webhooks (see [Webhooks](#webhooks)) |
 | GET    | `/api/v1/me/titles/search?q=&kind=`         | Search TMDB for anything to track (not only titles metareel has charted); needs a signed-in user |
@@ -799,7 +800,9 @@ notes; and where you watched, which opens that place's fields: a cinema
 (searched in `/me/venues` or added there), its screen, seat, screening type,
 premium formats (`/me/formats`, with their logos) and tickets with fees and snacks in one
 currency; a streaming service and plan, with a price for rentals and
-purchases; a disc's media and edition; a TV channel. Picture and sound
+purchases; a physical-media watch's disc (4K UHD Blu-ray, Blu-ray or DVD, with
+their logos; or VHS, a file or a film print), its label (Criterion, Arrow Video,
+Kino Lorber… with logos) and edition; a TV channel. Picture and sound
 (3D, resolution, HDR, audio, languages, aspect ratios, screen size) are
 optional and folded away. A watch at a cinema is entered and filed in the
 cinema's time zone. Discover (`#/discover`, for the top bar's country) has

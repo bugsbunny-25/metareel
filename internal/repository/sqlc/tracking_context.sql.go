@@ -180,7 +180,7 @@ const createWatchFormat = `-- name: CreateWatchFormat :one
 INSERT INTO watch_formats (slug, label, category, note, sort_order, active)
 VALUES (?1, ?2, ?3, ?4,
         ?5, ?6)
-RETURNING id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
+RETURNING id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version, logo_display
 `
 
 type CreateWatchFormatParams struct {
@@ -213,6 +213,7 @@ func (q *Queries) CreateWatchFormat(ctx context.Context, arg CreateWatchFormatPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LogoVersion,
+		&i.LogoDisplay,
 	)
 	return i, err
 }
@@ -352,7 +353,7 @@ func (q *Queries) GetVenueScreen(ctx context.Context, id int64) (VenueScreen, er
 }
 
 const getWatchFormat = `-- name: GetWatchFormat :one
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version, logo_display
 FROM watch_formats WHERE id = ?1
 `
 
@@ -370,12 +371,13 @@ func (q *Queries) GetWatchFormat(ctx context.Context, id int64) (WatchFormat, er
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LogoVersion,
+		&i.LogoDisplay,
 	)
 	return i, err
 }
 
 const getWatchFormatBySlug = `-- name: GetWatchFormatBySlug :one
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version, logo_display
 FROM watch_formats WHERE slug = ?1
 `
 
@@ -393,6 +395,7 @@ func (q *Queries) GetWatchFormatBySlug(ctx context.Context, slug string) (WatchF
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LogoVersion,
+		&i.LogoDisplay,
 	)
 	return i, err
 }
@@ -418,7 +421,7 @@ func (q *Queries) GetWatchFormatLogo(ctx context.Context, slug string) (GetWatch
 }
 
 const listFormatsForWatchEntries = `-- name: ListFormatsForWatchEntries :many
-SELECT ef.entry_id, f.id AS format_id, f.slug, f.label, f.category, f.logo_version
+SELECT ef.entry_id, f.id AS format_id, f.slug, f.label, f.category, f.logo_version, f.logo_display
 FROM watch_entry_formats ef
 JOIN watch_formats f ON f.id = ef.format_id
 JOIN watch_entries w ON w.id = ef.entry_id
@@ -439,6 +442,7 @@ type ListFormatsForWatchEntriesRow struct {
 	Label       string         `json:"label"`
 	Category    string         `json:"category"`
 	LogoVersion sql.NullString `json:"logo_version"`
+	LogoDisplay string         `json:"logo_display"`
 }
 
 // ListFormatsForWatchEntries hydrates a page of watches with their formats.
@@ -470,6 +474,7 @@ func (q *Queries) ListFormatsForWatchEntries(ctx context.Context, arg ListFormat
 			&i.Label,
 			&i.Category,
 			&i.LogoVersion,
+			&i.LogoDisplay,
 		); err != nil {
 			return nil, err
 		}
@@ -692,7 +697,7 @@ func (q *Queries) ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListV
 
 const listWatchFormats = `-- name: ListWatchFormats :many
 
-SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version
+SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version, logo_display
 FROM watch_formats
 WHERE (CAST(?1 AS INTEGER) = 0 OR active = 1)
 ORDER BY sort_order, label COLLATE NOCASE
@@ -720,6 +725,7 @@ func (q *Queries) ListWatchFormats(ctx context.Context, activeOnly int64) ([]Wat
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.LogoVersion,
+			&i.LogoDisplay,
 		); err != nil {
 			return nil, err
 		}
@@ -1029,17 +1035,19 @@ UPDATE watch_formats SET
     note = ?3,
     sort_order = ?4,
     active = ?5,
+    logo_display = ?6,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = ?6
+WHERE id = ?7
 `
 
 type UpdateWatchFormatParams struct {
-	Label     string         `json:"label"`
-	Category  string         `json:"category"`
-	Note      sql.NullString `json:"note"`
-	SortOrder int64          `json:"sort_order"`
-	Active    int64          `json:"active"`
-	ID        int64          `json:"id"`
+	Label       string         `json:"label"`
+	Category    string         `json:"category"`
+	Note        sql.NullString `json:"note"`
+	SortOrder   int64          `json:"sort_order"`
+	Active      int64          `json:"active"`
+	LogoDisplay string         `json:"logo_display"`
+	ID          int64          `json:"id"`
 }
 
 // UpdateWatchFormat changes a format in place. A format is deactivated
@@ -1051,6 +1059,7 @@ func (q *Queries) UpdateWatchFormat(ctx context.Context, arg UpdateWatchFormatPa
 		arg.Note,
 		arg.SortOrder,
 		arg.Active,
+		arg.LogoDisplay,
 		arg.ID,
 	)
 	if err != nil {

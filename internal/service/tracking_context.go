@@ -32,6 +32,8 @@ var (
 	trackingDimUnits     = map[string]bool{"m": true, "ft": true}
 	trackingFormatCats   = map[string]bool{
 		"brand": true, "projection": true, "sound": true, "motion": true, "dimension": true,
+		// Home media: the disc watched, and the label that released it.
+		"disc": true, "label": true,
 	}
 )
 
@@ -277,6 +279,16 @@ type FormatInput struct {
 	Note      *string `json:"note"`
 	SortOrder *int64  `json:"sort_order"`
 	Active    *bool   `json:"active"`
+	// LogoDisplay: "original" or "mono" (clients draw the logo white).
+	LogoDisplay *string `json:"logo_display"`
+}
+
+func validLogoDisplay(v *string) (string, error) {
+	switch d := strings.TrimSpace(*v); d {
+	case "original", "mono":
+		return d, nil
+	}
+	return "", &ValidationError{Message: "logo_display must be original or mono"}
 }
 
 // CreateFormat adds a format to the taxonomy.
@@ -292,7 +304,7 @@ func (s *TrackingService) CreateFormat(ctx context.Context, in FormatInput) (rep
 		return repository.WatchFormat{}, &ValidationError{Message: "label is required"}
 	}
 	if !trackingFormatCats[f.Category] {
-		return repository.WatchFormat{}, &ValidationError{Message: "category must be one of brand, projection, sound, motion, dimension"}
+		return repository.WatchFormat{}, &ValidationError{Message: "category must be one of brand, projection, sound, motion, dimension, disc, label"}
 	}
 	if in.SortOrder != nil {
 		f.SortOrder = *in.SortOrder
@@ -300,12 +312,28 @@ func (s *TrackingService) CreateFormat(ctx context.Context, in FormatInput) (rep
 	if in.Active != nil {
 		f.Active = *in.Active
 	}
+	if in.LogoDisplay != nil {
+		d, err := validLogoDisplay(in.LogoDisplay)
+		if err != nil {
+			return repository.WatchFormat{}, err
+		}
+		f.LogoDisplay = d
+	}
 	if _, err := s.write.FormatBySlug(ctx, f.Slug); err == nil {
 		return repository.WatchFormat{}, &ConflictError{Message: "a format with that slug already exists"}
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return repository.WatchFormat{}, err
 	}
-	return s.write.CreateFormat(ctx, f)
+	created, err := s.write.CreateFormat(ctx, f)
+	if err != nil || f.LogoDisplay == "" || f.LogoDisplay == created.LogoDisplay {
+		return created, err
+	}
+	// The insert takes the column default; a different display is set after.
+	created.LogoDisplay = f.LogoDisplay
+	if _, err := s.write.UpdateFormat(ctx, created); err != nil {
+		return repository.WatchFormat{}, err
+	}
+	return created, nil
 }
 
 // UpdateFormat edits a format. The slug never changes, because watches
@@ -321,7 +349,7 @@ func (s *TrackingService) UpdateFormat(ctx context.Context, id int64, in FormatI
 	}
 	if in.Category != "" {
 		if !trackingFormatCats[strings.TrimSpace(in.Category)] {
-			return repository.WatchFormat{}, &ValidationError{Message: "category must be one of brand, projection, sound, motion, dimension"}
+			return repository.WatchFormat{}, &ValidationError{Message: "category must be one of brand, projection, sound, motion, dimension, disc, label"}
 		}
 		current.Category = strings.TrimSpace(in.Category)
 	}
@@ -333,6 +361,13 @@ func (s *TrackingService) UpdateFormat(ctx context.Context, id int64, in FormatI
 	}
 	if in.Active != nil {
 		current.Active = *in.Active
+	}
+	if in.LogoDisplay != nil {
+		d, err := validLogoDisplay(in.LogoDisplay)
+		if err != nil {
+			return repository.WatchFormat{}, err
+		}
+		current.LogoDisplay = d
 	}
 	ok, err := s.write.UpdateFormat(ctx, current)
 	if err != nil {

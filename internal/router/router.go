@@ -170,6 +170,18 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.POST("/watch-formats", h.CreateWatchFormat)
 	admin.PATCH("/watch-formats/:id", h.UpdateWatchFormat)
 	admin.PUT("/watch-formats/:id/logo", h.PutWatchFormatLogo)
+	// Cinemas, for the console's Cinemas page. The same handlers as the /me
+	// routes users add cinemas through while logging; venues are shared data.
+	admin.GET("/venues", h.ListVenues)
+	admin.POST("/venues", h.CreateVenue)
+	admin.GET("/venues/:id", h.GetVenue)
+	admin.PUT("/venues/:id", h.UpdateVenue)
+	admin.DELETE("/venues/:id", h.DeleteVenue)
+	admin.POST("/venues/:id/aliases", h.AddVenueAlias)
+	admin.DELETE("/venues/:id/aliases/:alias_id", h.DeleteVenueAlias)
+	admin.POST("/venues/:id/screens", h.CreateScreen)
+	admin.PUT("/venues/:id/screens/:screen_id", h.UpdateScreen)
+	admin.DELETE("/venues/:id/screens/:screen_id", h.DeleteScreen)
 	admin.DELETE("/watch-formats/:id/logo", h.DeleteWatchFormatLogo)
 	admin.GET("/settings", h.GetSettings)
 	admin.PATCH("/settings", h.PatchSettings)

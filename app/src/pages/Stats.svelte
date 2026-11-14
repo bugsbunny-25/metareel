@@ -61,9 +61,12 @@
     countries: (y?.countries ?? []).slice(0, 6).map((c) => ({ label: nameOf(region, c.country), value: c.titles })),
     languages: (y?.languages ?? []).slice(0, 6).map((l) => ({ label: nameOf(language, l.language), value: l.titles })),
   })
-  const VENUE = { streaming: 'Streaming', theater: 'Cinema', physical: 'Disc or file', broadcast: 'TV broadcast', other: 'Elsewhere', unspecified: 'Not recorded' }
+  const VENUE = { streaming: 'Streaming', theater: 'Cinema', physical: 'Physical media', broadcast: 'TV broadcast', other: 'Elsewhere', unspecified: 'Not recorded' }
   const venues = $derived((y?.by_venue ?? []).map((v) => ({ label: VENUE[v.label] ?? v.label, value: v.watches, note: `· ${hours(v.minutes)} h` })))
-  const formats = $derived((y?.formats ?? []).map((f) => ({ label: f.label, value: f.watches, note: `· ${hours(f.minutes)} h`, logo: f.logo_url })))
+  const asBar = (f) => ({ label: f.label, value: f.watches, note: `· ${hours(f.minutes)} h`, logo: f.logo_url, mono: f.logo_display === 'mono' })
+  const HOME = new Set(['disc', 'label'])
+  const formats = $derived((y?.formats ?? []).filter((f) => !HOME.has(f.category)).map(asBar))
+  const discs = $derived((y?.formats ?? []).filter((f) => HOME.has(f.category)).map(asBar))
   const people = $derived([
     ['Actors', y?.people?.cast ?? []], ['Directors', y?.people?.directors ?? []], ['Writers', y?.people?.writers ?? []],
   ].filter(([, list]) => list.length))
@@ -211,6 +214,7 @@
           <div class="ph"><h2>Where you watched</h2><span class="hint">Watches · hours</span></div>
           <BarList items={venues} />
           {#if formats.length}<p class="sub-h">Formats</p><BarList items={formats} />{/if}
+          {#if discs.length}<p class="sub-h">Discs and labels</p><BarList items={discs} />{/if}
         </section>
         {#if y.spend?.length}
           <section class="panel pad">

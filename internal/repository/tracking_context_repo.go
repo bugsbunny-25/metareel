@@ -26,6 +26,17 @@ type WatchFormat struct {
 	// so it can be cached for good; empty when it has none. Under the public
 	// API by default; the admin API rewrites it to its own copy of the route.
 	LogoURL string `json:"logo_url,omitempty"`
+	// LogoDisplay is how clients should show the logo: "original" colours,
+	// or "mono" (draw it white, e.g. CSS filter: brightness(0) invert(1))
+	// for dark logos that vanish on a dark background.
+	LogoDisplay string `json:"logo_display"`
+}
+
+func logoDisplay(v string) string {
+	if v == "" {
+		return "original"
+	}
+	return v
 }
 
 // FormatLogoURL is the path a format's logo is served at, or "" without one.
@@ -41,7 +52,8 @@ func formatFrom(row sqlc.WatchFormat) WatchFormat {
 		ID: row.ID, Slug: row.Slug, Label: row.Label, Category: row.Category,
 		Note: nullStringPtr(row.Note), SortOrder: row.SortOrder, Active: row.Active != 0,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-		LogoURL: FormatLogoURL(row.Slug, nullStringPtr(row.LogoVersion)),
+		LogoURL:     FormatLogoURL(row.Slug, nullStringPtr(row.LogoVersion)),
+		LogoDisplay: row.LogoDisplay,
 	}
 }
 
@@ -151,7 +163,7 @@ func (r *TrackingRepository) CreateFormat(ctx context.Context, f WatchFormat) (W
 func (r *TrackingRepository) UpdateFormat(ctx context.Context, f WatchFormat) (bool, error) {
 	n, err := r.q.UpdateWatchFormat(ctx, sqlc.UpdateWatchFormatParams{
 		ID: f.ID, Label: f.Label, Category: f.Category, Note: toNullString(f.Note),
-		SortOrder: f.SortOrder, Active: boolInt(f.Active),
+		SortOrder: f.SortOrder, Active: boolInt(f.Active), LogoDisplay: logoDisplay(f.LogoDisplay),
 	})
 	if err != nil {
 		return false, fmt.Errorf("update watch format %d: %w", f.ID, err)
@@ -170,7 +182,7 @@ func (r *TrackingRepository) formatsFor(ctx context.Context, userID int64, ids [
 	for _, row := range rows {
 		out[row.EntryID] = append(out[row.EntryID], WatchFormat{
 			ID: row.FormatID, Slug: row.Slug, Label: row.Label, Category: row.Category, Active: true,
-			LogoURL: FormatLogoURL(row.Slug, nullStringPtr(row.LogoVersion))})
+			LogoURL: FormatLogoURL(row.Slug, nullStringPtr(row.LogoVersion)), LogoDisplay: row.LogoDisplay})
 	}
 	return out, nil
 }

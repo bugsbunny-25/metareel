@@ -3749,18 +3749,30 @@ components:
               observed_at: { type: string }
     WatchFormat:
       type: object
-      description: One premium format. category is the axis it sits on, which is what keeps "all my 70mm screenings" answerable.
+      description: >
+        One premium format. category is the axis it sits on, which is what
+        keeps "all my 70mm screenings" answerable. Home media uses two more
+        axes: disc (DVD, Blu-ray, 4K UHD Blu-ray) and label (who released
+        it, e.g. Criterion); a physical-media watch carries one of each.
       properties:
         id: { type: integer, format: int64 }
         slug: { type: string, description: Stable identifier used when logging a watch, e.g. imax-70mm }
         label: { type: string }
-        category: { type: string, enum: [brand, projection, sound, motion, dimension] }
+        category: { type: string, enum: [brand, projection, sound, motion, dimension, disc, label] }
         note: { type: string, nullable: true }
         sort_order: { type: integer }
         active: { type: boolean, description: Retired formats stay on the watches that carry them but cannot be chosen for new ones }
         created_at: { type: string }
         updated_at: { type: string }
         logo_url: { type: string, description: "Where its logo is served, versioned (e.g. /api/v1/formats/imax/logo?v=3f2a...); absent without a logo" }
+        logo_display:
+          type: string
+          enum: [original, mono]
+          description: >
+            How to show the logo on a dark background: in its original colours,
+            or mono (draw it white, e.g. CSS filter: brightness(0) invert(1)),
+            for dark logos that would otherwise vanish. The file is the same
+            either way.
     Venue:
       type: object
       description: A cinema. Shared reference data, not a per-user row.

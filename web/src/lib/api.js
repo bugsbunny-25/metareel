@@ -132,6 +132,18 @@ export const revokeSession = (id) => req(`/sessions/${id}`, { method: 'DELETE' }
 export const listWatchFormats = () => req('/watch-formats')
 export const createWatchFormat = (body) => req('/watch-formats', { method: 'POST', body })
 export const updateWatchFormat = (id, body) => req(`/watch-formats/${id}`, { method: 'PATCH', body })
+// ── Cinemas (shared venue data; the same routes users add cinemas through) ──
+export const listVenues = (query) => req('/venues', { query: { limit: 200, ...query } })
+export const getVenue = (id) => req(`/venues/${id}`)
+export const createVenue = (body) => req('/venues', { method: 'POST', body })
+export const updateVenue = (id, body) => req(`/venues/${id}`, { method: 'PUT', body })
+export const deleteVenue = (id) => req(`/venues/${id}`, { method: 'DELETE' })
+export const addVenueAlias = (id, body) => req(`/venues/${id}/aliases`, { method: 'POST', body })
+export const deleteVenueAlias = (id, aliasId) => req(`/venues/${id}/aliases/${aliasId}`, { method: 'DELETE' })
+export const createScreen = (id, body) => req(`/venues/${id}/screens`, { method: 'POST', body })
+export const updateScreen = (id, screenId, body) => req(`/venues/${id}/screens/${screenId}`, { method: 'PUT', body })
+export const deleteScreen = (id, screenId) => req(`/venues/${id}/screens/${screenId}`, { method: 'DELETE' })
+
 export const deleteWatchFormatLogo = (id) => req(`/watch-formats/${id}/logo`, { method: 'DELETE' })
 // The logo goes up as the raw image (req only sends JSON); the server works out its type.
 export async function uploadWatchFormatLogo(id, file) {

@@ -218,7 +218,7 @@ ORDER BY total_minor DESC, watches DESC;
 -- StatsByFormat counts watches and time per premium format.
 -- name: StatsByFormat :many
 SELECT
-    f.slug, f.label, f.category, f.logo_version,
+    f.slug, f.label, f.category, f.logo_version, f.logo_display,
     CAST(COUNT(*) AS INTEGER) AS watches,
     CAST(COALESCE(SUM(COALESCE(w.runtime_minutes_used, e.runtime, t.runtime, c.runtime, 0)), 0) AS INTEGER) AS minutes
 FROM watch_entry_formats ef
@@ -231,7 +231,7 @@ LEFT JOIN tracked_titles c ON c.tmdb_kind = w.tmdb_kind AND c.tmdb_id = w.tmdb_i
 WHERE w.user_id = sqlc.arg(user_id)
   AND (CAST(sqlc.arg(from_day) AS TEXT) = '' OR w.watched_on >= CAST(sqlc.arg(from_day) AS TEXT))
   AND (CAST(sqlc.arg(to_day) AS TEXT) = '' OR w.watched_on <= CAST(sqlc.arg(to_day) AS TEXT))
-GROUP BY f.slug, f.label, f.category, f.logo_version
+GROUP BY f.slug, f.label, f.category, f.logo_version, f.logo_display
 ORDER BY minutes DESC, watches DESC;
 
 -- WatchlistInCharts finds watchlist titles on a Top 10 right now. This is

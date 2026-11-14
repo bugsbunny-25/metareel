@@ -660,6 +660,7 @@ type WatchFormat struct {
 	CreatedAt   string         `json:"created_at"`
 	UpdatedAt   string         `json:"updated_at"`
 	LogoVersion sql.NullString `json:"logo_version"`
+	LogoDisplay string         `json:"logo_display"`
 }
 
 type WatchFormatLogo struct {

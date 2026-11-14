@@ -9,11 +9,12 @@ import (
 	"encoding/xml"
 	"errors"
 	"image"
-	_ "image/gif"  // DecodeConfig for GIF logos
+	"image/gif"
 	_ "image/jpeg" // DecodeConfig for JPEG logos
-	_ "image/png"  // DecodeConfig for PNG logos
+	"image/png"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -115,11 +116,34 @@ var svgElements = map[string]bool{
 	"linearGradient": true, "radialGradient": true, "stop": true, "pattern": true,
 	"clipPath": true, "mask": true, "marker": true,
 	"filter": true, "feGaussianBlur": true, "feOffset": true, "feFlood": true, "feComposite": true,
-	"feMerge": true, "feMergeNode": true, "feColorMatrix": true, "feBlend": true,
-	"metadata": true,
+	"feMerge": true, "feMergeNode": true, "feColorMatrix": true, "feBlend": true, "feDropShadow": true,
+	"feComponentTransfer": true, "feFuncR": true, "feFuncG": true, "feFuncB": true, "feFuncA": true,
+	"feMorphology": true,
+	"metadata":     true, "style": true, "switch": true,
 }
 
-var errSVG = &ValidationError{Message: "an SVG logo can only contain shapes, text, gradients and filters: no scripts, styles, embedded images, event handlers or links outside the file"}
+// editorNamespaces are the namespaces design tools add for their own
+// bookkeeping (Inkscape's named views, RDF licence blocks). Browsers don't
+// render them, so their elements and everything inside are skipped.
+var editorNamespaces = map[string]bool{
+	"http://www.inkscape.org/namespaces/inkscape":        true,
+	"http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd": true,
+	"http://www.w3.org/1999/02/22-rdf-syntax-ns#":        true,
+	"http://creativecommons.org/ns#":                     true,
+	"http://purl.org/dc/elements/1.1/":                   true,
+	// Illustrator's "preserve editing" data and its private extensions.
+	"http://ns.adobe.com/AdobeIllustrator/10.0/":        true,
+	"http://ns.adobe.com/Variables/1.0/":                true,
+	"http://ns.adobe.com/ImageReplacement/1.0/":         true,
+	"http://ns.adobe.com/SaveForWeb/1.0/":               true,
+	"http://ns.adobe.com/Extensibility/1.0/":            true,
+	"http://ns.adobe.com/Flows/1.0/":                    true,
+	"http://ns.adobe.com/GenericCustomNamespace/1.0/":   true,
+	"http://ns.adobe.com/XPath/1.0/":                    true,
+	"http://ns.adobe.com/AdobeSVGViewerExtensions/3.0/": true,
+}
+
+var errSVG = &ValidationError{Message: "an SVG logo can only contain shapes, text, gradients, filters and plain CSS: no scripts, embedded images, event handlers, CSS @-rules or links outside the file"}
 
 // checkSVG parses an SVG and accepts it only if it is UTF-8 XML whose root is
 // <svg>, every element is a drawing element, no attribute is an event handler,
@@ -147,6 +171,8 @@ func checkSVG(data []byte) error {
 		return nil, errors.New("only UTF-8")
 	}
 	depth, elements, root := 0, 0, ""
+	skip := 0 // >0 while inside metadata or an editor element
+	inStyle := false
 	for {
 		tok, err := d.Token()
 		if errors.Is(err, io.EOF) {
@@ -157,6 +183,27 @@ func checkSVG(data []byte) error {
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
+			if skip > 0 || editorNamespaces[t.Name.Space] || (depth > 0 && (t.Name.Local == "metadata" || t.Name.Local == "foreignObject")) {
+				// Editor bookkeeping, metadata and Illustrator's foreignObject
+				// (pointing at its private editing data) aren't drawn, so the
+				// editor elements' names don't matter. But an SVG or XHTML
+				// element hidden inside one (a <script>, an <iframe>, a <div>)
+				// still counts: those must be plain drawing elements, a <style>
+				// isn't allowed in there (its CSS isn't checked), and every
+				// attribute is still checked.
+				editor := editorNamespaces[t.Name.Space]
+				wrapper := skip == 0 && (t.Name.Local == "metadata" || t.Name.Local == "foreignObject")
+				if !editor && !wrapper && (!svgElements[t.Name.Local] || t.Name.Local == "style") {
+					return errSVG
+				}
+				for _, a := range t.Attr {
+					if !safeSVGAttr(a) {
+						return errSVG
+					}
+				}
+				skip++
+				continue
+			}
 			elements++
 			if elements > maxSVGElements {
 				return &ValidationError{Message: "the SVG logo is too complex; simplify it or export a PNG"}
@@ -176,17 +223,43 @@ func checkSVG(data []byte) error {
 					return errSVG
 				}
 			}
+			inStyle = t.Name.Local == "style"
 		case xml.EndElement:
+			if skip > 0 {
+				skip--
+				continue
+			}
 			depth--
+			inStyle = false
 		case xml.Directive:
-			return errSVG // <!DOCTYPE ...> and entity declarations
+			// A DOCTYPE is fine. Its internal subset may only declare plain
+			// entities with URL-like values: Illustrator writes the SVG and
+			// XLink namespaces that way (<!ENTITY ns_svg "http://...">). They
+			// are handed to the parser, so whatever uses them is checked
+			// expanded. Anything else (markup, parameter entities, element
+			// declarations) and any other directive is refused.
+			dir := strings.TrimSpace(string(t))
+			if !strings.HasPrefix(dir, "DOCTYPE") {
+				return errSVG
+			}
+			ents, ok := plainEntities(dir)
+			if !ok {
+				return errSVG
+			}
+			d.Entity = ents
 		case xml.ProcInst:
 			if t.Target != "xml" {
 				return errSVG // e.g. <?xml-stylesheet ...?>
 			}
 		case xml.CharData:
+			if skip > 0 {
+				continue
+			}
 			if depth == 0 && len(bytes.TrimSpace(t)) > 0 {
 				return errBadLogo // text outside the root
+			}
+			if inStyle && !safeCSS(string(t)) {
+				return errSVG
 			}
 		}
 	}
@@ -196,9 +269,36 @@ func checkSVG(data []byte) error {
 	return nil
 }
 
-// safeSVGAttr allows an attribute unless it is an event handler, a style
-// attribute (CSS can import or fetch), or a link or url() that leaves the
-// file.
+var (
+	entityDecl = regexp.MustCompile(`<!ENTITY\s+([A-Za-z_][A-Za-z0-9_.-]*)\s+"([^"]*)"\s*>`)
+	urlLike    = regexp.MustCompile(`^[A-Za-z0-9:/._#?=+~-]*$`)
+)
+
+// plainEntities reads a DOCTYPE's internal subset, if any, accepting only
+// up to 20 <!ENTITY name "url-like value"> declarations.
+func plainEntities(doctype string) (map[string]string, bool) {
+	open := strings.IndexByte(doctype, '[')
+	if open < 0 {
+		return nil, !strings.Contains(doctype, "]")
+	}
+	end := strings.LastIndexByte(doctype, ']')
+	if end < open {
+		return nil, false
+	}
+	ents := map[string]string{}
+	rest := entityDecl.ReplaceAllStringFunc(doctype[open+1:end], func(decl string) string {
+		m := entityDecl.FindStringSubmatch(decl)
+		if !urlLike.MatchString(m[2]) || len(ents) >= 20 {
+			return decl // left in rest, so the subset is refused
+		}
+		ents[m[1]] = m[2]
+		return ""
+	})
+	return ents, strings.TrimSpace(rest) == ""
+}
+
+// safeSVGAttr allows an attribute unless it is an event handler, unsafe CSS,
+// or a link or url() that leaves the file.
 func safeSVGAttr(a xml.Attr) bool {
 	name := strings.ToLower(a.Name.Local)
 	v := strings.ToLower(strings.TrimSpace(a.Value))
@@ -206,12 +306,29 @@ func safeSVGAttr(a xml.Attr) bool {
 	case strings.HasPrefix(name, "on"):
 		return false
 	case name == "style":
-		return false
+		return safeCSS(v)
 	case name == "href" || name == "src":
 		return strings.HasPrefix(v, "#")
 	}
-	// Presentation attributes may use url(#id) for gradients, clips and
-	// filters, and nothing else.
+	return localURLsOnly(v)
+}
+
+// safeCSS allows plain declarations and class rules (what design tools
+// export) but no @-rules (@import, @font-face), no escapes that could spell
+// anything, no legacy script hooks, and url() only to #ids.
+func safeCSS(css string) bool {
+	c := strings.ToLower(css)
+	for _, bad := range []string{"@", "\\", "expression", "javascript", "behavior", "binding", "</"} {
+		if strings.Contains(c, bad) {
+			return false
+		}
+	}
+	return localURLsOnly(c)
+}
+
+// localURLsOnly is false when a value has a url() that isn't url(#id), the
+// only kind gradients, clips and filters need.
+func localURLsOnly(v string) bool {
 	for rest := v; ; {
 		i := strings.Index(rest, "url(")
 		if i < 0 {
@@ -226,6 +343,55 @@ func safeSVGAttr(a xml.Attr) bool {
 	return !strings.Contains(v, "javascript:")
 }
 
+// trimTransparent crops fully transparent edges off a PNG or single-frame
+// GIF, so a logo exported on a big empty canvas isn't drawn tiny. Only the
+// empty border goes; the result is a PNG. Anything else, or an image with
+// less than 2% to gain, is returned untouched.
+func trimTransparent(data []byte, ct string) ([]byte, string) {
+	var img image.Image
+	switch ct {
+	case "image/png":
+		m, err := png.Decode(bytes.NewReader(data))
+		if err != nil {
+			return data, ct
+		}
+		img = m
+	case "image/gif":
+		g, err := gif.DecodeAll(bytes.NewReader(data))
+		if err != nil || len(g.Image) != 1 {
+			return data, ct // animated GIFs are left alone
+		}
+		img = g.Image[0]
+	default:
+		return data, ct
+	}
+	b := img.Bounds()
+	minX, minY, maxX, maxY := b.Max.X, b.Max.Y, b.Min.X-1, b.Min.Y-1
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if _, _, _, a := img.At(x, y).RGBA(); a > 0 {
+				minX, maxX = min(minX, x), max(maxX, x)
+				minY, maxY = min(minY, y), max(maxY, y)
+			}
+		}
+	}
+	crop := image.Rect(minX, minY, maxX+1, maxY+1)
+	if maxX < minX || crop.Dx()*crop.Dy()*100 >= b.Dx()*b.Dy()*98 {
+		return data, ct // fully transparent, or nothing worth trimming
+	}
+	sub, ok := img.(interface {
+		SubImage(image.Rectangle) image.Image
+	})
+	if !ok {
+		return data, ct
+	}
+	var buf bytes.Buffer
+	if err := (&png.Encoder{CompressionLevel: png.BestCompression}).Encode(&buf, sub.SubImage(crop)); err != nil {
+		return data, ct
+	}
+	return buf.Bytes(), "image/png"
+}
+
 // SetFormatLogo stores a format's logo and returns the format, whose
 // logo_url now points at the new version.
 func (s *TrackingService) SetFormatLogo(ctx context.Context, id int64, data []byte) (repository.WatchFormat, error) {
@@ -233,6 +399,7 @@ func (s *TrackingService) SetFormatLogo(ctx context.Context, id int64, data []by
 	if err != nil {
 		return repository.WatchFormat{}, err
 	}
+	data, ct = trimTransparent(data, ct)
 	sum := sha256.Sum256(data)
 	if err := s.write.SetFormatLogo(ctx, id, ct, data, hex.EncodeToString(sum[:6])); err != nil {
 		return repository.WatchFormat{}, err

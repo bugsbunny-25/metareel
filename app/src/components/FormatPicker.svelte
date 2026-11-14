@@ -2,24 +2,19 @@
      Atmos *and* 3D, so these are independent toggles, not one choice). The list comes from
      /me/formats once per page load. -->
 <script>
-  import { api } from '../lib/api.js'
+  import { loadFormats } from '../lib/formats.js'
 
   /** selected: format slugs. */
   let { selected = $bindable([]) } = $props()
 
   const GROUPS = [['brand', 'Screen'], ['projection', 'Projection'], ['sound', 'Sound'], ['motion', 'Motion'], ['dimension', '3D']]
 
-  let formats = $state(cache)
-  if (!cache) {
-    api.formats().then((r) => (cache = formats = r.formats ?? [])).catch(() => (formats = []))
-  }
+  let formats = $state(null)
+  loadFormats().then((list) => (formats = list)).catch(() => (formats = []))
   const groups = $derived(GROUPS.map(([k, name]) => [name, (formats ?? []).filter((f) => f.category === k)]).filter(([, l]) => l.length))
   const toggle = (slug) => (selected = selected.includes(slug) ? selected.filter((s) => s !== slug) : [...selected, slug])
 </script>
 
-<script module>
-  let cache = null
-</script>
 
 {#if formats === null}
   <p class="hint">Loading formats…</p>
@@ -30,7 +25,7 @@
         <span class="gl">{name}</span>
         <div class="chips">
           {#each list as f (f.slug)}
-            <button type="button" class="chip" aria-pressed={selected.includes(f.slug)} title={f.note ?? f.label} onclick={() => toggle(f.slug)}>{#if f.logo_url}<span class="plate" aria-hidden="true"><img src={f.logo_url} alt="" /></span>{/if}{f.label}</button>
+            <button type="button" class="chip" aria-pressed={selected.includes(f.slug)} title={f.note ?? f.label} onclick={() => toggle(f.slug)}>{#if f.logo_url}<span class="plate" aria-hidden="true"><img class:mono={f.logo_display === 'mono'} src={f.logo_url} alt="" /></span>{/if}{f.label}</button>
           {/each}
         </div>
       </div>
@@ -49,6 +44,7 @@
   .chip:has(.plate) { padding-left: 4px; }
   .plate { display: inline-flex; align-items: center; height: 20px; padding: 0 5px; border-radius: 10px; background: #161618; }
   .plate img { display: block; height: 12px; max-width: 64px; object-fit: contain; }
+  .plate img.mono { filter: brightness(0) invert(1); }
   .hint { margin: 0; color: var(--text-muted); font-size: 13px; }
   @media (max-width: 480px) { .g { grid-template-columns: 1fr; gap: 4px; } .gl { padding-top: 0; } }
 </style>

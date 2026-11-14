@@ -597,6 +597,18 @@ typed in major units and sent as minor units using the currency's fraction
 digits (`Intl.NumberFormat`). Streaming services are stored by name
 (`provider_name`), suggested from `/services/{country}`; a stored
 `provider_id` is kept only while the name is unchanged.
+Home media reuses the format taxonomy: categories `disc` (`dvd`, `blu-ray`,
+`uhd-blu-ray`) and `label` (Criterion, Arrow Video, …; migration 33, which
+also adds common cinema formats). A physical-media watch carries its disc and
+label as formats, so they get admin-managed logos and show on the diary and
+in Stats like cinema formats; `media` is still set (`bluray_4k`, `bluray`,
+`dvd`, or VHS / file / print without a disc format) so older readers keep
+working. The console's Cinemas page edits venues through admin copies of the
+`/me/venues` routes; the same rules apply (watches snapshot the name and
+city; a venue with watches is closed, not deleted). Admins can upload format
+logos in bulk: the console matches each file to a format by its name
+(`<slug>.<ext>`); the logo checklist is `docs/format-logos.md`.
+
 Premium-format logos are uploaded in the console (Premium formats) as the
 raw image to `PUT /admin/watch-formats/{id}/logo` and kept in SQLite
 (`watch_format_logos`, migration 32), so they're backed up with everything
@@ -604,11 +616,14 @@ else. The type comes from the bytes (`logoType`): PNG, JPEG, WebP or GIF by
 signature, with the dimensions read from the header and capped (a small file
 must not decode to a huge bitmap in every viewer's browser), or an SVG that
 `checkSVG` parses and allow-lists. It must be UTF-8 (UTF-16 or another
-charset could hide markup), have no DOCTYPE or stylesheet instruction, and
-use only drawing elements, matched on local name so a namespace prefix can't
-smuggle a `script`. Attributes are checked after the parser decodes
-character references: no `on*`, no `style`, and `href`/`url()` only to `#`
-ids. The allow-list is one layer; the sandboxing CSP and `<img>`-only
+charset could hide markup), have no DOCTYPE internal subset or stylesheet
+instruction, and use only drawing elements (plus `<style>`), matched on local
+name so a namespace prefix can't smuggle a `script`; editor bookkeeping
+(Inkscape, Sodipodi, RDF metadata) is skipped, but an SVG or XHTML element
+hidden inside it is still checked. Attributes are checked after the parser
+decodes character references: no `on*`, and `href`/`url()` only to `#` ids.
+CSS (in `<style>` or `style`) may not use `@`-rules, escapes or outside
+`url()`s. The allow-list is one layer; the sandboxing CSP and `<img>`-only
 rendering are the others. `watch_formats.
 logo_version` (a content hash) is put into every format's `logo_url`, so a
 logo URL is immutable and a new upload is a new URL; `GET /formats/{slug}/
@@ -619,7 +634,17 @@ under `/api/v1` with its session, the console under `/api/v1/admin` (list,
 create and update responses there rewrite `logo_url` to that copy). The ETag
 middleware keeps a `Cache-Control` a handler set only when it is `private`
 or `no-store`, so nothing on the keyed API can become shared-cacheable. The apps draw logos on
-a dark plate, since they're usually white on transparent.
+a dark plate; `watch_formats.logo_display` (migration 34) says whether to show
+a logo in its colours or `mono` (clients draw it white with a CSS filter; the
+file is unchanged). The console sets `mono` after an upload when 40% or more of
+the logo's visible pixels are dark and its corners are transparent, measuring
+an SVG with its `<foreignObject>` removed (Chrome won't read pixels back from
+one that has it). PNG and single-frame GIF uploads have fully transparent edges
+trimmed server-side (`trimTransparent`, re-encoded as PNG). `checkSVG` accepts
+Illustrator exports: an internal DTD subset of plain URL-valued entities (its
+namespace declarations, fed to the parser), `<switch>`, Adobe's namespaces as
+editor data, and a `<foreignObject>` whose contents are only editor data or
+drawing elements; a `<style>` inside skipped content is refused.
 Discover reads the three `/discover/:country/*` routes. The page loads
 `/rotation` once (with the user's `services` preference as `subscribed`) and
 shares its services: their `provider_ids` map plan and channel offers

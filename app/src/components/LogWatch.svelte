@@ -17,6 +17,7 @@
   import Poster from './Poster.svelte'
   import VenuePicker from './VenuePicker.svelte'
   import FormatPicker from './FormatPicker.svelte'
+  import { loadFormats, DISC_MEDIA, MEDIA_DISC } from '../lib/formats.js'
 
   /**
    * target: null when closed, else { kind: 'movie'|'tv', id, name, poster?, season?, episode?,
@@ -24,11 +25,12 @@
    */
   let { target = $bindable(null) } = $props()
 
-  const PLACES = [['', 'Not saying'], ['theater', 'Cinema'], ['streaming', 'Streaming'], ['physical', 'Disc or file'], ['broadcast', 'TV broadcast'], ['other', 'Elsewhere']]
+  const PLACES = [['', 'Not saying'], ['theater', 'Cinema'], ['streaming', 'Streaming'], ['physical', 'Physical media'], ['broadcast', 'TV broadcast'], ['other', 'Elsewhere']]
   const PRECISIONS = [['minute', 'Exact time'], ['day', 'Day'], ['month', 'Month'], ['year', 'Year']]
   const SCREENINGS = [['', 'Regular show'], ['preview', 'Preview or early access'], ['premiere', 'Premiere'], ['festival', 'Festival'], ['press', 'Press screening'], ['rerelease', 'Re-release'], ['marathon', 'Marathon']]
   const PLANS = [['flatrate', 'Subscription'], ['free', 'Free'], ['ads', 'Free with ads'], ['rent', 'Rented'], ['buy', 'Bought']]
-  const MEDIA = [['', 'Not saying'], ['bluray_4k', '4K Blu-ray'], ['bluray', 'Blu-ray'], ['dvd', 'DVD'], ['vhs', 'VHS'], ['digital_file', 'Digital file'], ['35mm', '35mm print'], ['70mm', '70mm print']]
+  // Discs come from the format taxonomy (with logos); these are the other media.
+  const OTHER_MEDIA = [['', '–'], ['vhs', 'VHS'], ['digital_file', 'Digital file'], ['35mm', '35mm print'], ['70mm', '70mm print']]
   const DIMENSIONS = [['', '–'], ['2d', '2D'], ['3d', '3D'], ['3d_hfr', '3D HFR']]
   const RESOLUTIONS = [['', '–'], ['sd', 'SD'], ['hd', 'HD 720p'], ['fhd', 'Full HD 1080p'], ['4k', '4K'], ['8k', '8K']]
   const HDRS = [['', '–'], ['none', 'No HDR'], ['hdr10', 'HDR10'], ['hdr10_plus', 'HDR10+'], ['dolby_vision', 'Dolby Vision'], ['hlg', 'HLG']]
@@ -65,7 +67,7 @@
       rating: null, liked: false, notes: '', tagText: '',
       place: '', venue: null, screenId: null, seat: '', screening: '', eventName: '', withQA: false, formats: [],
       currency: '', tickets: '', price: '', fees: '', snacks: '', booking: '',
-      provider: '', providerId: null, providerOriginal: '', monetization: 'flatrate', device: '', media: '', edition: '', channel: '',
+      provider: '', providerId: null, providerOriginal: '', monetization: 'flatrate', device: '', media: '', disc: '', label: '', edition: '', channel: '',
       dimension: '', resolution: '', hdr: '', audioFormat: '', frameRate: '', audioLang: '', subLang: '',
       aspect: '', aspectVariable: false, screenAspect: '', screenW: '', screenH: '', dimUnit: prefs.values.screen_unit ?? 'm',
     }
@@ -83,7 +85,11 @@
       place: w.venue_kind ?? '',
       venue: w.venue_id ? { id: w.venue_id, name: w.venue_name_at_watch ?? 'Cinema', city: w.venue_city_at_watch ?? null } : null,
       screenId: w.screen_id ?? null, seat: w.seat ?? '', screening: w.screening_type === 'regular' ? '' : (w.screening_type ?? ''),
-      eventName: w.event_name ?? '', withQA: !!w.with_qa, formats: (w.formats ?? []).map((ff) => ff.slug),
+      eventName: w.event_name ?? '', withQA: !!w.with_qa,
+      // Cinema formats only; the disc and label are their own pickers.
+      formats: (w.formats ?? []).filter((ff) => ff.category !== 'disc' && ff.category !== 'label').map((ff) => ff.slug),
+      disc: (w.formats ?? []).find((ff) => ff.category === 'disc')?.slug ?? MEDIA_DISC[w.media] ?? '',
+      label: (w.formats ?? []).find((ff) => ff.category === 'label')?.slug ?? '',
       currency: cur, tickets: w.tickets_count ?? '', price: fromMinor(w.price_minor, cur), fees: fromMinor(w.fees_minor, cur),
       snacks: fromMinor(w.concessions_minor, cur), booking: w.booking_source ?? '',
       monetization: w.monetization ?? 'flatrate', device: w.device ?? '', media: w.media ?? '', edition: w.edition ?? '',
@@ -99,6 +105,19 @@
     x.providerId = w.provider_id ?? null
     x.providerOriginal = w.provider_name ?? ''
     return x
+  }
+
+  // Discs and labels, for the physical-media section.
+  let media = $state({ discs: [], labels: [] })
+  $effect(() => {
+    if (f.place !== 'physical' || media.discs.length) return
+    loadFormats()
+      .then((all) => (media = { discs: all.filter((x) => x.category === 'disc'), labels: all.filter((x) => x.category === 'label') }))
+      .catch(() => {})
+  })
+  function pickDisc(slug) {
+    f.disc = f.disc === slug ? '' : slug
+    if (f.disc) f.media = ''
   }
 
   const pictureSet = (x) => !!(x.dimension || x.resolution || x.hdr || x.audioFormat || x.frameRate || x.audioLang || x.subLang || x.aspect || x.screenAspect || x.screenW || x.screenH)
@@ -202,7 +221,12 @@
         provider_id: name && name === f.providerOriginal ? f.providerId : null,
       })
     }
-    if (p === 'physical') Object.assign(out, { media: f.media || null, edition: text(f.edition), device: text(f.device) })
+    if (p === 'physical') {
+      Object.assign(out, {
+        media: f.disc ? DISC_MEDIA[f.disc] ?? null : f.media || null, edition: text(f.edition), device: text(f.device),
+        formats: [f.disc, f.label].filter(Boolean),
+      })
+    }
     if (p === 'broadcast') Object.assign(out, { provider_name: text(f.channel), device: text(f.device) })
     if (money) {
       const amounts = {
@@ -336,11 +360,37 @@
             </div>
           {:else if f.place === 'physical'}
             <div class="ctx">
-              <div class="row two">
-                <label>Media<select bind:value={f.media}>{#each MEDIA as [v, l]}<option value={v}>{l}</option>{/each}</select></label>
-                <label>Edition<input bind:value={f.edition} placeholder="e.g. Director's cut" maxlength="80" /></label>
+              <div class="field">
+                <span class="lbl">Disc</span>
+                <div class="chips" role="group" aria-label="Disc">
+                  {#each media.discs as d (d.slug)}
+                    <button type="button" class="pick" aria-pressed={f.disc === d.slug} onclick={() => pickDisc(d.slug)}>
+                      {#if d.logo_url}<span class="plate" aria-hidden="true"><img class:mono={d.logo_display === 'mono'} src={d.logo_url} alt="" /></span>{/if}{d.label}
+                    </button>
+                  {/each}
+                  <label class="other">or
+                    <select value={f.disc ? '' : f.media} aria-label="Other media" onchange={(e) => { f.media = e.currentTarget.value; if (f.media) f.disc = '' }}>
+                      {#each OTHER_MEDIA as [v, l]}<option value={v}>{v ? l : 'Other media'}</option>{/each}
+                    </select>
+                  </label>
+                </div>
               </div>
-              <label>Device<input bind:value={f.device} list="log-devices" placeholder="e.g. Projector" maxlength="60" /></label>
+              {#if media.labels.length}
+                <div class="field">
+                  <span class="lbl">Label <span class="muted">(who released it)</span></span>
+                  <div class="chips" role="group" aria-label="Label">
+                    {#each media.labels as l (l.slug)}
+                      <button type="button" class="pick" aria-pressed={f.label === l.slug} onclick={() => (f.label = f.label === l.slug ? '' : l.slug)}>
+                        {#if l.logo_url}<span class="plate" aria-hidden="true"><img class:mono={l.logo_display === 'mono'} src={l.logo_url} alt="" /></span>{/if}{l.label}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+              <div class="row two">
+                <label>Edition<input bind:value={f.edition} placeholder="e.g. Director's cut, 4K restoration" maxlength="80" /></label>
+                <label>Device<input bind:value={f.device} list="log-devices" placeholder="e.g. Projector" maxlength="60" /></label>
+              </div>
             </div>
           {:else if f.place === 'broadcast'}
             <div class="ctx">
@@ -456,6 +506,16 @@
   .chip { height: 32px; padding: 0 13px; border: 1px solid var(--border-subtle); border-radius: 16px; background: none; color: var(--text-primary); font: 500 14px/1 var(--font-sans); cursor: pointer; }
   .chip:hover { border-color: var(--border-strong); }
   .chip[aria-pressed='true'] { border-color: var(--accent-primary); background: var(--accent-primary); color: var(--accent-on); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .pick { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--border-subtle); border-radius: 15px; background: var(--bg-surface); color: var(--text-primary); font: 500 13px/1 var(--font-sans); cursor: pointer; }
+  .pick:has(.plate) { padding-left: 4px; }
+  .pick:hover { border-color: var(--border-strong); }
+  .pick[aria-pressed='true'] { border-color: var(--accent-yours); background: color-mix(in srgb, var(--accent-yours) 16%, var(--bg-surface)); font-weight: 700; }
+  .plate { display: inline-flex; align-items: center; height: 22px; padding: 0 6px; border-radius: 11px; background: #161618; }
+  .plate img { display: block; height: 13px; max-width: 72px; object-fit: contain; }
+  .plate img.mono { filter: brightness(0) invert(1); }
+  .other { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; color: var(--text-muted); font-size: 13px; font-weight: 400; }
+  .other select { padding: 5px 8px; font-size: 13px; }
   .ctx { display: grid; gap: 12px; padding: 14px; border-radius: 14px; background: var(--bg-canvas); }
   .ctx input, .ctx select, .ctx :global(input), .ctx :global(select) { background: var(--bg-surface); }
   .money { display: grid; gap: 10px; margin: 0; padding: 14px; border: 1px solid var(--border-subtle); border-radius: 14px; }

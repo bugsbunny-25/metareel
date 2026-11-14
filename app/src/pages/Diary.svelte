@@ -15,7 +15,7 @@
 
   let { onlog, onconfirm } = $props()
 
-  const VENUE = { streaming: 'Streaming', theater: 'Cinema', physical: 'Disc or file', broadcast: 'TV broadcast', other: 'Elsewhere' }
+  const VENUE = { streaming: 'Streaming', theater: 'Cinema', physical: 'Physical media', broadcast: 'TV broadcast', other: 'Elsewhere' }
   const kind = $derived(route.query.kind === 'movie' || route.query.kind === 'tv' ? route.query.kind : '')
   const rated = $derived(route.query.rated === '1')
   const day = $derived(/^\d{4}-\d{2}-\d{2}$/.test(route.query.day ?? '') ? route.query.day : '')

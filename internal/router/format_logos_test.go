@@ -98,6 +98,22 @@ func TestFormatLogos(t *testing.T) {
 		t.Errorf("a format without a logo: %d, want 404", rec.Code)
 	}
 
+	// Dark logos can be shown white: a display hint served with the logo.
+	rec = a.do(http.MethodPatch, "/api/v1/admin/watch-formats/"+id, `{"logo_display":"mono"}`, nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"logo_display":"mono"`) {
+		t.Fatalf("set logo_display: %d %s", rec.Code, rec.Body)
+	}
+	if rec := a.do(http.MethodGet, "/api/v1/me/formats", "", alice); !strings.Contains(rec.Body.String(), `"slug":"imax"`) || !strings.Contains(rec.Body.String(), `"logo_display":"mono"`) {
+		t.Errorf("user formats lack logo_display mono: %s", rec.Body)
+	}
+	if rec := a.do(http.MethodPatch, "/api/v1/admin/watch-formats/"+id, `{"logo_display":"sepia"}`, nil); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad logo_display: %d, want 400", rec.Code)
+	}
+	// An edit that doesn't mention it keeps it.
+	if rec := a.do(http.MethodPatch, "/api/v1/admin/watch-formats/"+id, `{"note":"Large format"}`, nil); !strings.Contains(rec.Body.String(), `"logo_display":"mono"`) {
+		t.Errorf("an unrelated edit reset logo_display: %s", rec.Body)
+	}
+
 	// Removing it.
 	rec = a.do(http.MethodDelete, "/api/v1/admin/watch-formats/"+id+"/logo", "", nil)
 	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "logo_url") {
