@@ -1,5 +1,7 @@
+import Constants from 'expo-constants';
+import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { endpoint, setHomeURL, signOut, useSignedIn } from '@/auth/session';
 import { normalizeHomeURL, URLError } from '@/auth/urls';
@@ -8,6 +10,8 @@ import { Field } from '@/components/Field';
 import { Panel, Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { useAccount } from '@/data/queries';
+import { useAppUpdate } from '@/data/app-update';
+import { useOutbox } from '@/offline';
 import { useEndpointState } from '@/net/endpoint';
 import { useTheme } from '@/theme';
 import { setThemePreference, type ThemePreference, useThemePreference } from '@/theme/preference';
@@ -20,6 +24,8 @@ export default function Settings() {
   const [home, setHome] = useState(session.home ?? '');
   const [homeError, setHomeError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const queued = useOutbox().length;
+  const update = useAppUpdate();
 
   async function saveHome() {
     setHomeError(null);
@@ -62,6 +68,10 @@ export default function Settings() {
         <Button kind="quiet" title="Save" onPress={saveHome} />
       </Panel>
 
+      <Panel title="Cinema subscriptions">
+        <Button kind="quiet" title="Break-even and savings" onPress={() => router.push('/subscriptions')} />
+      </Panel>
+
       <Panel title="Appearance">
         <ThemePicker />
       </Panel>
@@ -76,6 +86,21 @@ export default function Settings() {
         )) ?? <Text variant="muted">{account.isError ? "Couldn't load sessions." : 'Loading…'}</Text>}
       </Panel>
 
+      <Panel title="App">
+        <Row label="Version" value={`${Constants.expoConfig?.version ?? '?'}${Platform.OS === 'android' ? ' (APK)' : ''}`} />
+        {update.data ? (
+          <>
+            <Text style={{ color: colors.deltaDebut }}>Version {update.data.version} is available.</Text>
+            <Button kind="quiet" title="Download the APK" onPress={() => void Linking.openURL(update.data!.url)} />
+          </>
+        ) : null}
+      </Panel>
+
+      {queued ? (
+        <Text variant="muted">
+          {queued} change{queued === 1 ? '' : 's'} not yet synced stay on this phone after signing out and go out when this account signs in again.
+        </Text>
+      ) : null}
       <Button
         kind="quiet"
         title="Sign out"

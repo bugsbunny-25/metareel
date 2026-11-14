@@ -4507,6 +4507,7 @@ components:
         number_of_seasons: { type: integer }
         number_of_episodes: { type: integer }
         charted: { type: boolean, description: Whether metareel knows this title from a chart }
+        poster_color: { type: string, pattern: "^#[0-9a-f]{6}$", description: "Average colour of the poster (#rrggbb), for artwork-tinted surfaces; only on GET /api/v1/me/titles/{kind}/{id}, and absent when there is no poster or it couldn't be fetched" }
     TrackedTitleState:
       type: object
       nullable: true

@@ -3,7 +3,7 @@ import * as Device from 'expo-device';
 import * as SecureStore from 'expo-secure-store';
 import { createContext, type PropsWithChildren, useContext, useEffect, useMemo, useSyncExternalStore } from 'react';
 
-import { makeApi } from '@/api/client';
+import { makeApi, makeApiFetch } from '@/api/client';
 import { Endpoint } from '@/net/endpoint';
 import { ensureLocalNetworkAccess } from '@/net/local-network';
 import { clearQueryCache } from '@/query/client';
@@ -47,13 +47,27 @@ export const endpoint = new Endpoint((homeUrl) => {
   });
 });
 
-export const api = makeApi({
+/** Sends a request to the current server with the session token (see api/client). */
+export const apiFetch = makeApiFetch({
   endpoint,
   token: () => current()?.token ?? null,
   onUnauthorized: () => {
     void signOutLocally('Your session ended. Sign in again.');
   },
 });
+
+export const api = makeApi(apiFetch);
+
+/** The signed-in session, or null (for code outside React). */
+export const currentSession = current;
+
+/** Hears every session change (sign-in, sign-out, home URL). */
+export function subscribeSession(l: () => void) {
+  listeners.add(l);
+  return () => {
+    listeners.delete(l);
+  };
+}
 
 async function persist(s: StoredSession | null) {
   if (s) await SecureStore.setItemAsync(STORE_KEY, JSON.stringify(s));

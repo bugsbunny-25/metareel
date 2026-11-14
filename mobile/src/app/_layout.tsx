@@ -10,6 +10,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { endpoint, SessionProvider, useSession } from '@/auth/session';
 import { useEndpointRefresh } from '@/net/use-endpoint-refresh';
+import { useOutboxSync } from '@/offline/use-sync';
 import { persister, persistMaxAge, queryClient } from '@/query/client';
 import { useTheme } from '@/theme';
 
@@ -39,6 +40,7 @@ function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
   const { scheme, colors } = useTheme();
   const ready = fontsLoaded && session.status !== 'loading';
   useEndpointRefresh(endpoint);
+  useOutboxSync(session.status === 'signedIn');
 
   useEffect(() => {
     // The window background shows while a foldable unfolds or a window
@@ -57,6 +59,31 @@ function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bgCanvas } }}>
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="(tabs)" />
+          {['title/[kind]/[id]', 'show/[id]', 'watch/[id]', 'subscriptions', 'search'].map((name) => (
+            <Stack.Screen
+              key={name}
+              name={name}
+              options={{
+                headerShown: true,
+                headerTitle: '',
+                headerShadowVisible: false,
+                headerBackButtonDisplayMode: 'minimal',
+                headerStyle: { backgroundColor: colors.bgCanvas },
+                headerTintColor: colors.textPrimary,
+                headerTitleStyle: { fontFamily: 'SourceSerif4_700Bold', color: colors.textPrimary },
+              }}
+            />
+          ))}
+          <Stack.Screen
+            name="log"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: [0.75, 1],
+              sheetGrabberVisible: true,
+              sheetCornerRadius: 20,
+              contentStyle: { backgroundColor: colors.bgSurface },
+            }}
+          />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="sign-in" />

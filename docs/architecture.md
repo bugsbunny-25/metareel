@@ -898,6 +898,13 @@ the self-protection rules) but nothing is refused.
 
 ## Tracking (`service/tracking.go`, `service/tracking_titles.go`)
 
+Poster colours (`service/poster_colors.go`): `GET /me/titles/{kind}/{id}`
+adds `poster_color` (#rrggbb, the mean of every pixel of TMDB's w92 poster)
+for the mobile app's tinted heroes. The first request for a poster downloads
+it from `image.tmdb.org` (2 s budget, only paths matching a TMDB image path,
+512 KB cap) and caches the result in `poster_colors` by poster path; a failure
+just leaves the field out.
+
 `/api/v1/me/...` is one user's watchlist, statuses, watch log and tags. The
 group is wired in `router.Register` as
 `SameOriginWrites, h.Authenticate, h.RequireUser, handler.NoStore` and is

@@ -254,7 +254,7 @@ make reports-open
 | GET    | `/api/v1/me/titles/search?q=&kind=`         | Search TMDB for anything to track (not only titles metareel has charted); needs a signed-in user |
 | GET    | `/api/v1/me/people/search?q=`               | Search TMDB for actors and crew by name (opens `/people/:id`); needs a signed-in user |
 | GET    | `/api/v1/me/titles`                         | The user's tracked titles (`status`, `kind`, `favorite`, `sort`, `limit`, `offset`) |
-| GET/PUT/DELETE | `/api/v1/me/titles/{movie\|tv}/:id`  | One title: its TMDB metadata plus the user's status, favourite flag, watchlist note and watch roll-up |
+| GET/PUT/DELETE | `/api/v1/me/titles/{movie\|tv}/:id`  | One title: its TMDB metadata plus the user's status, favourite flag, watchlist note and watch roll-up; GET adds `poster_color` (#rrggbb, the poster's average colour, cached) for artwork-tinted screens |
 | GET    | `/api/v1/me/watchlist`                      | The watchlist, in list order |
 | PUT/DELETE | `/api/v1/me/watchlist/{movie\|tv}/:id` | Put a title on the watchlist or take it off (watches and favourites are kept) |
 | GET/POST | `/api/v1/me/watches`                      | The watch log (diary), newest local day first (cursor paged); log a watch |

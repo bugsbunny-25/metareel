@@ -58,12 +58,22 @@ export function makeApiFetch(deps: ApiDeps) {
   };
 }
 
-export function makeApi(deps: ApiDeps) {
-  const apiFetch = makeApiFetch(deps);
+export type ApiFetch = ReturnType<typeof makeApiFetch>;
+
+export function makeApi(apiFetch: ApiFetch) {
   return createClient<paths>({ baseUrl: PLACEHOLDER, fetch: apiFetch });
 }
 
 export type Api = ReturnType<typeof makeApi>;
+
+/** A request built for apiFetch from a path ("/api/v1/me/watches") and a JSON body. */
+export function apiRequest(method: string, path: string, body?: unknown): Request {
+  return new Request(PLACEHOLDER + path, {
+    method,
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
 
 /** Unwraps an openapi-fetch result: the data, or an ApiError with the server's message. */
 export function unwrap<T>(r: { data?: T; error?: unknown; response: Response }): T {

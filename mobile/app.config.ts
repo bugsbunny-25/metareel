@@ -54,6 +54,20 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ['expo-splash-screen', { backgroundColor: '#0b0b0c', image: './assets/images/splash-icon.png', imageWidth: 76 }],
     ['expo-secure-store', { faceIDPermission: false }],
     'expo-sqlite',
+    [
+      'expo-location',
+      {
+        // Foreground only: the position is used once, to list nearby cinemas.
+        locationWhenInUsePermission: 'metareel uses your location when you log a film, to list the cinemas near you.',
+        locationAlwaysAndWhenInUsePermission: false,
+        locationAlwaysPermission: false,
+        motionUsagePermission: false,
+        isIosBackgroundLocationEnabled: false,
+        isAndroidBackgroundLocationEnabled: false,
+        isAndroidForegroundServiceEnabled: false,
+      },
+    ],
+    'expo-background-task',
     ['./plugins/with-home-http.js', { hosts: homeHttpHosts }],
   ],
   runtimeVersion: { policy: 'fingerprint' },

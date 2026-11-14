@@ -171,6 +171,7 @@ type Querier interface {
 	GetNetflixTitle(ctx context.Context, id int64) (GetNetflixTitleRow, error)
 	GetNetflixTitleRow(ctx context.Context, id int64) (NetflixTitle, error)
 	GetPerson(ctx context.Context, personID int64) (GetPersonRow, error)
+	GetPosterColor(ctx context.Context, posterPath string) (string, error)
 	GetPreviousChartSnapshot(ctx context.Context, arg GetPreviousChartSnapshotParams) (ChartSnapshot, error)
 	GetTaskRunByID(ctx context.Context, id int64) (TaskRun, error)
 	GetTaskScheduleByID(ctx context.Context, id int64) (TaskSchedule, error)
@@ -628,6 +629,7 @@ type Querier interface {
 	SaveDataImport(ctx context.Context, arg SaveDataImportParams) error
 	SaveFlixPatrolDetails(ctx context.Context, arg SaveFlixPatrolDetailsParams) error
 	SavePageview(ctx context.Context, arg SavePageviewParams) error
+	SavePosterColor(ctx context.Context, arg SavePosterColorParams) error
 	// distributors is a JSON list (NULL when Wikidata has none).
 	SaveTmdbDistributors(ctx context.Context, arg SaveTmdbDistributorsParams) error
 	SaveTmdbEnwiki(ctx context.Context, arg SaveTmdbEnwikiParams) error

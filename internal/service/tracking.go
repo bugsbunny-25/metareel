@@ -63,7 +63,14 @@ type TrackingService struct {
 	write  *repository.TrackingRepository
 	read   *repository.TrackingRepository
 	titles *TrackedTitleService
+	colors *PosterColorService
 	now    func() time.Time
+}
+
+// WithPosterColors adds poster colours to single-title responses.
+func (s *TrackingService) WithPosterColors(c *PosterColorService) *TrackingService {
+	s.colors = c
+	return s
 }
 
 func NewTrackingService(log *slog.Logger, write, read *repository.TrackingRepository, titles *TrackedTitleService) *TrackingService {
@@ -92,7 +99,11 @@ func (s *TrackingService) GetTitleState(ctx context.Context, userID int64, kind,
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"title": titlePayload(snap), "state": st}, nil
+	title := titlePayload(snap)
+	if c := s.colors.Color(ctx, snap.PosterPath); c != "" {
+		title["poster_color"] = c
+	}
+	return map[string]any{"title": title, "state": st}, nil
 }
 
 // SetTitleState sets the status, favourite flag and watchlist note of a

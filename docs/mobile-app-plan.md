@@ -419,10 +419,28 @@ of the typing. "S" ≈ ½–1 day, "M" ≈ 2–3 days.
 | **1. Backend prerequisites** | B1 nearby venues, B2 device label, B3 remember-device sessions, B4 local-URL probe, login rate-limit review for the public deployment, CSRF/bearer router test, OpenAPI. Expo account + EAS project; bundle ID registered. | 3–4 | Go tests + live check on a DB copy; probe verified from a script. |
 | **2. App foundation** | Scaffold `mobile/`, config plugins (incl. `with-local-http`), fonts, theme generator, API types, sign-in + secure store + endpoint switching, TanStack Query + SQLite persistence, adaptive shell (headless tabs as bar/rail), B5 poster colour, first TestFlight build and first GitHub Release APK, EAS Update channels, CI. | 6–8 | Sign in on the iOS simulator (via TestFlight-equivalent build) and Android emulator; switches between home and public URL; shell resizes on fold/unfold without losing state. |
 | **3. Core phone flows** | Tonight with Top 10 rail, quick log, full log sheet (venue nearby, formats, money, subscription covered), outbox + offline banner, Up next + Show ticks, Watchlist, Diary, Title (lean), Search, Subscriptions, Settings (sessions, update check). | 10–14 | Maestro: sign in → airplane mode → quick log → online → entry on the web Diary exactly once. |
+
 | **4. Large screens & foldables** | List–detail on medium/expanded, rail, side-panel log sheet, `expo-hinge` + `fold-info`, tabletop layout, iPhone Duo pass, multi-window/freeform, iPad pass. | 4–6 | §2 test matrix passes; no state loss on fold/unfold mid-log. |
 | **5. Share sheet** | `expo-sharing` receive on both platforms, resolve screen, B11 Letterboxd. | 2–4 | Shared Netflix, IMDb and Letterboxd links resolve or fall back to search. |
 | **6. Notifications** | 6a: local episode reminders + background task. 6b: B7–B10, Firebase project, Expo push, permission UX, settings switches. | 2 + 4–5 | A watchlist title arriving on one of your services notifies once and deep-links to the title. |
 | **7. Widgets & "Now showing"** | B6 glance, Up next + Break-even widgets (iOS, then Android), lock-screen accessory, iOS Live Activity, Android `now-showing` module. | 6–9 | Widgets update after a log and after a background refresh; "Now showing" ends with a pre-filled log on both platforms. |
+
+**Phase 3 status (2026-11-14):** built and checked on the Android emulator:
+Tonight (Top 10 rail, Up next with ticks, recent logs, Log a film), search
+(TMDB titles and IMDb/TMDB/Netflix links; films and series interleaved),
+the log sheet (when, stars, liked, cinema from GPS with an offline-ranked
+cache, formats, price or subscription face value, streaming service, notes;
+drafts survive restarts), the SQLite outbox (logs, episode ticks and watchlist
+changes; verified offline → online with one server row per log), Diary
+(grouped by the day a watch started, pending rows on top), a watch's page
+(edit rating/liked/notes, delete), Title (poster-tinted hero via B5, scores,
+where to watch with service logos, chart positions), Show (seasons, tick,
+long-press to mark up to, unmark), Up next stages, Watchlist,
+Subscriptions (break-even, savings), Settings (subscriptions, APK update
+check), and a background task that flushes the outbox. Not done: Maestro
+flows (the CLI isn't installed; the offline check was run by hand), the
+side-panel log sheet on wide windows (phase 4), and logos for IMDb / RT /
+TMDB scores (the web app is getting them; reuse when they land).
 
 v1 worth using day to day = phases 1–4, about **5–7 weeks of focused days**.
 Phases 5–7 are independent and can be reordered.

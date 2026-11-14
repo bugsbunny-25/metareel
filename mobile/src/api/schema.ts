@@ -52,7 +52,7 @@ export interface paths {
         put?: never;
         /**
          * Sign in with a username and password
-         * @description Starts a session. Sets the metareel_session cookie (HttpOnly, SameSite=Strict, Secure over HTTPS) and returns the session token once, for clients that send it as a Bearer token. Native clients (the mobile app) may name the device and ask for a "remember this device" session, which lasts AUTH_DEVICE_SESSION_TTL (default 180 days) and ends after AUTH_DEVICE_SESSION_IDLE_TIMEOUT (default 90 days) unused; it is revocable like any session. Attempts are rate limited per client IP and failed attempts per username (429 with Retry-After); behind a reverse proxy, set SERVER_TRUSTED_PROXIES so the client IP is the real one. Cross-site browser requests are refused (403).
+         * @description Starts a session. Sets the metareel_session cookie (the admin console's metareel_admin_session with client=admin; HttpOnly, SameSite=Strict, Secure over HTTPS) and returns the session token once, for clients that send it as a Bearer token. Native clients (the mobile app) may name the device and ask for a "remember this device" session, which lasts AUTH_DEVICE_SESSION_TTL (default 180 days) and ends after AUTH_DEVICE_SESSION_IDLE_TIMEOUT (default 90 days) unused; it is revocable like any session. Attempts are rate limited per client IP and failed attempts per username (429 with Retry-After); behind a reverse proxy, set SERVER_TRUSTED_PROXIES so the client IP is the real one. Cross-site browser requests are refused (403).
          */
         post: operations["login"];
         delete?: never;
@@ -92,7 +92,7 @@ export interface paths {
         put?: never;
         /**
          * End the current session
-         * @description Ends the session of the Bearer session token or cookie sent, and clears the cookie. Succeeds also when there is no session.
+         * @description Ends the session of the Bearer session token or cookie sent (the admin console's with client=admin), and clears that cookie; the other sign-in stays. Succeeds also when there is no session.
          */
         post: operations["logout"];
         delete?: never;
@@ -110,7 +110,7 @@ export interface paths {
         };
         /**
          * Whether the admin console needs a sign-in, and who is signed in
-         * @description Used by the admin console. Never 401: user is null without a valid session cookie or Bearer session token.
+         * @description Used by the admin console (client=admin) and the user app. Never 401: user is null without a valid session cookie for that client or a Bearer session token.
          */
         get: operations["authSession"];
         put?: never;
@@ -1784,7 +1784,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Replace a cinema subscription (e.g. set ended_on to end it) */
+        /** Replace a cinema subscription (end it, resubscribe with a new run, add a price change) */
         put: operations["updateCinemaSubscription"];
         post?: never;
         /** Delete a cinema subscription; its watches stay, no longer covered */
@@ -2309,6 +2309,10 @@ export interface components {
                 provider_name?: string;
                 monetization?: string;
                 link?: string;
+                /** @description TMDB provider logo path (https://image.tmdb.org/t/p/w92{logo_path}); omitted when unknown */
+                logo_path?: string;
+                /** @description The service's own page for the title (JustWatch); omitted when unknown */
+                url?: string;
             }[];
             /** @description Watchlist titles observed coming off a service. These have already gone: metareel has no schedule of future departures. */
             recently_left?: {
@@ -2351,6 +2355,8 @@ export interface components {
             name?: string;
             chain?: string | null;
             address?: string | null;
+            /** @description ZIP, PIN or postcode; a US ZIP fills region (the state) when none is given */
+            postcode?: string | null;
             city?: string | null;
             region?: string | null;
             /** @description ISO 3166-1 alpha-2 */
@@ -2379,6 +2385,8 @@ export interface components {
             name: string;
             chain?: string | null;
             address?: string | null;
+            /** @description ZIP, PIN or postcode; a US ZIP fills region (the state) when none is given */
+            postcode?: string | null;
             city?: string | null;
             region?: string | null;
             /** @description ISO 3166-1 alpha-2 */
@@ -2474,7 +2482,7 @@ export interface components {
             plan?: string;
             /** @description Matched against a venue's chain or name to suggest the plan when logging */
             chain?: string | null;
-            /** @description Per period */
+            /** @description Per period, minor units: the price in effect today (see prices) */
             price_minor?: number;
             /** @example USD */
             currency?: string;
@@ -2482,19 +2490,48 @@ export interface components {
             period?: "month" | "year";
             /**
              * Format: date
-             * @description The first billing day
+             * @description The first billing day of the first run
              */
             started_on?: string;
-            /** Format: date */
+            /**
+             * Format: date
+             * @description The end of the last run; null while it runs
+             */
             ended_on?: string | null;
             note?: string | null;
             created_at?: string;
             updated_at?: string;
+            /** @description The runs of the plan, oldest first. Cancelling and resubscribing leaves a gap between two runs, and gaps are not billed. */
+            periods?: components["schemas"]["CinemaSubscriptionPeriod"][];
+            /** @description What a billing period cost from each date, oldest first; the earliest also covers bills before its date. */
+            prices?: components["schemas"]["CinemaSubscriptionPrice"][];
         };
+        CinemaSubscriptionPeriod: {
+            /**
+             * Format: date
+             * @description The run's first billing day
+             */
+            started_on: string;
+            /**
+             * Format: date
+             * @description Null while it runs; only the last run may be open
+             */
+            ended_on?: string | null;
+        };
+        CinemaSubscriptionPrice: {
+            /**
+             * Format: date
+             * @description First bill at this price (the first price may omit it: the plan's start)
+             */
+            from: string;
+            price_minor: number;
+        };
+        /** @description A plan. Send periods and prices to set its history. Without periods, started_on and ended_on are its only run (create) or move the first start and the last end of the stored runs (update). Without prices, price_minor is its only price (create) or replaces the price in effect today (update). Runs must not overlap and only the last may be open; one price per date. */
         CinemaSubscriptionInput: {
             plan: string;
             chain?: string | null;
-            price_minor: number;
+            /** @description Required without prices on create */
+            price_minor?: number;
             /** @description ISO 4217 */
             currency: string;
             /**
@@ -2502,11 +2539,16 @@ export interface components {
              * @enum {string}
              */
             period: "month" | "year";
-            /** Format: date */
-            started_on: string;
+            /**
+             * Format: date
+             * @description Required without periods on create
+             */
+            started_on?: string;
             /** Format: date */
             ended_on?: string | null;
             note?: string | null;
+            periods?: components["schemas"]["CinemaSubscriptionPeriod"][];
+            prices?: components["schemas"]["CinemaSubscriptionPrice"][];
         };
         /** @description Where and how a watch happened. These fields sit at the top level of a watch and of the body that logs one; all of them are optional. */
         WatchContext: {
@@ -2786,6 +2828,8 @@ export interface components {
             number_of_episodes?: number;
             /** @description Whether metareel knows this title from a chart */
             charted?: boolean;
+            /** @description Average colour of the poster (#rrggbb), for artwork-tinted surfaces; only on GET /api/v1/me/titles/{kind}/{id}, and absent when there is no poster or it couldn't be fetched */
+            poster_color?: string;
         };
         /** @description One user's state for one title. The watch roll-up is derived from their watches. */
         TrackedTitleState: {
@@ -4081,6 +4125,11 @@ export interface components {
              * @default false
              */
             remember_device: boolean;
+            /**
+             * @description admin signs in to the admin console (its own cookie), like ?client=admin
+             * @enum {string}
+             */
+            client?: "admin";
         };
         ProbeRequest: {
             /**
@@ -4542,7 +4591,10 @@ export interface operations {
     };
     login: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description "admin" for the admin console, which has its own sign-in and the metareel_admin_session cookie; without it, the user app's metareel_session. The two are separate: one being signed in never signs in the other. */
+                client?: "admin";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4556,7 +4608,7 @@ export interface operations {
             /** @description Signed in */
             200: {
                 headers: {
-                    /** @description metareel_session=<token> */
+                    /** @description metareel_session=<token>, or metareel_admin_session=<token> for client=admin */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
@@ -4630,7 +4682,10 @@ export interface operations {
     };
     logout: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description "admin" for the admin console, which has its own sign-in and the metareel_admin_session cookie; without it, the user app's metareel_session. The two are separate: one being signed in never signs in the other. */
+                client?: "admin";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4648,7 +4703,10 @@ export interface operations {
     };
     authSession: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description "admin" for the admin console, which has its own sign-in and the metareel_admin_session cookie; without it, the user app's metareel_session. The two are separate: one being signed in never signs in the other. */
+                client?: "admin";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7776,7 +7834,7 @@ export interface operations {
     listVenues: {
         parameters: {
             query?: {
-                /** @description Words (up to four, e.g. pvr mumbai) each matched in the name, chain, city or address; names starting with the first word come first */
+                /** @description Words (up to four, e.g. pvr mumbai) each matched in the name, chain, city, address or postcode; names starting with the first word come first */
                 q?: string;
                 /** @description ISO 3166-1 alpha-2 */
                 country?: string;

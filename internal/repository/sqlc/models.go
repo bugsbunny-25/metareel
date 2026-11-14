@@ -219,6 +219,12 @@ type NetflixTop10Global struct {
 	CumulativeWeeks   sql.NullInt64   `json:"cumulative_weeks"`
 }
 
+type PosterColor struct {
+	PosterPath string `json:"poster_path"`
+	Color      string `json:"color"`
+	ComputedAt string `json:"computed_at"`
+}
+
 type Ranking struct {
 	ID                int64          `json:"id"`
 	TitleID           int64          `json:"title_id"`

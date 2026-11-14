@@ -187,8 +187,10 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	// diary reads use the read-only pool, like the other read services.
 	trackingWrite := repository.NewTrackingRepository(db)
 	trackingRead := repository.NewTrackingRepository(readDB)
-	trackedTitles := service.NewTrackedTitleService(log, client.NewTMDB(httpClient, cfg.TMDB.APIKey), trackingWrite, trackingRead)
-	tracking := service.NewTrackingService(log, trackingWrite, trackingRead, trackedTitles)
+	tmdbClient := client.NewTMDB(httpClient, cfg.TMDB.APIKey)
+	trackedTitles := service.NewTrackedTitleService(log, tmdbClient, trackingWrite, trackingRead)
+	tracking := service.NewTrackingService(log, trackingWrite, trackingRead, trackedTitles).
+		WithPosterColors(service.NewPosterColorService(log, trackingWrite, tmdbClient))
 
 	h := &handler.Handler{
 		Top10:      top10Read,
