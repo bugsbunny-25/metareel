@@ -16,7 +16,7 @@ import { useDiary, usePreferences, useShowQueue, useTop10 } from '@/data/queries
 import { changeText, type LibraryState, libraryMark, movement, providerName, setScope, useChartReference, useLibrary, useScope } from '@/data/scope';
 import { useWindowClass } from '@/layout/window-class';
 import Svg, { Text as SvgText } from 'react-native-svg';
-import { markEpisode, openLog, openTitle } from '@/lib/actions';
+import { markEpisode, openEpisode, openLog, openTitle } from '@/lib/actions';
 import { episodeCode, starText, tmdbKind } from '@/lib/format';
 import { useTheme } from '@/theme';
 import { nowShowingProps, stopNowShowing, useNowShowing } from '@/nowshowing';
@@ -59,7 +59,7 @@ export default function Tonight() {
                 poster={s.poster_path}
                 title={s.title ?? ''}
                 subtitle={`${episodeCode(ep.season_number, ep.episode_number)}${ep.name ? ` · ${ep.name}` : ''}`}
-                onPress={() => openTitle({ kind: 'tv', id: s.tmdb_id ?? '' })}
+                onPress={() => openEpisode(s.tmdb_id ?? '', ep.season_number ?? 0, ep.episode_number ?? 1)}
                 right={
                   <Pressable
                     onPress={() => markEpisode(s.tmdb_id ?? '', s.title ?? '', ep.season_number!, ep.episode_number!)}
