@@ -46,6 +46,9 @@ func TestLetterboxdResolve(t *testing.T) {
 		"https://letterboxd.com/someuser/list/best/",
 		"https://letterboxd.com/tag/science-fiction/",
 		"https://example.com/film/dune-part-two/",
+		"https://boxd.it:22/abcd",
+		"https://user@letterboxd.com/film/dune-part-two/",
+		"ftp://letterboxd.com/film/dune-part-two/",
 		"not a url",
 	} {
 		if _, err := c.Resolve(ctx, link); !errors.Is(err, ErrLetterboxdNotFilm) {

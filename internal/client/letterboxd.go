@@ -86,6 +86,12 @@ func IsLetterboxdURL(s string) bool {
 	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && letterboxdHost(u.Hostname())
 }
 
+// letterboxdFetchable reports whether u may be fetched: a Letterboxd host on
+// the default port. It is then fetched over HTTPS whatever its scheme.
+func letterboxdFetchable(u *url.URL) bool {
+	return (u.Scheme == "https" || u.Scheme == "http") && u.Port() == "" && u.User == nil && letterboxdHost(u.Hostname())
+}
+
 func letterboxdHost(h string) bool {
 	h = strings.ToLower(h)
 	return h == "boxd.it" || h == "letterboxd.com" || h == "www.letterboxd.com"
@@ -94,9 +100,10 @@ func letterboxdHost(h string) bool {
 // Resolve turns a Letterboxd link into a TMDB reference.
 func (c *LetterboxdClient) Resolve(ctx context.Context, link string) (LetterboxdRef, error) {
 	u, err := url.Parse(strings.TrimSpace(link))
-	if err != nil || !letterboxdHost(u.Hostname()) {
+	if err != nil || !letterboxdFetchable(u) {
 		return LetterboxdRef{}, ErrLetterboxdNotFilm
 	}
+	u.Scheme = "https"
 	for hop := 0; strings.EqualFold(u.Hostname(), "boxd.it"); hop++ {
 		if hop >= letterboxdMaxHops {
 			return LetterboxdRef{}, fmt.Errorf("letterboxd: too many redirects")
@@ -105,9 +112,10 @@ func (c *LetterboxdClient) Resolve(ctx context.Context, link string) (Letterboxd
 		if err != nil {
 			return LetterboxdRef{}, err
 		}
-		if !letterboxdHost(next.Hostname()) {
+		if !letterboxdFetchable(next) {
 			return LetterboxdRef{}, ErrLetterboxdNotFilm
 		}
+		next.Scheme = "https"
 		u = next
 	}
 	m := letterboxdFilmPathRe.FindStringSubmatch(u.EscapedPath())

@@ -436,9 +436,15 @@ then:
    If a request fails, that batch's log rows are removed and the cursor stays,
    so the next run retries.
 
+Re-registering a token that belongs to another user moves the device to
+the caller: that is how a phone switches accounts, and tokens are never
+returned by the API, so taking over someone's device needs their token from
+elsewhere (accepted).
+
 Arrivals only exist for titles whose watch providers are refreshed: the
-`titles.metadata` candidates include every watchlisted title (as if it were
-charting), not only charted ones. Push and access tokens never reach logs or
+`titles.metadata` candidates include every watchlisted title on the short
+window, ranked after titles that are actually charting so a long watchlist
+can't crowd them out of a run. Push and access tokens never reach logs or
 errors; Expo's error messages quote the push token, so only error codes are
 kept.
 

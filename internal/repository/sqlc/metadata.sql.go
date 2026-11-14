@@ -342,10 +342,12 @@ FROM (
         FROM netflix_titles n
         WHERE COALESCE(n.tmdb_id, '') <> '' AND n.tmdb_kind IS NOT NULL
         UNION ALL
-        -- Titles on someone's watchlist, charted or not, count as current:
-        -- their watch providers are what watchlist-arrival notifications
-        -- compare against.
-        SELECT DISTINCT ut.tmdb_kind, ut.tmdb_id, date('now')
+        -- Titles on someone's watchlist, charted or not, get the short
+        -- window too (watchlist-arrival notifications compare their watch
+        -- providers), dated just inside it so they rank after titles that
+        -- are actually charting and a long watchlist can't crowd those out
+        -- of a run.
+        SELECT DISTINCT ut.tmdb_kind, ut.tmdb_id, date('now', '-29 days')
         FROM user_titles ut
         WHERE ut.status = 'watchlist'
     ) u
