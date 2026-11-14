@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { unwrap } from '@/api/client';
 import type { components } from '@/api/schema';
 import { api } from '@/auth/session';
+import { Button } from '@/components/Button';
 import { Chip } from '@/components/Chip';
 import { Field } from '@/components/Field';
 import { Icon } from '@/components/Icon';
@@ -21,6 +22,7 @@ import { useFormats, useMyTitle, usePreferences, useSubscriptions, useWatch } fr
 import { useWindowClass } from '@/layout/window-class';
 import { isBookSplit, isTabletop, useFold } from 'fold-info';
 import { currencyFor, deviceTimeZone, endedAt, episodeCode, toMinor, type When } from '@/lib/format';
+import { loggedTitle, startNowShowing, useNowShowing } from '@/nowshowing';
 import { enqueue } from '@/offline';
 import { queryClient } from '@/query/client';
 import { useTheme } from '@/theme';
@@ -77,6 +79,8 @@ function NewWatch({ params: p }: { params: { kind: string; id: string; title?: s
   const episode = p.episode ? Number(p.episode) : null;
   const draftKey = `draft:${kind}:${p.id}:${season ?? ''}:${episode ?? ''}`;
   const prefs = usePreferences();
+  const meta = useMyTitle(kind, p.id, kind === 'movie' && season == null);
+  const showing = useNowShowing();
   const [d, setD] = useState<Draft>(() => loadDraft(draftKey) ?? emptyDraft(''));
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
   const [error, setError] = useState<string | null>(null);
@@ -115,9 +119,26 @@ function NewWatch({ params: p }: { params: { kind: string; id: string; title?: s
     } catch {
       // Left behind, it expires after a few hours.
     }
+    loggedTitle(kind, p.id);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
   }
+
+  // "Now showing": watching it right now. The form is kept as a draft, and
+  // "Log it" from the lock screen / notification brings it back.
+  function startShowing() {
+    void startNowShowing({
+      kind,
+      id: p.id,
+      title: p.title ?? meta.data?.title?.title ?? 'Film',
+      poster: p.poster ?? '',
+      venue: d.place === 'theater' ? (d.venue?.name ?? '') : '',
+      runtime: meta.data?.title?.runtime || null,
+    });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.back();
+  }
+  const canShow = kind === 'movie' && season == null && !(showing?.kind === kind && showing.id === p.id);
 
   return (
     <Sheet
@@ -152,6 +173,12 @@ function NewWatch({ params: p }: { params: { kind: string; id: string; title?: s
         <Field label="Service" placeholder="Netflix" value={d.provider} onChangeText={(provider) => set({ provider })} autoCorrect={false} />
       ) : null}
       <Field label="Notes" multiline value={d.notes} onChangeText={(notes) => set({ notes })} style={{ minHeight: 80, paddingTop: 12, textAlignVertical: 'top' }} />
+      {canShow ? (
+        <Section title="Watching it now?">
+          <Text variant="muted">Keep it on your lock screen until it ends, then log it from there with this form filled in.</Text>
+          <Button kind="quiet" title="Start Now showing" onPress={startShowing} />
+        </Section>
+      ) : null}
     </Sheet>
   );
 }
@@ -456,28 +483,36 @@ function Sheet({ title, subtitle, poster, action, error, children }: {
       </View>
     );
   }
+  // The header is the scroll view's sticky first row rather than a sibling
+  // above it: iOS form sheets lay out their first scroll view from the
+  // sheet's top edge, which put the form over a sibling header.
   const sheet = (
-    <View style={{ flex: 1, backgroundColor: colors.bgSurface }}>
-      <View style={[styles.head, { paddingHorizontal: gutter.compact }]}>
-        <Poster path={poster} title={title} width={44} />
-        <View style={{ flex: 1 }}>
-          <Text variant="heading" numberOfLines={2}>{title}</Text>
-          {subtitle ? <Text variant="muted" num>{subtitle}</Text> : null}
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.bgSurface }}
+      stickyHeaderIndices={[0]}
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+    >
+      <View style={{ backgroundColor: colors.bgSurface }}>
+        <View style={[styles.head, { paddingHorizontal: gutter.compact }]}>
+          <Poster path={poster} title={title} width={44} />
+          <View style={{ flex: 1 }}>
+            <Text variant="heading" numberOfLines={2}>{title}</Text>
+            {subtitle ? <Text variant="muted" num>{subtitle}</Text> : null}
+          </View>
+          {action}
+          <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Close" style={[styles.close, { backgroundColor: colors.bgElevated }]}>
+            <Text variant="label">✕</Text>
+          </Pressable>
         </View>
-        {action}
-        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Close" style={[styles.close, { backgroundColor: colors.bgElevated }]}>
-          <Text variant="label">✕</Text>
-        </Pressable>
+        {error ? (
+          <Text style={{ color: colors.deltaDown, paddingHorizontal: gutter.compact }} accessibilityLiveRegion="polite">
+            {error}
+          </Text>
+        ) : null}
       </View>
-      {error ? (
-        <Text style={{ color: colors.deltaDown, paddingHorizontal: gutter.compact }} accessibilityLiveRegion="polite">
-          {error}
-        </Text>
-      ) : null}
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: gutter.compact, gap: 18, paddingBottom: insets.bottom + 24 }}>
-        {children}
-      </ScrollView>
-    </View>
+      <View style={{ padding: gutter.compact, gap: 18 }}>{children}</View>
+    </ScrollView>
   );
   if (!sidePanel) return sheet;
   // Wide windows: the form slides in beside the content, which stays visible

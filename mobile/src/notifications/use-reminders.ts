@@ -6,6 +6,9 @@ import { AppState } from 'react-native';
 import { usePreferences } from '@/data/queries';
 
 import { refreshPushRegistration } from './push';
+import { refreshNowShowing } from '@/nowshowing';
+import { refreshWidgets } from '@/widgets/sync';
+
 import { syncEpisodeReminders } from './reminders';
 
 /**
@@ -18,8 +21,14 @@ export function useEpisodeReminderSync(signedIn: boolean) {
   useEffect(() => {
     if (!signedIn) return;
     void syncEpisodeReminders();
+    void refreshWidgets();
+    void refreshNowShowing();
     const app = AppState.addEventListener('change', (s) => {
-      if (s === 'active') void syncEpisodeReminders();
+      if (s === 'active') {
+        void syncEpisodeReminders();
+        void refreshWidgets();
+        void refreshNowShowing();
+      }
     });
     return () => app.remove();
   }, [signedIn]);

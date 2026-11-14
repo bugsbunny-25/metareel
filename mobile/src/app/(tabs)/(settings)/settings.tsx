@@ -218,7 +218,7 @@ function WatchlistArrivals() {
           }}
         />
       </View>
-      {on && !country ? <Text variant="muted">Set your country on the web app's Settings so the server knows where you watch.</Text> : null}
+      {on && !country ? <Text variant="muted">Set your country on the web app&apos;s Settings so the server knows where you watch.</Text> : null}
       {result && ARRIVAL_NOTES[result] ? <Text variant="muted">{ARRIVAL_NOTES[result]}</Text> : null}
       {result === 'blocked' ? (
         <>

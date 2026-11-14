@@ -55,6 +55,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
   },
   plugins: [
+    // Runs after the extension plugins' project changes (mods run in
+    // reverse order): see the file.
+    './plugins/with-unique-extension-plists.js',
     'expo-router',
     ['expo-splash-screen', { backgroundColor: '#0b0b0c', image: './assets/images/splash-icon.png', imageWidth: 76 }],
     ['expo-secure-store', { faceIDPermission: false }],
@@ -90,6 +93,34 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         enableRemoteNotifications: true,
         color: '#0b0b0c',
         defaultChannel: 'episodes',
+      },
+    ],
+    [
+      'expo-widgets',
+      {
+        // Home screen widgets from GET /me/glance (phase 7), on both
+        // platforms; the iOS lock screen gets Up next as an accessory. The
+        // "Now showing" Live Activity needs no entry here.
+        enableAndroid: true,
+        // Needed for Android custom notifications ("Now showing"); on iOS it
+        // adds the push entitlement expo-notifications uses anyway.
+        enablePushNotifications: true,
+        widgets: [
+          {
+            name: 'UpNext',
+            displayName: 'Up next',
+            description: 'The next episode of the shows you are watching, and what airs next.',
+            ios: { supportedFamilies: ['systemSmall', 'systemMedium', 'accessoryRectangular', 'accessoryInline'] },
+            android: { targetCellWidth: 2, targetCellHeight: 2 },
+          },
+          {
+            name: 'BreakEven',
+            displayName: 'Break-even',
+            description: 'Your cinema plan this month against the films it takes to pay off.',
+            ios: { supportedFamilies: ['systemSmall'] },
+            android: { targetCellWidth: 2, targetCellHeight: 2 },
+          },
+        ],
       },
     ],
     ['./plugins/with-home-http.js', { hosts: homeHttpHosts }],

@@ -24,6 +24,9 @@ cookies. An optional home-network address is used over plain HTTP only after
 | `src/query/` | TanStack Query, its cache persisted to SQLite |
 | `src/theme/` | `tokens.ts` (generated from `app/src/tokens.css`) and `useTheme()` (dark first) |
 | `src/notifications/` | New-episode reminders: `plan.ts` (pure: upcoming episodes → reminders), `reminders.ts` (permission, settings switch, keeping the OS schedule in step), `use-reminders.ts` (sync on launch/foreground, open the show on tap) |
+| `src/widgets/` | Home and lock screen widgets (`expo-widgets`): Up next and Break-even, SwiftUI on iOS and Compose on Android, fed from `GET /me/glance` by `sync.ts` |
+| `src/nowshowing/` | "Now showing": iOS Live Activity / Android ongoing notification for the film you're watching, ending with a pre-filled log |
+| `plugins/with-unique-extension-plists.js` | Gives the share and widget extensions their own `Info.plist` reference (both plugins would share one, which Xcode rejects) |
 | `src/layout/window-class.ts` | Material window size classes (compact < 600 dp ≤ medium < 840 dp ≤ expanded) |
 | `src/layout/ListDetail.tsx` | List and detail side by side on medium/expanded windows (Diary, Up next, Watchlist); on a half-open book foldable (Android, or iPhone Duo via UIKit's division region) the split sits on the fold |
 | `src/screens/` | Title, Show and Watch views, used as screens and in the detail pane |

@@ -514,6 +514,35 @@ project (`EAS_PROJECT_ID`), the APNs key and a Firebase project
 (`GOOGLE_SERVICES_JSON` at build time); without them the app says the build
 can't receive push.
 
+**Phase 7 status (2026-11-14):** B6 `GET /me/glance` (7a). Widgets with
+`expo-widgets` on both platforms (`src/widgets/`): **Up next** (iOS small,
+medium and the lock-screen rectangular / inline accessories; Android 2x2)
+and **Break-even** (iOS small; Android 2x2), each an `@expo/ui` SwiftUI
+layout on iOS and a Jetpack Compose one on Android. The app maps the glance
+to widget props (`props.ts`, tested) and pushes them on launch, on
+foreground, after the outbox sends a log or tick, and from the background
+task; signing out blanks them. **"Now showing"** (`src/nowshowing/`) starts
+from the log sheet ("Start Now showing", films): on iOS a Live Activity
+(lock screen + Dynamic Island) whose progress bar and countdown run by
+themselves; on Android an ongoing notification. Both open the log sheet,
+which comes back with its saved draft; logging the title, or "Stop" on
+Tonight's Now showing card, ends it. Deviation from the plan: Android uses
+`expo-widgets`' custom notifications instead of a hand-written
+`modules/now-showing`, since that API now covers ongoing notifications with
+a custom layout (no live timer, so it shows start and end times and the
+progress is refreshed on foreground). `plugins/with-unique-extension-plists.js`
+works around expo-sharing and expo-widgets both adding an `Info.plist`
+reference that Xcode then rejects. Checked: on the iPhone Duo simulator, the
+widget layouts and props reach the App Group (Up next: Grey's Anatomy S1E1,
+next airing S23E6 on Thu 19 Nov) and the Live Activity shows on the lock
+screen; on the Pixel Fold emulator, both widget providers are registered and
+"Now showing" runs start → notification → tap → log, after which the
+notification is gone. Not checked: the widgets placed on a home screen (no
+scripted way to add one) and the Dynamic Island (the Duo's outer display
+uses the side strip). Also fixed on the way: on iOS the log sheet's header
+was drawn under the form (form sheets lay out their first scroll view from
+the top), so the header is now the scroll view's sticky first row.
+
 v1 worth using day to day = phases 1–4, about **5–7 weeks of focused days**.
 Phases 5–7 are independent and can be reordered.
 

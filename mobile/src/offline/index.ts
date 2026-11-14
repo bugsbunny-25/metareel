@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react';
 import { apiRequest } from '@/api/client';
 import { apiFetch, currentSession, subscribeSession } from '@/auth/session';
 import { queryClient } from '@/query/client';
+import { refreshWidgets } from '@/widgets/sync';
 
 import { Outbox, type OutboxItem, type OutboxKind, type OutboxOp } from './outbox';
 import { SQLiteStore } from './sqlite-store';
@@ -31,7 +32,10 @@ export const outbox = new Outbox(new SQLiteStore(), send, Date.now, () => {
 /** Sends what is queued, when signed in. Safe to call often. */
 export function flushOutbox() {
   if (!currentSession()) return Promise.resolve();
-  return outbox.flush().then(() => undefined);
+  return outbox.flush().then((r) => {
+    // A log or a tick changes what the widgets show.
+    if (r.sent) void refreshWidgets({ force: true });
+  });
 }
 
 /** Queue a write and try to send it right away. */

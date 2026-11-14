@@ -16,9 +16,10 @@ import { useDiary, usePreferences, useShowQueue, useTop10 } from '@/data/queries
 import { changeText, type LibraryState, libraryMark, movement, providerName, setScope, useChartReference, useLibrary, useScope } from '@/data/scope';
 import { useWindowClass } from '@/layout/window-class';
 import Svg, { Text as SvgText } from 'react-native-svg';
-import { markEpisode, openTitle } from '@/lib/actions';
+import { markEpisode, openLog, openTitle } from '@/lib/actions';
 import { episodeCode, starText, tmdbKind } from '@/lib/format';
 import { useTheme } from '@/theme';
+import { nowShowingProps, stopNowShowing, useNowShowing } from '@/nowshowing';
 
 type ChartItem = components['schemas']['Top10Result'];
 
@@ -43,6 +44,7 @@ export default function Tonight() {
       actions={[{ label: 'Search', sf: 'magnifyingglass', icon: 'search', onPress: () => router.push('/search') }]}
     >
       <ConnectionNote />
+      <NowShowingCard />
       <Button title="Log a film" onPress={() => router.push({ pathname: '/search', params: { mode: 'log' } })} />
       <OutboxBanner />
 
@@ -226,3 +228,23 @@ const styles = StyleSheet.create({
   scopeHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' },
   scopePill: { minHeight: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center' },
 });
+
+/** The film you're watching right now, with Log it and Stop. */
+function NowShowingCard() {
+  const s = useNowShowing();
+  if (!s) return null;
+  const p = nowShowingProps(s);
+  return (
+    <Panel title="Now showing">
+      <TitleRow
+        poster={s.poster}
+        title={s.title}
+        subtitle={[s.venue, p.startLabel, p.endLabel].filter(Boolean).join(' · ')}
+        onPress={() => openTitle({ kind: s.kind, id: s.id, title: s.title })}
+      />
+      <Button title="Log it" onPress={() => openLog({ kind: s.kind, id: s.id, title: s.title, poster: s.poster })} />
+      <Button kind="quiet" title="Stop" onPress={() => void stopNowShowing()} />
+    </Panel>
+  );
+}
+
