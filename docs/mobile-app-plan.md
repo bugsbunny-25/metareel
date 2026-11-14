@@ -493,6 +493,27 @@ simulator against the test server (a followed show airing on 19 Nov got its
 reminder); the tap was not exercised because the reminder only fires at
 18:00 on the air date.
 
+**Phase 6b status (2026-11-14):** B7 `user_devices` + `GET/PUT
+/me/devices`, `DELETE /me/devices/{id}` (a device belongs to the session
+that registered it; signing out deletes it). B8 `notify_watchlist_arrivals`
+preference. B9 `notifications.dispatch` (hourly at :15, `PushService`,
+`client.ExpoPush`, `notification_log`, `push_tickets` for receipts,
+`PUSH_ENABLED` / `EXPO_ACCESS_TOKEN` / `EXPO_PUSH_URL`). B10 checked: the
+metadata refresh only picked charted titles, so a never-charted watchlist
+title could never "arrive"; watchlisted titles are now refresh candidates.
+App: Settings → Notifications → Watchlist arrivals asks for permission,
+creates the Android `arrivals` channel, registers the Expo push token and
+sets the preference; the token is re-registered on launch while it's on, and
+a tap opens the title. Checked live against the test server with a fake Expo
+endpoint: register / list / delete devices (401 without a session, 400 for a
+bad token, 404 for someone else's device), the first run only sets the
+cursor, a simulated Netflix arrival sends one message to the device with the
+title link, a later arrival of the same title sends nothing, and no token
+reaches the server log. Not done: a real push to a device. It needs the EAS
+project (`EAS_PROJECT_ID`), the APNs key and a Firebase project
+(`GOOGLE_SERVICES_JSON` at build time); without them the app says the build
+can't receive push.
+
 v1 worth using day to day = phases 1–4, about **5–7 weeks of focused days**.
 Phases 5–7 are independent and can be reordered.
 

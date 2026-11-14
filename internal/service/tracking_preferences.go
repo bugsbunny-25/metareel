@@ -26,6 +26,10 @@ type Preferences struct {
 	// Services are the TMDB provider IDs of the streaming services the user
 	// pays for (at most 20): Discover's rotation reads them as subscribed.
 	Services []int64 `json:"services,omitempty"`
+	// NotifyWatchlistArrivals: send a push notification (mobile app) when a
+	// title on the watchlist arrives on one of Services (any service when
+	// none are listed) in Country. Off unless set.
+	NotifyWatchlistArrivals *bool `json:"notify_watchlist_arrivals,omitempty"`
 }
 
 const maxPreferredServices = 20
@@ -71,7 +75,7 @@ func (s *TrackingService) SetPreferences(ctx context.Context, userID int64, in P
 		return nil
 	}
 	p := Preferences{Country: upper(in.Country), Currency: upper(in.Currency), Provider: trimmedPtr(in.Provider),
-		ScreenUnit: trimmedPtr(in.ScreenUnit), StaleDays: in.StaleDays}
+		ScreenUnit: trimmedPtr(in.ScreenUnit), StaleDays: in.StaleDays, NotifyWatchlistArrivals: in.NotifyWatchlistArrivals}
 	if len(in.Services) > maxPreferredServices {
 		return nil, &ValidationError{Message: "at most 20 services"}
 	}

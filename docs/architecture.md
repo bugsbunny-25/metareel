@@ -157,6 +157,7 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
 | `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz`; known IDs also go to `imdb_rating_history` when changed |
+| `notifications.dispatch` | `PushService.Run` | Mobile push notifications (see [Push notifications](#push-notifications-servicepush_notifygo)); hourly, does nothing unless `PUSH_ENABLED` |
 | `venues.import` | `VenueImporter` | Cinemas from OpenStreetMap (see [Cinema import](#cinema-import-servicevenue_importgo)); run by hand, no schedule |
 | `tmdb.credits.refresh` | `CreditsRefresher` | `tmdb_people` + `tmdb_credits` of every TMDB title: `/movie/{id}/credits`, or `/tv/{id}?append_to_response=aggregate_credits` (with `created_by` as Creator); keeps the top 25 cast and the jobs in `creditJobs` (TV: 10 per job by episodes); never-fetched first, again after 60 days (`tmdb_titles.credits_fetched_at`), 1,000 a run, 250 ms apart; each title replaced in one transaction |
 | `tmdb.episodes.refresh` | `EpisodesRefresher` | `tmdb_episodes` of TV shows with a stored TMDB season list: seasons aired in the last 3 years, undated and the latest (`append_to_response=season/N`, 20 per request, 250 ms apart); due daily when an episode airs within -14..+60 days or a season starts within 30 days, weekly for returning statuses, else monthly (`tmdb_titles.episodes_fetched_at`); each fetched season replaced in one transaction |
@@ -410,6 +411,36 @@ other than same-origin / none, or an `Origin` whose host is not the request's
 `Host` / `X-Forwarded-Host`), so pages on other sites can't drive the
 admin API (open, or signed in with a SameSite=Strict cookie); clients without
 those headers (curl) pass.
+
+## Push notifications (`service/push_notify.go`)
+
+The mobile app registers its Expo push token with `PUT /me/devices`
+(`user_devices`, tied to the registering session: signing out deletes the
+session and the device with it). `notifications.dispatch` (hourly at :15)
+then:
+
+1. Fetches receipts for tickets older than 15 minutes (`push_tickets`; Expo
+   keeps them about a day) and disables devices reported
+   `DeviceNotRegistered`.
+2. Reads `watch_provider_events` after its own cursor
+   (`notifications.cursor.offers` in `app_settings`; the first run only sets
+   it, so history is never sent), 500 at a time.
+3. For each title that was `added` as `flatrate`, `free` or `ads`, finds users
+   with it on their watchlist and an active device, whose preferences have
+   `notify_watchlist_arrivals`, the event's `country`, and the provider among
+   their `services` (any provider when they list none).
+4. Records `(user, watchlist_arrival, kind:id)` in `notification_log` (so each
+   title is announced once per user) and sends "Now on <service>" to every
+   device through `client.ExpoPush` (100 per request), with `data.url` =
+   `/title/<kind>/<id>` for the app to open and Android channel `arrivals`.
+   If a request fails, that batch's log rows are removed and the cursor stays,
+   so the next run retries.
+
+Arrivals only exist for titles whose watch providers are refreshed: the
+`titles.metadata` candidates include every watchlisted title (as if it were
+charting), not only charted ones. Push and access tokens never reach logs or
+errors; Expo's error messages quote the push token, so only error codes are
+kept.
 
 ## Letterboxd links (`client/letterboxd.go`)
 
@@ -1427,6 +1458,9 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `DATABASE_URL` | `file:./data/metareel.db?...` | SQLite DSN (WAL + busy timeout + FK enforcement) |
 | `DATABASE_MIGRATIONS_DIR` | `db/migrations` | Goose migrations directory |
+| `PUSH_ENABLED` | `false` | Send mobile push notifications (`notifications.dispatch`); off, the job does nothing |
+| `EXPO_ACCESS_TOKEN` | — | Expo access token, only if the Expo project requires one for push (never logged) |
+| `EXPO_PUSH_URL` | `https://exp.host` | Expo push service base URL |
 | `WEBHOOK_ALLOW_LOOPBACK` | `false` | Let webhook URLs resolve to loopback (a receiver on the same host outside Docker); link-local, multicast and unspecified addresses are always refused |
 | `DATABASE_READ_CONNS` | `4` | Read-only connections (`query_only`) serving charts, analytics and title overviews next to the single writer; `0` serves them from the writer |
 | `REDIS_ADDR` | `localhost:6379` | Redis address |

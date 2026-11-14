@@ -115,6 +115,7 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 		Handle(tasks.TypeMappingRefresh, taskhandlers.MappingRefreshJob(mapping)).
 		Handle(tasks.TypeVenuesImport, taskhandlers.VenuesImportJob(service.NewVenueImporter(log, client.NewOverpass(cfg.Imports.OverpassURL),
 			repository.NewTrackingRepository(db), timezoneFinder(log), cfg.Imports.VenueCountries).WithHistoric(client.NewWikidataAPI(cfg.HTTP.Timeout)))).
+		Handle(tasks.TypeNotificationsDispatch, taskhandlers.NotificationsDispatchJob(NewPushService(log, db, cfg))).
 		Handle(tasks.TypeMaintenance, taskhandlers.MaintenanceJob(maintenance))
 	if deps.Ratings != nil {
 		jobs.Handle(tasks.TypeRatingsPrewarm, taskhandlers.RatingsPrewarmJob(deps.Ratings, flixRepo))
@@ -186,4 +187,11 @@ func timezoneFinder(log *slog.Logger) service.TimezoneFinder {
 		return nil
 	}
 	return f
+}
+
+// NewPushService builds the push notification service (devices + dispatch)
+// for the job and the /me/devices handlers.
+func NewPushService(log *slog.Logger, db *sql.DB, cfg *config.Config) *service.PushService {
+	return service.NewPushService(log, repository.NewPushRepository(db), repository.NewWebhookRepository(db),
+		repository.NewOpsRepository(db), client.NewExpoPush(cfg.HTTP.Timeout, cfg.Push.ExpoURL, cfg.Push.ExpoAccessToken), cfg.Push.Enabled)
 }

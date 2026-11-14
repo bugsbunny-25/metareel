@@ -4,6 +4,10 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
 // in here. The server is entered at sign-in. EAS_PROJECT_ID comes from
 // `eas init` (see README); without it, OTA updates are simply off.
 const projectId = process.env.EAS_PROJECT_ID;
+// Android push (watchlist arrivals) goes through FCM, which needs the
+// Firebase project's google-services.json; builds without it still work,
+// they just can't register for push. Not committed: pass its path.
+const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
 // Hosts the app may reach over plain HTTP on the home network (comma
 // separated, e.g. "homelab.local,192.168.1.20"). Build-time only; everything
 // else must be HTTPS. See plugins/with-home-http.js.
@@ -37,6 +41,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       monochromeImage: './assets/images/android-icon-monochrome.png',
     },
     predictiveBackGestureEnabled: true,
+    ...(googleServicesFile ? { googleServicesFile } : {}),
     // Only what the modules declare (no default storage or overlay permissions).
     permissions: [],
     // expo-secure-store adds these for biometric unlock, which the app doesn't use.
@@ -79,8 +84,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       'expo-notifications',
       {
-        // Episode reminders are scheduled on the device (phase 6a).
+        // Episode reminders are local (phase 6a); watchlist arrivals are
+        // pushed by the server through Expo (phase 6b).
         icon: './assets/images/android-icon-monochrome.png',
+        enableRemoteNotifications: true,
         color: '#0b0b0c',
         defaultChannel: 'episodes',
       },

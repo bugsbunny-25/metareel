@@ -219,10 +219,24 @@ type NetflixTop10Global struct {
 	CumulativeWeeks   sql.NullInt64   `json:"cumulative_weeks"`
 }
 
+type NotificationLog struct {
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	Kind      string `json:"kind"`
+	Ref       string `json:"ref"`
+	CreatedAt string `json:"created_at"`
+}
+
 type PosterColor struct {
 	PosterPath string `json:"poster_path"`
 	Color      string `json:"color"`
 	ComputedAt string `json:"computed_at"`
+}
+
+type PushTicket struct {
+	TicketID  string `json:"ticket_id"`
+	DeviceID  int64  `json:"device_id"`
+	CreatedAt string `json:"created_at"`
 }
 
 type Ranking struct {
@@ -525,6 +539,19 @@ type User struct {
 	CreatedAt    time.Time    `json:"created_at"`
 	UpdatedAt    time.Time    `json:"updated_at"`
 	LastLoginAt  sql.NullTime `json:"last_login_at"`
+}
+
+type UserDevice struct {
+	ID           int64          `json:"id"`
+	UserID       int64          `json:"user_id"`
+	SessionID    sql.NullInt64  `json:"session_id"`
+	Platform     string         `json:"platform"`
+	PushProvider string         `json:"push_provider"`
+	Token        string         `json:"token"`
+	AppVersion   sql.NullString `json:"app_version"`
+	CreatedAt    string         `json:"created_at"`
+	LastSeenAt   string         `json:"last_seen_at"`
+	DisabledAt   sql.NullString `json:"disabled_at"`
 }
 
 type UserPreference struct {

@@ -2557,7 +2557,7 @@ components:
       properties:
         task_type:
           type: string
-          enum: [flixpatrol.top10.scrape, titles.enrich, titles.metadata, ratings.prewarm, netflix.top10.import, netflix.titles.match, imdb.ratings.import, mapping.refresh, maintenance]
+          enum: [flixpatrol.top10.scrape, titles.enrich, titles.metadata, ratings.prewarm, netflix.top10.import, netflix.titles.match, imdb.ratings.import, mapping.refresh, notifications.dispatch, maintenance]
           description: See GET /api/v1/admin/task-types
         name:
           type: string

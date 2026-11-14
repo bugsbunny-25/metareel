@@ -3,12 +3,16 @@ import { router } from 'expo-router';
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
 
+import { usePreferences } from '@/data/queries';
+
+import { refreshPushRegistration } from './push';
 import { syncEpisodeReminders } from './reminders';
 
 /**
  * Keeps episode reminders in step while signed in (launch and every return
- * to the foreground, throttled), and opens the show when a reminder is
- * tapped, including the tap that launched the app.
+ * to the foreground, throttled), keeps the push token registered when
+ * watchlist arrivals are on, and opens what a notification links to (the
+ * show, the title) when tapped, including the tap that launched the app.
  */
 export function useEpisodeReminderSync(signedIn: boolean) {
   useEffect(() => {
@@ -19,6 +23,12 @@ export function useEpisodeReminderSync(signedIn: boolean) {
     });
     return () => app.remove();
   }, [signedIn]);
+
+  // Keep this device's push token current while watchlist arrivals are on.
+  const arrivalsOn = usePreferences(signedIn).data?.notify_watchlist_arrivals === true;
+  useEffect(() => {
+    if (signedIn) void refreshPushRegistration(arrivalsOn);
+  }, [signedIn, arrivalsOn]);
 
   useEffect(() => {
     if (!signedIn) return;

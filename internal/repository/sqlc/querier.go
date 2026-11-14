@@ -89,12 +89,16 @@ type Querier interface {
 	// Netflix matches made through a FlixPatrol title (whose match was cleared).
 	DeleteNetflixEvidenceVia(ctx context.Context, titleID sql.NullInt64) ([]int64, error)
 	DeleteNetflixMostPopular(ctx context.Context) error
+	DeleteNotificationLog(ctx context.Context, arg DeleteNotificationLogParams) error
+	DeletePushTickets(ctx context.Context, ticketIds []string) error
 	// TMDB release dates of movies (migration 000024) and the observations of
 	// when a movie reached streaming, for release windows.
 	DeleteReleaseDates(ctx context.Context, arg DeleteReleaseDatesParams) error
 	DeleteSeasonEpisodes(ctx context.Context, arg DeleteSeasonEpisodesParams) error
 	DeleteSessionByHash(ctx context.Context, tokenHash string) (DeleteSessionByHashRow, error)
 	DeleteSessionByID(ctx context.Context, id int64) (string, error)
+	// Receipts are kept by Expo for about a day; older tickets can't be checked.
+	DeleteStalePushTickets(ctx context.Context) (int64, error)
 	// Retention: drop logs of runs that started before the cutoff.
 	DeleteTaskRunLogsBefore(ctx context.Context, olderThan string) (int64, error)
 	DeleteTaskRunsBefore(ctx context.Context, olderThan string) (int64, error)
@@ -106,6 +110,7 @@ type Querier interface {
 	DeleteTmdbWatchProviders(ctx context.Context, arg DeleteTmdbWatchProvidersParams) error
 	DeleteTrackedSeason(ctx context.Context, arg DeleteTrackedSeasonParams) error
 	DeleteUser(ctx context.Context, username string) (int64, error)
+	DeleteUserDevice(ctx context.Context, arg DeleteUserDeviceParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, username string) (int64, error)
 	DeleteUserSessionsExcept(ctx context.Context, arg DeleteUserSessionsExceptParams) (int64, error)
 	DeleteUserTag(ctx context.Context, arg DeleteUserTagParams) (int64, error)
@@ -117,6 +122,7 @@ type Querier interface {
 	DeleteWatchEntry(ctx context.Context, arg DeleteWatchEntryParams) (int64, error)
 	DeleteWatchFormatLogo(ctx context.Context, formatID int64) error
 	DeleteWebhook(ctx context.Context, id int64) (int64, error)
+	DisableUserDevice(ctx context.Context, id int64) error
 	// One netflix_seasons row per season title a TV title charted with.
 	EnsureNetflixSeasons(ctx context.Context) error
 	EnsureNetflixTitle(ctx context.Context, arg EnsureNetflixTitleParams) (NetflixTitle, error)
@@ -204,6 +210,9 @@ type Querier interface {
 	InsertMappingEvent(ctx context.Context, arg InsertMappingEventParams) error
 	InsertNetflixEngagement(ctx context.Context, arg InsertNetflixEngagementParams) error
 	InsertNetflixMostPopular(ctx context.Context, arg InsertNetflixMostPopularParams) error
+	// Records a notification; 0 rows means it was already sent.
+	InsertNotificationLog(ctx context.Context, arg InsertNotificationLogParams) (int64, error)
+	InsertPushTicket(ctx context.Context, arg InsertPushTicketParams) error
 	InsertRanking(ctx context.Context, arg InsertRankingParams) error
 	InsertReleaseDate(ctx context.Context, arg InsertReleaseDateParams) error
 	InsertTitleLink(ctx context.Context, arg InsertTitleLinkParams) error
@@ -217,6 +226,7 @@ type Querier interface {
 	LatestNetflixGlobalWeek(ctx context.Context) (string, error)
 	// API keys for the public API, and admin-editable settings.
 	ListAPIKeys(ctx context.Context) ([]ApiKey, error)
+	ListActiveDeviceTokens(ctx context.Context, userID int64) ([]ListActiveDeviceTokensRow, error)
 	// ListActiveSessions lists unexpired sessions used within their idle window
 	// (see GetActiveSession), newest use first.
 	ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]ListActiveSessionsRow, error)
@@ -224,6 +234,9 @@ type Querier interface {
 	ListAllFlixPatrolTargets(ctx context.Context) ([]ListAllFlixPatrolTargetsRow, error)
 	ListAllMappingEvidence(ctx context.Context) ([]MappingEvidence, error)
 	ListAppSettings(ctx context.Context) ([]AppSetting, error)
+	// Users with the title on their watchlist and a device to notify, with their
+	// preferences (JSON) for the country / services / opt-in checks.
+	ListArrivalWatchers(ctx context.Context, arg ListArrivalWatchersParams) ([]ListArrivalWatchersRow, error)
 	// Episodes airing between two dates of shows with a subscription, free or
 	// ad-supported offer in a country (optionally from one provider).
 	ListCalendarEpisodes(ctx context.Context, arg ListCalendarEpisodesParams) ([]ListCalendarEpisodesRow, error)
@@ -270,6 +283,8 @@ type Querier interface {
 	// analytics.
 	ListCreditsOfType(ctx context.Context, creditType string) ([]ListCreditsOfTypeRow, error)
 	ListDataImports(ctx context.Context) ([]DataImport, error)
+	// Tickets old enough for their receipt (a datetime modifier such as '-15 minutes').
+	ListDuePushTickets(ctx context.Context, arg ListDuePushTicketsParams) ([]ListDuePushTicketsRow, error)
 	// Pending deliveries whose next attempt is due, of enabled webhooks.
 	ListDueWebhookDeliveries(ctx context.Context, limit int64) ([]ListDueWebhookDeliveriesRow, error)
 	ListEnabledTaskSchedules(ctx context.Context) ([]TaskSchedule, error)
@@ -491,6 +506,8 @@ type Querier interface {
 	// Windows are SQLite datetime modifiers, e.g. '-3 days' and '-30 days'.
 	// TV shows stored before seasons were kept are due once, and so are titles
 	// with watch providers whose JustWatch offer URLs were never looked up.
+	// Watchlisted titles are included (as recently charting) even if they never
+	// charted.
 	ListTmdbRefsDueForDetails(ctx context.Context, arg ListTmdbRefsDueForDetailsParams) ([]ListTmdbRefsDueForDetailsRow, error)
 	// TMDB titles FlixPatrol titles are mapped to, without a Rotten Tomatoes
 	// slug, whose RT search backoff has expired; most recently charting first,
@@ -522,6 +539,7 @@ type Querier interface {
 	// Episodes airing after today and up to a day of shows in the user's
 	// library, except the ones on hold, dropped or not wanted.
 	ListUpcomingEpisodes(ctx context.Context, arg ListUpcomingEpisodesParams) ([]ListUpcomingEpisodesRow, error)
+	ListUserDevices(ctx context.Context, userID int64) ([]ListUserDevicesRow, error)
 	ListUserTags(ctx context.Context, userID int64) ([]ListUserTagsRow, error)
 	// ListUserTitles lists a user's tracked titles with their display metadata.
 	// An empty status lists every tracked title. The sort key is passed through a
@@ -752,6 +770,10 @@ type Querier interface {
 	// Every statement is scoped by user_id; nothing here may read another
 	// user's rows.
 	UpsertTrackedTitle(ctx context.Context, arg UpsertTrackedTitleParams) error
+	// Push notifications: registered devices, what was sent, pending receipts.
+	// Registers a device, or moves an existing token to this user and session
+	// (a phone signed in again) and enables it again.
+	UpsertUserDevice(ctx context.Context, arg UpsertUserDeviceParams) (int64, error)
 	UpsertUserTag(ctx context.Context, arg UpsertUserTagParams) (UserTag, error)
 	UpsertVenueRef(ctx context.Context, arg UpsertVenueRefParams) error
 	// WatchlistInCharts finds watchlist titles on a Top 10 right now. This is

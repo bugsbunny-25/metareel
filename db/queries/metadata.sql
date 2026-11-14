@@ -59,6 +59,8 @@ ORDER BY country, CASE monetization WHEN 'flatrate' THEN 0 WHEN 'free' THEN 1 WH
 -- Windows are SQLite datetime modifiers, e.g. '-3 days' and '-30 days'.
 -- TV shows stored before seasons were kept are due once, and so are titles
 -- with watch providers whose JustWatch offer URLs were never looked up.
+-- Watchlisted titles are included (as recently charting) even if they never
+-- charted.
 SELECT k.tmdb_kind, k.tmdb_id
 FROM (
     SELECT u.tmdb_kind, u.tmdb_id, MAX(u.last_seen) AS last_seen
@@ -72,6 +74,13 @@ FROM (
                (SELECT MAX(g.week) FROM netflix_top10_global g WHERE g.netflix_title_id = n.id)
         FROM netflix_titles n
         WHERE COALESCE(n.tmdb_id, '') <> '' AND n.tmdb_kind IS NOT NULL
+        UNION ALL
+        -- Titles on someone's watchlist, charted or not, count as current:
+        -- their watch providers are what watchlist-arrival notifications
+        -- compare against.
+        SELECT DISTINCT ut.tmdb_kind, ut.tmdb_id, date('now')
+        FROM user_titles ut
+        WHERE ut.status = 'watchlist'
     ) u
     GROUP BY u.tmdb_kind, u.tmdb_id
 ) k

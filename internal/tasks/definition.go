@@ -24,6 +24,7 @@ const (
 	TypeTMDBCredits           = "tmdb.credits.refresh"
 	TypeVenuesImport          = "venues.import"
 	TypeMaintenance           = "maintenance"
+	TypeNotificationsDispatch = "notifications.dispatch"
 	// TypeMappingRefresh follows mapping changes: TMDB details and IDs of
 	// the TMDB titles now mapped to, season numbers of Netflix titles that
 	// changed. Queued by the mapping writer; runnable by hand.
@@ -46,6 +47,7 @@ var Types = []string{
 	TypeTMDBCredits,
 	TypeVenuesImport,
 	TypeMappingRefresh,
+	TypeNotificationsDispatch,
 	TypeMaintenance,
 }
 

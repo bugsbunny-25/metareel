@@ -51,6 +51,8 @@ var taskTypeInfo = map[string]TaskTypeInfo{
 		Description: "Imports every cinema OpenStreetMap has in each country (VENUES_IMPORT_COUNTRIES, or countries given to the run) as a venue to pick when logging a watch, with its address, coordinates and time zone. Matches venues entered before by OSM ID, Wikidata ID or the same name nearby; re-runs only fill empty fields and never delete. Run it by hand now and then; data © OpenStreetMap contributors (ODbL)."},
 	tasks.TypeMappingRefresh: {Label: "Mapping refresh",
 		Description: "Follows up mapping changes (queued automatically): shares mappings over links, fetches TMDB details and Wikidata IDs of the TMDB titles now mapped to, fills mapped titles' missing IMDb / Wikidata IDs and remaps season numbers. Run by hand, it shares mappings and fills IDs."},
+	tasks.TypeNotificationsDispatch: {Label: "Push notifications",
+		Description: "Sends the mobile app's push notifications: a title on someone's watchlist arriving on one of their streaming services in their country (users opt in on the phone). Follows watch provider changes from where the last run stopped (the first run only starts following), sends each title once per user through Expo's push service, and disables devices whose token is gone. Does nothing unless PUSH_ENABLED is set."},
 	tasks.TypeMaintenance: {Label: "Maintenance",
 		Description: "Deletes old task runs, alerts on stale charts, marks interrupted runs failed and optimises the database."},
 }

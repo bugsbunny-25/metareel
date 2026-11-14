@@ -51,6 +51,7 @@ type Handler struct {
 	Search         *service.SearchService
 	Webhooks       *service.WebhookService
 	Tracking       *service.TrackingService
+	Push           *service.PushService
 }
 
 func (h *Handler) logger() *slog.Logger {

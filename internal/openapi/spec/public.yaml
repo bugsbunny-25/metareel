@@ -2918,6 +2918,73 @@ paths:
         "401": { $ref: "#/components/responses/TrackingUnauthorized" }
         "403": { $ref: "#/components/responses/TrackingCrossSite" }
 
+  /api/v1/me/devices:
+    get:
+      operationId: listDevices
+      tags: [Account]
+      summary: Your devices registered for push notifications
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The devices, most recently seen first, and whether this server sends push notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  devices: { type: array, items: { $ref: "#/components/schemas/UserDevice" } }
+                  push_enabled: { type: boolean }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+    put:
+      operationId: registerDevice
+      tags: [Account]
+      summary: Register this device for push notifications
+      description: >
+        Stores the device's Expo push token for the signed-in user and the
+        session making the request (re-registering a token moves it to this
+        user and session and enables it again). Signing out of that session
+        removes the device. Tokens are never logged or returned.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceInput" }
+      responses:
+        "200":
+          description: The registered device
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device: { $ref: "#/components/schemas/UserDevice" }
+                  push_enabled: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+
+  /api/v1/me/devices/{id}:
+    delete:
+      operationId: deleteDevice
+      tags: [Account]
+      summary: Unregister one of your devices
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Removed }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/me/shows:
     get:
       operationId: showQueue
@@ -4439,6 +4506,32 @@ components:
           maxItems: 20
           items: { type: integer }
           description: "TMDB provider IDs of the streaming services the user pays for (the rotation's subscribed)"
+        notify_watchlist_arrivals:
+          type: boolean
+          description: >
+            Push a notification to the user's registered devices when a title
+            on their watchlist arrives on one of `services` (any streaming
+            service when none are listed) in `country`, included in a
+            subscription, free or with ads. Needs `country` and a device
+            (PUT /api/v1/me/devices); off unless true.
+    UserDevice:
+      type: object
+      description: A phone registered for push notifications. Its token is never returned.
+      properties:
+        id: { type: integer }
+        platform: { type: string, enum: [ios, android] }
+        app_version: { type: string }
+        created_at: { type: string }
+        last_seen_at: { type: string }
+        disabled: { type: boolean, description: The push service reported the token as no longer registered }
+        session_id: { type: integer, description: The session that registered it; signing out of it removes the device }
+    DeviceInput:
+      type: object
+      required: [platform, token]
+      properties:
+        platform: { type: string, enum: [ios, android] }
+        token: { type: string, description: "Expo push token, ExponentPushToken[...]" }
+        app_version: { type: string, maxLength: 32 }
     QueueEpisode:
       type: object
       properties:

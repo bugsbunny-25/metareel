@@ -29,6 +29,7 @@ type Config struct {
 	Imports      Imports
 	Alerts       Alerts
 	Webhooks     Webhooks
+	Push         Push
 	Maintenance  Maintenance
 	Auth         Auth
 }
@@ -197,6 +198,18 @@ type Webhooks struct {
 	// AllowLoopback lets webhook URLs resolve to loopback (a receiver on the
 	// same host, outside Docker).
 	AllowLoopback bool `env:"WEBHOOK_ALLOW_LOOPBACK" envDefault:"false"`
+}
+
+// Push configures push notifications to the mobile app (Expo's push
+// service). Off by default; the notifications.dispatch job does nothing
+// until it is on.
+type Push struct {
+	Enabled bool `env:"PUSH_ENABLED" envDefault:"false"`
+	// ExpoAccessToken is optional: needed only when the Expo project
+	// requires access tokens for push. Never logged.
+	ExpoAccessToken string `env:"EXPO_ACCESS_TOKEN" envDefault:""`
+	// ExpoURL is the push service's base URL (tests point it elsewhere).
+	ExpoURL string `env:"EXPO_PUSH_URL" envDefault:"https://exp.host"`
 }
 
 type Alerts struct {

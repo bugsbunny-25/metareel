@@ -74,6 +74,14 @@ One-time setup, from `mobile/`:
    and the iOS certificates; download a backup of the Android keystore.
 4. Add an `EXPO_TOKEN` secret (an Expo access token) to the `mobile` GitHub
    environment.
+5. Push notifications (watchlist arrivals), optional: let EAS create an APNs
+   key (`eas credentials`, iOS → Push Notifications), create a Firebase
+   project with an Android app `io.github.bugsbunny25.metareel`, upload its
+   FCM v1 service account key to EAS (`eas credentials`, Android → FCM V1),
+   and store its `google-services.json` as an EAS file variable named
+   `GOOGLE_SERVICES_JSON` (the config reads the path from that variable).
+   Then set `PUSH_ENABLED=true` on the server. Local episode reminders need
+   none of this.
 
 Then:
 

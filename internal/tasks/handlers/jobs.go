@@ -182,6 +182,13 @@ func MappingRefreshJob(m *service.TitleMappingService) JobFunc {
 	}
 }
 
+// NotificationsDispatchJob sends push notifications (see PushService.Run).
+func NotificationsDispatchJob(p *service.PushService) JobFunc {
+	return func(ctx context.Context, _ tasks.JobPayload, run *Run) (any, error) {
+		return p.Run(ctx, run.Log)
+	}
+}
+
 func MaintenanceJob(m *service.MaintenanceService) JobFunc {
 	return func(ctx context.Context, _ tasks.JobPayload, run *Run) (any, error) {
 		return m.Run(ctx, run.Log)

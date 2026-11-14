@@ -22,9 +22,10 @@ export function useAccount() {
 }
 
 /** Server-side preferences: country, chart service, currency, services. */
-export function usePreferences() {
+export function usePreferences(enabled = true) {
   return useQuery({
     queryKey: ['preferences'],
+    enabled,
     staleTime: 10 * 60_000,
     queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/preferences', { signal })),
     select: (d) => d.preferences ?? {},

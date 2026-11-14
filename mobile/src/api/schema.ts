@@ -1693,6 +1693,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your devices registered for push notifications */
+        get: operations["listDevices"];
+        /**
+         * Register this device for push notifications
+         * @description Stores the device's Expo push token for the signed-in user and the session making the request (re-registering a token moves it to this user and session and enables it again). Signing out of that session removes the device. Tokens are never logged or returned.
+         */
+        put: operations["registerDevice"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/devices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unregister one of your devices */
+        delete: operations["deleteDevice"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/shows": {
         parameters: {
             query?: never;
@@ -2749,6 +2787,28 @@ export interface components {
             stale_days?: number;
             /** @description TMDB provider IDs of the streaming services the user pays for (the rotation's subscribed) */
             services?: number[];
+            /** @description Push a notification to the user's registered devices when a title on their watchlist arrives on one of `services` (any streaming service when none are listed) in `country`, included in a subscription, free or with ads. Needs `country` and a device (PUT /api/v1/me/devices); off unless true. */
+            notify_watchlist_arrivals?: boolean;
+        };
+        /** @description A phone registered for push notifications. Its token is never returned. */
+        UserDevice: {
+            id?: number;
+            /** @enum {string} */
+            platform?: "ios" | "android";
+            app_version?: string;
+            created_at?: string;
+            last_seen_at?: string;
+            /** @description The push service reported the token as no longer registered */
+            disabled?: boolean;
+            /** @description The session that registered it; signing out of it removes the device */
+            session_id?: number;
+        };
+        DeviceInput: {
+            /** @enum {string} */
+            platform: "ios" | "android";
+            /** @description Expo push token, ExponentPushToken[...] */
+            token: string;
+            app_version?: string;
         };
         QueueEpisode: {
             season_number?: number;
@@ -7577,6 +7637,84 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["TrackingUnauthorized"];
             403: components["responses"]["TrackingCrossSite"];
+        };
+    };
+    listDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The devices, most recently seen first, and whether this server sends push notifications */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        devices?: components["schemas"]["UserDevice"][];
+                        push_enabled?: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+        };
+    };
+    registerDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceInput"];
+            };
+        };
+        responses: {
+            /** @description The registered device */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        device?: components["schemas"]["UserDevice"];
+                        push_enabled?: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            403: components["responses"]["TrackingCrossSite"];
+        };
+    };
+    deleteDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            403: components["responses"]["TrackingCrossSite"];
+            404: components["responses"]["NotFound"];
         };
     };
     showQueue: {

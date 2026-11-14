@@ -9,8 +9,9 @@ import { Button } from '@/components/Button';
 import { Field } from '@/components/Field';
 import { Panel, Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
-import { useAccount } from '@/data/queries';
+import { useAccount, usePreferences } from '@/data/queries';
 import { useAppUpdate } from '@/data/app-update';
+import { type ArrivalsResult, setWatchlistArrivals } from '@/notifications/push';
 import { setEpisodeReminders, useEpisodeReminders, useReminderStatus } from '@/notifications/reminders';
 import { useOutbox } from '@/offline';
 import { useEndpointState } from '@/net/endpoint';
@@ -79,6 +80,7 @@ export default function Settings() {
 
       <Panel title="Notifications">
         <EpisodeReminders />
+        <WatchlistArrivals />
       </Panel>
 
       <Panel title="Where you're signed in">
@@ -168,6 +170,57 @@ function EpisodeReminders() {
         </Text>
       ) : null}
       {blocked ? (
+        <>
+          <Text variant="muted">Notifications are off for metareel. Allow them in the system settings, then turn this on.</Text>
+          <Button kind="quiet" title="Open settings" onPress={() => void Linking.openSettings()} />
+        </>
+      ) : null}
+    </>
+  );
+}
+
+const ARRIVAL_NOTES: Partial<Record<ArrivalsResult, string>> = {
+  denied: 'metareel needs permission to send notifications.',
+  unavailable: "This build can't receive push notifications (it needs the EAS project and push setup).",
+  'server-off': 'Saved, but your server has push notifications off (PUSH_ENABLED).',
+};
+
+function WatchlistArrivals() {
+  const prefs = usePreferences();
+  const on = prefs.data?.notify_watchlist_arrivals === true;
+  const country = prefs.data?.country;
+  const { colors } = useTheme();
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<ArrivalsResult | null>(null);
+  return (
+    <>
+      <View style={styles.row}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text>Watchlist arrivals</Text>
+          <Text variant="muted">
+            When a title on your watchlist starts streaming on one of your services{country ? ` in ${country}` : ''}. Sent by your server, once per title.
+          </Text>
+        </View>
+        <Switch
+          value={on}
+          disabled={busy || !prefs.data}
+          accessibilityLabel="Watchlist arrival notifications"
+          trackColor={{ true: colors.accentYours }}
+          thumbColor={Platform.OS === 'android' ? '#ffffff' : undefined}
+          onValueChange={async (v) => {
+            setBusy(true);
+            try {
+              setResult(await setWatchlistArrivals(v));
+            } catch {
+              setResult(null);
+            }
+            setBusy(false);
+          }}
+        />
+      </View>
+      {on && !country ? <Text variant="muted">Set your country on the web app's Settings so the server knows where you watch.</Text> : null}
+      {result && ARRIVAL_NOTES[result] ? <Text variant="muted">{ARRIVAL_NOTES[result]}</Text> : null}
+      {result === 'blocked' ? (
         <>
           <Text variant="muted">Notifications are off for metareel. Allow them in the system settings, then turn this on.</Text>
           <Button kind="quiet" title="Open settings" onPress={() => void Linking.openSettings()} />
