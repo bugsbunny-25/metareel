@@ -54,13 +54,15 @@
   })
   const Page = $derived(current.page)
 
-  // Sign-in: the console shows the sign-in screen when the server requires
-  // an admin session and there is none (or the user isn't an admin), or when
-  // the user opened #/login themselves.
+  // Sign-in: only when the server requires an admin session
+  // (AUTH_REQUIRE_ADMIN_LOGIN) and there is none, or the user isn't an admin.
+  // Otherwise the console is open and has no sign-in at all.
   loadAuth()
-  const showLogin = $derived(
-    route.path === '/login' || (auth.loginRequired && (!auth.user || auth.user.role !== 'admin')),
-  )
+  const showLogin = $derived(auth.loginRequired && (!auth.user || auth.user.role !== 'admin'))
+  // An old #/login link (the optional sign-in that used to exist) goes to the overview.
+  $effect(() => {
+    if (route.path === '/login') navigate('/', {})
+  })
   const canUse = $derived(auth.ready && !showLogin)
 
   async function doSignOut() {
@@ -168,11 +170,9 @@
         </a>
       {/if}
       <button class="btn btn-ghost btn-sm" onclick={() => setQuery({ glossary: '1' })} title="What the terms on these pages mean"><Icon name="help" size={14} />Glossary</button>
-      {#if auth.user}
+      {#if auth.loginRequired && auth.user}
         <span class="user-chip" title="Signed in as {auth.user.username} ({auth.user.role})"><Icon name="user" size={14} />{auth.user.username}</span>
         <button class="btn btn-ghost btn-sm" onclick={doSignOut} title="Sign out"><Icon name="logOut" size={14} />Sign out</button>
-      {:else}
-        <button class="btn btn-ghost btn-sm" onclick={() => navigate('/login', { next: route.path })} title="Sign in (optional on this server)"><Icon name="lock" size={14} />Sign in</button>
       {/if}
       <button class="btn btn-ghost btn-icon btn-sm" onclick={toggleTheme} aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'} title="Toggle theme">
         <Icon name={dark ? 'sun' : 'moon'} size={14} />
