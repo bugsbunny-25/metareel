@@ -1,4 +1,4 @@
-import { SourceSans3_400Regular, SourceSans3_600SemiBold, SourceSans3_700Bold } from '@expo-google-fonts/source-sans-3';
+import { SourceSans3_400Regular, SourceSans3_600SemiBold, SourceSans3_700Bold, SourceSans3_800ExtraBold } from '@expo-google-fonts/source-sans-3';
 import { SourceSerif4_600SemiBold, SourceSerif4_700Bold, useFonts } from '@expo-google-fonts/source-serif-4';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { Stack } from 'expo-router';
@@ -23,6 +23,7 @@ export default function RootLayout() {
     SourceSans3_400Regular,
     SourceSans3_600SemiBold,
     SourceSans3_700Bold,
+    SourceSans3_800ExtraBold,
   });
   return (
     <SafeAreaProvider>
@@ -59,7 +60,7 @@ function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bgCanvas } }}>
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="(tabs)" />
-          {['title/[kind]/[id]', 'show/[id]', 'watch/[id]', 'subscriptions', 'search'].map((name) => (
+          {['search'].map((name) => (
             <Stack.Screen
               key={name}
               name={name}

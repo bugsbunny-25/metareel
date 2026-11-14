@@ -1,13 +1,16 @@
 import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams } from 'expo-router';
+import type { ReactNode } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import type { components } from '@/api/schema';
 import { Button } from '@/components/Button';
 import { Poster } from '@/components/Poster';
+import { RatingLogo } from '@/components/RatingLogo';
 import { Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { useMyTitle, usePreferences, useTitleOverview } from '@/data/queries';
+import { providerName } from '@/data/scope';
 import { useWindowClass } from '@/layout/window-class';
 import { openLog, setWatchlist } from '@/lib/actions';
 import { runtimeText, starText, tmdbImage, year } from '@/lib/format';
@@ -74,10 +77,18 @@ export default function TitleScreen() {
 
       {r && (r.imdb || r.rotten_tomatoes || m?.vote_average) ? (
         <View style={styles.scores}>
-          {r.imdb ? <Score label="IMDb" value={r.imdb.rating.toFixed(1)} /> : null}
-          {r.rotten_tomatoes?.critics_score != null ? <Score label="Tomatometer" value={`${r.rotten_tomatoes.critics_score}%`} /> : null}
-          {r.rotten_tomatoes?.audience_score != null ? <Score label="Popcornmeter" value={`${r.rotten_tomatoes.audience_score}%`} /> : null}
-          {m?.vote_average ? <Score label="TMDB" value={m.vote_average.toFixed(1)} /> : null}
+          {r.imdb ? <Score label="IMDb" value={r.imdb.rating.toFixed(1)} logo={<RatingLogo source="imdb" />} /> : null}
+          {r.rotten_tomatoes?.critics_score != null ? (
+            <Score
+              label={r.rotten_tomatoes.certified_fresh ? 'Tomatometer, Certified Fresh' : 'Tomatometer'}
+              value={`${r.rotten_tomatoes.critics_score}%`}
+              logo={<RatingLogo source="rt" rotten={r.rotten_tomatoes.critics_score < 60} certified={!!r.rotten_tomatoes.certified_fresh} />}
+            />
+          ) : null}
+          {r.rotten_tomatoes?.audience_score != null ? (
+            <Score label="Popcornmeter" value={`${r.rotten_tomatoes.audience_score}%`} logo={<RatingLogo source="rt-audience" rotten={r.rotten_tomatoes.audience_score < 60} />} />
+          ) : null}
+          {m?.vote_average ? <Score label="TMDB" value={m.vote_average.toFixed(1)} logo={<RatingLogo source="tmdb" />} /> : null}
         </View>
       ) : null}
 
@@ -123,7 +134,7 @@ export default function TitleScreen() {
               <Text variant="label" num>
                 #{c.rank}
               </Text>{' '}
-              {c.provider} · {c.country}
+              {providerName(c.provider ?? '')} · {c.country}
             </Text>
           ))}
         </Panel>
@@ -138,14 +149,14 @@ export default function TitleScreen() {
   );
 }
 
-function Score({ label, value }: { label: string; value: string }) {
+function Score({ label, value, logo }: { label: string; value: string; logo: ReactNode }) {
   const { colors, radius } = useTheme();
   return (
     <View style={[styles.score, { backgroundColor: colors.bgSurface, borderRadius: radius.panel }]} accessible accessibilityLabel={`${label} ${value}`}>
-      <Text variant="title" num>
+      {logo}
+      <Text variant="title" num numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
-      <Text variant="caption">{label}</Text>
     </View>
   );
 }
@@ -155,8 +166,9 @@ const styles = StyleSheet.create({
   heroWide: { padding: 24, gap: 24 },
   heroText: { flex: 1, gap: 6 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  scores: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  score: { paddingVertical: 12, paddingHorizontal: 16, minWidth: 96, gap: 2 },
+  // One row of equal boxes, however many sources there are (up to four).
+  scores: { flexDirection: 'row', gap: 8 },
+  score: { flex: 1, minWidth: 0, paddingVertical: 12, paddingHorizontal: 12, gap: 6, alignItems: 'flex-start' },
   providers: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   provider: { alignItems: 'center', gap: 4 },
   logo: { width: 48, height: 48, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },

@@ -9,11 +9,11 @@ import { useWindowClass } from '@/layout/window-class';
 import { useTheme } from '@/theme';
 
 const TABS: { name: string; href: '/' | '/diary' | '/up-next' | '/watchlist' | '/settings'; label: string; icon: IconName }[] = [
-  { name: 'index', href: '/', label: 'Tonight', icon: 'tonight' },
-  { name: 'diary', href: '/diary', label: 'Diary', icon: 'diary' },
-  { name: 'up-next', href: '/up-next', label: 'Up next', icon: 'up-next' },
-  { name: 'watchlist', href: '/watchlist', label: 'Watchlist', icon: 'bookmark' },
-  { name: 'settings', href: '/settings', label: 'Settings', icon: 'settings' },
+  { name: '(home)', href: '/', label: 'Tonight', icon: 'tonight' },
+  { name: '(diary)', href: '/diary', label: 'Diary', icon: 'diary' },
+  { name: '(up-next)', href: '/up-next', label: 'Up next', icon: 'up-next' },
+  { name: '(watchlist)', href: '/watchlist', label: 'Watchlist', icon: 'bookmark' },
+  { name: '(settings)', href: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
 /**

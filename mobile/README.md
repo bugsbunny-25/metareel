@@ -13,8 +13,9 @@ cookies. An optional home-network address is used over plain HTTP only after
 
 | Path | What |
 |---|---|
-| `src/app/` | Routes (Expo Router): `sign-in`, and the tab shell `(tabs)/` (Tonight, Diary, Up next, Watchlist, Settings) |
+| `src/app/` | Routes (Expo Router): `sign-in`, `search` and the `log` sheet (full screen), and the tab shell `(tabs)/` (Tonight, Diary, Up next, Watchlist, Settings) |
 | `src/app/(tabs)/_layout.tsx` | One navigator for every window size: a bottom bar on compact windows, a rail on medium/expanded ones |
+| `src/app/(tabs)/(home,diary,up-next,watchlist,settings)/` | Each tab is its own stack; Title, Show, Watch and Subscriptions are shared routes inside every tab, so the bar or rail stays on screen and Back returns within the tab |
 | `src/auth/` | Session store (Keychain/Keystore), sign-in, the home-URL probe, address validation |
 | `src/net/endpoint.ts` | Picks the public or verified home URL per request; drops the home URL on a network error |
 | `src/api/` | `schema.ts` (generated from `internal/openapi/spec/public.yaml`) and the typed client |
