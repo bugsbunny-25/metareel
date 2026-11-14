@@ -35,7 +35,7 @@ func writeData(c *echo.Context, out any, err error) error {
 		return c.JSON(http.StatusNotFound, map[string]any{"error": err.Error()})
 	case errors.Is(err, sql.ErrNoRows):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": "not found"})
-	case errors.Is(err, service.ErrRatingsUnavailable), errors.Is(err, service.ErrUpstream):
+	case errors.Is(err, service.ErrRatingsUnavailable), errors.Is(err, service.ErrUpstream), errors.Is(err, service.ErrPersonUnavailable):
 		return c.JSON(http.StatusBadGateway, map[string]any{"error": err.Error()})
 	default:
 		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})

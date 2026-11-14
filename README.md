@@ -217,7 +217,7 @@ make reports-open
 | GET    | `/api/v1/titles/tmdb/:kind/:id/availability/history` | When the title arrived on / left each service per country (`added` / `removed` between two TMDB refreshes; `country` optional) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/history`     | Ratings, TMDB popularity and English Wikipedia pageviews over time (`from`, `to`; default last 90 days, ≤ 366): IMDb dataset, each provider's rating sources (a point when a value changed) and daily TMDB popularity |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/credits`     | Top 25 cast and key crew (directors, writers, creators, composers, cinematographers) from TMDB; TV with episodes credited |
-| GET    | `/api/v1/people/:id`                        | A TMDB person and their titles metareel knows, with roles and each title's chart record (points, days, best rank, countries) |
+| GET    | `/api/v1/people/:id`                        | A TMDB person: profile and full filmography live from TMDB (cached 12 h; `details_status` says why they're missing), and their titles metareel knows with roles and each title's chart record (points, days, best rank, countries) |
 | GET    | `/api/v1/titles/tmdb/movie/:id/releases`    | A movie's premiere, theatrical (limited / wide), digital (PVOD), physical and TV dates per country from TMDB, the observed streaming arrival (first offer seen arriving, or first chart day) and the windows between them in days (`country`) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/timeline`    | Everything that happened to a title, newest first: chart debuts, peaks, #1 runs and re-entries, availability added/removed, rating changes, Wikipedia pageview spikes, Netflix Top 10 weeks and engagement periods, season premieres, release (`types`, `country`, `from`, `to`, `limit`) |
 | GET    | `/api/v1/calendar/:country`                 | Upcoming episodes of shows streamable in the country (subscription / free / ads), one entry per show, season and day with the services (`from`, `to`: default the next 14 days, ≤ 62; `provider_id`) |
@@ -784,7 +784,12 @@ started, on hold, dropped -- each with its next episode, progress and a
 one-click "Watched", then an Upcoming timeline from `/me/upcoming` with
 episodes per week; a Movies tab lists released watchlist movies and ones not
 out yet), a show page (`#/show/:id`: a map of every episode, season tabs,
-tick to mark, untick to delete after asking, "watched up to here") and Stats (one year at a
+tick to mark, untick to delete after asking, "watched up to here"), a person page (`#/person/:id`
+from `/people/:id`: photo, born/died, biography, IMDb link; credits, their charted titles and
+what you've seen and bookmarked of their work; the titles of theirs that charted; and the
+filmography by department with a Coming up list, film/series filter, newest/popular/top-rated
+sort and appearances as themselves hidden by default; title pages link their cast and crew
+here, and so do Stats' people) and Stats (one year at a
 time from `/me/stats/year` and `/me/stats/ratings`: watches, hours, titles and
 streaks; watches per month, weekday and hour; your rating spread and how far
 you sit from TMDB, IMDb and RT, overall and per title; genres, decades,

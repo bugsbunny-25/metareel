@@ -41,12 +41,13 @@
     ])
     if (!ov && !mine?.title) throw Object.assign(new Error('not found'), { status: 404 })
     const charted = !!ov && (mine?.title?.charted ?? (ov.stats?.appearances ?? 0) > 0)
-    const [timeline, history, offerHistory] = await Promise.all([
+    const [timeline, history, offerHistory, credits] = await Promise.all([
       charted ? api.timeline(k, tid, country, signal).catch((e) => ({ failed: e.message })) : null,
       charted ? api.history(k, tid, signal).catch((e) => ({ failed: e.message })) : null,
       ov ? api.availabilityHistory(k, tid, signal).catch(() => null) : null,
+      ov ? api.credits(k, tid, signal).catch(() => null) : null,
     ])
-    return { ov: ov ?? {}, catalogued: !!ov, mine, charted, timeline, history, offerHistory }
+    return { ov: ov ?? {}, catalogued: !!ov, mine, charted, timeline, history, offerHistory, credits }
   }
 
   const m = $derived(d?.ov.metadata ?? d?.mine?.title ?? {})
@@ -73,6 +74,25 @@
   const streaming = $derived([...new Set((here?.flatrate ?? []).map((p) => p.provider_name))])
   const lastRemoved = $derived((d?.offerHistory?.events ?? []).filter((e) => e.country === scope.country && e.event === 'removed' && e.monetization === 'flatrate').at(-1) ?? null)
   const nfViews = $derived(d?.ov.netflix?.total_views || 0)
+
+  // Cast & crew (stored for catalogued titles once the credits job has run). Crew are grouped
+  // into the lines a credits block reads as.
+  const cast = $derived(d?.credits?.cast ?? [])
+  const CREW = { Director: 'Directed by', Creator: 'Created by', Screenplay: 'Written by', Writer: 'Written by', Teleplay: 'Written by', Story: 'Story by',
+    Novel: 'Based on the novel by', Characters: 'Characters by', 'Original Music Composer': 'Music by', 'Director of Photography': 'Cinematography by' }
+  const crew = $derived.by(() => {
+    const g = new Map()
+    for (const c of d?.credits?.crew ?? []) {
+      const label = CREW[c.job]
+      if (!label) continue
+      const list = g.get(label) ?? []
+      if (!list.some((x) => x.person_id === c.person_id)) list.push(c)
+      g.set(label, list)
+    }
+    const order = [...new Set(Object.values(CREW))]
+    return [...g].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
+  })
+  let castAll = $state(false)
 
   async function toggleWatchlist() {
     try {
@@ -216,6 +236,34 @@
         </section>
       </div>
     </div>
+
+    {#if cast.length || crew.length}
+      <section class="panel pad credits" aria-labelledby="credits-h">
+        <div class="credits-h"><h2 id="credits-h">Cast &amp; crew</h2>{#if cast.length > 12}<button class="more" onclick={() => (castAll = !castAll)} aria-expanded={castAll}>{castAll ? 'Show fewer' : `All ${cast.length} cast`}</button>{/if}</div>
+        {#if cast.length}
+          <ul class="cast">
+            {#each castAll ? cast : cast.slice(0, 12) as c (c.person_id)}
+              <li>
+                <a href="#/person/{c.person_id}">
+                  {#if c.profile_path}<img src="https://image.tmdb.org/t/p/w185{c.profile_path}" alt="" loading="lazy" />{:else}<span class="face-ph" aria-hidden="true">{c.name.split(/\s+/).slice(0, 2).map((w) => w[0]).join('')}</span>{/if}
+                  <b>{c.name}</b>
+                  {#if c.character}<span class="as">{c.character}</span>{/if}
+                  {#if c.episodes}<span class="as num">{c.episodes} ep{c.episodes === 1 ? '' : 's'}</span>{/if}
+                </a>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if crew.length}
+          <dl class="crew">
+            {#each crew as [label, people] (label)}
+              <dt>{label}</dt>
+              <dd>{#each people.slice(0, 4) as c, i (c.person_id)}{i ? ', ' : ''}<a href="#/person/{c.person_id}">{c.name}</a>{/each}</dd>
+            {/each}
+          </dl>
+        {/if}
+      </section>
+    {/if}
   </article>
 {/if}
 
@@ -258,6 +306,21 @@
   .stale { color: var(--status-stale); }
   .watch { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
   .left { margin: 0; color: var(--delta-down); font-weight: 600; }
+
+  .credits { margin-top: 16px; gap: 14px; }
+  .credits-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .more { padding: 0; border: 0; background: none; color: var(--accent-yours); font: 600 14px/1 var(--font-sans); cursor: pointer; }
+  .cast { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 18px 14px; margin: 0; padding: 0; list-style: none; }
+  .cast a { display: grid; gap: 3px; color: inherit; text-decoration: none; }
+  .cast img, .face-ph { width: 100%; aspect-ratio: 1; border-radius: 50%; object-fit: cover; object-position: top; background: var(--bg-elevated); margin-bottom: 5px; }
+  .face-ph { display: grid; place-items: center; color: var(--text-muted); font: 700 22px/1 var(--font-display); }
+  .cast b { font-size: 14px; line-height: 1.25; }
+  .cast a:hover b { text-decoration: underline; text-underline-offset: 3px; }
+  .as { color: var(--text-muted); font-size: 12.5px; line-height: 1.3; }
+  .crew { grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 4px 0 0; padding-top: 12px; border-top: 1px solid var(--border-subtle); font-size: 14.5px; }
+  .crew dd { text-align: left; font-weight: 600; }
+  .crew a { color: inherit; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); }
+  .crew a:hover { text-decoration-color: currentColor; }
 
   @media (max-width: 960px) {
     .grid { grid-template-columns: 1fr; }

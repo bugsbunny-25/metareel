@@ -1532,12 +1532,19 @@ paths:
   /api/v1/people/{id}:
     get:
       operationId: getPerson
-      summary: A person (TMDB) and their titles metareel knows, with each title's chart record
+      summary: A person's TMDB profile and filmography, and their titles metareel knows with each title's chart record
       description: >-
-        The person's credits on the titles metareel knows (`roles`: "as
-        <character>" for cast, else the job) with each title's FlixPatrol
-        record over every stored chart (points, days, best rank, countries,
-        first and last day), most charted first.
+        `titles` are the person's credits on the titles metareel knows
+        (`roles`: "as <character>" for cast, else the job) with each title's
+        FlixPatrol record over every stored chart (points, days, best rank,
+        countries, first and last day), most charted first. `details` (birth,
+        death, biography, IMDb ID, ...) and `filmography` (every movie and TV
+        credit, one entry per title, newest first with titles not dated yet
+        leading) come live from TMDB and are cached in memory for 12 hours;
+        `details_status` says why they are missing (`not_configured`: no TMDB
+        key, `unavailable`: TMDB failed, `not_found`). A person metareel has no
+        credits for is still returned when TMDB knows them (`titles` empty).
+        502 when TMDB fails for such a person.
       parameters:
         - name: id
           in: path
@@ -1552,6 +1559,11 @@ paths:
               schema: { $ref: "#/components/schemas/PersonResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: TMDB failed for a person metareel has no credits for
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/titles/tmdb/{kind}/{id}/releases:
     get:
@@ -4895,6 +4907,38 @@ components:
               countries: { type: integer }
               first_charted: { type: string, format: date, nullable: true }
               last_charted: { type: string, format: date, nullable: true }
+        details_status: { type: string, enum: [ok, not_configured, unavailable, not_found] }
+        details:
+          type: object
+          nullable: true
+          description: TMDB profile; null unless details_status is ok
+          properties:
+            biography: { type: string, nullable: true }
+            birthday: { type: string, format: date, nullable: true }
+            deathday: { type: string, format: date, nullable: true }
+            place_of_birth: { type: string, nullable: true }
+            known_for: { type: string, nullable: true, description: "TMDB department, e.g. Acting, Directing" }
+            homepage: { type: string, nullable: true }
+            imdb_id: { type: string, nullable: true }
+            also_known_as: { type: array, items: { type: string } }
+        filmography:
+          type: array
+          description: Every movie and TV credit on TMDB, one entry per title; empty unless details_status is ok
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [movie, tv] }
+              tmdb_id: { type: string }
+              title: { type: string }
+              date: { type: string, format: date, nullable: true, description: Release or first air date; null if not announced }
+              year: { type: integer, nullable: true }
+              poster_path: { type: string, nullable: true }
+              roles: { type: array, items: { type: string }, description: '"as <character>" for cast, else the job' }
+              departments: { type: array, items: { type: string } }
+              episodes: { type: integer, nullable: true, description: "TV: most episodes of any of the roles" }
+              popularity: { type: number }
+              vote_average: { type: number }
+              vote_count: { type: integer }
     PeopleResponse:
       type: object
       properties:

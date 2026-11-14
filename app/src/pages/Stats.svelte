@@ -239,7 +239,7 @@
                   {#each list.slice(0, 5) as p (p.person_id)}
                     <li>
                       {#if p.profile_path}<img src="https://image.tmdb.org/t/p/w92{p.profile_path}" alt="" loading="lazy" />{:else}<span class="ph-face" aria-hidden="true"><Icon name="flag" size={12} /></span>{/if}
-                      <span class="pn">{p.name}</span><span class="hint num">{p.titles}</span>
+                      <a class="pn" href="#/person/{p.person_id}">{p.name}</a><span class="hint num">{p.titles}</span>
                     </li>
                   {/each}
                 </ol>
@@ -316,7 +316,8 @@
   .ppl { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
   .ppl li { display: flex; align-items: center; gap: 10px; }
   .ppl img, .ph-face { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: var(--bg-elevated); display: grid; place-items: center; color: var(--text-muted); }
-  .pn { flex: 1; font-weight: 600; }
+  .pn { flex: 1; font-weight: 600; color: inherit; text-decoration: none; }
+  .pn:hover { text-decoration: underline; text-underline-offset: 3px; }
 
   .empty { padding: 40px 0; }
   .empty h2 { margin: 0 0 6px; font: 700 24px/1.2 var(--font-display); }

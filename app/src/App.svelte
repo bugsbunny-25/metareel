@@ -25,6 +25,7 @@
   import Settings from './pages/Settings.svelte'
   import Discover from './pages/Discover.svelte'
   import Show from './pages/Show.svelte'
+  import Person from './pages/Person.svelte'
 
   let logTarget = $state(null)
   let confirmRequest = $state(null)
@@ -61,12 +62,13 @@
 
   const titleMatch = $derived(route.path.match(/^\/title\/(movie|tv)\/(\d+)$/))
   const showMatch = $derived(route.path.match(/^\/show\/(\d+)$/))
+  const personMatch = $derived(route.path.match(/^\/person\/(\d+)$/))
   const PAGES = { '/': 'home', '/charts': 'charts', '/discover': 'discover', '/up-next': 'upnext', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/stats': 'stats', '/settings': 'settings' }
-  const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : 'missing'))
+  const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : personMatch ? 'person' : 'missing'))
   const providers = $derived(reference.providers.filter((p) => p.countries.includes(scope.country)))
 
   $effect(() => {
-    const NAMES = { charts: 'Top 10', title: 'Title', upnext: 'Up next', show: 'Episodes', discover: 'Discover', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', settings: 'Settings', missing: 'Not found' }
+    const NAMES = { charts: 'Top 10', title: 'Title', upnext: 'Up next', show: 'Episodes', person: 'Person', discover: 'Discover', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', settings: 'Settings', missing: 'Not found' }
     document.title = NAMES[page] ? `${NAMES[page]} · metareel` : 'metareel'
   })
   // On a phone the nav scrolls sideways; keep the current page's link in view.
@@ -149,6 +151,8 @@
       <UpNext {onlog} />
     {:else if page === 'show'}
       {#key route.path}<Show id={showMatch[1]} {onlog} {onconfirm} />{/key}
+    {:else if page === 'person'}
+      {#key route.path}<Person id={personMatch[1]} />{/key}
     {:else if page === 'stats'}
       <Stats />
     {:else if page === 'diary'}

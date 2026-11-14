@@ -219,7 +219,7 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		History:        service.NewHistoryService(historyRepo, readMetadataRepo),
 		Calendar:       service.NewCalendarService(episodesRepo),
 		Breakouts:      breakouts,
-		Credits:        service.NewCreditsService(creditsRepo, readMetadataRepo),
+		Credits:        service.NewCreditsService(creditsRepo, readMetadataRepo).WithTMDB(client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
 		Discover:       service.NewDiscoverService(repository.NewDiscoverRepository(readDB), analyticsRepo, episodesRepo, readMetadataRepo),
 		ReleaseWindows: service.NewReleaseWindowsService(repository.NewReleaseDatesRepository(readDB), readMetadataRepo, analyticsRepo),
 		Timeline:       service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),

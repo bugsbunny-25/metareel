@@ -526,7 +526,14 @@ usually the original network or service release, not per country.
 
 `GET /api/v1/titles/tmdb/{kind}/{id}/credits` reads the stored credits.
 `GET /api/v1/people/{id}` lists a person's credited titles with each title's
-FlixPatrol record (`ListPersonChartStats`, all stored charts).
+FlixPatrol record (`ListPersonChartStats`, all stored charts), and adds their
+TMDB profile and filmography (`service/credits_person.go`): one
+`/person/{id}?append_to_response=combined_credits,external_ids` request,
+merged to one entry per title, kept in memory for 12 hours (a miss for an
+hour; at most 1,000 people; concurrent requests for one person share a fetch).
+Nothing of it is stored. A TMDB failure leaves `details` null with
+`details_status: unavailable` for a person metareel has credits for, and is a
+502 for one it doesn't; a person known only to TMDB is still returned.
 `GET /api/v1/analytics/people` sums each title's chart points in the range
 (`ChartEntries` with the usual filters) and credits them in full to every
 person credited in the role (actors: billing order under 10), once per

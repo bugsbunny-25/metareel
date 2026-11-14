@@ -7,7 +7,10 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/bugsbunny-25/metareel/internal/client"
 	"github.com/bugsbunny-25/metareel/internal/repository"
@@ -203,6 +206,13 @@ func keepCredits(c *client.TMDBCredits) (cast, crew []client.TMDBCredit) {
 type CreditsService struct {
 	repo     *repository.CreditsRepository
 	metadata *repository.MetadataRepository
+
+	// TMDB profiles and filmographies (WithTMDB), cached by person ID.
+	tmdb    personSource
+	mu      sync.Mutex
+	people  map[int64]personCacheEntry
+	fetches singleflight.Group
+	now     func() time.Time
 }
 
 func NewCreditsService(repo *repository.CreditsRepository, metadata *repository.MetadataRepository) *CreditsService {
@@ -288,9 +298,17 @@ type PersonResponse struct {
 	Points      int64         `json:"points"`   // over every title
 	Charting    int           `json:"charting"` // titles that charted
 	Titles      []PersonTitle `json:"titles"`   // most charted first, then newest
+	// TMDB profile and every movie and TV credit, live from TMDB (cached for
+	// 12 hours). DetailsStatus says why they are missing: not_configured,
+	// unavailable (TMDB failed) or not_found.
+	DetailsStatus string             `json:"details_status"`
+	Details       *PersonDetails     `json:"details"`
+	Filmography   []FilmographyTitle `json:"filmography"`
 }
 
-// Person returns a person and their titles metareel knows.
+// Person returns a person, their titles metareel knows with their chart
+// record, and their TMDB profile and filmography. A person metareel has no
+// credits for is still found when TMDB knows them.
 func (s *CreditsService) Person(ctx context.Context, id int64) (*PersonResponse, error) {
 	if id <= 0 {
 		return nil, &ValidationError{Message: "invalid person id"}
@@ -299,9 +317,32 @@ func (s *CreditsService) Person(ctx context.Context, id int64) (*PersonResponse,
 	if err != nil {
 		return nil, err
 	}
+	tp, status, tmdbErr := s.tmdbPerson(ctx, id)
 	if p == nil {
+		switch {
+		case tp != nil:
+			out := &PersonResponse{PersonID: id, Titles: []PersonTitle{}, DetailsStatus: status}
+			addTMDB(out, tp)
+			return out, nil
+		case tmdbErr != nil:
+			return nil, personUnavailable(tmdbErr)
+		}
 		return nil, ErrPersonNotFound
 	}
+	out, err := s.chartedPerson(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	out.DetailsStatus, out.Filmography = status, []FilmographyTitle{}
+	if tp != nil {
+		addTMDB(out, tp)
+	}
+	return out, nil
+}
+
+// chartedPerson returns a person with their titles metareel knows.
+func (s *CreditsService) chartedPerson(ctx context.Context, p *repository.Person) (*PersonResponse, error) {
+	id := p.ID
 	credits, err := s.repo.PersonCredits(ctx, id)
 	if err != nil {
 		return nil, err

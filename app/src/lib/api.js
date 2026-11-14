@@ -85,6 +85,10 @@ export const api = {
   timeline: (kind, id, country, signal) => request('GET', `/titles/tmdb/${kind}/${id}/timeline${qs({ country })}`, { signal }),
   history: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/history`, { signal }),
   availabilityHistory: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/availability/history`, { signal }),
+  credits: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/credits`, { signal }),
+
+  // People: profile and filmography from TMDB, plus the chart record of their titles.
+  person: (id, signal) => request('GET', `/people/${id}`, { signal }),
 
   // Your account: who you are, where you're signed in, your password and preferences.
   account: (signal) => request('GET', '/me/account', { signal }),
