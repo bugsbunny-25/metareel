@@ -76,6 +76,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         android: { enabled: true, singleShareMimeTypes: ['text/plain'] },
       },
     ],
+    [
+      'expo-notifications',
+      {
+        // Episode reminders are scheduled on the device (phase 6a).
+        icon: './assets/images/android-icon-monochrome.png',
+        color: '#0b0b0c',
+        defaultChannel: 'episodes',
+      },
+    ],
     ['./plugins/with-home-http.js', { hosts: homeHttpHosts }],
   ],
   runtimeVersion: { policy: 'fingerprint' },

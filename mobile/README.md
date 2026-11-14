@@ -23,6 +23,7 @@ cookies. An optional home-network address is used over plain HTTP only after
 | `src/api/` | `schema.ts` (generated from `internal/openapi/spec/public.yaml`) and the typed client |
 | `src/query/` | TanStack Query, its cache persisted to SQLite |
 | `src/theme/` | `tokens.ts` (generated from `app/src/tokens.css`) and `useTheme()` (dark first) |
+| `src/notifications/` | New-episode reminders: `plan.ts` (pure: upcoming episodes → reminders), `reminders.ts` (permission, settings switch, keeping the OS schedule in step), `use-reminders.ts` (sync on launch/foreground, open the show on tap) |
 | `src/layout/window-class.ts` | Material window size classes (compact < 600 dp ≤ medium < 840 dp ≤ expanded) |
 | `src/layout/ListDetail.tsx` | List and detail side by side on medium/expanded windows (Diary, Up next, Watchlist); on a half-open book foldable (Android, or iPhone Duo via UIKit's division region) the split sits on the fold |
 | `src/screens/` | Title, Show and Watch views, used as screens and in the detail pane |

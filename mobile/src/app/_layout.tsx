@@ -11,6 +11,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { endpoint, SessionProvider, useSession } from '@/auth/session';
 import { useEndpointRefresh } from '@/net/use-endpoint-refresh';
 import { useSideInsets } from '@/layout/root-header';
+import { useEpisodeReminderSync } from '@/notifications/use-reminders';
 import { useOutboxSync } from '@/offline/use-sync';
 import { persister, persistMaxAge, queryClient } from '@/query/client';
 import { useWindowClass } from '@/layout/window-class';
@@ -48,6 +49,7 @@ function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
   const side = useSideInsets();
   useEndpointRefresh(endpoint);
   useOutboxSync(session.status === 'signedIn');
+  useEpisodeReminderSync(session.status === 'signedIn');
 
   useEffect(() => {
     // The window background shows while a foldable unfolds or a window

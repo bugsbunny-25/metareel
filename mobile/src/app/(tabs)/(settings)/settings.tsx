@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { endpoint, setHomeURL, signOut, useSignedIn } from '@/auth/session';
 import { normalizeHomeURL, URLError } from '@/auth/urls';
@@ -11,6 +11,7 @@ import { Panel, Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { useAccount } from '@/data/queries';
 import { useAppUpdate } from '@/data/app-update';
+import { setEpisodeReminders, useEpisodeReminders, useReminderStatus } from '@/notifications/reminders';
 import { useOutbox } from '@/offline';
 import { useEndpointState } from '@/net/endpoint';
 import { useTheme } from '@/theme';
@@ -76,6 +77,10 @@ export default function Settings() {
         <ThemePicker />
       </Panel>
 
+      <Panel title="Notifications">
+        <EpisodeReminders />
+      </Panel>
+
       <Panel title="Where you're signed in">
         {account.data?.sessions?.map((s) => (
           <Row
@@ -124,6 +129,51 @@ function Row({ label, value }: { label: string; value: string }) {
         {value}
       </Text>
     </View>
+  );
+}
+
+function EpisodeReminders() {
+  const on = useEpisodeReminders();
+  const scheduled = useReminderStatus();
+  const { colors } = useTheme();
+  const [busy, setBusy] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+  return (
+    <>
+      <View style={styles.row}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text>New episodes</Text>
+          <Text variant="muted">At 6 pm on the day a new episode of a show you follow airs. Scheduled on this phone.</Text>
+        </View>
+        <Switch
+          value={on}
+          disabled={busy}
+          accessibilityLabel="New episode reminders"
+          trackColor={{ true: colors.accentYours }}
+          thumbColor={Platform.OS === 'android' ? '#ffffff' : undefined}
+          onValueChange={async (v) => {
+            setBusy(true);
+            setBlocked((await setEpisodeReminders(v)) === 'blocked');
+            setBusy(false);
+          }}
+        />
+      </View>
+      {on ? (
+        <Text variant="muted">
+          {scheduled.next
+            ? `Next: ${scheduled.next.title}, ${scheduled.next.at.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}${scheduled.count > 1 ? ` · ${scheduled.count} scheduled` : ''}`
+            : scheduled.count
+              ? `${scheduled.count} scheduled`
+              : 'Nothing airing in the next two weeks.'}
+        </Text>
+      ) : null}
+      {blocked ? (
+        <>
+          <Text variant="muted">Notifications are off for metareel. Allow them in the system settings, then turn this on.</Text>
+          <Button kind="quiet" title="Open settings" onPress={() => void Linking.openSettings()} />
+        </>
+      ) : null}
+    </>
   );
 }
 

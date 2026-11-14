@@ -478,6 +478,21 @@ Checked on the Android emulator against the test server: a Letterboxd link
 The iOS share extension is built by the plugin but was not exercised on the
 simulator.
 
+**Phase 6a status (2026-11-14):** new-episode reminders are local
+notifications (`expo-notifications`), off until switched on in Settings →
+Notifications, which is also when the OS asks for permission (Android 13+
+needs the `episodes` channel first; a permanently denied permission shows a
+link to the system settings). `src/notifications/plan.ts` turns
+`/me/upcoming` into one reminder per show and day at 18:00 local time (TMDB
+has air dates, not times), for the next 14 days, at most 48 (iOS keeps 64
+pending). The sync keeps the OS schedule in step on launch, on every return
+to the foreground (at most every 15 minutes) and from the background task,
+and cancels everything on sign-out. A tap opens the show. Settings shows the
+next reminder, read back from the OS schedule. Checked on the iPhone Duo
+simulator against the test server (a followed show airing on 19 Nov got its
+reminder); the tap was not exercised because the reminder only fires at
+18:00 on the air date.
+
 v1 worth using day to day = phases 1–4, about **5–7 weeks of focused days**.
 Phases 5–7 are independent and can be reordered.
 
@@ -501,8 +516,8 @@ Phases 5–7 are independent and can be reordered.
 
 ## 9. Still open (small, can be decided during the phases)
 
-- **Notification timing** (6a): episode reminders at a fixed local hour (e.g.
-  18:00) or at the episode's air time when TMDB has one?
+- ~~**Notification timing** (6a)~~: decided, 18:00 local on the air date
+  (TMDB episode data has no air times).
 - **Top 10 rail default**: which service and country by default (your
   `services` preference's first entry, or Netflix)?
 - **"Now showing" start**: should picking a showtime later (e.g. from a cinema's
