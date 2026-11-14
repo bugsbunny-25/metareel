@@ -36,6 +36,29 @@ export function moveLabel(m, prev) {
   }
 }
 
+// Arrow emoji with the text-presentation selector (U+FE0E), so they draw as glyphs that take the
+// movement colour (green up, red down) instead of the platform's blue emoji tiles.
+export const UP = '\u2B06\uFE0E';
+export const DOWN = '\u2B07\uFE0E';
+
+/** What a chart row shows for its change: ⬆︎ 2, ⬇︎ 1, New, Back, or a dash for no change. */
+export function changeText(m) {
+  switch (m.type) {
+    case 'up': return `${UP} ${m.by}`;
+    case 'down': return `${DOWN} ${m.by}`;
+    case 'same': return '–';
+    case 'debut': return 'New';
+    default: return 'Back';
+  }
+}
+
+/**
+ * Whether a library entry makes a title "yours" (orange in charts): anything you watch, watched,
+ * want, finished, paused, dropped or favourited. Only "Not interested" without watches is not.
+ */
+export const isYours = (state) =>
+  !!state && (state.watch_count > 0 || state.favorite || (!!state.status && state.status !== 'not_interested'));
+
 const ORIGIN = { original: 'Original', in_house: 'In-house', licensed: 'Licensed' };
 export const originOf = (o) =>
   o && ORIGIN[o.origin] ? { key: o.origin, label: ORIGIN[o.origin], owner: o.owner, reason: o.reason } : null;

@@ -6,6 +6,7 @@
      order; there's no manual reordering yet. -->
 <script>
   import Poster from '../components/Poster.svelte'
+  import ProviderLogo from '../components/ProviderLogo.svelte'
   import Icon from '../components/Icon.svelte'
   import { api } from '../lib/api.js'
   import { library, libKey } from '../lib/library.svelte.js'
@@ -176,8 +177,8 @@
               <td class="where">
                 {#if t.info?.streaming.length}
                   <span class="providers">
-                    {#each t.info.streaming.slice(0, 3) as s}
-                      {#if s.link}<a class="pill strong" href={s.link} target="_blank" rel="noopener noreferrer">{s.provider_name}</a>{:else}<span class="pill strong">{s.provider_name}</span>{/if}
+                    {#each t.info.streaming.slice(0, 3) as s (s.provider_name)}
+                      <ProviderLogo name={s.provider_name} logo={s.logo_path} link={s.url || s.link || null} size={30} />
                     {/each}
                     {#if t.info.streaming.length > 3}<span class="pill">+{t.info.streaming.length - 3}</span>{/if}
                   </span>

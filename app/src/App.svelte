@@ -1,10 +1,10 @@
-<!-- App shell: top bar (brand, primary nav, scope pickers, theme, account), the routed page,
+<!-- App shell: top bar (brand, primary nav, search, theme, account), the routed page,
      the "Log a watch" dialog and toasts. Signed out, it shows the sign-in screen instead. -->
 <script>
   import { untrack } from 'svelte'
   import { route } from './lib/router.svelte.js'
   import { session, loadSession, signOut } from './lib/session.svelte.js'
-  import { scope, reference, setScope, loadReference, providerName } from './lib/scope.svelte.js'
+  import { loadReference } from './lib/scope.svelte.js'
   import { library } from './lib/library.svelte.js'
   import { loadPrefs } from './lib/prefs.svelte.js'
   import { theme, toggleTheme } from './lib/theme.svelte.js'
@@ -65,7 +65,6 @@
   const personMatch = $derived(route.path.match(/^\/person\/(\d+)$/))
   const PAGES = { '/': 'home', '/charts': 'charts', '/discover': 'discover', '/up-next': 'upnext', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/stats': 'stats', '/settings': 'settings' }
   const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : personMatch ? 'person' : 'missing'))
-  const providers = $derived(reference.providers.filter((p) => p.countries.includes(scope.country)))
 
   $effect(() => {
     const NAMES = { charts: 'Top 10', title: 'Title', upnext: 'Up next', show: 'Episodes', person: 'Person', discover: 'Discover', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', settings: 'Settings', missing: 'Not found' }
@@ -103,20 +102,6 @@
       <button class="search" type="button" onclick={() => (searchOpen = true)} aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}>
         <Icon name="search" size={15} /><span class="label">Search</span><kbd>{mac ? '⌘' : 'Ctrl'} K</kbd>
       </button>
-      <label class="pick">
-        <span class="sr">Country</span>
-        <select value={scope.country} onchange={(e) => setScope({ country: e.currentTarget.value })} disabled={!reference.loaded}>
-          {#each reference.countries as c}<option value={c.code}>{c.name}</option>{/each}
-          {#if !reference.loaded}<option value={scope.country}>{scope.country}</option>{/if}
-        </select>
-      </label>
-      <label class="pick">
-        <span class="sr">Service</span>
-        <select value={scope.provider} onchange={(e) => setScope({ provider: e.currentTarget.value })} disabled={!reference.loaded}>
-          {#each providers as p}<option value={p.slug}>{providerName(p.slug)}</option>{/each}
-          {#if !reference.loaded}<option value={scope.provider}>{providerName(scope.provider)}</option>{/if}
-        </select>
-      </label>
       <button class="icon-btn" type="button" onclick={toggleTheme} aria-label="Switch to {theme.effective === 'light' ? 'dark' : 'light'} mode" title="Switch to {theme.effective === 'light' ? 'dark' : 'light'} mode">
         {theme.effective === 'light' ? '☾' : '☀'}
       </button>
@@ -185,11 +170,6 @@
   .primary a { color: var(--text-muted); text-decoration: none; white-space: nowrap; }
   .primary a:hover, .primary a[aria-current='page'] { color: var(--text-primary); }
   .tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-  .pick select {
-    height: 32px; padding: 0 28px 0 12px; border: 0; border-radius: 16px; appearance: none; cursor: pointer;
-    background: var(--bg-elevated) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a1a1a8' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 11px center;
-    color: var(--text-primary); font: 600 13px/1 var(--font-sans);
-  }
   .search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--bg-elevated); color: var(--text-muted); font: 500 13px/1 var(--font-sans); cursor: pointer; }
   .search:hover { color: var(--text-primary); }
   .search .label { min-width: 90px; text-align: left; }

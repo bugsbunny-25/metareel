@@ -18,6 +18,7 @@
   import VenuePicker from './VenuePicker.svelte'
   import FormatPicker from './FormatPicker.svelte'
   import { loadFormats, DISC_MEDIA, MEDIA_DISC } from '../lib/formats.js'
+  import { uuid } from '../lib/uuid.js'
 
   /**
    * target: null when closed, else { kind: 'movie'|'tv', id, name, poster?, season?, episode?,
@@ -138,7 +139,7 @@
       pictureOpen = pictureSet(f)
       error = ''
       incomplete = false
-      key = crypto.randomUUID()
+      key = uuid()
       dialog.showModal()
       if (w) {
         loadingFull = true

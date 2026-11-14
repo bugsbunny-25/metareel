@@ -374,6 +374,10 @@ type StreamingHit struct {
 	ProviderName string `json:"provider_name"`
 	Monetization string `json:"monetization"`
 	Link         string `json:"link,omitempty"`
+	// LogoPath is TMDB's provider logo (https://image.tmdb.org/t/p/w92{logo_path}).
+	LogoPath string `json:"logo_path,omitempty"`
+	// URL is the service's own page for the title (JustWatch), when known.
+	URL string `json:"url,omitempty"`
 }
 
 // WatchlistStreamingNow finds watchlist titles available in a country.
@@ -388,7 +392,7 @@ func (r *TrackingRepository) WatchlistStreamingNow(ctx context.Context, userID i
 		out = append(out, StreamingHit{
 			Kind: row.TmdbKind, TmdbID: row.TmdbID, Title: row.DisplayTitle,
 			ProviderID: row.ProviderID, ProviderName: row.ProviderName,
-			Monetization: row.Monetization, Link: row.Link,
+			Monetization: row.Monetization, Link: row.Link, LogoPath: row.LogoPath, URL: row.Url,
 		})
 	}
 	return out, nil

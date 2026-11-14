@@ -1,14 +1,17 @@
-<!-- Home. A breakout hero tinted from its poster, KPI tiles with 14-day trends, the Top 10 rail,
-     movement and your-list tables, and breakouts by country. Everything is for the chosen scope. -->
+<!-- Home (#/?date=YYYY-MM-DD for a past day). A breakout hero tinted from its poster, KPI tiles with 14-day trends, the Top 10 rail,
+     movement and your-list tables, and breakouts by country. Everything is for the scope picked beside the Top 10. -->
 <script>
   import Poster from '../components/Poster.svelte'
   import Icon from '../components/Icon.svelte'
+  import ScopePicker from '../components/ScopePicker.svelte'
+  import ChartDatePicker from '../components/ChartDatePicker.svelte'
+  import { route, setQuery } from '../lib/router.svelte.js'
   import { api } from '../lib/api.js'
-  import { loadCharts, offersFor, tmdbKind } from '../lib/charts.js'
+  import { loadCharts, offersFor, tmdbKind, chartDateParam } from '../lib/charts.js'
   import { library, libKey } from '../lib/library.svelte.js'
   import { scope, providerName, countryName, inCountry } from '../lib/scope.svelte.js'
   import { sampleColor, seriesPath, debutsPerDay, dayMonth } from '../lib/viz.js'
-  import { shortDate } from '../lib/rows.js'
+  import { shortDate, UP, DOWN, isYours } from '../lib/rows.js'
   import { toast } from '../lib/toast.svelte.js'
 
   let { onlog } = $props()
@@ -18,24 +21,27 @@
   let data = $state(null)
   let tab = $state('tv')
   let tint = $state(null)
+  // '' is the latest chart; a past day comes from the query so it survives reloads.
+  const date = $derived(chartDateParam(route.query.date))
 
   $effect(() => {
     const { country, provider } = scope
+    const day = date
     const ctrl = new AbortController()
     loading = true
     error = ''
-    load(country, provider, ctrl.signal)
+    load(country, provider, day, ctrl.signal)
       .then((d) => { if (!ctrl.signal.aborted) data = d })
       .catch((err) => { if (err.name !== 'AbortError') error = err.message })
       .finally(() => { if (!ctrl.signal.aborted) loading = false })
     return () => ctrl.abort()
   })
 
-  async function load(country, provider, signal) {
+  async function load(country, provider, day, signal) {
     // Movement and breakouts are asked for the chart date on screen, so a scrape that is a
     // day behind still shows matching data instead of a 404 for "today".
     const [charts, changes] = await Promise.all([
-      loadCharts(country, provider, signal),
+      loadCharts(country, provider, signal, day),
       api.availabilityChanges(country, signal).catch(() => ({ events: [] })),
     ])
     const [movers, breakouts] = await Promise.all([
@@ -123,6 +129,9 @@
   const heroBreak = $derived(data?.hero?.breakout ?? null)
   const heroEntry = $derived(data?.hero ? [...tvRows, ...movieRows].find((e) => e.item.tmdb_id === data.hero.id) : null)
   const heroState = $derived(data?.hero ? library.get(data.hero.kind, data.hero.id) : null)
+  // Copy says "today" only for the latest chart; a past day is named.
+  const past = $derived(!!date && !!data?.charts.date)
+  const when = $derived(past ? `on ${dayMonth(data.charts.date)}` : 'today')
   const titleHref = (kind, id) => (id ? `#/title/${tmdbKind(kind)}/${id}` : undefined)
 
   async function toggleHero() {
@@ -146,8 +155,9 @@
   </div>
 {:else if data && !data.charts.date}
   <section class="empty">
-    <h1>No chart yet</h1>
-    <p>metareel has no {providerName(data.provider)} Top 10 for {inCountry(data.country)}. Pick another service or country at the top.</p>
+    <h1>{date ? 'No chart that day' : 'No chart yet'}</h1>
+    <p>metareel has no {providerName(data.provider)} Top 10 for {inCountry(data.country)}{date ? ` on ${dayMonth(date)}` : ''}. Pick another {date ? 'day, ' : ''}country or service.</p>
+    <div class="empty-picks"><ScopePicker label="Top 10" /><ChartDatePicker country={data.country} provider={data.provider} value={date} onchange={(d) => setQuery({ date: d })} /></div>
   </section>
 {:else if data}
   <div class="home" aria-busy={loading}>
@@ -155,7 +165,7 @@
       <section class="hero" style:--tint={tint ? `rgb(${tint.join(' ')} / 0.42)` : 'transparent'}>
         <a class="hero-art" href={titleHref(data.hero.kind, data.hero.id)} aria-hidden="true" tabindex="-1"><Poster path={data.hero.poster} seed={data.hero.id} title={data.hero.name} width={128} radius={10} /></a>
         <div class="hero-copy">
-          <p class="eyebrow">{heroBreak ? 'Breaking out' : `No. ${heroEntry?.item.rank ?? 1} in ${inCountry(data.country)} today`}</p>
+          <p class="eyebrow">{heroBreak ? 'Breaking out' : `No. ${heroEntry?.item.rank ?? 1} in ${inCountry(data.country)} ${when}`}</p>
           <h1><a href={titleHref(data.hero.kind, data.hero.id)}>{data.hero.name}</a></h1>
           <p class="hero-meta">
             {data.hero.kind === 'tv' ? (data.hero.seasons ? `Series · ${data.hero.seasons} season${data.hero.seasons === 1 ? '' : 's'}` : 'Series') : 'Film'}{#if data.hero.genres.length}{' · '}{data.hero.genres.slice(0, 2).join(', ')}{/if}{#if data.hero.year}{' · '}{data.hero.year}{/if}
@@ -181,9 +191,9 @@
       </section>
     {/if}
 
-    <section class="kpis" aria-label="Today at a glance">
+    <section class="kpis" aria-label="{past ? dayMonth(data.charts.date) : 'Today'} at a glance">
       <div class="kpi">
-        <span class="k-label">New entries today</span>
+        <span class="k-label">New entries {when}</span>
         <span class="k-row"><b class="num">{today}</b>
           {#if spark}
             <svg width="132" height="36" viewBox="0 0 132 36" role="img" aria-label="New entries per day over {debuts.length} days">
@@ -214,13 +224,15 @@
 
     <section class="block">
       <div class="block-head">
-        <h2>Top 10 in {inCountry(data.country)} today</h2>
+        <h2>Top 10 in {inCountry(data.country)} {when}</h2>
+        <ScopePicker label="Top 10" />
+        <ChartDatePicker country={scope.country} provider={scope.provider} value={date} shown={data.charts.date} onchange={(d) => setQuery({ date: d })} />
         <div class="seg" role="tablist" aria-label="Chart">
           <button role="tab" aria-selected={tab === 'tv'} onclick={() => (tab = 'tv')} disabled={!tvRows.length}>Shows</button>
           <button role="tab" aria-selected={tab === 'movies'} onclick={() => (tab = 'movies')} disabled={!movieRows.length}>Movies</button>
         </div>
         <span class="hint">{providerName(data.provider)} · {dayMonth(data.charts.date)}</span>
-        <a class="more" href="#/charts?cat={tab}">Full chart and trends</a>
+        <a class="more" href="#/charts?cat={tab}{date ? `&date=${date}` : ''}">Full chart and trends</a>
       </div>
       <ol class="top-rail">
         {#each rail as e (e.item.slug)}
@@ -229,8 +241,9 @@
             <a class="tile" href={titleHref(e.item.kind, e.item.tmdb_id)}>
               <Poster path={e.poster_path} seed={e.item.tmdb_id ?? e.item.slug} title={e.item.name} width={92} radius={8} size="w185" />
               {#if e.state?.status === 'watchlist'}<span class="mark" aria-hidden="true"><Icon name="bookmark-fill" size={12} /></span>
-              {:else if e.state?.watch_count > 0}<span class="mark" aria-hidden="true"><Icon name="check" size={12} /></span>{/if}
-              <span class="sr">No. {e.item.rank}: {e.item.name}{e.state?.status === 'watchlist' ? ', on your watchlist' : e.state?.watch_count > 0 ? ', watched' : ''}</span>
+              {:else if e.state?.watch_count > 0 || e.state?.status === 'completed'}<span class="mark" aria-hidden="true"><Icon name="check" size={12} /></span>
+              {:else if isYours(e.state)}<span class="mark" aria-hidden="true"><Icon name={e.state.favorite ? 'heart-fill' : 'list'} size={12} /></span>{/if}
+              <span class="sr">No. {e.item.rank}: {e.item.name}{e.state?.status === 'watchlist' ? ', on your watchlist' : e.state?.watch_count > 0 ? ', watched' : isYours(e.state) ? ', in your library' : ''}</span>
             </a>
           </li>
         {/each}
@@ -249,7 +262,7 @@
                   <td><a class="cell" href={titleHref(m.kind, m.tmdb_id)}><Poster path={m.poster_path} seed={m.tmdb_id ?? m.slug} title={m.name} width={26} radius={4} size="w92" /><span class="ell">{m.name}</span></a></td>
                   <td class="right num">{m.rank}</td>
                   <td class="right num muted">{m.previous_rank ?? '–'}</td>
-                  <td class="right"><span class="chg {m.type}">{m.type === 'debut' ? 'New' : `${m.type === 'up' ? 'Up' : 'Down'} ${size(m)}`}</span></td>
+                  <td class="right"><span class="chg {m.type}" aria-hidden="true">{m.type === 'debut' ? 'New' : `${m.type === 'up' ? UP : DOWN} ${size(m)}`}</span><span class="sr">{m.type === 'debut' ? 'New' : `${m.type === 'up' ? 'Up' : 'Down'} ${size(m)}`}</span></td>
                 </tr>
               {/each}
             </tbody>
@@ -307,6 +320,8 @@
   .loading { display: grid; gap: 16px; padding: 8px var(--gutter); }
   .empty { padding: 60px var(--gutter); }
   .empty h1 { margin: 0 0 8px; font: 700 32px/1.1 var(--font-display); }
+  .empty p { margin: 0 0 14px; }
+  .empty-picks { display: flex; flex-wrap: wrap; gap: 8px; }
 
   .hero {
     display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 28px; margin: 6px var(--gutter) 0; padding: 24px 28px;
@@ -342,9 +357,11 @@
   .seg button { height: 28px; padding: 0 14px; border: 0; border-radius: 7px; background: none; color: var(--text-muted); font: 600 13px/1 var(--font-sans); cursor: pointer; }
   .seg button[aria-selected='true'] { background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); }
   .seg button:disabled { opacity: 0.4; cursor: default; }
-  .top-rail { display: flex; gap: 4px; margin: 0; padding: 0 0 6px; list-style: none; overflow-x: auto; scrollbar-width: thin; }
+  .top-rail { display: flex; gap: 4px; margin: 0; padding: 6px 0 12px; list-style: none; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; }
   .top-rail li { position: relative; display: flex; align-items: flex-end; flex: none; }
-  .big { margin-right: -14px; color: var(--bg-canvas); -webkit-text-stroke: 2px var(--border-strong); font: 800 100px/0.78 var(--font-sans); letter-spacing: -0.06em; }
+  /* The numeral's font box is taller than its 0.78 line; clipping to the line (digits sit inside
+     it) keeps the rail free of vertical overflow, so it only ever scrolls sideways. */
+  .big { height: calc(0.78em + 2px); padding-bottom: 2px; overflow: hidden; margin-right: -14px; color: var(--bg-canvas); -webkit-text-stroke: 2px var(--border-strong); font: 800 100px/0.78 var(--font-sans); letter-spacing: -0.06em; }
   .tile { position: relative; z-index: 1; display: block; border-radius: 8px; transition: transform 0.15s ease; }
   .tile:hover { transform: translateY(-3px); }
   .mark { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-yours); color: var(--bg-canvas); }

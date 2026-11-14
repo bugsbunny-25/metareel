@@ -61,7 +61,10 @@ export const api = {
   providers: (signal) => request('GET', '/providers', { signal }),
 
   // Charts and movement
-  top10: (category, country, provider, signal) => request('GET', `/top10/${seg(category)}/${country}/${provider}`, { signal }),
+  /** date: YYYY-MM-DD for a past chart; omitted for the latest. */
+  top10: (category, country, provider, signal, date) => request('GET', `/top10/${seg(category)}/${country}/${provider}${qs({ date })}`, { signal }),
+  /** Dates a scope has charts for, newest first: { items: [{ date, category, entries }] }. */
+  chartDates: (country, provider, signal) => request('GET', `/charts/${country}/${provider}/dates${qs({ limit: 366 })}`, { signal }),
   top10History: (category, country, provider, from, to, signal) =>
     request('GET', `/top10/${seg(category)}/${country}/${provider}/history${qs({ from, to })}`, { signal }),
   movers: (country, provider, date, signal) => request('GET', `/movers${qs({ country, provider, date })}`, { signal }),

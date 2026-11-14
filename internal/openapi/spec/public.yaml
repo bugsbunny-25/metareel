@@ -3935,6 +3935,8 @@ components:
               provider_name: { type: string }
               monetization: { type: string }
               link: { type: string }
+              logo_path: { type: string, description: "TMDB provider logo path (https://image.tmdb.org/t/p/w92{logo_path}); omitted when unknown" }
+              url: { type: string, description: "The service's own page for the title (JustWatch); omitted when unknown" }
         recently_left:
           type: array
           description: >

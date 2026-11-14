@@ -2,7 +2,7 @@
      metareel's analytics: genres' share of Top 10 points, how long debuts stay in the Top 10
      (/analytics/decay), how long titles take from release to the charts per service
      (/analytics/release-lag) and each service's originals versus licensed titles
-     (/analytics/origins). svc=1 narrows genres and staying power to the service in the top bar.
+     (/analytics/origins). svc=1 narrows genres and staying power to the service in the pickers at the top of Discover.
      Each panel loads on its own and says so when it fails. -->
 <script>
   import BarList from '../../components/BarList.svelte'

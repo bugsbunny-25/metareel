@@ -1,7 +1,12 @@
-<!-- Charts: the scope's Top 10 for shows or films, with 14-day trends, scores and origin. -->
+<!-- Charts (#/charts?cat=tv|movies&date=YYYY-MM-DD): the Top 10 for the country and service
+     picked here, for shows or films, on the latest day or a past one, with 14-day trends, scores
+     and origin. -->
 <script>
   import Top10Row from '../components/Top10Row.svelte'
-  import { loadCharts, offersFor, tmdbKind } from '../lib/charts.js'
+  import ScopePicker from '../components/ScopePicker.svelte'
+  import RatingLogo from '../components/RatingLogo.svelte'
+  import ChartDatePicker from '../components/ChartDatePicker.svelte'
+  import { loadCharts, offersFor, tmdbKind, chartDateParam } from '../lib/charts.js'
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
   import { route, setQuery } from '../lib/router.svelte.js'
@@ -12,6 +17,7 @@
   let { onlog } = $props()
 
   const cat = $derived(route.query.cat === 'movies' ? 'movies' : 'tv')
+  const date = $derived(chartDateParam(route.query.date))
   let loading = $state(true)
   let error = $state('')
   let data = $state(null)
@@ -19,10 +25,11 @@
 
   $effect(() => {
     const { country, provider } = scope
+    const day = date
     const ctrl = new AbortController()
     loading = true
     error = ''
-    Promise.all([loadCharts(country, provider, ctrl.signal), api.availabilityChanges(country, ctrl.signal).catch(() => ({ events: [] }))])
+    Promise.all([loadCharts(country, provider, ctrl.signal, day), api.availabilityChanges(country, ctrl.signal).catch(() => ({ events: [] }))])
       .then(([d, ch]) => { if (!ctrl.signal.aborted) { data = { ...d, country, provider }; events = ch.events ?? [] } })
       .catch((err) => { if (err.name !== 'AbortError') error = err.message })
       .finally(() => { if (!ctrl.signal.aborted) loading = false })
@@ -55,6 +62,8 @@
       <button role="tab" aria-selected={cat === 'tv'} onclick={() => setQuery({ cat: 'tv' })}>Shows</button>
       <button role="tab" aria-selected={cat === 'movies'} onclick={() => setQuery({ cat: 'movies' })}>Movies</button>
     </div>
+    <ScopePicker label="Top 10" />
+    <ChartDatePicker country={scope.country} provider={scope.provider} value={date} shown={data?.date} onchange={(d) => setQuery({ date: d })} />
     {#if chart}<span class="scope">{providerName(scope.provider)} · {inCountry(scope.country)} · {dayMonth(chart.date)}</span>{/if}
   </header>
 
@@ -63,7 +72,7 @@
   {:else if loading && !data}
     <div class="skeleton" style="height:640px" aria-busy="true" aria-label="Loading"></div>
   {:else if !chart}
-    <p class="empty">No {cat === 'tv' ? 'shows' : 'films'} chart for {providerName(scope.provider)} in {inCountry(scope.country)}.</p>
+    <p class="empty">No {cat === 'tv' ? 'shows' : 'films'} chart for {providerName(scope.provider)} in {inCountry(scope.country)}{date ? ` on ${dayMonth(date)}` : ''}.</p>
   {:else}
     <div class="t10-wrap" aria-busy={loading}>
       <table class="t10">
@@ -75,8 +84,8 @@
             <th scope="col">Title</th>
             <th scope="col" class="hn">14 days</th>
             <th scope="col" class="hn right">Days</th>
-            <th scope="col" class="hn right">IMDb</th>
-            <th scope="col" class="hn right">RT</th>
+            <th scope="col" class="hn right"><RatingLogo source="imdb" /></th>
+            <th scope="col" class="hn right"><RatingLogo source="rt" /></th>
             <th scope="col" class="hn">Origin</th>
             <th scope="col"><span class="sr">Your list</span></th>
           </tr>
@@ -99,6 +108,7 @@
   .t10-wrap { container: top10 / inline-size; overflow-x: auto; }
   .t10 { width: 100%; border-collapse: separate; border-spacing: 0; }
   .t10 th { height: 34px; padding: 0 10px; color: var(--text-muted); font: 600 12.5px/1 var(--font-sans); text-align: left; white-space: nowrap; }
+  .t10 th :global(.rating-logo) { vertical-align: middle; }
   .foot { margin: 14px 4px 0; color: var(--text-muted); font-size: 13px; }
   .empty { color: var(--text-muted); }
   .alert { margin: 0; }

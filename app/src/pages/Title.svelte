@@ -4,6 +4,8 @@
 <script>
   import Poster from '../components/Poster.svelte'
   import Icon from '../components/Icon.svelte'
+  import RatingLogo from '../components/RatingLogo.svelte'
+  import ProviderLogo from '../components/ProviderLogo.svelte'
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
   import { scope, countryName, providerName } from '../lib/scope.svelte.js'
@@ -72,7 +74,14 @@
   const r = $derived(d?.ov.ratings ?? null)
   const tmdbScore = $derived(r?.sources?.find((x) => x.source === 'tmdb')?.value ?? m.vote_average ?? null)
   const here = $derived(d?.ov.availability?.countries?.[scope.country] ?? null)
-  const streaming = $derived([...new Set((here?.flatrate ?? []).map((p) => p.provider_name))])
+  // One logo per service: plan tiers ("Netflix Standard with Ads", "… Amazon Channel") collapse
+  // into the base service when it's there.
+  const streaming = $derived.by(() => {
+    const seen = new Map()
+    for (const p of here?.flatrate ?? []) if (!seen.has(p.provider_name)) seen.set(p.provider_name, p)
+    const all = [...seen.values()]
+    return all.filter((p) => !all.some((o) => o !== p && p.provider_name.startsWith(o.provider_name + ' ')))
+  })
   const lastRemoved = $derived((d?.offerHistory?.events ?? []).filter((e) => e.country === scope.country && e.event === 'removed' && e.monetization === 'flatrate').at(-1) ?? null)
   const nfViews = $derived(d?.ov.netflix?.total_views || 0)
 
@@ -200,9 +209,9 @@
             {#if errs.ratings}
               <dt>Ratings</dt><dd class="muted">didn’t load</dd>
             {:else}
-              {#if r?.imdb?.rating != null}<dt>IMDb</dt><dd class="num" class:stale={r.stale}>{r.imdb.rating.toFixed(1)}{#if r.imdb.votes}{' '}<span class="muted">· {compact(r.imdb.votes)} votes</span>{/if}</dd>{/if}
-              {#if r?.rotten_tomatoes?.critics_score != null}<dt>Tomatometer</dt><dd class="num" class:stale={r.stale}>{r.rotten_tomatoes.critics_score}%{#if r.rotten_tomatoes.audience_score != null}{' '}<span class="muted">· audience {r.rotten_tomatoes.audience_score}%</span>{/if}</dd>{/if}
-              {#if tmdbScore}<dt>TMDB</dt><dd class="num">{Number(tmdbScore).toFixed(1)}</dd>{/if}
+              {#if r?.imdb?.rating != null}<dt><RatingLogo source="imdb" height={17} /></dt><dd class="num" class:stale={r.stale}>{r.imdb.rating.toFixed(1)}{#if r.imdb.votes}{' '}<span class="muted">· {compact(r.imdb.votes)} votes</span>{/if}</dd>{/if}
+              {#if r?.rotten_tomatoes?.critics_score != null}<dt><RatingLogo source="rt" rotten={r.rotten_tomatoes.critics_score < 60} certified={!!r.rotten_tomatoes.certified_fresh} height={20} title="Tomatometer{r.rotten_tomatoes.certified_fresh ? ', Certified Fresh' : ''}" /></dt><dd class="num" class:stale={r.stale}>{r.rotten_tomatoes.critics_score}%{#if r.rotten_tomatoes.audience_score != null}{' '}<span class="muted aud">· <RatingLogo source="rt-audience" rotten={r.rotten_tomatoes.audience_score < 60} height={16} title="Audience score (Popcornmeter)" /> {r.rotten_tomatoes.audience_score}%</span>{/if}</dd>{/if}
+              {#if tmdbScore}<dt><RatingLogo source="tmdb" height={18} /></dt><dd class="num">{Number(tmdbScore).toFixed(1)}</dd>{/if}
               {#if r?.stale}<dt>Ratings</dt><dd class="stale">not refreshed, last known</dd>{/if}
             {/if}
             <dt>Your status</dt>
@@ -227,7 +236,7 @@
           {:else if errs.availability}
             <p class="note">Availability didn’t load.</p>
           {:else if streaming.length}
-            <p class="watch">{#each streaming as w}<span class="pill strong">{w}</span>{/each}</p>
+            <p class="watch">{#each streaming as w (w.provider_name)}<ProviderLogo name={w.provider_name} logo={w.logo_path} link={w.url ?? w.link} size={40} />{/each}</p>
           {:else if lastRemoved}
             <p class="left">Left {lastRemoved.provider_name} on {dayMonth(lastRemoved.observed_at.slice(0, 10))}. Not on a subscription service here now.</p>
           {:else}
@@ -301,11 +310,12 @@
   .numbers { box-shadow: inset 0 2px 0 var(--text-primary); border-radius: 4px 4px var(--radius-panel) var(--radius-panel); }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 9px 16px; margin: 6px 0 0; font-size: 15px; }
   dt { color: var(--text-muted); }
+  dt :global(.rating-logo) { vertical-align: -4px; }
   dd { margin: 0; font-weight: 700; text-align: right; }
   dd .muted { font-weight: 400; }
   dd.you { color: var(--accent-yours); }
   .stale { color: var(--status-stale); }
-  .watch { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+  .watch { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; }
   .left { margin: 0; color: var(--delta-down); font-weight: 600; }
 
   .credits { margin-top: 16px; gap: 14px; }

@@ -1,7 +1,8 @@
-<!-- Top 10 row. Artwork-led, 64px: serif titles, change in coloured words, a 14-day trend,
-     days, IMDb, RT and origin. Your titles get an orange wash and trend line. -->
+<!-- Top 10 row. Artwork-led, 64px: serif titles, change as coloured arrows (green up, red down,
+     blue New), a 14-day trend, days, IMDb, RT (tan when stale) and origin. Your titles (anything in
+     your library) get an orange wash with an orange edge, rank and trend line. -->
 <script>
-  import { chartRow, moveLabel, stars, starsLabel, shortDate } from '../lib/rows.js'
+  import { chartRow, moveLabel, changeText, isYours, stars, starsLabel, shortDate } from '../lib/rows.js'
   import Poster from './Poster.svelte'
   import Icon from './Icon.svelte'
   import Spark from './Spark.svelte'
@@ -10,12 +11,10 @@
 
   const r = $derived(chartRow(entry))
   const onList = $derived(r.mark.kind === 'watchlist')
-  const mine = $derived(r.mark.kind !== 'none' || entry.state?.status === 'watching')
+  const mine = $derived(isYours(entry.state))
   const score = (key) => r.scores.find((s) => s.key === key)
   const owner = (o) => (o ? o.charAt(0).toUpperCase() + o.slice(1) : '')
-  const change = $derived(
-    { up: `Up ${r.move.by}`, down: `Down ${r.move.by}`, same: 'No change', debut: 'New', reentry: 'Back' }[r.move.type]
-  )
+  const change = $derived(changeText(r.move))
   const meta = $derived(r.kind === 'tv' ? (r.season ? `TV · Season ${r.season}` : 'TV') : 'Film')
 </script>
 
@@ -64,20 +63,22 @@
 </tr>
 
 <style>
-  /* Your titles: a quiet orange wash across the row. */
-  tr.mine td { background: color-mix(in srgb, var(--accent-yours) 9%, transparent); }
-  tr.mine td:first-child { border-radius: 12px 0 0 12px; }
+  /* Your titles: an orange wash across the row with an orange leading edge; it stays on hover. */
+  tr.mine td { background: var(--wash-yours); }
+  tr.mine td:first-child { border-radius: 12px 0 0 12px; box-shadow: inset 3px 0 0 var(--accent-yours); }
   tr.mine td:last-child { border-radius: 0 12px 12px 0; }
   td { height: 64px; padding: 0 10px; vertical-align: middle; color: var(--text-primary); font: 400 14px/20px var(--font-sans); white-space: nowrap; }
   tr:hover td { background: var(--bg-elevated); }
   tr:hover td:first-child { border-radius: 12px 0 0 12px; }
   tr:hover td:last-child { border-radius: 0 12px 12px 0; }
+  tr.mine:hover td { background: var(--wash-yours-hover); }
   tr:not(:first-child) td:not(.rank):not(.move) { box-shadow: inset 0 1px 0 var(--border-subtle); }
   .right { text-align: right; }
 
   .rank { width: 36px; padding-right: 2px; text-align: right; color: var(--text-muted); font: 700 21px/1 var(--font-display); }
   tr.mine .rank { color: var(--accent-yours); }
-  .move { width: 82px; }
+  .move { width: 64px; }
+  .move .chg { font-size: 14.5px; }
 
   .title { width: 100%; max-width: 0; }
   .link { display: flex; align-items: center; gap: 12px; min-width: 0; color: inherit; text-decoration: none; }
@@ -106,6 +107,6 @@
   .round.on { background: var(--accent-yours); color: var(--bg-canvas); }
   .seen { display: inline-flex; align-items: center; gap: 5px; padding-right: 2px; color: var(--accent-yours); font-size: 13px; letter-spacing: 0.04em; }
 
-  @container top10 (max-width: 560px) { td { padding-inline: 6px; } .move { width: 64px; } }
+  @container top10 (max-width: 560px) { td { padding-inline: 6px; } .move { width: 52px; } }
   .link:focus-visible, button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 </style>

@@ -264,7 +264,9 @@ SELECT
     u.tmdb_kind, u.tmdb_id,
     CAST(COALESCE(NULLIF(t.title, ''), NULLIF(c.title, ''), '') AS TEXT) AS display_title,
     wp.provider_id, wp.provider_name, wp.monetization,
-    CAST(COALESCE(wp.link, '') AS TEXT) AS link
+    CAST(COALESCE(wp.link, '') AS TEXT) AS link,
+    CAST(COALESCE(wp.logo_path, '') AS TEXT) AS logo_path,
+    CAST(COALESCE(wp.url, '') AS TEXT) AS url
 FROM user_titles u
 JOIN tmdb_watch_providers wp ON wp.tmdb_kind = u.tmdb_kind AND wp.tmdb_id = u.tmdb_id
 LEFT JOIN tmdb_titles t ON t.tmdb_kind = u.tmdb_kind AND t.tmdb_id = u.tmdb_id
