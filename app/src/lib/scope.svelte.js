@@ -12,6 +12,8 @@ function saved() {
 }
 
 const initial = saved()
+/** Whether this browser has a country of its own; if not, the user's saved default applies. */
+export const hasSavedScope = !!initial.country
 export const scope = $state({ country: initial.country ?? 'US', provider: initial.provider ?? 'netflix' })
 
 /** Reference data for the pickers: countries that have charts, and each service's countries. */

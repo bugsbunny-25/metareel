@@ -307,3 +307,11 @@ JOIN watch_entries w ON w.id = et.entry_id
 WHERE w.user_id = sqlc.arg(user_id)
   AND et.entry_id IN (sqlc.slice(entry_ids))
 ORDER BY et.entry_id, g.name COLLATE NOCASE;
+
+-- name: GetUserPreferences :one
+SELECT data, CAST(updated_at AS TEXT) AS updated_at FROM user_preferences WHERE user_id = sqlc.arg(user_id);
+
+-- name: SaveUserPreferences :exec
+INSERT INTO user_preferences (user_id, data, updated_at)
+VALUES (sqlc.arg(user_id), sqlc.arg(data), CURRENT_TIMESTAMP)
+ON CONFLICT (user_id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP;

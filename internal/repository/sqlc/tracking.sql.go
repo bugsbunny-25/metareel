@@ -215,6 +215,22 @@ func (q *Queries) GetTitleSnapshot(ctx context.Context, arg GetTitleSnapshotPara
 	return i, err
 }
 
+const getUserPreferences = `-- name: GetUserPreferences :one
+SELECT data, CAST(updated_at AS TEXT) AS updated_at FROM user_preferences WHERE user_id = ?1
+`
+
+type GetUserPreferencesRow struct {
+	Data      string `json:"data"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+func (q *Queries) GetUserPreferences(ctx context.Context, userID int64) (GetUserPreferencesRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserPreferences, userID)
+	var i GetUserPreferencesRow
+	err := row.Scan(&i.Data, &i.UpdatedAt)
+	return i, err
+}
+
 const getUserTitle = `-- name: GetUserTitle :one
 SELECT user_id, tmdb_kind, tmdb_id, status, rating, favorite, watchlist_position,
        watchlist_note, first_watched_at, last_watched_at, watch_count, episodes_watched,
@@ -959,6 +975,22 @@ type RollupUserTitleParams struct {
 // a FROM-clause subquery with the row being updated.
 func (q *Queries) RollupUserTitle(ctx context.Context, arg RollupUserTitleParams) error {
 	_, err := q.db.ExecContext(ctx, rollupUserTitle, arg.UserID, arg.TmdbKind, arg.TmdbID)
+	return err
+}
+
+const saveUserPreferences = `-- name: SaveUserPreferences :exec
+INSERT INTO user_preferences (user_id, data, updated_at)
+VALUES (?1, ?2, CURRENT_TIMESTAMP)
+ON CONFLICT (user_id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP
+`
+
+type SaveUserPreferencesParams struct {
+	UserID int64  `json:"user_id"`
+	Data   string `json:"data"`
+}
+
+func (q *Queries) SaveUserPreferences(ctx context.Context, arg SaveUserPreferencesParams) error {
+	_, err := q.db.ExecContext(ctx, saveUserPreferences, arg.UserID, arg.Data)
 	return err
 }
 

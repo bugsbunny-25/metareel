@@ -80,6 +80,14 @@ export const api = {
   history: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/history`, { signal }),
   availabilityHistory: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/availability/history`, { signal }),
 
+  // Your account: who you are, where you're signed in, your password and preferences.
+  account: (signal) => request('GET', '/me/account', { signal }),
+  changePassword: (current, next) => request('POST', '/me/password', { body: { current_password: current, new_password: next } }),
+  endSession: (id) => request('DELETE', `/me/sessions/${id}`),
+  endOtherSessions: () => request('DELETE', '/me/sessions'),
+  preferences: (signal) => request('GET', '/me/preferences', { signal }),
+  setPreferences: (prefs) => request('PUT', '/me/preferences', { body: prefs }),
+
   // The signed-in user's library
   myTitles: (offset = 0, signal) => request('GET', `/me/titles${qs({ limit: 200, offset })}`, { signal }),
   myTitle: (kind, id, signal) => request('GET', `/me/titles/${kind}/${id}`, { signal }),

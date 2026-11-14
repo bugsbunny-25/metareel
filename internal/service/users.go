@@ -242,3 +242,34 @@ func toUserResponse(u repository.UserRecord) UserResponse {
 	return UserResponse{ID: u.ID, Username: u.Username, Role: u.Role, Disabled: u.Disabled,
 		CreatedAt: u.CreatedAt, LastLoginAt: u.LastLoginAt}
 }
+
+// ChangeOwnPassword is a signed-in user changing their own password: the
+// current one must check out, and every other session of theirs is ended
+// (the one making the change stays signed in). It returns how many ended.
+func (s *UserService) ChangeOwnPassword(ctx context.Context, username, current, next, ip string, keepSessionID int64) (int64, error) {
+	if err := s.sessions.CheckPassword(ctx, username, current, ip); err != nil {
+		if errors.Is(err, ErrInvalidLogin) {
+			return 0, &ValidationError{Message: "your current password isn't right"}
+		}
+		return 0, err
+	}
+	if current == next {
+		return 0, &ValidationError{Message: "the new password is the same as the current one"}
+	}
+	if err := validatePassword(next); err != nil {
+		return 0, err
+	}
+	hash, err := s.hash(ctx, next)
+	if err != nil {
+		return 0, err
+	}
+	if err := userErr(s.repo.SetUserPassword(ctx, username, hash)); err != nil {
+		return 0, err
+	}
+	n, err := s.sessions.RevokeUserExcept(ctx, username, keepSessionID)
+	if err != nil {
+		return 0, err
+	}
+	s.log.Info("password changed by its user", "username", username, "sessions_ended", n)
+	return n, nil
+}

@@ -490,6 +490,12 @@ type User struct {
 	LastLoginAt  sql.NullTime `json:"last_login_at"`
 }
 
+type UserPreference struct {
+	UserID    int64  `json:"user_id"`
+	Data      string `json:"data"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 type UserTag struct {
 	ID        int64  `json:"id"`
 	UserID    int64  `json:"user_id"`

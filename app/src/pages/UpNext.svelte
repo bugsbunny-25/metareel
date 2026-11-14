@@ -24,8 +24,8 @@
   // Stages in the order they're shown. Caught-up shows have no section: they surface in
   // Upcoming when a new episode is on its way, and back in Continue watching once it airs.
   const STAGES = [
-    ['watching', 'Continue watching', 'Watched in the last 30 days'],
-    ['stalled', 'Haven’t watched in a while', 'Nothing watched for more than 30 days'],
+    ['watching', 'Continue watching', (n) => `Watched in the last ${n} days`],
+    ['stalled', 'Haven’t watched in a while', (n) => `Nothing watched for more than ${n} days`],
     ['not_started', 'Not started', 'On your watchlist'],
     ['on_hold', 'On hold', 'Paused; left out of Upcoming'],
     ['dropped', 'Dropped', 'Stopped watching; left out of Upcoming'],
@@ -192,7 +192,7 @@
     {:else}
       <section class="kpis" aria-label="Shows at a glance">
         <div class="kpi"><span class="k-label">To catch up</span><b class="num">{toCatchUp}</b><span class="k-sub">episode{toCatchUp === 1 ? '' : 's'} · about {hm(minutesLeft)}</span></div>
-        <div class="kpi"><span class="k-label">In progress</span><b class="num">{inProgress.length}</b><span class="k-sub">{count('stalled')} not watched for 30+ days</span></div>
+        <div class="kpi"><span class="k-label">In progress</span><b class="num">{inProgress.length}</b><span class="k-sub">{count('stalled')} not watched for {queue.stale_days ?? 30}+ days</span></div>
         <div class="kpi"><span class="k-label">Airing this week</span><b class="num">{upcoming ? soon.length : '–'}</b><span class="k-sub">{#if soon.length}next: {soon[0].show_title}, {whenLabel(soon[0].air_date)}{:else}nothing in the next 7 days{/if}</span></div>
         <div class="kpi"><span class="k-label">Caught up</span><b class="num">{count('caught_up')}</b><span class="k-sub">{(queue.shows ?? []).filter((s) => s.stage === 'caught_up' && s.next_air_date).length} with episodes on the way</span></div>
       </section>
@@ -201,7 +201,7 @@
         {@const list = byStage[key]}
         {#if list.length}
           <section class="stage" aria-labelledby="st-{key}">
-            <div class="sh"><h2 id="st-{key}">{name}</h2><span class="n num">{list.length}</span><span class="hint">{hint}</span></div>
+            <div class="sh"><h2 id="st-{key}">{name}</h2><span class="n num">{list.length}</span><span class="hint">{typeof hint === 'function' ? hint(queue.stale_days ?? 30) : hint}</span></div>
             {#if key === 'watching' || key === 'stalled'}
               <div class="cards">
                 {#each list as s (s.tmdb_id)}

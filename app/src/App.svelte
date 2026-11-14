@@ -6,6 +6,7 @@
   import { session, loadSession, signOut } from './lib/session.svelte.js'
   import { scope, reference, setScope, loadReference, providerName } from './lib/scope.svelte.js'
   import { library } from './lib/library.svelte.js'
+  import { loadPrefs } from './lib/prefs.svelte.js'
   import { theme, toggleTheme } from './lib/theme.svelte.js'
   import { toasts } from './lib/toast.svelte.js'
   import LogWatch from './components/LogWatch.svelte'
@@ -21,6 +22,7 @@
   import Library from './pages/Library.svelte'
   import Stats from './pages/Stats.svelte'
   import UpNext from './pages/UpNext.svelte'
+  import Settings from './pages/Settings.svelte'
   import Show from './pages/Show.svelte'
 
   let logTarget = $state(null)
@@ -51,18 +53,19 @@
     if (!session.user) return
     untrack(() => {
       bootError = ''
-      Promise.all([loadReference(), library.load()]).catch((err) => (bootError = err.message))
+      // Preferences after the reference lists, so a saved country/service pair is checked against them.
+      Promise.all([loadReference().then(loadPrefs), library.load()]).catch((err) => (bootError = err.message))
     })
   })
 
   const titleMatch = $derived(route.path.match(/^\/title\/(movie|tv)\/(\d+)$/))
   const showMatch = $derived(route.path.match(/^\/show\/(\d+)$/))
-  const PAGES = { '/': 'home', '/charts': 'charts', '/up-next': 'upnext', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/stats': 'stats' }
+  const PAGES = { '/': 'home', '/charts': 'charts', '/up-next': 'upnext', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/stats': 'stats', '/settings': 'settings' }
   const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : 'missing'))
   const providers = $derived(reference.providers.filter((p) => p.countries.includes(scope.country)))
 
   $effect(() => {
-    const NAMES = { charts: 'Top 10', title: 'Title', upnext: 'Up next', show: 'Episodes', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', missing: 'Not found' }
+    const NAMES = { charts: 'Top 10', title: 'Title', upnext: 'Up next', show: 'Episodes', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', settings: 'Settings', missing: 'Not found' }
     document.title = NAMES[page] ? `${NAMES[page]} · metareel` : 'metareel'
   })
   // On a phone the nav scrolls sideways; keep the current page's link in view.
@@ -110,13 +113,14 @@
           {#if !reference.loaded}<option value={scope.provider}>{providerName(scope.provider)}</option>{/if}
         </select>
       </label>
-      <button class="icon-btn" type="button" onclick={toggleTheme} aria-label="Switch to {theme.mode === 'light' ? 'dark' : 'light'} mode" title="Switch to {theme.mode === 'light' ? 'dark' : 'light'} mode">
-        {theme.mode === 'light' ? '☾' : '☀'}
+      <button class="icon-btn" type="button" onclick={toggleTheme} aria-label="Switch to {theme.effective === 'light' ? 'dark' : 'light'} mode" title="Switch to {theme.effective === 'light' ? 'dark' : 'light'} mode">
+        {theme.effective === 'light' ? '☾' : '☀'}
       </button>
       <details class="account">
         <summary aria-label="Account: {session.user.username}"><span class="avatar" aria-hidden="true">{session.user.username.slice(0, 1).toUpperCase()}</span></summary>
         <div class="menu">
           <p class="who">Signed in as <b>{session.user.username}</b></p>
+          <a href="#/settings" onclick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>Settings</a>
           {#if session.user.role === 'admin'}<a href="/admin/">Admin console</a>{/if}
           <button type="button" onclick={signOut}>Sign out</button>
         </div>
@@ -135,6 +139,8 @@
       <Watchlist {onlog} />
     {:else if page === 'library'}
       <Library {onlog} />
+    {:else if page === 'settings'}
+      <Settings {onconfirm} />
     {:else if page === 'upnext'}
       <UpNext {onlog} />
     {:else if page === 'show'}

@@ -2595,6 +2595,161 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/TrackingUnauthorized" }
 
+  /api/v1/me/account:
+    get:
+      operationId: getAccount
+      tags: [Account]
+      summary: Your account and where you're signed in
+      description: >
+        The signed-in user and their active sessions, most recently used
+        first; `current` marks the session making the request.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The user and their sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: "#/components/schemas/AccountUser" }
+                  sessions:
+                    type: array
+                    items: { $ref: "#/components/schemas/AccountSession" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/password:
+    post:
+      operationId: changePassword
+      tags: [Account]
+      summary: Change your password
+      description: >
+        Needs the current password (and shares the sign-in rate limit, so it
+        can't be used to guess one). Every other session of the user is
+        ended; the one making the change stays signed in. A wrong current
+        password is a 400, not a 401, so a client does not mistake it for a
+        lost session.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, minLength: 10, description: "At least 10 characters, at most 256 bytes" }
+      responses:
+        "200":
+          description: Changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  other_sessions_ended: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "429": { description: Too many password attempts; try again later }
+
+  /api/v1/me/sessions:
+    delete:
+      operationId: endOtherSessions
+      tags: [Account]
+      summary: Sign out everywhere else
+      description: Ends every session of the user except the one making the request.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: How many sessions ended
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ended: { type: integer }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+
+  /api/v1/me/sessions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    delete:
+      operationId: endSession
+      tags: [Account]
+      summary: Sign one of your other sessions out
+      description: >
+        Only the user's own sessions; any other id is a 404. The current
+        session signs out through POST /api/v1/auth/logout (which also clears
+        the cookie), so its id here is a 400.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Signed out }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/preferences:
+    get:
+      operationId: getPreferences
+      tags: [Account]
+      summary: Your preferences
+      description: >
+        Settings that follow the user to every device. Each is optional; an
+        unset one falls back to the client's default. Device-only choices
+        (the theme) are not stored here.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The preferences, and when they were last saved (absent if never)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preferences: { $ref: "#/components/schemas/Preferences" }
+                  updated_at: { type: string }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+    put:
+      operationId: setPreferences
+      tags: [Account]
+      summary: Replace your preferences
+      description: Replaces them as a whole; a field left out is cleared.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Preferences" }
+      responses:
+        "200":
+          description: The stored preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preferences: { $ref: "#/components/schemas/Preferences" }
+                  updated_at: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+
   /api/v1/me/shows:
     get:
       operationId: showQueue
@@ -2614,7 +2769,7 @@ paths:
         - BearerSession: []
         - SessionCookie: []
       parameters:
-        - { name: stale_days, in: query, required: false, schema: { type: integer, default: 30, minimum: 7, maximum: 365 }, description: "Days without a watch after which a show part way through is stalled rather than watching" }
+        - { name: stale_days, in: query, required: false, schema: { type: integer, minimum: 7, maximum: 365 }, description: "Days without a watch after which a show part way through is stalled rather than watching; defaults to the user's stale_days preference, else 30" }
       responses:
         "200":
           description: The shows, ordered by stage and then within it
@@ -3820,6 +3975,35 @@ components:
         air_date: { type: string, nullable: true }
         episode_type: { type: string, nullable: true }
         runtime: { type: integer, nullable: true }
+    AccountUser:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        role: { type: string, enum: [admin, reader] }
+        disabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        last_login_at: { type: string, format: date-time, nullable: true }
+    AccountSession:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        username: { type: string }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        user_agent: { type: string }
+        ip: { type: string }
+        current: { type: boolean, description: The session making the request }
+    Preferences:
+      type: object
+      properties:
+        country: { type: string, description: "ISO 3166-1 alpha-2; the country a new device opens on" }
+        provider: { type: string, description: "Chart service slug (netflix, amazon-prime, ...) a new device opens on" }
+        currency: { type: string, description: "ISO 4217; prefilled for ticket and rental prices" }
+        screen_unit: { type: string, enum: [m, ft] }
+        stale_days: { type: integer, minimum: 7, maximum: 365, description: "Default stale_days for GET /api/v1/me/shows" }
     QueueEpisode:
       type: object
       properties:

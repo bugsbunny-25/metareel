@@ -107,11 +107,14 @@ func (s *TrackingService) refreshShowEpisodes(ctx context.Context, userID int64)
 
 // ShowQueue sorts every show in the user's library into stages (see
 // stageOrder), each with progress and the next episode to watch. staleDays
-// (7-365, default 30) is how long without a watch moves a show part way
-// through from "watching" to "stalled".
+// (7-365) is how long without a watch moves a show part way through from
+// "watching" to "stalled"; 0 means the user's preference, else 30.
 func (s *TrackingService) ShowQueue(ctx context.Context, userID int64, staleDays int) (map[string]any, error) {
 	if staleDays == 0 {
 		staleDays = defaultStaleDays
+		if p, _, err := s.preferences(ctx, userID); err == nil && p.StaleDays != nil {
+			staleDays = *p.StaleDays
+		}
 	}
 	if staleDays < minStaleDays || staleDays > maxStaleDays {
 		return nil, &ValidationError{Message: "stale_days must be between 7 and 365"}

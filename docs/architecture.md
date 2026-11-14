@@ -597,6 +597,17 @@ typed in major units and sent as minor units using the currency's fraction
 digits (`Intl.NumberFormat`). Streaming services are stored by name
 (`provider_name`), suggested from `/services/{country}`; a stored
 `provider_id` is kept only while the name is unchanged.
+Settings splits what follows the user from what belongs to a device.
+Preferences are one JSON object per user in `user_preferences` (validated in
+`TrackingService.SetPreferences`, so a new key needs no table rebuild); the
+app loads them after the reference lists and applies the default
+country/service only on a browser that has none of its own, so the top-bar
+pickers keep working per device. `ShowQueue` uses `stale_days` when the
+request has none. The theme stays in `localStorage`. Account routes reuse the
+session and user services: `CheckPassword` verifies the current password
+under the sign-in rate limit, `ChangeOwnPassword` ends the user's other
+sessions, and `RevokeForUser` refuses ids that aren't the caller's, so one
+user can never end another's session.
 Search queries both search endpoints in parallel (debounced, older
 requests aborted) and drops TMDB hits already listed as charted; an ID or link
 skips text search and goes to `/titles/lookup`, which only knows titles in

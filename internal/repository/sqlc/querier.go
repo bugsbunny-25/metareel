@@ -171,6 +171,7 @@ type Querier interface {
 	GetTrackedEpisode(ctx context.Context, arg GetTrackedEpisodeParams) (TrackedEpisode, error)
 	GetTrackedEpisodesFetchedAt(ctx context.Context, tmdbID string) (string, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
+	GetUserPreferences(ctx context.Context, userID int64) (GetUserPreferencesRow, error)
 	GetUserTitle(ctx context.Context, arg GetUserTitleParams) (GetUserTitleRow, error)
 	GetVenue(ctx context.Context, id int64) (Venue, error)
 	GetVenueScreen(ctx context.Context, id int64) (VenueScreen, error)
@@ -589,6 +590,7 @@ type Querier interface {
 	// distributors is a JSON list (NULL when Wikidata has none).
 	SaveTmdbDistributors(ctx context.Context, arg SaveTmdbDistributorsParams) error
 	SaveTmdbEnwiki(ctx context.Context, arg SaveTmdbEnwikiParams) error
+	SaveUserPreferences(ctx context.Context, arg SaveUserPreferencesParams) error
 	// Changes whenever a name, a mapping or a chart changes, so the index is
 	// rebuilt only then.
 	SearchIndexStamp(ctx context.Context) (string, error)

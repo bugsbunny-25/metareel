@@ -9,6 +9,7 @@
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
   import { scope } from '../lib/scope.svelte.js'
+  import { prefs } from '../lib/prefs.svelte.js'
   import { toast } from '../lib/toast.svelte.js'
   import { localDay, fromUTC, zonedInput, zonedToDate, browserZone } from '../lib/dates.js'
   import { toMinor, fromMinor, currencyFor, remember, recall } from '../lib/money.js'
@@ -66,7 +67,7 @@
       currency: '', tickets: '', price: '', fees: '', snacks: '', booking: '',
       provider: '', providerId: null, providerOriginal: '', monetization: 'flatrate', device: '', media: '', edition: '', channel: '',
       dimension: '', resolution: '', hdr: '', audioFormat: '', frameRate: '', audioLang: '', subLang: '',
-      aspect: '', aspectVariable: false, screenAspect: '', screenW: '', screenH: '', dimUnit: 'm',
+      aspect: '', aspectVariable: false, screenAspect: '', screenW: '', screenH: '', dimUnit: prefs.values.screen_unit ?? 'm',
     }
   }
 
@@ -90,7 +91,7 @@
       frameRate: w.frame_rate ?? '', audioLang: w.audio_language ?? '', subLang: w.subtitle_language ?? '',
       aspect: w.content_aspect_ratio_text ?? '', aspectVariable: !!w.content_aspect_variable,
       screenAspect: w.screen_aspect_ratio ? String(w.screen_aspect_ratio) : '',
-      screenW: w.screen_id ? '' : (w.screen_width ?? ''), screenH: w.screen_id ? '' : (w.screen_height ?? ''), dimUnit: w.screen_dim_unit ?? 'm',
+      screenW: w.screen_id ? '' : (w.screen_width ?? ''), screenH: w.screen_id ? '' : (w.screen_height ?? ''), dimUnit: w.screen_dim_unit ?? prefs.values.screen_unit ?? 'm',
     })
     // The service or channel is one stored name; which field shows it depends on the place.
     if (x.place === 'broadcast') x.channel = w.provider_name ?? ''
@@ -112,7 +113,8 @@
         f.season = target.season ?? 1
         f.episode = target.episode ?? 1
       }
-      if (!f.currency) f.currency = recall('currency') ?? currencyFor(scope.country)
+      // Your saved currency, else the one you used last time, else the country's.
+      if (!f.currency) f.currency = prefs.values.currency ?? recall('currency') ?? currencyFor(scope.country)
       pictureOpen = pictureSet(f)
       error = ''
       incomplete = false

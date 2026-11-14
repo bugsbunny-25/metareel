@@ -256,6 +256,10 @@ make reports-open
 | GET/PUT/DELETE | `/api/v1/me/watches/:id`            | One watch: read, replace, or delete it for good |
 | GET    | `/api/v1/me/tags`                           | The user's tags with how many watches carry each |
 | DELETE | `/api/v1/me/tags/:id`                       | Delete a tag and detach it from every watch |
+| GET    | `/api/v1/me/account`                        | Your user and where you're signed in (sessions, `current` marks this one) |
+| POST   | `/api/v1/me/password`                       | Change your password (`current_password`, `new_password`); ends your other sessions |
+| DELETE | `/api/v1/me/sessions[/:id]`                 | Sign one of your other sessions out, or (no id) every session but this one |
+| GET/PUT | `/api/v1/me/preferences`                   | Preferences that follow you: default `country` + `provider`, `currency`, `screen_unit` (m/ft), `stale_days` for `/me/shows`; PUT replaces them |
 | GET    | `/api/v1/me/shows`                          | Every show you track, sorted into stages (`watching`, `stalled` after `stale_days` (30) without a watch, `not_started`, `on_hold`, `dropped`, `caught_up`) with progress, the next episode and the next air date |
 | GET    | `/api/v1/me/upcoming`                       | Episodes still to air of your shows, soonest first (`days`: 90, ≤ 365); on hold, dropped and unwanted shows left out |
 | GET    | `/api/v1/me/shows/:id`                      | A show with the user's progress: seasons, episodes, watch counts (`include_specials`) |
@@ -796,7 +800,12 @@ currency; a streaming service and plan, with a price for rentals and
 purchases; a disc's media and edition; a TV channel. Picture and sound
 (3D, resolution, HDR, audio, languages, aspect ratios, screen size) are
 optional and folded away. A watch at a cinema is entered and filed in the
-cinema's time zone.
+cinema's time zone. Settings (`#/settings`, from the account menu) holds the
+account (sign out), preferences saved to the account (default charts for a new
+device, currency, screen unit, when a show counts as not watched in a while),
+the theme for this device (dark, light or match the system), a password
+change, and every signed-in session with sign out per device or everywhere
+else.
 
 ```bash
 make dev-ui      # admin console at http://localhost:5173/admin/

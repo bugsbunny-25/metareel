@@ -60,6 +60,12 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	// RequireUser refuses API keys, which identify an integration, not a
 	// person.
 	me := e.Group("/api/v1/me", handler.SameOriginWrites, h.Authenticate, h.RequireUser, handler.NoStore)
+	me.GET("/account", h.GetAccount)
+	me.POST("/password", h.ChangePassword)
+	me.DELETE("/sessions", h.RevokeMyOtherSessions)
+	me.DELETE("/sessions/:id", h.RevokeMySession)
+	me.GET("/preferences", h.GetPreferences)
+	me.PUT("/preferences", h.SetPreferences)
 	me.GET("/titles", h.ListTrackedTitles)
 	me.GET("/titles/search", h.SearchTrackedTitles)
 	me.GET("/titles/:kind/:id", h.GetTrackedTitle)
