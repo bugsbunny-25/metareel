@@ -28,7 +28,7 @@ export function Button({
       {busy ? (
         <ActivityIndicator color={primary ? colors.accentOn : colors.textPrimary} />
       ) : (
-        <Text variant="label" style={{ color: primary ? colors.accentOn : colors.textPrimary, fontSize: 16 }}>
+        <Text variant="label" numberOfLines={1} style={{ color: primary ? colors.accentOn : colors.textPrimary, fontSize: 16, lineHeight: 21 }}>
           {title}
         </Text>
       )}

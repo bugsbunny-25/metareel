@@ -1373,7 +1373,11 @@ paths:
         - name: netflix
           in: query
           schema: { type: string, example: "81231974", description: "Netflix title ID (netflix.com/title/<id>), from Wikidata or Tudum's Top 10" }
-      description: Give exactly one of imdb, tmdb, slug or netflix.
+        - name: letterboxd
+          in: query
+          required: false
+          schema: { type: string, example: "https://boxd.it/aRvI", description: "A boxd.it short link or a letterboxd.com film (or review) URL; resolved through the film page's TMDB id, cached a day. 400 when the link is not a film, 404 when the film has no TMDB id, 502 when Letterboxd can't be reached or refuses (the mobile app then falls back to a search)" }
+      description: Give exactly one of imdb, tmdb, slug, netflix or letterboxd. A Letterboxd film is returned in items even when metareel has never charted it.
       responses:
         "200":
           description: TMDB titles and FlixPatrol titles

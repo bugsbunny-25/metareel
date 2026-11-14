@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"regexp"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bugsbunny-25/metareel/internal/client"
 	"github.com/bugsbunny-25/metareel/internal/repository"
 	"github.com/bugsbunny-25/metareel/internal/repository/sqlc"
 	"github.com/bugsbunny-25/metareel/internal/scraper/flixpatrol"
@@ -24,6 +26,8 @@ type TitleOverviewService struct {
 	mapping   *TitleMappingService // optional: the overview's ids section
 	// engagement: optional, Netflix engagement report rows
 	engagement *repository.EngagementRepository
+	// letterboxd: optional, resolves Letterboxd links in Lookup
+	letterboxd letterboxdResolver
 	now        func() time.Time
 }
 
@@ -699,4 +703,49 @@ func (s *TitleOverviewService) currentPositions(ctx context.Context, rankings []
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Rank < out[j].Rank })
 	return out
+}
+
+// letterboxdResolver turns a Letterboxd link into a TMDB reference.
+type letterboxdResolver interface {
+	Resolve(ctx context.Context, link string) (client.LetterboxdRef, error)
+}
+
+// WithLetterboxd lets Lookup resolve Letterboxd links (shared to the mobile app).
+func (s *TitleOverviewService) WithLetterboxd(r letterboxdResolver) *TitleOverviewService {
+	s.letterboxd = r
+	return s
+}
+
+// LookupLetterboxd resolves a boxd.it or letterboxd.com film link to its
+// TMDB title, plus the charted titles mapped to it. The title is returned
+// even when metareel has never charted it: Letterboxd vouches for the id.
+func (s *TitleOverviewService) LookupLetterboxd(ctx context.Context, link string) (*LookupResult, error) {
+	link = strings.TrimSpace(link)
+	if !client.IsLetterboxdURL(link) {
+		return nil, &ValidationError{Message: "letterboxd must be a boxd.it or letterboxd.com link"}
+	}
+	if s.letterboxd == nil {
+		return nil, fmt.Errorf("%w: letterboxd lookups are not configured", ErrUpstream)
+	}
+	ref, err := s.letterboxd.Resolve(ctx, link)
+	switch {
+	case err == nil:
+	case errors.Is(err, client.ErrLetterboxdNotFilm):
+		return nil, &ValidationError{Message: "that Letterboxd link is not a film"}
+	case errors.Is(err, client.ErrLetterboxdNoTMDB):
+		return nil, fmt.Errorf("%w: the Letterboxd film has no TMDB id", ErrTitleNotFound)
+	default:
+		return nil, fmt.Errorf("%w: letterboxd: %v", ErrUpstream, err)
+	}
+	out, err := s.Lookup(ctx, "", ref.Kind+":"+ref.TmdbID, "", "")
+	if errors.Is(err, ErrTitleNotFound) || errors.Is(err, sql.ErrNoRows) {
+		out, err = &LookupResult{Refs: []LookupRef{}, Titles: []RankedTitle{}}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(out.Refs) == 0 {
+		out.Refs = append(out.Refs, LookupRef{Kind: ref.Kind, TmdbID: ref.TmdbID})
+	}
+	return out, nil
 }

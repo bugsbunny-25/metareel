@@ -411,6 +411,17 @@ other than same-origin / none, or an `Origin` whose host is not the request's
 admin API (open, or signed in with a SameSite=Strict cookie); clients without
 those headers (curl) pass.
 
+## Letterboxd links (`client/letterboxd.go`)
+
+`GET /titles/lookup?letterboxd=` (the mobile app's share sheet) resolves a
+`boxd.it` short link or a `letterboxd.com` film / review URL: redirects are
+followed by hand (at most 3, only to boxd.it or letterboxd.com), the film slug
+is read from the path, and the film page's `data-tmdb-id` / `data-tmdb-type`
+give the TMDB title. A plain GET, no cookies, no challenge handling: anything
+but a 200 is an upstream error (502) and the app falls back to a title search.
+Answers are cached in memory (a day; a link that isn't a film or has no TMDB
+id for an hour).
+
 ## Title search (`service/search.go`)
 
 `GET /search` matches the names of every mapped TMDB title (TMDB title and

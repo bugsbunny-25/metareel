@@ -64,7 +64,7 @@ function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bgCanvas } }}>
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="(tabs)" />
-          {['search'].map((name) => (
+          {['search', 'share'].map((name) => (
             <Stack.Screen
               key={name}
               name={name}

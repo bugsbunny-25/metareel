@@ -745,7 +745,7 @@ export interface paths {
         };
         /**
          * Find a title by IMDb ID, TMDB ID, FlixPatrol slug or Netflix ID
-         * @description Give exactly one of imdb, tmdb, slug or netflix.
+         * @description Give exactly one of imdb, tmdb, slug, netflix or letterboxd. A Letterboxd film is returned in items even when metareel has never charted it.
          */
         get: operations["lookupTitle"];
         put?: never;
@@ -5926,6 +5926,7 @@ export interface operations {
                 tmdb?: string;
                 slug?: string;
                 netflix?: string;
+                letterboxd?: string;
             };
             header?: never;
             path?: never;

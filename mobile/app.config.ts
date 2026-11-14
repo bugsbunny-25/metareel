@@ -68,6 +68,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
     'expo-background-task',
+    [
+      'expo-sharing',
+      {
+        // Receive links (and text with a link) shared from other apps.
+        ios: { enabled: true, activationRule: { supportsWebUrlWithMaxCount: 1, supportsText: true } },
+        android: { enabled: true, singleShareMimeTypes: ['text/plain'] },
+      },
+    ],
     ['./plugins/with-home-http.js', { hosts: homeHttpHosts }],
   ],
   runtimeVersion: { policy: 'fingerprint' },

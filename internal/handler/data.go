@@ -399,7 +399,17 @@ func (h *Handler) GetTitleRatingsBatch(c *echo.Context) error {
 
 // LookupTitle: GET /api/v1/titles/lookup?imdb=tt…|tmdb=movie:425|slug=…|netflix=81231974
 func (h *Handler) LookupTitle(c *echo.Context) error {
-	out, err := h.Overview.Lookup(c.Request().Context(), c.QueryParam("imdb"), c.QueryParam("tmdb"), c.QueryParam("slug"), c.QueryParam("netflix"))
+	ctx := c.Request().Context()
+	if lb := c.QueryParam("letterboxd"); lb != "" {
+		for _, p := range []string{"imdb", "tmdb", "slug", "netflix"} {
+			if c.QueryParam(p) != "" {
+				return badRequest(c, errors.New("give exactly one of imdb, tmdb (kind:id), slug, netflix or letterboxd"))
+			}
+		}
+		out, err := h.Overview.LookupLetterboxd(ctx, lb)
+		return writeData(c, out, err)
+	}
+	out, err := h.Overview.Lookup(ctx, c.QueryParam("imdb"), c.QueryParam("tmdb"), c.QueryParam("slug"), c.QueryParam("netflix"))
 	return writeData(c, out, err)
 }
 

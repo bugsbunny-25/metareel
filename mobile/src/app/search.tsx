@@ -10,39 +10,29 @@ import { Text } from '@/components/Text';
 import { TitleRow } from '@/components/TitleRow';
 import { useTitleSearch } from '@/data/queries';
 import { openLog, openTitle } from '@/lib/actions';
+import { lookupQuery, parseShared } from '@/lib/share';
 import { year } from '@/lib/format';
 import { useTheme } from '@/theme';
 
-/** A TMDB id or link the lookup endpoint resolves (the web ⌘K palette's rules). */
-export function parseLookup(text: string): { tmdb?: string; imdb?: string; netflix?: string; kind?: 'movie' | 'tv' } | null {
-  const t = text.trim();
-  let m = t.match(/themoviedb\.org\/(movie|tv)\/(\d+)/i);
-  if (m) return { kind: m[1].toLowerCase() as 'movie' | 'tv', tmdb: m[2] };
-  m = t.match(/\b(tt\d{6,10})\b/i);
-  if (m) return { imdb: m[1].toLowerCase() };
-  m = t.match(/netflix\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?title\/(\d+)/i);
-  if (m) return { netflix: m[1] };
-  return null;
-}
-
 /** Search any title; ?mode=log opens the log sheet (or the show) on pick. */
 export default function Search() {
-  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const { mode, q: initial } = useLocalSearchParams<{ mode?: string; q?: string }>();
   const { colors, fonts, gutter } = useTheme();
-  const [text, setText] = useState('');
-  const [q, setQ] = useState('');
+  const [text, setText] = useState(initial ?? '');
+  const [q, setQ] = useState(initial ?? '');
   useEffect(() => {
     const t = setTimeout(() => setQ(text), 300);
     return () => clearTimeout(t);
   }, [text]);
 
-  const ref = parseLookup(q);
+  // A pasted link or ID is looked up; anything else is a title search.
+  const parsed = parseShared(q);
+  const ref = parsed && parsed.type !== 'search' ? parsed : null;
   const search = useTitleSearch(ref ? '' : q);
   const lookup = useQuery({
     queryKey: ['lookup', q],
-    enabled: !!ref && !ref.kind,
-    queryFn: async ({ signal }) =>
-      unwrap(await api.GET('/api/v1/titles/lookup', { params: { query: { imdb: ref?.imdb, netflix: ref?.netflix } }, signal })),
+    enabled: !!ref && ref.type !== 'tmdb',
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/titles/lookup', { params: { query: lookupQuery(ref!) }, signal })),
   });
 
   const pick = (kind: 'movie' | 'tv', id: string, title?: string, poster?: string) => {
@@ -53,8 +43,8 @@ export default function Search() {
 
   type Result = components['schemas']['TitleSearchResult'];
   const results: Result[] =
-    ref?.kind && ref.tmdb
-      ? [{ tmdb_kind: ref.kind, tmdb_id: ref.tmdb, title: `TMDB ${ref.kind} ${ref.tmdb}` }]
+    ref?.type === 'tmdb'
+      ? [{ tmdb_kind: ref.kind, tmdb_id: ref.id, title: `TMDB ${ref.kind} ${ref.id}` }]
       : ref
         ? (lookup.data?.items ?? []).map((i) => ({ tmdb_kind: i.kind, tmdb_id: i.tmdb_id, title: `Found: ${i.kind} ${i.tmdb_id}` }))
         : (search.data?.results ?? []);
@@ -68,7 +58,7 @@ export default function Search() {
           autoFocus
           value={text}
           onChangeText={setText}
-          placeholder="Title, or an IMDb / TMDB / Netflix link"
+          placeholder="Title, or an IMDb / TMDB / Netflix / Letterboxd link"
           placeholderTextColor={colors.textMuted}
           returnKeyType="search"
           autoCorrect={false}

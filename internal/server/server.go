@@ -215,6 +215,7 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 
 		Charts: service.NewChartsService(analyticsRepo),
 		Overview: service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping).
+			WithLetterboxd(client.NewLetterboxd(cfg.HTTP.Timeout, cfg.HTTP.UserAgent)).
 			WithEngagement(engagementRepo),
 		Analytics: service.NewAnalyticsService(analyticsRepo, readMetadataRepo, repository.NewImportsRepository(readDB), repository.NewRatingsRepository(readDB)).
 			WithEpisodes(episodesRepo).WithCredits(creditsRepo),

@@ -1,6 +1,6 @@
 # metareel mobile app: plan
 
-Status: **agreed plan, not started**. No app code yet. Written 2026-11-14;
+Status: **in progress**; phase status notes are in §8. Written 2026-11-14;
 decisions from the review with the user are in §0 and folded into each section.
 
 A React Native app built with Expo (SDK 58) for phones and foldables on Android
@@ -455,6 +455,20 @@ fold, form below). Checked on the Pixel 9 Pro Fold emulator: unfolded, half
 open at 90°, tabletop in landscape. iOS: the iPhone Duo's fold position isn't
 exposed (only `expo-hinge`'s status/angle), so the iOS split is the
 size-class one. Density changes still recreate the activity (see section 2).
+
+**Phase 5 status (2026-11-14):** metareel is a share target on both
+platforms (`expo-sharing`: iOS share extension for one URL or text, Android
+`SEND text/plain`). `+native-intent.tsx` routes the share to `/share`, which
+pulls the first link out of the shared text (`src/lib/share.ts`: TMDB, IMDb,
+Netflix and Letterboxd links, boxd.it short links) and resolves it through
+`GET /titles/lookup`; anything else, or a link that doesn't resolve, offers
+search with the shared words. B11 is `?letterboxd=` on the lookup: the server
+fetches the film page (following boxd.it redirects by hand, Letterboxd hosts
+only) and reads its TMDB id, caching hits for a day and misses for an hour.
+Checked on the Android emulator against the test server: a Letterboxd link
+(live fetch), a Netflix link with tracking params, and plain text (search).
+The iOS share extension is built by the plugin but was not exercised on the
+simulator.
 
 v1 worth using day to day = phases 1–4, about **5–7 weeks of focused days**.
 Phases 5–7 are independent and can be reordered.
