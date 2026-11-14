@@ -100,7 +100,8 @@ export function useShow(id: string) {
 export function useSubscriptions() {
   return useQuery({
     queryKey: ['subscriptions'],
-    staleTime: 10 * 60_000,
+    // Short: a plan added on the web (or from the log sheet's link) shows up soon.
+    staleTime: 30_000,
     queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/subscriptions', { signal })),
   });
 }
@@ -167,5 +168,39 @@ export function useUpcoming(days = 180) {
   return useQuery({
     queryKey: ['upcoming', days],
     queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/upcoming', { params: { query: { days } }, signal })),
+  });
+}
+
+/** Streaming services in a country (names for the log sheet's service picker). */
+export function useServices(country?: string) {
+  return useQuery({
+    queryKey: ['services', country ?? ''],
+    enabled: !!country,
+    staleTime: 24 * 60 * 60_000,
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/services/{country}', { params: { path: { country: country! } }, signal })),
+  });
+}
+
+/** Your latest watches of one kind (films or episodes), for the diary's recent rows. */
+export function useRecentWatches(kind: Kind, limit: number) {
+  return useQuery({
+    queryKey: ['diary', 'recent', kind, limit],
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/watches', { params: { query: { tmdb_kind: kind, limit } }, signal })),
+  });
+}
+
+/** How you rate: the half-star distribution. */
+export function useRatingStats() {
+  return useQuery({
+    queryKey: ['stats', 'ratings'],
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/stats/ratings', { signal })),
+  });
+}
+
+/** Totals over a range (all time without one). */
+export function useStatsSummary(from?: string) {
+  return useQuery({
+    queryKey: ['stats', 'summary', from ?? ''],
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/stats/summary', { params: { query: from ? { from } : {} }, signal })),
   });
 }
