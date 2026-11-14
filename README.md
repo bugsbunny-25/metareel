@@ -192,6 +192,7 @@ make reports-open
 | GET    | `/docs`, `/docs/admin`                      | Swagger UI (public + admin)                 |
 | GET    | `/openapi/public.yaml`, `/openapi/admin.yaml` | OpenAPI specs (YAML)                      |
 | POST   | `/api/v1/auth/login`, `/api/v1/auth/logout` | Sign a user in (session cookie + token) or out ([access](#public-api-access)) |
+| POST   | `/api/v1/auth/probe`                        | Unauthenticated: proves to the mobile app that a server on its home-network URL is the one it signed in to ([users](#users)) |
 | GET    | `/api/v1/auth/me`                           | Who the request is authenticated as (user or API key) |
 | GET    | `/api/v1/auth/session`                      | For the console: whether admin sign-in is required and who is signed in |
 | GET    | `/api/v1/top10/{movies\|tv-shows}/:country[/:provider]` | Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`, the TMDB `poster_path` once the title has metadata, and for TV `season_number` + `season_source` when known) |
@@ -273,6 +274,7 @@ make reports-open
 | GET    | `/api/v1/me/formats`                        | The premium formats a watch can carry (IMAX, Dolby Cinema, 4DX, 70mm, Atmos…), each with a versioned `logo_url` once it has a logo |
 | GET    | `/api/v1/formats/:slug/logo`                | A format's logo image (use the format's `logo_url`; cached for a year at its current `?v=`, served with a sandboxing CSP) |
 | GET/POST | `/api/v1/me/venues`                       | Search cinemas (`q`: every word in the name, chain, city, address or postcode, e.g. `pvr mumbai` or `amc 10036`; `country`, `include_closed`); add one |
+| GET    | `/api/v1/me/venues/nearby`                  | Cinemas near `lat`/`lon` (`radius_km` default 10, max 100; `limit`; `include_closed`), nearest first with `distance_m`; ones you watched at win ties within 250 m. The position is never stored and is redacted in the request log |
 | GET/PUT/DELETE | `/api/v1/me/venues/:id`             | One cinema with its screens, former names and outside ids; delete is refused while watches point at it |
 | POST/DELETE | `/api/v1/me/venues/:id/aliases[/:alias_id]` | Record or remove a name a cinema used to have |
 | POST   | `/api/v1/me/venues/:id/screens`             | Add an auditorium (size, seats, aspect ratio) |
@@ -449,7 +451,7 @@ valid (a wrong key is rejected even when a valid cookie is present).
 ### Users
 
 - `POST /api/v1/auth/login` with `{"username","password"}` returns
-  `{token, expires_at, user}` and sets the `metareel_session` cookie (HttpOnly,
+  `{token, expires_at, session_id, probe_key, remember_device, user}` and sets the `metareel_session` cookie (HttpOnly,
   SameSite=Strict, `Secure` when the request came over HTTPS, including via a
   proxy that sets `X-Forwarded-Proto: https`). `POST /api/v1/auth/logout` ends
   the session; `GET /api/v1/auth/me` says who a request is authenticated as.
@@ -460,6 +462,19 @@ valid (a wrong key is rejected even when a valid cookie is present).
 - Sessions last `AUTH_SESSION_TTL` (default 30 days) and end after
   `AUTH_SESSION_IDLE_TIMEOUT` (default 7 days) without use. Only a digest of
   each token is stored; the maintenance job deletes expired sessions.
+- Native clients (the planned mobile app, `docs/mobile-app-plan.md`) can also
+  send `device_name` (shown in session lists) and `remember_device: true` for
+  a session that lasts `AUTH_DEVICE_SESSION_TTL` (default 180 days) and ends
+  after `AUTH_DEVICE_SESSION_IDLE_TIMEOUT` (default 90 days) unused. They are
+  revoked like any other session.
+- `POST /api/v1/auth/probe` `{"session_id","nonce"}` lets the app check that
+  a server answering on a plain-HTTP home address is this one before it sends
+  its token there: the answer is `hex(HMAC-SHA256(probe_key, nonce))` with the
+  `probe_key` from sign-in. Unknown or ended sessions get a proof that never
+  matches. Rate limited per client IP.
+- Behind a reverse proxy, set `SERVER_TRUSTED_PROXIES` (IPs or CIDR ranges)
+  so rate limits see the real client from `X-Forwarded-For`; otherwise every
+  client looks like the proxy and shares one sign-in limit.
 - Passwords (at least 10 characters) are stored as argon2id hashes. Logins are
   rate limited per client IP (10, then 1 every 6 s) and failed logins per
   username (5, then 1 every 30 s); answers are 429 with `Retry-After`.

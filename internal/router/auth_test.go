@@ -389,3 +389,42 @@ func TestAdminUserManagement(t *testing.T) {
 		t.Fatalf("delete bob twice: %d", rec.Code)
 	}
 }
+
+// Behind a configured proxy, the client IP comes from X-Forwarded-For (so
+// each client gets its own sign-in rate limit); without one, or from an
+// untrusted peer, forwarded headers are ignored.
+func TestTrustedProxiesSetClientIP(t *testing.T) {
+	for _, tc := range []struct {
+		name, proxies, remote, xff, want string
+	}{
+		{"no proxies: header ignored", "", "10.0.0.5:1234", "203.0.113.9", "10.0.0.5"},
+		{"trusted proxy", "10.0.0.0/8", "10.0.0.5:1234", "203.0.113.9", "203.0.113.9"},
+		{"trusted single ip", "10.0.0.5", "10.0.0.5:1234", "198.51.100.1, 203.0.113.9", "203.0.113.9"},
+		{"untrusted peer", "10.0.0.0/8", "192.168.1.7:1234", "203.0.113.9", "192.168.1.7"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			if tc.proxies != "" {
+				cfg.Server.TrustedProxies = []string{tc.proxies}
+			}
+			e := echo.New()
+			Register(e, &handler.Handler{}, cfg)
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = tc.remote
+			req.Header.Set("X-Forwarded-For", tc.xff)
+			var got string
+			if e.IPExtractor != nil {
+				got = e.IPExtractor(req)
+			} else {
+				got = echo.ExtractIPDirect()(req)
+			}
+			if got != tc.want {
+				t.Errorf("client ip = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	bad := config.Server{TrustedProxies: []string{"not-an-ip"}}
+	if _, err := bad.TrustedProxyNets(); err == nil {
+		t.Error("TrustedProxyNets accepted a bad value")
+	}
+}

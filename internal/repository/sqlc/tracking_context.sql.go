@@ -713,6 +713,113 @@ func (q *Queries) ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListV
 	return items, nil
 }
 
+const listVenuesInBox = `-- name: ListVenuesInBox :many
+SELECT v.id, v.name, v.chain, v.address, v.postcode, v.city, v.region, v.country, v.latitude, v.longitude,
+       v.timezone, v.opened_on, v.closed_on, v.status, v.replaced_by_venue_id, v.note,
+       v.created_by, v.created_at, v.updated_at,
+       CAST((SELECT COUNT(*) FROM venue_screens s WHERE s.venue_id = v.id) AS INTEGER) AS screen_count,
+       CAST((SELECT COUNT(*) FROM watch_entries w WHERE w.venue_id = v.id AND w.user_id = ?1) AS INTEGER) AS your_watches,
+       CAST(COALESCE((SELECT MAX(w.ended_at) FROM watch_entries w WHERE w.venue_id = v.id AND w.user_id = ?1), '') AS TEXT) AS your_last_watch
+FROM venues v
+WHERE v.latitude >= CAST(?2 AS REAL) AND v.latitude <= CAST(?3 AS REAL)
+  AND v.longitude >= CAST(?4 AS REAL) AND v.longitude <= CAST(?5 AS REAL)
+  AND (CAST(?6 AS INTEGER) = 1 OR v.status <> 'closed')
+LIMIT ?7
+`
+
+type ListVenuesInBoxParams struct {
+	UserID        int64   `json:"user_id"`
+	MinLat        float64 `json:"min_lat"`
+	MaxLat        float64 `json:"max_lat"`
+	MinLon        float64 `json:"min_lon"`
+	MaxLon        float64 `json:"max_lon"`
+	IncludeClosed int64   `json:"include_closed"`
+	Limit         int64   `json:"limit"`
+}
+
+type ListVenuesInBoxRow struct {
+	ID                int64           `json:"id"`
+	Name              string          `json:"name"`
+	Chain             sql.NullString  `json:"chain"`
+	Address           sql.NullString  `json:"address"`
+	Postcode          sql.NullString  `json:"postcode"`
+	City              sql.NullString  `json:"city"`
+	Region            sql.NullString  `json:"region"`
+	Country           sql.NullString  `json:"country"`
+	Latitude          sql.NullFloat64 `json:"latitude"`
+	Longitude         sql.NullFloat64 `json:"longitude"`
+	Timezone          sql.NullString  `json:"timezone"`
+	OpenedOn          sql.NullString  `json:"opened_on"`
+	ClosedOn          sql.NullString  `json:"closed_on"`
+	Status            string          `json:"status"`
+	ReplacedByVenueID sql.NullInt64   `json:"replaced_by_venue_id"`
+	Note              sql.NullString  `json:"note"`
+	CreatedBy         sql.NullInt64   `json:"created_by"`
+	CreatedAt         string          `json:"created_at"`
+	UpdatedAt         string          `json:"updated_at"`
+	ScreenCount       int64           `json:"screen_count"`
+	YourWatches       int64           `json:"your_watches"`
+	YourLastWatch     string          `json:"your_last_watch"`
+}
+
+// ListVenuesInBox lists cinemas with coordinates inside a latitude /
+// longitude box (the caller computes the box around a point and the exact
+// distance), with how often the user has watched there. Capped by limit;
+// the caller asks for far more than it returns.
+func (q *Queries) ListVenuesInBox(ctx context.Context, arg ListVenuesInBoxParams) ([]ListVenuesInBoxRow, error) {
+	rows, err := q.db.QueryContext(ctx, listVenuesInBox,
+		arg.UserID,
+		arg.MinLat,
+		arg.MaxLat,
+		arg.MinLon,
+		arg.MaxLon,
+		arg.IncludeClosed,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListVenuesInBoxRow{}
+	for rows.Next() {
+		var i ListVenuesInBoxRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Chain,
+			&i.Address,
+			&i.Postcode,
+			&i.City,
+			&i.Region,
+			&i.Country,
+			&i.Latitude,
+			&i.Longitude,
+			&i.Timezone,
+			&i.OpenedOn,
+			&i.ClosedOn,
+			&i.Status,
+			&i.ReplacedByVenueID,
+			&i.Note,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ScreenCount,
+			&i.YourWatches,
+			&i.YourLastWatch,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWatchFormats = `-- name: ListWatchFormats :many
 
 SELECT id, slug, label, category, note, sort_order, active, created_at, updated_at, logo_version, logo_display

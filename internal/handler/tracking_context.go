@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v5"
@@ -34,6 +36,42 @@ func (h *Handler) ListVenues(c *echo.Context) error {
 	out, err := h.Tracking.ListVenues(c.Request().Context(), c.QueryParam("q"), c.QueryParam("country"),
 		isTrue(c.QueryParam("include_closed")), limit, offset)
 	return h.writeTracking(c, http.StatusOK, out, err)
+}
+
+// NearbyVenues: GET /api/v1/me/venues/nearby?lat=&lon=&radius_km=&limit=&include_closed=
+// Cinemas near the caller's position, nearest first. The position is not
+// stored, and the request logger redacts lat/lon (see RequestLogger).
+func (h *Handler) NearbyVenues(c *echo.Context) error {
+	lat, err := requiredFloat(c.QueryParam("lat"), "lat")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	lon, err := requiredFloat(c.QueryParam("lon"), "lon")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	var radius float64
+	if v := c.QueryParam("radius_km"); strings.TrimSpace(v) != "" {
+		if radius, err = requiredFloat(v, "radius_km"); err != nil {
+			return badRequest(c, err)
+		}
+	}
+	limit, err := optionalInt(c.QueryParam("limit"), "limit")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Tracking.NearbyVenues(c.Request().Context(), userID(c), lat, lon, radius, limit,
+		isTrue(c.QueryParam("include_closed")))
+	return h.writeTracking(c, http.StatusOK, out, err)
+}
+
+// requiredFloat parses a finite decimal query value.
+func requiredFloat(v, name string) (float64, error) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, errors.New(name + " must be a number")
+	}
+	return f, nil
 }
 
 // GetVenue: GET /api/v1/me/venues/{id}

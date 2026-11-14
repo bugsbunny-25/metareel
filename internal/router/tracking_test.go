@@ -632,3 +632,101 @@ func TestStatsEndpoints(t *testing.T) {
 		}
 	}
 }
+
+// A native app (the mobile client) signs in for a token and sends it as a
+// Bearer header. Its HTTP stack adds neither Origin nor Sec-Fetch-Site, so
+// the cross-site check lets its writes through.
+func TestNativeClientBearerWrites(t *testing.T) {
+	a := newTrackingEnv(t)
+	rec := a.do(http.MethodPost, "/api/v1/auth/login",
+		`{"username":"alice","password":"long enough pw","device_name":"Pixel Fold","remember_device":true}`, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", rec.Code, rec.Body)
+	}
+	var login struct {
+		Token          string `json:"token"`
+		SessionID      int64  `json:"session_id"`
+		ProbeKey       string `json:"probe_key"`
+		RememberDevice bool   `json:"remember_device"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &login); err != nil {
+		t.Fatal(err)
+	}
+	if login.Token == "" || login.SessionID == 0 || len(login.ProbeKey) != 64 || !login.RememberDevice {
+		t.Fatalf("login response = %s", rec.Body)
+	}
+	bearer := map[string]string{"Authorization": "Bearer " + login.Token}
+
+	body := `{"tmdb_kind":"movie","tmdb_id":"27205","ended_at":"2026-11-10T01:30:00Z","client_key":"7d1e0c52-phone"}`
+	rec = a.do(http.MethodPost, "/api/v1/me/watches", body, bearer)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("bearer POST with no Origin: %d, want 201 (%s)", rec.Code, rec.Body)
+	}
+	// The offline queue retries with the same client_key: no second watch.
+	if rec = a.do(http.MethodPost, "/api/v1/me/watches", body, bearer); rec.Code >= 300 {
+		t.Fatalf("retry: %d %s", rec.Code, rec.Body)
+	}
+	rec = a.do(http.MethodGet, "/api/v1/me/watches", "", bearer)
+	if n := strings.Count(rec.Body.String(), `"tmdb_id":"27205"`); n != 1 {
+		t.Errorf("watches after a retry: %d entries of the film, want 1 (%s)", n, rec.Body)
+	}
+
+	// The device name shows in the account's session list.
+	rec = a.do(http.MethodGet, "/api/v1/me/account", "", bearer)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"device_name":"Pixel Fold"`) ||
+		!strings.Contains(rec.Body.String(), `"remember_device":true`) {
+		t.Errorf("sessions: %d %s", rec.Code, rec.Body)
+	}
+
+	// The local-URL probe needs no credentials and answers with a proof.
+	rec = a.do(http.MethodPost, "/api/v1/auth/probe",
+		`{"session_id":`+itoa(login.SessionID)+`,"nonce":"0123456789abcdef0123"}`, nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"proof":"`) {
+		t.Fatalf("probe: %d %s", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("probe Cache-Control = %q, want no-store", got)
+	}
+	if rec = a.do(http.MethodPost, "/api/v1/auth/probe", `{"session_id":1,"nonce":"short"}`, nil); rec.Code != http.StatusBadRequest {
+		t.Errorf("probe with a short nonce: %d, want 400", rec.Code)
+	}
+}
+
+func TestNearbyVenuesEndpoint(t *testing.T) {
+	a := newTrackingEnv(t)
+	alice := a.login(t, "alice")
+	rec := a.do(http.MethodPost, "/api/v1/me/venues",
+		`{"name":"PVR Phoenix","city":"Mumbai","country":"in","latitude":19.0995,"longitude":72.9156}`, alice)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create venue: %d %s", rec.Code, rec.Body)
+	}
+
+	rec = a.do(http.MethodGet, "/api/v1/me/venues/nearby?lat=19.1&lon=72.915&radius_km=5", "", alice)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("nearby: %d %s", rec.Code, rec.Body)
+	}
+	var out struct {
+		Venues []struct {
+			Name      string `json:"name"`
+			DistanceM int64  `json:"distance_m"`
+		} `json:"venues"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Venues) != 1 || out.Venues[0].Name != "PVR Phoenix" || out.Venues[0].DistanceM > 200 {
+		t.Errorf("nearby = %s", rec.Body)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Errorf("Cache-Control = %q", got)
+	}
+
+	for _, q := range []string{"lon=72.9", "lat=19.1", "lat=abc&lon=72.9", "lat=19.1&lon=72.9&radius_km=500", "lat=NaN&lon=72.9"} {
+		if rec := a.do(http.MethodGet, "/api/v1/me/venues/nearby?"+q, "", alice); rec.Code != http.StatusBadRequest {
+			t.Errorf("?%s: %d, want 400 (%s)", q, rec.Code, rec.Body)
+		}
+	}
+	if rec := a.do(http.MethodGet, "/api/v1/me/venues/nearby?lat=19.1&lon=72.9", "", nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("signed out: %d, want 401", rec.Code)
+	}
+}

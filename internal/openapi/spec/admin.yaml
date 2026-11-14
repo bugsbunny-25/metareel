@@ -2771,8 +2771,10 @@ components:
         expires_at: { type: string, format: date-time, description: Absolute expiry; idle sessions end earlier }
         user_agent: { type: string }
         ip: { type: string }
+        device_name: { type: string, description: "The name a native client gave at sign-in; empty for browsers" }
+        remember_device: { type: boolean, description: "A long-lived \"remember this device\" session" }
         current: { type: boolean, description: The session making this request }
-      required: [id, user_id, username, created_at, last_seen_at, expires_at, user_agent, ip, current]
+      required: [id, user_id, username, created_at, last_seen_at, expires_at, user_agent, ip, device_name, remember_device, current]
 
     ApiKey:
       type: object

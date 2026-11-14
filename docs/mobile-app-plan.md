@@ -280,19 +280,21 @@ routes with `RequireUser` + `NoStore` and never `ETag`.
   replayed; the bearer token is the only credential.
 - **Idempotent logging exists:** `LogWatch` returns the existing watch for a
   repeated `client_key`.
-- **Public exposure:** login is already rate-limited (`ErrLoginRateLimited`,
-  `Retry-After`). Phase 1 re-reads that path with the public deployment in
-  mind (per-IP behind the proxy uses the real client IP) before longer
-  sessions ship.
+- **Public exposure:** login is rate-limited per client IP and per username.
+  Phase 1 found that with no IP extractor configured, every request through
+  a reverse proxy looked like the proxy, so all clients shared one per-IP
+  sign-in bucket. Fixed with `SERVER_TRUSTED_PROXIES`: set it to the proxy's
+  address so `X-Forwarded-For` (through those proxies only) gives the real
+  client IP.
 
 ### Additions
 
 | # | Change | Phase | Size |
 |---|---|---|---|
-| B1 | **Cinemas near me**: `GET /api/v1/me/venues/nearby?lat=&lon=&radius_km=&limit=&include_closed=`. Migration adds an index on `venues(latitude, longitude)`; query `ListVenuesInBox` takes a lat/lon bounding box; Go computes haversine distance, sorts, cuts to `limit`, returns `distance_m` and `screen_count`, and boosts venues the user has logged at. Coordinates must **not** reach logs: strip `lat`/`lon` from logged query strings. | 1 | S |
-| B2 | **Device label on sessions**: optional `device_name` in the login body ("iPhone Duo"), stored on `sessions`, shown in Settings → Sessions on web and phone. | 1 | XS |
-| B3 | **Remember this device**: `remember_device: true` at login → session with a 180-day absolute life (new `AUTH_DEVICE_SESSION_TTL`, default `4320h`) and a matching idle timeout, revocable like any session. Web logins unchanged. | 1 | S |
-| B4 | **Local-URL verification**: `POST /api/v1/auth/probe {nonce, session_id}` (unauthenticated, rate-limited) answers `HMAC-SHA256(key = the session's stored token hash, nonce)`. `sessions.token_hash` already stores the token hashed; the app derives the same hash from its token, computes the HMAC, and only then sends the token over the home HTTP URL (§7). Confirm the hash function in the session service when implementing. | 1 | S |
+| B1 | **Cinemas near me** (**done in phase 1**): `GET /api/v1/me/venues/nearby?lat=&lon=&radius_km=&limit=&include_closed=`. Migration adds an index on `venues(latitude, longitude)`; query `ListVenuesInBox` takes a lat/lon bounding box; Go computes haversine distance, sorts, cuts to `limit`, returns `distance_m` and `screen_count`, and boosts venues the user has logged at. Coordinates must **not** reach logs: strip `lat`/`lon` from logged query strings. | 1 | S |
+| B2 | **Device label on sessions**: optional `device_name` in the login body ("iPhone Duo"), stored on `sessions`, shown in Settings → Sessions on web and phone. **Done in phase 1** (API; the web Settings page doesn't show it yet). | 1 | XS |
+| B3 | **Remember this device**: `remember_device: true` at login → session with a 180-day absolute life (`AUTH_DEVICE_SESSION_TTL`, default `4320h`) that ends after 90 days unused (`AUTH_DEVICE_SESSION_IDLE_TIMEOUT`, default `2160h`), revocable like any session. Web logins unchanged. **Done in phase 1.** | 1 | S |
+| B4 | **Local-URL verification**: login returns `session_id` and `probe_key` (= HMAC-SHA256(stored token digest, "metareel/probe/v1"), recomputed, never stored). `POST /api/v1/auth/probe {session_id, nonce}` (unauthenticated, rate-limited) answers `HMAC-SHA256(probe_key, nonce)`; the app keeps `probe_key` next to its token and only sends the token over the home HTTP URL once the proof matches (§7). Unknown or ended sessions get a non-matching proof, not an error. **Done in phase 1.** | 1 | S |
 | B5 | **Poster colour**: average colour of the poster (small TMDB image, decoded in Go) computed when a title's display snapshot is cached; `poster_color` on title payloads. | 2 | S |
 | B6 | **Glance**: `GET /api/v1/me/glance`: top Up next items, next airing episode, current subscription period break-even, last watch. For widgets and background refresh. | 7 | S |
 | B7 | **Devices**: migration `user_devices` (`id`, `user_id`, `session_id` → `sessions` ON DELETE CASCADE, `platform`, `push_provider` expo, `token` UNIQUE, `app_version`, `created_at`, `last_seen_at`, `disabled_at`). `PUT /me/devices` (upsert by token), `DELETE /me/devices/{id}`, `GET /me/devices`. Tokens kept out of logs. | 6b | S |
@@ -333,6 +335,9 @@ updates, and is verified on a DB copy per `local-verification`.
   - The app probes it (short timeout) on launch, on network change and on
     foreground, and uses it only when it answers **and** passes the B4
     verification. Otherwise everything goes to the public URL.
+  - Requests that arrive straight from the LAN (not through the proxy) carry
+    the phone's LAN address, so rate limits and session IPs stay correct on
+    both paths.
   - The bearer token is **never sent** to the home URL before verification, so
     an impostor answering `homelab.local` on someone else's Wi-Fi learns nothing.
   - Cleartext is allowed only for that host (Android network security config)

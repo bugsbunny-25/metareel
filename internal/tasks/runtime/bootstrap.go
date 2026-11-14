@@ -78,7 +78,8 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 	downloader := client.NewDownloader(cfg.Imports.DownloadTimeout, "")
 	alerts := service.NewAlertService(log, opsRepo, cfg.Alerts.WebhookURL, cfg.Alerts.Format, cfg.Alerts.Cooldown)
 	sessions := service.NewSessionService(log, repository.NewUserRepository(db),
-		service.SessionConfig{TTL: cfg.Auth.SessionTTL, IdleTimeout: cfg.Auth.SessionIdleTimeout})
+		service.SessionConfig{TTL: cfg.Auth.SessionTTL, IdleTimeout: cfg.Auth.SessionIdleTimeout,
+			DeviceTTL: cfg.Auth.DeviceSessionTTL, DeviceIdleTimeout: cfg.Auth.DeviceSessionIdleTimeout})
 	maintenance := service.NewMaintenanceService(log, opsRepo, taskScheduleRepo, alerts, cfg.Maintenance.RunRetentionDays, cfg.Alerts.StaleChartHours).
 		WithCredits(repository.NewCreditsRepository(db)).
 		WithSessions(sessions)

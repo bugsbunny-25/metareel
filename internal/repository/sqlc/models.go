@@ -233,14 +233,16 @@ type Ranking struct {
 }
 
 type Session struct {
-	ID         int64     `json:"id"`
-	UserID     int64     `json:"user_id"`
-	TokenHash  string    `json:"token_hash"`
-	CreatedAt  time.Time `json:"created_at"`
-	LastSeenAt time.Time `json:"last_seen_at"`
-	ExpiresAt  time.Time `json:"expires_at"`
-	UserAgent  string    `json:"user_agent"`
-	Ip         string    `json:"ip"`
+	ID             int64     `json:"id"`
+	UserID         int64     `json:"user_id"`
+	TokenHash      string    `json:"token_hash"`
+	CreatedAt      time.Time `json:"created_at"`
+	LastSeenAt     time.Time `json:"last_seen_at"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	UserAgent      string    `json:"user_agent"`
+	Ip             string    `json:"ip"`
+	DeviceName     string    `json:"device_name"`
+	RememberDevice bool      `json:"remember_device"`
 }
 
 type TaskRun struct {

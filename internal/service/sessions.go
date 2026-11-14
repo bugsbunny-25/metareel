@@ -5,12 +5,14 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"golang.org/x/time/rate"
 
@@ -43,6 +45,15 @@ type SessionConfig struct {
 	TTL time.Duration
 	// IdleTimeout ends a session that has not been used for this long.
 	IdleTimeout time.Duration
+	// DeviceTTL and DeviceIdleTimeout are the same for "remember this
+	// device" sessions (phones), which a client asks for at sign-in.
+	DeviceTTL         time.Duration
+	DeviceIdleTimeout time.Duration
+}
+
+// idle is the idle timeouts in the form the repository takes.
+func (c SessionConfig) idle() repository.SessionIdle {
+	return repository.SessionIdle{Default: c.IdleTimeout, Device: c.DeviceIdleTimeout}
 }
 
 // SessionService signs users in and checks session tokens. Only digests of
@@ -59,6 +70,10 @@ type SessionService struct {
 	lastTouch map[int64]time.Time
 	ipLimits  map[string]*rate.Limiter
 	userLimit map[string]*rate.Limiter
+	// probeLimits rate limits the local-URL probe per client IP;
+	// probeDecoy answers probes for sessions that don't exist (see Probe).
+	probeLimits map[string]*rate.Limiter
+	probeDecoy  []byte
 }
 
 type cachedSession struct {
@@ -73,12 +88,46 @@ type SessionUser struct {
 	Role     string `json:"role"`
 }
 
+// LoginInput is a sign-in attempt. DeviceName and RememberDevice come from
+// native clients: the name is shown in session lists, and a remembered
+// device gets the longer device lifetime (SessionConfig.DeviceTTL).
+type LoginInput struct {
+	Username       string
+	Password       string
+	UserAgent      string
+	IP             string
+	DeviceName     string
+	RememberDevice bool
+}
+
 // LoginResult carries a new session token; it is not stored and cannot be
-// shown again.
+// shown again. SessionID and ProbeKey let a client check that a server
+// answering on a local URL is this one before sending it the token (see
+// Probe); the probe key is derived from the token's digest, never stored.
 type LoginResult struct {
-	Token     string      `json:"token"`
-	ExpiresAt time.Time   `json:"expires_at"`
-	User      SessionUser `json:"user"`
+	Token          string      `json:"token"`
+	ExpiresAt      time.Time   `json:"expires_at"`
+	SessionID      int64       `json:"session_id"`
+	ProbeKey       string      `json:"probe_key"`
+	RememberDevice bool        `json:"remember_device"`
+	User           SessionUser `json:"user"`
+}
+
+const maxDeviceNameLen = 64
+
+// cleanDeviceName trims a client's device name, drops control characters
+// and caps its length.
+func cleanDeviceName(name string) string {
+	name = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(name))
+	if r := []rune(name); len(r) > maxDeviceNameLen {
+		name = strings.TrimSpace(string(r[:maxDeviceNameLen]))
+	}
+	return name
 }
 
 func NewSessionService(log *slog.Logger, repo *repository.UserRepository, cfg SessionConfig) *SessionService {
@@ -88,20 +137,28 @@ func NewSessionService(log *slog.Logger, repo *repository.UserRepository, cfg Se
 	if cfg.IdleTimeout <= 0 || cfg.IdleTimeout > cfg.TTL {
 		cfg.IdleTimeout = cfg.TTL
 	}
+	if cfg.DeviceTTL <= 0 {
+		cfg.DeviceTTL = 180 * 24 * time.Hour
+	}
+	if cfg.DeviceIdleTimeout <= 0 || cfg.DeviceIdleTimeout > cfg.DeviceTTL {
+		cfg.DeviceIdleTimeout = cfg.DeviceTTL
+	}
 	return &SessionService{
 		log: log, repo: repo, cfg: cfg, now: time.Now,
-		cache:     map[string]cachedSession{},
-		lastTouch: map[int64]time.Time{},
-		ipLimits:  map[string]*rate.Limiter{},
-		userLimit: map[string]*rate.Limiter{},
+		cache:       map[string]cachedSession{},
+		lastTouch:   map[int64]time.Time{},
+		ipLimits:    map[string]*rate.Limiter{},
+		userLimit:   map[string]*rate.Limiter{},
+		probeLimits: map[string]*rate.Limiter{},
+		probeDecoy:  newProbeDecoyKey(),
 	}
 }
 
 // Login checks a username and password and starts a session. Unknown users,
 // disabled users and wrong passwords all fail the same way and take about
 // the same time.
-func (s *SessionService) Login(ctx context.Context, username, password, userAgent, ip string) (*LoginResult, error) {
-	username = strings.TrimSpace(username)
+func (s *SessionService) Login(ctx context.Context, in LoginInput) (*LoginResult, error) {
+	username, password, userAgent, ip := strings.TrimSpace(in.Username), in.Password, in.UserAgent, in.IP
 	if username == "" || password == "" {
 		return nil, &ValidationError{Message: "username and password are required"}
 	}
@@ -144,17 +201,26 @@ func (s *SessionService) Login(ctx context.Context, username, password, userAgen
 	if len(userAgent) > maxUserAgentLen {
 		userAgent = userAgent[:maxUserAgentLen]
 	}
-	expires, err := s.repo.CreateSession(ctx, user.ID, digest, s.cfg.TTL, userAgent, ip)
+	ttl := s.cfg.TTL
+	if in.RememberDevice {
+		ttl = s.cfg.DeviceTTL
+	}
+	id, expires, err := s.repo.CreateSession(ctx, repository.NewSession{
+		UserID: user.ID, TokenHash: digest, TTL: ttl, UserAgent: userAgent, IP: ip,
+		DeviceName: cleanDeviceName(in.DeviceName), RememberDevice: in.RememberDevice,
+	})
 	if err != nil {
 		return nil, err
 	}
 	if err := s.repo.RecordUserLogin(ctx, user.ID); err != nil {
 		s.log.Warn("recording login failed", slog.Int64("user_id", user.ID), slog.Any("err", err))
 	}
-	s.log.Info("login", slog.String("username", user.Username), slog.String("ip", ip))
+	s.log.Info("login", slog.String("username", user.Username), slog.String("ip", ip),
+		slog.Bool("remember_device", in.RememberDevice))
 	return &LoginResult{
-		Token: token, ExpiresAt: expires,
-		User: SessionUser{ID: user.ID, Username: user.Username, Role: user.Role},
+		Token: token, ExpiresAt: expires, SessionID: id, ProbeKey: hex.EncodeToString(probeKey(digest)),
+		RememberDevice: in.RememberDevice,
+		User:           SessionUser{ID: user.ID, Username: user.Username, Role: user.Role},
 	}, nil
 }
 
@@ -174,7 +240,7 @@ func (s *SessionService) Lookup(ctx context.Context, token string) (repository.S
 		return c.rec, nil
 	}
 
-	rec, err := s.repo.GetActiveSession(ctx, digest, s.cfg.IdleTimeout)
+	rec, err := s.repo.GetActiveSession(ctx, digest, s.cfg.idle())
 	if err != nil {
 		s.mu.Lock()
 		delete(s.cache, digest)
@@ -237,19 +303,24 @@ type SessionResponse struct {
 	ExpiresAt  time.Time `json:"expires_at"`
 	UserAgent  string    `json:"user_agent"`
 	IP         string    `json:"ip"`
-	Current    bool      `json:"current"` // the session making the request
+	// DeviceName is what a native client called itself at sign-in ("" for
+	// browsers); RememberDevice marks a long-lived device session.
+	DeviceName     string `json:"device_name"`
+	RememberDevice bool   `json:"remember_device"`
+	Current        bool   `json:"current"` // the session making the request
 }
 
 // List returns every active session, most recently used first.
 func (s *SessionService) List(ctx context.Context) ([]SessionResponse, error) {
-	rows, err := s.repo.ListActiveSessions(ctx, s.cfg.IdleTimeout)
+	rows, err := s.repo.ListActiveSessions(ctx, s.cfg.idle())
 	if err != nil {
 		return nil, err
 	}
 	out := make([]SessionResponse, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, SessionResponse{ID: r.ID, UserID: r.UserID, Username: r.Username, CreatedAt: r.CreatedAt,
-			LastSeenAt: r.LastSeenAt, ExpiresAt: r.ExpiresAt, UserAgent: r.UserAgent, IP: r.IP})
+			LastSeenAt: r.LastSeenAt, ExpiresAt: r.ExpiresAt, UserAgent: r.UserAgent, IP: r.IP,
+			DeviceName: r.DeviceName, RememberDevice: r.RememberDevice})
 	}
 	return out, nil
 }
@@ -282,7 +353,7 @@ func (s *SessionService) forgetUser(username string) {
 
 // PruneExpired deletes expired and idle sessions (maintenance job).
 func (s *SessionService) PruneExpired(ctx context.Context) (int64, error) {
-	return s.repo.DeleteExpiredSessions(ctx, s.cfg.IdleTimeout)
+	return s.repo.DeleteExpiredSessions(ctx, s.cfg.idle())
 }
 
 // allowLogin rate limits login attempts: every attempt per client IP, and

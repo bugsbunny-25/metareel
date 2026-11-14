@@ -707,7 +707,15 @@ in Stats like cinema formats; `media` is still set (`bluray_4k`, `bluray`,
 `dvd`, or VHS / file / print without a disc format) so older readers keep
 working. The console's Cinemas page edits venues through admin copies of the
 `/me/venues` routes; the same rules apply (watches snapshot the name and
-city; a venue with watches is closed, not deleted). Admins can upload format
+city; a venue with watches is closed, not deleted).
+`GET /me/venues/nearby` (`TrackingService.NearbyVenues`) computes a
+latitude/longitude box around the point (every longitude near the poles or
+across the antimeridian), lists up to 5,000 cinemas in it through the
+`idx_venues_lat_lon` index (`ListVenuesInBox`, with the caller's watch count
+and latest watch there), then computes haversine distances in Go, keeps those
+within the radius and sorts them; a cinema the user has watched at counts as
+250 m closer. The request logger (`handler.RequestLogger`, echo's default
+with `redactURI`) logs `lat` and `lon` as `REDACTED`. Admins can upload format
 logos in bulk: the console matches each file to a format by its name
 (`<slug>.<ext>`). Logo files are not kept in the repo (they are trademarks); they live only in the database once uploaded.
 
@@ -847,6 +855,23 @@ The public API accepts an API key or a user's session; `handler.Authenticate`
   at most 4 argon2id hashes run at once (19 MiB each). The response sets the
   HttpOnly, SameSite=Strict cookie and returns the token once. `/api/v1/auth`
   sits behind `SameOriginWrites`, so other sites can't sign a browser in or out.
+  Native clients send neither `Origin` nor `Sec-Fetch-Site`, so their Bearer
+  writes pass that check (`TestNativeClientBearerWrites`).
+- Device sessions: a login with `remember_device` stores `sessions.remember_device`
+  and gets `AUTH_DEVICE_SESSION_TTL`; `GetActiveSession`, `ListActiveSessions`
+  and `DeleteExpiredSessions` pick the idle timeout per row
+  (`AUTH_DEVICE_SESSION_IDLE_TIMEOUT` for device sessions). `device_name` is
+  cleaned (control characters dropped, 64 runes) and listed with the session.
+- Local-URL probe (`SessionService.Probe`, `POST /api/v1/auth/probe`, no
+  credentials): `probe_key = HMAC-SHA256(token_digest, "metareel/probe/v1")`
+  is returned at login and recomputed from the stored digest, never stored;
+  the answer is `HMAC-SHA256(probe_key, nonce)`. Unknown or ended sessions are
+  answered with a per-process random key so live ids aren't revealed; 20
+  probes per IP, then 1 a second.
+- Client IP (`c.RealIP()`, used by every rate limit and stored on sessions):
+  the connecting address unless `SERVER_TRUSTED_PROXIES` is set, in which case
+  `echo.ExtractIPFromXFFHeader` walks `X-Forwarded-For` through only those
+  ranges (loopback and private ranges are not trusted implicitly).
 - Users are created by `AUTH_ADMIN_*` on first start (`server.bootstrapAdmin`,
   only while `users` is empty) and managed with `metareel user …`
   (`cmd/server/user.go`) or the console's Users & sessions page.
@@ -1380,6 +1405,7 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `SERVER_READ_TIMEOUT` | `15s` | Echo read timeout |
 | `SERVER_WRITE_TIMEOUT` | `15s` | Echo write timeout |
 | `SERVER_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown window |
+| `SERVER_TRUSTED_PROXIES` | (empty) | Reverse proxies (IPs/CIDRs, comma separated) whose `X-Forwarded-For` names the client; empty ignores forwarded headers |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `DATABASE_URL` | `file:./data/metareel.db?...` | SQLite DSN (WAL + busy timeout + FK enforcement) |
 | `DATABASE_MIGRATIONS_DIR` | `db/migrations` | Goose migrations directory |
@@ -1425,6 +1451,8 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `AUTH_REQUIRE_ADMIN_LOGIN` | `false` | Require a signed-in admin for the admin console and `/api/v1/admin` |
 | `AUTH_SESSION_TTL` | `720h` | Absolute lifetime of a user's sign-in session |
 | `AUTH_SESSION_IDLE_TIMEOUT` | `168h` | A session unused this long ends (capped at the TTL) |
+| `AUTH_DEVICE_SESSION_TTL` | `4320h` | Absolute lifetime of a "remember this device" session (mobile app) |
+| `AUTH_DEVICE_SESSION_IDLE_TIMEOUT` | `2160h` | A device session unused this long ends (capped at its TTL) |
 | `AUTH_ADMIN_USERNAME` | _(empty)_ | Creates the first admin on startup while no users exist |
 | `AUTH_ADMIN_PASSWORD` / `AUTH_ADMIN_PASSWORD_FILE` | _(empty)_ | That admin's password, or a file holding it (trailing newline trimmed); never logged |
 

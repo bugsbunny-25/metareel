@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -41,10 +43,45 @@ type Server struct {
 	ReadTimeout     time.Duration `env:"SERVER_READ_TIMEOUT" envDefault:"15s"`
 	WriteTimeout    time.Duration `env:"SERVER_WRITE_TIMEOUT" envDefault:"15s"`
 	ShutdownTimeout time.Duration `env:"SERVER_SHUTDOWN_TIMEOUT" envDefault:"10s"`
+	// TrustedProxies lists the reverse proxies (IPs or CIDR ranges) whose
+	// X-Forwarded-For header names the real client. Empty: the connecting
+	// address is the client, and forwarded headers are ignored. Set it when
+	// the server sits behind a proxy (a public domain), or every client
+	// looks like the proxy and shares one sign-in rate limit.
+	TrustedProxies []string `env:"SERVER_TRUSTED_PROXIES" envSeparator:","`
 }
 
 func (s Server) Address() string {
 	return fmt.Sprintf("%s:%d", s.Host, s.Port)
+}
+
+// TrustedProxyNets parses TrustedProxies; a bare IP is a single-address range.
+func (s Server) TrustedProxyNets() ([]*net.IPNet, error) {
+	var out []*net.IPNet
+	for _, raw := range s.TrustedProxies {
+		v := strings.TrimSpace(raw)
+		if v == "" {
+			continue
+		}
+		if !strings.Contains(v, "/") {
+			ip := net.ParseIP(v)
+			if ip == nil {
+				return nil, fmt.Errorf("SERVER_TRUSTED_PROXIES: %q is not an IP or CIDR range", v)
+			}
+			bits := 128
+			if ip.To4() != nil {
+				ip, bits = ip.To4(), 32
+			}
+			out = append(out, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+			continue
+		}
+		_, n, err := net.ParseCIDR(v)
+		if err != nil {
+			return nil, fmt.Errorf("SERVER_TRUSTED_PROXIES: %q is not an IP or CIDR range", v)
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }
 
 type Log struct {
@@ -188,6 +225,11 @@ type Auth struct {
 	SessionTTL time.Duration `env:"AUTH_SESSION_TTL" envDefault:"720h"`
 	// SessionIdleTimeout ends a session unused for this long.
 	SessionIdleTimeout time.Duration `env:"AUTH_SESSION_IDLE_TIMEOUT" envDefault:"168h"`
+	// DeviceSessionTTL and DeviceSessionIdleTimeout apply instead to
+	// "remember this device" sessions, which the mobile app asks for at
+	// sign-in (revocable like any session).
+	DeviceSessionTTL         time.Duration `env:"AUTH_DEVICE_SESSION_TTL" envDefault:"4320h"`
+	DeviceSessionIdleTimeout time.Duration `env:"AUTH_DEVICE_SESSION_IDLE_TIMEOUT" envDefault:"2160h"`
 	// AdminUsername and AdminPassword (or AdminPasswordFile, e.g. a Docker
 	// secret) create the first admin account when no users exist yet.
 	// Ignored once any user exists.
@@ -204,6 +246,9 @@ func Load() (*Config, error) {
 	cfg := &Config{}
 	if err := env.Parse(cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	if _, err := cfg.Server.TrustedProxyNets(); err != nil {
+		return nil, err
 	}
 	return cfg, nil
 }

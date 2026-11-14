@@ -20,9 +20,19 @@ func isAdminPath(p string) bool {
 
 // Register wires all routes and middleware onto the given Echo instance.
 func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
+	// Behind a reverse proxy, take the client from X-Forwarded-For, but
+	// only through the configured proxies; otherwise the connecting address
+	// (headers are never trusted by default).
+	if nets, err := cfg.Server.TrustedProxyNets(); err == nil && len(nets) > 0 {
+		opts := []echo.TrustOption{echo.TrustLoopback(false), echo.TrustLinkLocal(false), echo.TrustPrivateNet(false)}
+		for _, n := range nets {
+			opts = append(opts, echo.TrustIPRange(n))
+		}
+		e.IPExtractor = echo.ExtractIPFromXFFHeader(opts...)
+	}
 	e.Use(emw.Recover())
 	e.Use(emw.RequestID())
-	e.Use(emw.RequestLogger())
+	e.Use(handler.RequestLogger())
 	e.Use(emw.Gzip())
 	// CORS for the public API only: the admin UI is same-origin, and other
 	// websites a LAN user opens must not be able to drive /api/v1/admin.
@@ -44,6 +54,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	auth := e.Group("/api/v1/auth", handler.SameOriginWrites)
 	auth.POST("/login", h.Login)
 	auth.POST("/logout", h.Logout)
+	auth.POST("/probe", h.Probe) // unauthenticated: the mobile app checks a local URL
 	auth.GET("/me", h.Me, h.Authenticate)
 	auth.GET("/session", h.AuthSession)
 
@@ -89,6 +100,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	me.PUT("/subscriptions/:id", h.UpdateSubscription)
 	me.DELETE("/subscriptions/:id", h.DeleteSubscription)
 	me.GET("/venues", h.ListVenues)
+	me.GET("/venues/nearby", h.NearbyVenues) // before /venues/:id
 	me.POST("/venues", h.CreateVenue)
 	me.GET("/venues/:id", h.GetVenue)
 	me.PUT("/venues/:id", h.UpdateVenue)

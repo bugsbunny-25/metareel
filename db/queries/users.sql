@@ -34,14 +34,15 @@ WHERE username = sqlc.arg(username);
 UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = sqlc.arg(id);
 
 -- name: CreateSession :one
-INSERT INTO sessions (user_id, token_hash, expires_at, user_agent, ip)
+INSERT INTO sessions (user_id, token_hash, expires_at, user_agent, ip, device_name, remember_device)
 VALUES (sqlc.arg(user_id), sqlc.arg(token_hash), datetime('now', CAST(sqlc.arg(ttl) AS TEXT)),
-        sqlc.arg(user_agent), sqlc.arg(ip))
-RETURNING id, user_id, token_hash, created_at, last_seen_at, expires_at, user_agent, ip;
+        sqlc.arg(user_agent), sqlc.arg(ip), sqlc.arg(device_name), sqlc.arg(remember_device))
+RETURNING id, expires_at;
 
 -- GetActiveSession returns a session that has not expired, was used within
--- the idle window (idle is a negative modifier, e.g. '-604800 seconds') and
--- belongs to an enabled user.
+-- its idle window and belongs to an enabled user. idle and device_idle are
+-- negative modifiers (e.g. '-604800 seconds'); device_idle applies to
+-- "remember this device" sessions.
 -- name: GetActiveSession :one
 SELECT s.id, s.user_id, s.expires_at, u.username, u.role
 FROM sessions s
@@ -49,7 +50,20 @@ JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = sqlc.arg(token_hash)
   AND u.disabled = 0
   AND s.expires_at > datetime('now')
-  AND s.last_seen_at > datetime('now', CAST(sqlc.arg(idle) AS TEXT));
+  AND s.last_seen_at > datetime('now', CASE WHEN s.remember_device THEN CAST(sqlc.arg(device_idle) AS TEXT)
+                                            ELSE CAST(sqlc.arg(idle) AS TEXT) END);
+
+-- GetActiveSessionDigest returns the token digest of an active session by
+-- id (same rules as GetActiveSession), for the local-URL probe.
+-- name: GetActiveSessionDigest :one
+SELECT s.token_hash
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.id = sqlc.arg(id)
+  AND u.disabled = 0
+  AND s.expires_at > datetime('now')
+  AND s.last_seen_at > datetime('now', CASE WHEN s.remember_device THEN CAST(sqlc.arg(device_idle) AS TEXT)
+                                            ELSE CAST(sqlc.arg(idle) AS TEXT) END);
 
 -- name: TouchSession :exec
 UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = sqlc.arg(id);
@@ -65,7 +79,8 @@ WHERE user_id = (SELECT id FROM users WHERE username = sqlc.arg(username));
 -- name: DeleteExpiredSessions :execrows
 DELETE FROM sessions
 WHERE expires_at <= datetime('now')
-   OR last_seen_at <= datetime('now', CAST(sqlc.arg(idle) AS TEXT));
+   OR last_seen_at <= datetime('now', CASE WHEN remember_device THEN CAST(sqlc.arg(device_idle) AS TEXT)
+                                           ELSE CAST(sqlc.arg(idle) AS TEXT) END);
 
 -- name: CountEnabledAdmins :one
 SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled = 0;
@@ -73,14 +88,16 @@ SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled = 0;
 -- name: DeleteUser :execrows
 DELETE FROM users WHERE username = sqlc.arg(username);
 
--- ListActiveSessions lists unexpired sessions used within the idle window
--- (idle is a negative modifier, e.g. '-604800 seconds'), newest use first.
+-- ListActiveSessions lists unexpired sessions used within their idle window
+-- (see GetActiveSession), newest use first.
 -- name: ListActiveSessions :many
-SELECT s.id, s.user_id, u.username, s.created_at, s.last_seen_at, s.expires_at, s.user_agent, s.ip
+SELECT s.id, s.user_id, u.username, s.created_at, s.last_seen_at, s.expires_at, s.user_agent, s.ip,
+       s.device_name, s.remember_device
 FROM sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.expires_at > datetime('now')
-  AND s.last_seen_at > datetime('now', CAST(sqlc.arg(idle) AS TEXT))
+  AND s.last_seen_at > datetime('now', CASE WHEN s.remember_device THEN CAST(sqlc.arg(device_idle) AS TEXT)
+                                            ELSE CAST(sqlc.arg(idle) AS TEXT) END)
 ORDER BY s.last_seen_at DESC, s.id DESC;
 
 -- name: DeleteSessionByID :one

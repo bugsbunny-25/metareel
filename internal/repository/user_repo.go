@@ -95,25 +95,54 @@ func (r *UserRepository) RecordUserLogin(ctx context.Context, id int64) error {
 	return r.q.RecordUserLogin(ctx, id)
 }
 
-// CreateSession stores a session (by token digest) that expires after ttl.
-func (r *UserRepository) CreateSession(ctx context.Context, userID int64, tokenHash string, ttl time.Duration, userAgent, ip string) (time.Time, error) {
+// NewSession is a session to store (by token digest) that expires after TTL.
+type NewSession struct {
+	UserID         int64
+	TokenHash      string
+	TTL            time.Duration
+	UserAgent      string
+	IP             string
+	DeviceName     string
+	RememberDevice bool
+}
+
+// SessionIdle is how long a session may go unused: Default for ordinary
+// sessions, Device for "remember this device" ones.
+type SessionIdle struct {
+	Default time.Duration
+	Device  time.Duration
+}
+
+// CreateSession stores a session and returns its id and expiry.
+func (r *UserRepository) CreateSession(ctx context.Context, s NewSession) (int64, time.Time, error) {
 	row, err := r.q.CreateSession(ctx, sqlc.CreateSessionParams{
-		UserID: userID, TokenHash: tokenHash, Ttl: sqliteOffset(ttl), UserAgent: userAgent, Ip: ip,
+		UserID: s.UserID, TokenHash: s.TokenHash, Ttl: sqliteOffset(s.TTL), UserAgent: s.UserAgent, Ip: s.IP,
+		DeviceName: s.DeviceName, RememberDevice: s.RememberDevice,
 	})
 	if err != nil {
-		return time.Time{}, fmt.Errorf("create session: %w", err)
+		return 0, time.Time{}, fmt.Errorf("create session: %w", err)
 	}
-	return row.ExpiresAt, nil
+	return row.ID, row.ExpiresAt, nil
 }
 
 // GetActiveSession returns sql.ErrNoRows unless the session exists, has not
-// expired, was used within idle and belongs to an enabled user.
-func (r *UserRepository) GetActiveSession(ctx context.Context, tokenHash string, idle time.Duration) (SessionRecord, error) {
-	row, err := r.q.GetActiveSession(ctx, sqlc.GetActiveSessionParams{TokenHash: tokenHash, Idle: sqliteOffset(-idle)})
+// expired, was used within its idle window and belongs to an enabled user.
+func (r *UserRepository) GetActiveSession(ctx context.Context, tokenHash string, idle SessionIdle) (SessionRecord, error) {
+	row, err := r.q.GetActiveSession(ctx, sqlc.GetActiveSessionParams{
+		TokenHash: tokenHash, Idle: sqliteOffset(-idle.Default), DeviceIdle: sqliteOffset(-idle.Device),
+	})
 	if err != nil {
 		return SessionRecord{}, err
 	}
 	return SessionRecord{ID: row.ID, UserID: row.UserID, Username: row.Username, Role: row.Role, ExpiresAt: row.ExpiresAt}, nil
+}
+
+// ActiveSessionDigest returns the token digest of an active session by id
+// (same rules as GetActiveSession), or sql.ErrNoRows.
+func (r *UserRepository) ActiveSessionDigest(ctx context.Context, id int64, idle SessionIdle) (string, error) {
+	return r.q.GetActiveSessionDigest(ctx, sqlc.GetActiveSessionDigestParams{
+		ID: id, Idle: sqliteOffset(-idle.Default), DeviceIdle: sqliteOffset(-idle.Device),
+	})
 }
 
 func (r *UserRepository) TouchSession(ctx context.Context, id int64) error {
@@ -140,9 +169,12 @@ func (r *UserRepository) DeleteUserSessions(ctx context.Context, username string
 	return n, nil
 }
 
-// DeleteExpiredSessions removes sessions past their expiry or unused for idle.
-func (r *UserRepository) DeleteExpiredSessions(ctx context.Context, idle time.Duration) (int64, error) {
-	n, err := r.q.DeleteExpiredSessions(ctx, sqliteOffset(-idle))
+// DeleteExpiredSessions removes sessions past their expiry or unused for
+// their idle window.
+func (r *UserRepository) DeleteExpiredSessions(ctx context.Context, idle SessionIdle) (int64, error) {
+	n, err := r.q.DeleteExpiredSessions(ctx, sqlc.DeleteExpiredSessionsParams{
+		Idle: sqliteOffset(-idle.Default), DeviceIdle: sqliteOffset(-idle.Device),
+	})
 	if err != nil {
 		return 0, fmt.Errorf("delete expired sessions: %w", err)
 	}
@@ -173,19 +205,26 @@ type SessionInfo struct {
 	ExpiresAt  time.Time
 	UserAgent  string
 	IP         string
+	DeviceName string
+	// RememberDevice marks a "remember this device" session (longer TTL and
+	// idle timeout).
+	RememberDevice bool
 }
 
 // ListActiveSessions lists sessions that have not expired and were used
-// within idle.
-func (r *UserRepository) ListActiveSessions(ctx context.Context, idle time.Duration) ([]SessionInfo, error) {
-	rows, err := r.q.ListActiveSessions(ctx, sqliteOffset(-idle))
+// within their idle window.
+func (r *UserRepository) ListActiveSessions(ctx context.Context, idle SessionIdle) ([]SessionInfo, error) {
+	rows, err := r.q.ListActiveSessions(ctx, sqlc.ListActiveSessionsParams{
+		Idle: sqliteOffset(-idle.Default), DeviceIdle: sqliteOffset(-idle.Device),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
 	}
 	out := make([]SessionInfo, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, SessionInfo{ID: row.ID, UserID: row.UserID, Username: row.Username, CreatedAt: row.CreatedAt,
-			LastSeenAt: row.LastSeenAt, ExpiresAt: row.ExpiresAt, UserAgent: row.UserAgent, IP: row.Ip})
+			LastSeenAt: row.LastSeenAt, ExpiresAt: row.ExpiresAt, UserAgent: row.UserAgent, IP: row.Ip,
+			DeviceName: row.DeviceName, RememberDevice: row.RememberDevice})
 	}
 	return out, nil
 }

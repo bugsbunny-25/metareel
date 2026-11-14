@@ -58,7 +58,7 @@ type Querier interface {
 	CountWebhookDeliveriesByStatus(ctx context.Context) ([]CountWebhookDeliveriesByStatusRow, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
 	CreateCinemaSubscription(ctx context.Context, arg CreateCinemaSubscriptionParams) (int64, error)
-	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (CreateSessionRow, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskRunLog(ctx context.Context, arg CreateTaskRunLogParams) error
 	CreateTaskSchedule(ctx context.Context, arg CreateTaskScheduleParams) (TaskSchedule, error)
@@ -81,7 +81,7 @@ type Querier interface {
 	// DeleteEpisodeWatches removes every watch of the chosen episodes. scope is
 	// as for ListMarkableEpisodes.
 	DeleteEpisodeWatches(ctx context.Context, arg DeleteEpisodeWatchesParams) (int64, error)
-	DeleteExpiredSessions(ctx context.Context, idle string) (int64, error)
+	DeleteExpiredSessions(ctx context.Context, arg DeleteExpiredSessionsParams) (int64, error)
 	// One kind of a title's evidence, or all of it (kind '').
 	DeleteMappingEvidence(ctx context.Context, arg DeleteMappingEvidenceParams) (int64, error)
 	// Netflix "What We Watched" engagement reports.
@@ -151,9 +151,13 @@ type Querier interface {
 	FindTmdbRefsByNetflixID(ctx context.Context, arg FindTmdbRefsByNetflixIDParams) ([]FindTmdbRefsByNetflixIDRow, error)
 	FindVenueByRef(ctx context.Context, arg FindVenueByRefParams) (int64, error)
 	// GetActiveSession returns a session that has not expired, was used within
-	// the idle window (idle is a negative modifier, e.g. '-604800 seconds') and
-	// belongs to an enabled user.
+	// its idle window and belongs to an enabled user. idle and device_idle are
+	// negative modifiers (e.g. '-604800 seconds'); device_idle applies to
+	// "remember this device" sessions.
 	GetActiveSession(ctx context.Context, arg GetActiveSessionParams) (GetActiveSessionRow, error)
+	// GetActiveSessionDigest returns the token digest of an active session by
+	// id (same rules as GetActiveSession), for the local-URL probe.
+	GetActiveSessionDigest(ctx context.Context, arg GetActiveSessionDigestParams) (string, error)
 	// Operations: settings lookups, chart freshness.
 	GetAppSetting(ctx context.Context, key string) (string, error)
 	GetCinemaSubscription(ctx context.Context, arg GetCinemaSubscriptionParams) (CinemaSubscription, error)
@@ -212,9 +216,9 @@ type Querier interface {
 	LatestNetflixGlobalWeek(ctx context.Context) (string, error)
 	// API keys for the public API, and admin-editable settings.
 	ListAPIKeys(ctx context.Context) ([]ApiKey, error)
-	// ListActiveSessions lists unexpired sessions used within the idle window
-	// (idle is a negative modifier, e.g. '-604800 seconds'), newest use first.
-	ListActiveSessions(ctx context.Context, idle string) ([]ListActiveSessionsRow, error)
+	// ListActiveSessions lists unexpired sessions used within their idle window
+	// (see GetActiveSession), newest use first.
+	ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]ListActiveSessionsRow, error)
 	// Distinct targets of every FlixPatrol schedule (enabled or not).
 	ListAllFlixPatrolTargets(ctx context.Context) ([]ListAllFlixPatrolTargetsRow, error)
 	ListAllMappingEvidence(ctx context.Context) ([]MappingEvidence, error)
@@ -535,6 +539,11 @@ type Querier interface {
 	// the import matches on, and a fill-in update that never overwrites a value
 	// someone already set.
 	ListVenuesForImport(ctx context.Context, country sql.NullString) ([]ListVenuesForImportRow, error)
+	// ListVenuesInBox lists cinemas with coordinates inside a latitude /
+	// longitude box (the caller computes the box around a point and the exact
+	// distance), with how often the user has watched there. Capped by limit;
+	// the caller asks for far more than it returns.
+	ListVenuesInBox(ctx context.Context, arg ListVenuesInBoxParams) ([]ListVenuesInBoxRow, error)
 	// ListWatchEntries is the diary, newest local day first. Paging is by the
 	// (watched_on, id) cursor; an empty cursor_on starts at the newest entry.
 	ListWatchEntries(ctx context.Context, arg ListWatchEntriesParams) ([]ListWatchEntriesRow, error)

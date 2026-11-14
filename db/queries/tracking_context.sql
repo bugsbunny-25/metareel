@@ -247,3 +247,20 @@ SELECT l.content_type, l.data, CAST(COALESCE(f.logo_version, '') AS TEXT) AS log
 FROM watch_formats f
 JOIN watch_format_logos l ON l.format_id = f.id
 WHERE f.slug = sqlc.arg(slug);
+
+-- ListVenuesInBox lists cinemas with coordinates inside a latitude /
+-- longitude box (the caller computes the box around a point and the exact
+-- distance), with how often the user has watched there. Capped by limit;
+-- the caller asks for far more than it returns.
+-- name: ListVenuesInBox :many
+SELECT v.id, v.name, v.chain, v.address, v.postcode, v.city, v.region, v.country, v.latitude, v.longitude,
+       v.timezone, v.opened_on, v.closed_on, v.status, v.replaced_by_venue_id, v.note,
+       v.created_by, v.created_at, v.updated_at,
+       CAST((SELECT COUNT(*) FROM venue_screens s WHERE s.venue_id = v.id) AS INTEGER) AS screen_count,
+       CAST((SELECT COUNT(*) FROM watch_entries w WHERE w.venue_id = v.id AND w.user_id = sqlc.arg(user_id)) AS INTEGER) AS your_watches,
+       CAST(COALESCE((SELECT MAX(w.ended_at) FROM watch_entries w WHERE w.venue_id = v.id AND w.user_id = sqlc.arg(user_id)), '') AS TEXT) AS your_last_watch
+FROM venues v
+WHERE v.latitude >= CAST(sqlc.arg(min_lat) AS REAL) AND v.latitude <= CAST(sqlc.arg(max_lat) AS REAL)
+  AND v.longitude >= CAST(sqlc.arg(min_lon) AS REAL) AND v.longitude <= CAST(sqlc.arg(max_lon) AS REAL)
+  AND (CAST(sqlc.arg(include_closed) AS INTEGER) = 1 OR v.status <> 'closed')
+LIMIT sqlc.arg(limit);

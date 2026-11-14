@@ -424,6 +424,50 @@ func (r *TrackingRepository) ListVenues(ctx context.Context, f VenueFilter) ([]V
 	return out, nil
 }
 
+// VenueBox is a latitude/longitude box to list cinemas in, with the user
+// whose watch counts come along.
+type VenueBox struct {
+	UserID                         int64
+	MinLat, MaxLat, MinLon, MaxLon float64
+	IncludeClosed                  bool
+	Limit                          int64
+}
+
+// BoxVenue is a cinema in a box with the user's watches there.
+type BoxVenue struct {
+	Venue
+	YourWatches   int64
+	YourLastWatch string // UTC instant of the latest watch there, "" if none
+}
+
+// ListVenuesInBox lists cinemas whose coordinates fall inside the box.
+func (r *TrackingRepository) ListVenuesInBox(ctx context.Context, b VenueBox) ([]BoxVenue, error) {
+	rows, err := r.q.ListVenuesInBox(ctx, sqlc.ListVenuesInBoxParams{
+		UserID: b.UserID, MinLat: b.MinLat, MaxLat: b.MaxLat, MinLon: b.MinLon, MaxLon: b.MaxLon,
+		IncludeClosed: boolInt(b.IncludeClosed), Limit: b.Limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list venues in box: %w", err)
+	}
+	out := make([]BoxVenue, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, BoxVenue{
+			Venue: Venue{
+				ID: row.ID, Name: row.Name, Chain: nullStringPtr(row.Chain), Address: nullStringPtr(row.Address), Postcode: nullStringPtr(row.Postcode),
+				City: nullStringPtr(row.City), Region: nullStringPtr(row.Region), Country: nullStringPtr(row.Country),
+				Latitude: nullFloatPtr(row.Latitude), Longitude: nullFloatPtr(row.Longitude),
+				Timezone: nullStringPtr(row.Timezone), OpenedOn: nullStringPtr(row.OpenedOn),
+				ClosedOn: nullStringPtr(row.ClosedOn), Status: row.Status,
+				ReplacedByVenueID: nullInt64Ptr(row.ReplacedByVenueID), Note: nullStringPtr(row.Note),
+				CreatedBy: nullInt64Ptr(row.CreatedBy), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+				ScreenCount: row.ScreenCount,
+			},
+			YourWatches: row.YourWatches, YourLastWatch: row.YourLastWatch,
+		})
+	}
+	return out, nil
+}
+
 // VenueWatchCount is how many watches point at a venue.
 func (r *TrackingRepository) VenueWatchCount(ctx context.Context, id int64) (int64, error) {
 	n, err := r.q.CountVenueWatches(ctx, sql.NullInt64{Int64: id, Valid: true})

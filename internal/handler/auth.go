@@ -169,18 +169,27 @@ type loginRequest struct {
 	// Client "admin" signs in to the admin console (its own cookie); also
 	// accepted as ?client=admin.
 	Client string `json:"client"`
+	// Native clients (the mobile app): what the device calls itself, and a
+	// long-lived "remember this device" session.
+	DeviceName     string `json:"device_name"`
+	RememberDevice bool   `json:"remember_device"`
 }
 
-// Login: POST /api/v1/auth/login {"username","password"}. Sets the app's
-// session cookie (the admin console's with ?client=admin or "client":"admin")
-// and returns the token once, for non-browser clients.
+// Login: POST /api/v1/auth/login {"username","password","client"?,
+// "device_name"?,"remember_device"?}. Sets the app's session cookie (the
+// admin console's with ?client=admin or "client":"admin") and returns the
+// token once, for non-browser clients, with the session id and probe key the
+// mobile app uses to check a local URL (see Probe).
 func (h *Handler) Login(c *echo.Context) error {
 	var req loginRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
 	}
 	r := c.Request()
-	out, err := h.Sessions.Login(r.Context(), req.Username, req.Password, r.UserAgent(), c.RealIP())
+	out, err := h.Sessions.Login(r.Context(), service.LoginInput{
+		Username: req.Username, Password: req.Password, UserAgent: r.UserAgent(), IP: c.RealIP(),
+		DeviceName: req.DeviceName, RememberDevice: req.RememberDevice,
+	})
 	var vErr *service.ValidationError
 	switch {
 	case err == nil:
@@ -197,6 +206,38 @@ func (h *Handler) Login(c *echo.Context) error {
 	}
 	admin := adminClient(c) || req.Client == "admin"
 	c.SetCookie(sessionCookie(r, cookieName(admin), out.Token, out.ExpiresAt))
+	c.Response().Header().Set("Cache-Control", "no-store")
+	return c.JSON(http.StatusOK, out)
+}
+
+type probeRequest struct {
+	SessionID int64  `json:"session_id"`
+	Nonce     string `json:"nonce"`
+}
+
+// Probe: POST /api/v1/auth/probe {"session_id","nonce"} answers
+// {"proof": hex HMAC-SHA256(probe_key, nonce)}. Unauthenticated: a mobile
+// app calls it on a plain-HTTP local URL to check the server is the one it
+// signed in to before sending its token there. Unknown sessions get a proof
+// that won't match, never an error.
+func (h *Handler) Probe(c *echo.Context) error {
+	var req probeRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
+	}
+	out, err := h.Sessions.Probe(c.Request().Context(), req.SessionID, req.Nonce, c.RealIP())
+	var vErr *service.ValidationError
+	switch {
+	case err == nil:
+	case errors.As(err, &vErr):
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": vErr.Error()})
+	case errors.Is(err, service.ErrProbeRateLimited):
+		c.Response().Header().Set("Retry-After", "1")
+		return c.JSON(http.StatusTooManyRequests, map[string]any{"error": err.Error()})
+	default:
+		h.logger().Error("probe", "err", err)
+		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
+	}
 	c.Response().Header().Set("Cache-Control", "no-store")
 	return c.JSON(http.StatusOK, out)
 }
