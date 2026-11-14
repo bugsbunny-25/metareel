@@ -1865,6 +1865,7 @@ paths:
                         kind: { type: string }
                         tmdb_id: { type: string, nullable: true }
                         imdb_id: { type: string, nullable: true }
+                        poster_path: { type: string, nullable: true, description: TMDB poster of the mapped title }
                         netflix_title_id: { type: integer, format: int64 }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -5630,6 +5631,7 @@ components:
         kind: { type: string, description: "movie | tv_show: the TMDB namespace of tmdb_id when mapped (a special in the TV list can be a movie), else Netflix's list" }
         tmdb_id: { type: string, nullable: true }
         imdb_id: { type: string, nullable: true }
+        poster_path: { type: string, nullable: true, description: "TMDB poster of the mapped title (absent when unmapped)" }
         netflix_title_id: { type: integer, format: int64 }
 
     NetflixSeasonSource:

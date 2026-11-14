@@ -68,7 +68,7 @@ WHERE m.imdb_id = sqlc.arg(imdb_id) ORDER BY t.id;
 SELECT tmdb_kind, tmdb_id FROM tmdb_titles WHERE imdb_id = ?;
 
 -- name: ListNetflixGlobalWeek :many
-SELECT g.*, n.tmdb_id, tm.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
+SELECT g.*, n.tmdb_id, tm.imdb_id, tm.poster_path, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
 LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND tm.tmdb_id = n.tmdb_id
@@ -78,7 +78,7 @@ WHERE g.week = sqlc.arg(week)
 ORDER BY g.category, g.weekly_rank;
 
 -- name: ListNetflixCountryWeek :many
-SELECT c.*, n.tmdb_id, tm.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
+SELECT c.*, n.tmdb_id, tm.imdb_id, tm.poster_path, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_top10_countries c
 JOIN netflix_titles n ON n.id = c.netflix_title_id
 LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND tm.tmdb_id = n.tmdb_id
@@ -94,7 +94,7 @@ SELECT CAST(COALESCE(MAX(week), '') AS TEXT) FROM netflix_top10_global;
 SELECT CAST(COALESCE(MAX(week), '') AS TEXT) FROM netflix_top10_countries WHERE country = ?;
 
 -- name: ListNetflixMostPopular :many
-SELECT p.*, n.tmdb_id, tm.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
+SELECT p.*, n.tmdb_id, tm.imdb_id, tm.poster_path, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_most_popular p
 JOIN netflix_titles n ON n.id = p.netflix_title_id
 LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND tm.tmdb_id = n.tmdb_id

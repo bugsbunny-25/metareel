@@ -1,8 +1,8 @@
 <!-- Netflix's own Top 10 (#/discover?tab=netflix&nf=country|alltime&week=YYYY-MM-DD): the weekly
      global lists (four categories, with hours and views), the weekly list for the country in the
      top bar (films and shows, ranks only: that is all Netflix publishes per country) and the
-     all-time most popular (views in the first 91 days). Netflix rows carry no poster, so posters
-     come from metareel's Netflix chart titles of the last month where they match. -->
+     all-time most popular (views in the first 91 days). Each row carries the TMDB poster of the
+     title it's mapped to; unmapped titles get a placeholder. -->
 <script>
   import Poster from '../../components/Poster.svelte'
   import Icon from '../../components/Icon.svelte'
@@ -38,16 +38,6 @@
         ? view === 'country' ? `Netflix publishes no Top 10 for ${inCountry(cc)} that metareel has${w ? ' for that week' : ''}.` : 'Netflix has no Top 10 for that week.'
         : err.message
     })
-    return () => ctrl.abort()
-  })
-
-  // Posters, from the Netflix titles metareel charted lately (one request, kept).
-  let posters = $state(new Map())
-  $effect(() => {
-    const ctrl = new AbortController()
-    api.leaderboard({ period: 'month', provider: 'netflix', limit: 200 }, ctrl.signal)
-      .then((d) => { posters = new Map((d.items ?? []).filter((it) => it.tmdb_id && it.poster_path).map((it) => [`${tmdbKind(it.kind)}:${it.tmdb_id}`, it.poster_path])) })
-      .catch(() => {})
     return () => ctrl.abort()
   })
 
@@ -135,7 +125,7 @@
             {@const href = it.tmdb_id ? `#/title/${k}/${it.tmdb_id}` : null}
             <li>
               <span class="rank num" class:one={it.rank === 1}>{it.rank}</span>
-              <svelte:element this={href ? 'a' : 'span'} class="pic" {href} tabindex="-1" aria-hidden="true"><Poster path={it.tmdb_id ? posters.get(`${k}:${it.tmdb_id}`) ?? null : null} seed={it.tmdb_id ?? it.show_title} title={it.show_title} width={34} radius={4} size="w92" /></svelte:element>
+              <svelte:element this={href ? 'a' : 'span'} class="pic" {href} tabindex="-1" aria-hidden="true"><Poster path={it.poster_path ?? null} seed={it.tmdb_id ?? it.show_title} title={it.show_title} width={34} radius={4} size="w92" /></svelte:element>
               <div class="txt">
                 {#if href}<a class="name" {href}>{name(it)}</a>{:else}<span class="name">{name(it)}</span>{/if}
                 <span class="sub">
