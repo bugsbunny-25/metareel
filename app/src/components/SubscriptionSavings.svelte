@@ -1,5 +1,6 @@
 <!-- Stats: does your cinema subscription pay off? Each plan's covered tickets at face value
-     against what it has cost (billing periods plus anything paid on top), month by month, and the
+     against what it has cost (each bill at the price then, none in the gaps between runs, plus
+     anything paid on top), month by month, and the
      break-even. For chains you paid at without a plan, what a plan would have had to cost.
      All time, not the year picked above: a plan runs across years. -->
 <script>
@@ -42,7 +43,7 @@
         <div class="top">
           <div>
             <p class="name">{s.plan} <span class="pill" class:on={s.active}>{s.active ? 'Active' : 'Ended'}</span></p>
-            <p class="hint">{money(s.price_minor, s.currency)} a {s.period} · {s.bills} {s.bills === 1 ? 'bill' : 'bills'} since {s.started_on}</p>
+            <p class="hint">{money(s.price_minor, s.currency)} a {s.period}{#if (s.prices?.length ?? 0) > 1}{' '}now ({s.prices.length - 1} price {s.prices.length === 2 ? 'change' : 'changes'}){/if} · {s.bills} {s.bills === 1 ? 'bill' : 'bills'} since {s.started_on}{#if (s.periods?.length ?? 0) > 1}{' '}over {s.periods.length} runs, gaps not billed{/if}</p>
           </div>
           <div class="verdict" class:ahead class:behind={!ahead}>
             <b class="num">{money(Math.abs(s.saved_minor), s.currency)}</b>

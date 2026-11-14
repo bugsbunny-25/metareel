@@ -179,7 +179,10 @@
   let subs = $state([])
   $effect(() => { if (target) api.subscriptions().then((r) => (subs = r.subscriptions ?? [])).catch(() => (subs = [])) })
   const today = localDay()
-  const subChoices = $derived(subs.filter((s) => !s.ended_on || s.ended_on >= (f.day || today) || s.id === f.subId))
+  // Plans you had on the watch's day (a run covering it), plus the one already picked.
+  const onDay = (s, day) => (s.periods?.length ? s.periods : [{ started_on: s.started_on, ended_on: s.ended_on }])
+    .some((p) => p.started_on <= day && (!p.ended_on || p.ended_on >= day))
+  const subChoices = $derived(subs.filter((s) => onDay(s, f.day || today) || s.id === f.subId))
   const chainOf = (v) => `${v?.chain ?? ''} ${v?.name ?? ''}`.toLowerCase()
   $effect(() => {
     if (f.place !== 'theater' || f.subTouched || !f.venue) return

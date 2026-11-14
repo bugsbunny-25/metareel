@@ -37,3 +37,34 @@ FROM watch_entries w
 LEFT JOIN venues v ON v.id = w.venue_id
 WHERE w.user_id = sqlc.arg(user_id) AND (w.venue_kind = 'theater' OR w.subscription_id IS NOT NULL)
 ORDER BY w.watched_on, w.id;
+
+-- Periods (runs between cancelling and resubscribing) and price changes of a
+-- user's plans, oldest first.
+
+-- name: ListCinemaSubscriptionPeriods :many
+SELECT p.id, p.subscription_id, p.started_on, p.ended_on
+FROM cinema_subscription_periods p
+JOIN cinema_subscriptions s ON s.id = p.subscription_id
+WHERE s.user_id = sqlc.arg(user_id)
+ORDER BY p.subscription_id, p.started_on, p.id;
+
+-- name: ListCinemaSubscriptionPrices :many
+SELECT p.id, p.subscription_id, p.effective_on, p.price_minor
+FROM cinema_subscription_prices p
+JOIN cinema_subscriptions s ON s.id = p.subscription_id
+WHERE s.user_id = sqlc.arg(user_id)
+ORDER BY p.subscription_id, p.effective_on, p.id;
+
+-- name: DeleteCinemaSubscriptionPeriods :exec
+DELETE FROM cinema_subscription_periods WHERE subscription_id = sqlc.arg(subscription_id);
+
+-- name: DeleteCinemaSubscriptionPrices :exec
+DELETE FROM cinema_subscription_prices WHERE subscription_id = sqlc.arg(subscription_id);
+
+-- name: InsertCinemaSubscriptionPeriod :exec
+INSERT INTO cinema_subscription_periods (subscription_id, started_on, ended_on)
+VALUES (sqlc.arg(subscription_id), sqlc.arg(started_on), sqlc.narg(ended_on));
+
+-- name: InsertCinemaSubscriptionPrice :exec
+INSERT INTO cinema_subscription_prices (subscription_id, effective_on, price_minor)
+VALUES (sqlc.arg(subscription_id), sqlc.arg(effective_on), sqlc.arg(price_minor));

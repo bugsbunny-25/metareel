@@ -277,9 +277,9 @@ make reports-open
 | POST/DELETE | `/api/v1/me/venues/:id/aliases[/:alias_id]` | Record or remove a name a cinema used to have |
 | POST   | `/api/v1/me/venues/:id/screens`             | Add an auditorium (size, seats, aspect ratio) |
 | PUT/DELETE | `/api/v1/me/venues/:id/screens/:screen_id` | Edit or remove an auditorium |
-| GET/POST | `/api/v1/me/subscriptions`                | Your cinema subscriptions (plan, chain, price per month or year, start and end) and well-known plans; add one |
-| PUT/DELETE | `/api/v1/me/subscriptions/:id`          | Replace (e.g. end) or delete a plan; deleting keeps its watches, uncovered |
-| GET    | `/api/v1/me/subscriptions/savings`          | Per plan: bills paid against covered tickets' face value (or your usual ticket price), extras, savings, break-even, month by month; and what a plan would have to cost at chains you paid at |
+| GET/POST | `/api/v1/me/subscriptions`                | Your cinema subscriptions (plan, chain, price per month or year with its `prices` over time, `periods` it ran: cancel and resubscribe leaves an unbilled gap) and well-known plans; add one |
+| PUT/DELETE | `/api/v1/me/subscriptions/:id`          | Replace (e.g. end, resubscribe, change the price) or delete a plan; deleting keeps its watches, uncovered |
+| GET    | `/api/v1/me/subscriptions/savings`          | Per plan: bills paid (at the price then, none in gaps) against covered tickets' face value (or your usual ticket price), extras, savings, break-even, month by month; and what a plan would have to cost at chains you paid at |
 | GET    | `/api/v1/me/stats/summary`                  | Totals, where you watched, formats, spend (`from`, `to`) |
 | GET    | `/api/v1/me/stats/calendar`                 | Day-by-day heatmap and streaks |
 | GET    | `/api/v1/me/stats/year`                     | Year in review (`year`, default this year) |
@@ -838,8 +838,9 @@ device, currency, screen unit, when a show counts as not watched in a while),
 the theme for this device (dark, light or match the system), a password
 change, every signed-in session with sign out per device or everywhere
 else, and your cinema subscriptions (`/me/subscriptions`: AMC Stubs A-List,
-Regal Unlimited, ODEON Limitless… with price per month or year, chain and
-dates). Stats weighs each plan's covered tickets at face value against what it
+Regal Unlimited, ODEON Limitless… with price per month or year, chain, the
+runs you had it (cancel and resubscribe; the gaps aren't billed) and price
+changes over time). Stats weighs each plan's covered tickets at face value against what it
 cost, month by month with the break-even, and says what a plan would have had
 to cost to pay off at the chains you buy tickets from
 (`/me/subscriptions/savings`).

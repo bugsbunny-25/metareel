@@ -2991,7 +2991,7 @@ paths:
     put:
       operationId: updateCinemaSubscription
       tags: [Tracking]
-      summary: Replace a cinema subscription (e.g. set ended_on to end it)
+      summary: Replace a cinema subscription (end it, resubscribe with a new run, add a price change)
       security: [{ BearerSession: [] }, { SessionCookie: [] }]
       requestBody:
         required: true
@@ -4093,26 +4093,55 @@ components:
         id: { type: integer, format: int64 }
         plan: { type: string, example: AMC Stubs A-List }
         chain: { type: string, nullable: true, description: Matched against a venue's chain or name to suggest the plan when logging }
-        price_minor: { type: integer, description: Per period, minor units }
+        price_minor: { type: integer, description: "Per period, minor units: the price in effect today (see prices)" }
         currency: { type: string, example: USD }
         period: { type: string, enum: [month, year] }
-        started_on: { type: string, format: date, description: The first billing day }
-        ended_on: { type: string, format: date, nullable: true }
+        started_on: { type: string, format: date, description: The first billing day of the first run }
+        ended_on: { type: string, format: date, nullable: true, description: The end of the last run; null while it runs }
         note: { type: string, nullable: true }
         created_at: { type: string }
         updated_at: { type: string }
+        periods:
+          type: array
+          description: The runs of the plan, oldest first. Cancelling and resubscribing leaves a gap between two runs, and gaps are not billed.
+          items: { $ref: "#/components/schemas/CinemaSubscriptionPeriod" }
+        prices:
+          type: array
+          description: What a billing period cost from each date, oldest first; the earliest also covers bills before its date.
+          items: { $ref: "#/components/schemas/CinemaSubscriptionPrice" }
+    CinemaSubscriptionPeriod:
+      type: object
+      required: [started_on]
+      properties:
+        started_on: { type: string, format: date, description: The run's first billing day }
+        ended_on: { type: string, format: date, nullable: true, description: Null while it runs; only the last run may be open }
+    CinemaSubscriptionPrice:
+      type: object
+      required: [from, price_minor]
+      properties:
+        from: { type: string, format: date, description: "First bill at this price (the first price may omit it: the plan's start)" }
+        price_minor: { type: integer, minimum: 0 }
     CinemaSubscriptionInput:
       type: object
-      required: [plan, price_minor, currency, started_on]
+      description: >
+        A plan. Send periods and prices to set its history. Without periods,
+        started_on and ended_on are its only run (create) or move the first
+        start and the last end of the stored runs (update). Without prices,
+        price_minor is its only price (create) or replaces the price in effect
+        today (update). Runs must not overlap and only the last may be open;
+        one price per date.
+      required: [plan, currency]
       properties:
         plan: { type: string, maxLength: 100 }
         chain: { type: string, nullable: true, maxLength: 100 }
-        price_minor: { type: integer, minimum: 0 }
+        price_minor: { type: integer, minimum: 0, description: Required without prices on create }
         currency: { type: string, description: ISO 4217 }
         period: { type: string, enum: [month, year], default: month }
-        started_on: { type: string, format: date }
+        started_on: { type: string, format: date, description: Required without periods on create }
         ended_on: { type: string, format: date, nullable: true }
         note: { type: string, nullable: true, maxLength: 500 }
+        periods: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/CinemaSubscriptionPeriod" } }
+        prices: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/CinemaSubscriptionPrice" } }
     WatchContext:
       type: object
       description: >

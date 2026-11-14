@@ -579,12 +579,21 @@ is deleted. Watches keep their `venue_name_at_watch`.
 
 `cinema_subscriptions` (migration 35) holds a user's plans: name, chain,
 price per `month` or `year` in minor units with a currency, `started_on`
-(first billing day) and `ended_on`. A watch has `subscription_id` (only the
+(first billing day) and `ended_on`. Migration 38 adds its history:
+`cinema_subscription_periods` (runs: cancelling and resubscribing leaves a
+gap between two periods; only the last may be open, and they may not
+overlap) and `cinema_subscription_prices` (a price from each date; the
+earliest also covers bills before its date). The plan's `started_on`,
+`ended_on` and `price_minor` are kept in step as a summary (first start, last
+end, the price in effect today). The API takes `periods` and `prices`; a
+client that omits them edits the stored history through the summary fields
+(the first start, the last end, today's price). A watch has `subscription_id` (only the
 user's own plan; checked on write) and `face_value_minor`, what the ticket
 would have cost; `price_minor` stays what was paid (an upcharge).
-`GET /me/subscriptions/savings` works it out on read: bills are the start
-day and each month or year after it (clamped to month ends) up to today or
-the end; covered watches in the plan's currency are valued at their face
+`GET /me/subscriptions/savings` works it out on read: each run bills on its
+start day and each month or year after it (clamped to month ends) up to
+today or its end, at the price in effect on each bill day, and the gaps
+between runs bill nothing; covered watches in the plan's currency are valued at their face
 value or the median single ticket paid at the plan's chain (venue chain or
 name containing it), else at any cinema, in that currency; savings = value -
 bills - extras paid on covered watches. The what-if sums the last 12 months

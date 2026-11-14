@@ -55,6 +55,20 @@ type CinemaSubscription struct {
 	UpdatedAt  string         `json:"updated_at"`
 }
 
+type CinemaSubscriptionPeriod struct {
+	ID             int64          `json:"id"`
+	SubscriptionID int64          `json:"subscription_id"`
+	StartedOn      string         `json:"started_on"`
+	EndedOn        sql.NullString `json:"ended_on"`
+}
+
+type CinemaSubscriptionPrice struct {
+	ID             int64  `json:"id"`
+	SubscriptionID int64  `json:"subscription_id"`
+	EffectiveOn    string `json:"effective_on"`
+	PriceMinor     int64  `json:"price_minor"`
+}
+
 type DataImport struct {
 	Source       string         `json:"source"`
 	Etag         sql.NullString `json:"etag"`

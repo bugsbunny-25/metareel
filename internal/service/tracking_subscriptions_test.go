@@ -71,3 +71,89 @@ func TestPlanSavings(t *testing.T) {
 		t.Fatalf("what-if = %+v", w)
 	}
 }
+
+func TestPlanBillsAcrossGapsAndPriceChanges(t *testing.T) {
+	// Subscribed 10 Jan at 20.00, cancelled 15 Mar, back 1 Jun; the price went
+	// up to 25.00 from 1 Jul. Bills: 10 Jan, 10 Feb, 10 Mar (run 1); 1 Jun,
+	// 1 Jul, 1 Aug (run 2, the last two at the new price). Nothing in Apr/May.
+	sub := repository.CinemaSubscription{ID: 1, Plan: "ODEON Limitless", Currency: "GBP", Period: "month",
+		Periods: []repository.SubscriptionPeriod{{StartedOn: "2026-01-10", EndedOn: str("2026-03-15")}, {StartedOn: "2026-06-01"}},
+		Prices:  []repository.SubscriptionPrice{{From: "2026-01-10", PriceMinor: 2000}, {From: "2026-07-01", PriceMinor: 2500}}}
+	got := planBills(sub, "2026-08-20")
+	want := []Bill{{"2026-01-10", 2000}, {"2026-02-10", 2000}, {"2026-03-10", 2000}, {"2026-06-01", 2000}, {"2026-07-01", 2500}, {"2026-08-01", 2500}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("bills = %v, want %v", got, want)
+	}
+	r := planSavings(sub, nil, "2026-08-20")
+	if r.Bills != 6 || r.PaidMinor != 4*2000+2*2500 || !r.Active {
+		t.Fatalf("savings = %+v", r)
+	}
+	for _, m := range r.Months {
+		if m.Month == "2026-04" || m.Month == "2026-05" {
+			t.Fatalf("billed in the gap: %+v", m)
+		}
+	}
+	// Cancelled again: inactive, and no bill after the end.
+	sub.Periods[1].EndedOn = str("2026-07-15")
+	if r := planBills(sub, "2026-08-20"); len(r) != 5 {
+		t.Fatalf("bills after second cancel = %v", r)
+	}
+}
+
+func TestSubscriptionFromHistory(t *testing.T) {
+	s := &TrackingService{}
+	i64 := func(v int64) *int64 { return &v }
+	base := SubscriptionInput{Plan: "Regal Unlimited", Currency: "usd", Period: "month"}
+
+	// Periods given out of order with a gap, a price change; summary follows them.
+	in := base
+	in.Periods = &[]SubscriptionPeriodInput{{StartedOn: "2026-06-01"}, {StartedOn: "2026-01-10", EndedOn: str("2026-03-15")}}
+	in.Prices = &[]SubscriptionPriceInput{{From: "2099-01-01", PriceMinor: i64(2500)}, {From: "2026-02-01", PriceMinor: i64(1999)}}
+	got, err := s.subscriptionFrom(in, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.StartedOn != "2026-01-10" || got.EndedOn != nil || got.Periods[0].StartedOn != "2026-01-10" || got.Currency != "USD" {
+		t.Fatalf("periods = %+v", got)
+	}
+	// The first price is moved back to the plan's start; today's price is the summary.
+	if got.Prices[0].From != "2026-01-10" || got.PriceMinor != 1999 {
+		t.Fatalf("prices = %+v, price %d", got.Prices, got.PriceMinor)
+	}
+
+	bad := func(name string, mod func(*SubscriptionInput)) {
+		t.Helper()
+		in := base
+		in.Periods = &[]SubscriptionPeriodInput{{StartedOn: "2026-01-10", EndedOn: str("2026-03-15")}, {StartedOn: "2026-06-01"}}
+		in.PriceMinor = i64(2000)
+		mod(&in)
+		if _, err := s.subscriptionFrom(in, nil); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+	bad("overlap", func(in *SubscriptionInput) { (*in.Periods)[1].StartedOn = "2026-03-15" })
+	bad("open period before another", func(in *SubscriptionInput) { (*in.Periods)[0].EndedOn = nil })
+	bad("end before start", func(in *SubscriptionInput) { (*in.Periods)[0].EndedOn = str("2026-01-01") })
+	bad("no periods", func(in *SubscriptionInput) { in.Periods = &[]SubscriptionPeriodInput{} })
+	bad("duplicate price date", func(in *SubscriptionInput) {
+		in.Prices = &[]SubscriptionPriceInput{{From: "2026-02-01", PriceMinor: i64(1)}, {From: "2026-02-01", PriceMinor: i64(2)}}
+	})
+	bad("missing price", func(in *SubscriptionInput) { in.PriceMinor = nil })
+
+	// Update without periods or prices (an older client): runs and prices are
+	// kept, the last end and today's price replaced.
+	prev := got
+	upd := base
+	upd.StartedOn, upd.EndedOn, upd.PriceMinor = "2026-01-10", str("2026-09-30"), i64(2100)
+	got2, err := s.subscriptionFrom(upd, &prev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got2.Periods) != 2 || got2.Periods[1].EndedOn == nil || *got2.Periods[1].EndedOn != "2026-09-30" || *got2.EndedOn != "2026-09-30" {
+		t.Fatalf("kept periods = %+v", got2.Periods)
+	}
+	// Stored: 19.99 from the start, 25.00 from 2099; today's (the first) becomes 21.00.
+	if len(got2.Prices) != 2 || got2.Prices[0].PriceMinor != 2100 || got2.Prices[1].PriceMinor != 2500 || got2.PriceMinor != 2100 {
+		t.Fatalf("kept prices = %+v", got2.Prices)
+	}
+}

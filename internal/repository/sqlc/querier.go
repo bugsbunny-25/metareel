@@ -72,6 +72,8 @@ type Querier interface {
 	DeleteAPIKey(ctx context.Context, id int64) (int64, error)
 	DeleteChartRankings(ctx context.Context, arg DeleteChartRankingsParams) error
 	DeleteCinemaSubscription(ctx context.Context, arg DeleteCinemaSubscriptionParams) (int64, error)
+	DeleteCinemaSubscriptionPeriods(ctx context.Context, subscriptionID int64) error
+	DeleteCinemaSubscriptionPrices(ctx context.Context, subscriptionID int64) error
 	// DeleteEmptyUserTitle removes a state row that holds nothing worth keeping
 	// (no status, no rating, not a favourite, no watches), so clearing a
 	// watchlist entry does not leave a dangling row behind.
@@ -190,6 +192,8 @@ type Querier interface {
 	GetWatchFormatLogo(ctx context.Context, slug string) (GetWatchFormatLogoRow, error)
 	GetWebhook(ctx context.Context, id int64) (Webhook, error)
 	GetWebhookDeliveryPayload(ctx context.Context, id int64) (string, error)
+	InsertCinemaSubscriptionPeriod(ctx context.Context, arg InsertCinemaSubscriptionPeriodParams) error
+	InsertCinemaSubscriptionPrice(ctx context.Context, arg InsertCinemaSubscriptionPriceParams) error
 	InsertCredit(ctx context.Context, arg InsertCreditParams) error
 	InsertEpisode(ctx context.Context, arg InsertEpisodeParams) error
 	InsertMappingEvent(ctx context.Context, arg InsertMappingEventParams) error
@@ -236,6 +240,10 @@ type Querier interface {
 	// 'YYYY-MM-DD HH:MM:SS' UTC, then row id), oldest first: keyset paging, so
 	// many charts sharing one changed_at are read page by page.
 	ListChartsChangedAfter(ctx context.Context, arg ListChartsChangedAfterParams) ([]ListChartsChangedAfterRow, error)
+	// Periods (runs between cancelling and resubscribing) and price changes of a
+	// user's plans, oldest first.
+	ListCinemaSubscriptionPeriods(ctx context.Context, userID int64) ([]CinemaSubscriptionPeriod, error)
+	ListCinemaSubscriptionPrices(ctx context.Context, userID int64) ([]CinemaSubscriptionPrice, error)
 	// Cinema subscriptions of a user and the watches they covered.
 	ListCinemaSubscriptions(ctx context.Context, userID int64) ([]CinemaSubscription, error)
 	// Netflix titles mapped only by a Wikidata label match (source
