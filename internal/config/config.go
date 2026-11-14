@@ -101,8 +101,11 @@ type FlareSolverr struct {
 }
 
 type UI struct {
-	StaticDir   string `env:"UI_STATIC_DIR" envDefault:"web/dist"`
-	ServeStatic bool   `env:"UI_SERVE_STATIC" envDefault:"true"`
+	// StaticDir is the admin console build, served at /admin.
+	StaticDir string `env:"UI_STATIC_DIR" envDefault:"web/dist"`
+	// AppStaticDir is the user app build, served at /.
+	AppStaticDir string `env:"APP_STATIC_DIR" envDefault:"app/dist"`
+	ServeStatic  bool   `env:"UI_SERVE_STATIC" envDefault:"true"`
 }
 
 type TMDB struct {
@@ -142,6 +145,12 @@ type Imports struct {
 	NetflixSearch         bool   `env:"NETFLIX_TOP10_SEARCH" envDefault:"true"`
 	NetflixSearchQueryID  string `env:"NETFLIX_TOP10_SEARCH_QUERY_ID" envDefault:"592260c9-ef04-4ae6-bec7-ae2d47498f9b"`
 	NetflixSearchQueryVer int    `env:"NETFLIX_TOP10_SEARCH_QUERY_VERSION" envDefault:"102"`
+	// VenueCountries are the countries venues.import brings cinemas in for
+	// (ISO codes, comma separated) when a run names none.
+	VenueCountries []string `env:"VENUES_IMPORT_COUNTRIES" envSeparator:"," envDefault:"US,GB,IN"`
+	// OverpassURL is the Overpass API instance venues.import reads
+	// OpenStreetMap from.
+	OverpassURL string `env:"VENUES_OVERPASS_URL" envDefault:"https://overpass-api.de/api/interpreter"`
 }
 
 // Alerts sends problems (failed runs, stale charts, FlareSolverr down) to a

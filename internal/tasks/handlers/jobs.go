@@ -158,6 +158,13 @@ func CreditsJob(c *service.CreditsRefresher) JobFunc {
 	}
 }
 
+// VenuesImportJob imports cinemas from OpenStreetMap.
+func VenuesImportJob(v *service.VenueImporter) JobFunc {
+	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {
+		return v.Run(ctx, p.Countries, run.Log)
+	}
+}
+
 // MappingRefreshJob follows up mapping changes (see TitleMappingService.Refresh).
 func MappingRefreshJob(m *service.TitleMappingService) JobFunc {
 	return func(ctx context.Context, p tasks.JobPayload, run *Run) (any, error) {

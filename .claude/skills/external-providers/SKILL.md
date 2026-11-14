@@ -63,6 +63,21 @@ it, and again after — several fields and enums below were only discoverable th
 
 - `https://datasets.imdbws.com/title.ratings.tsv.gz` (~9 MB, daily, ETag). Personal / non-commercial use only. Imported for known IMDb IDs (`IMDB_DATASET_SCOPE`); `imdb_dataset` is the first-choice IMDb rating in ratings responses.
 
+## OpenStreetMap / Overpass (`client/overpass.go`, `venues.import`, no key)
+
+- One query per country: `area["ISO3166-1"="IN"][admin_level=2]` then `nwr["amenity"="cinema"]`, `out center tags` (ways and relations come with a centre). US ~5.5k cinemas (~1 min), IN ~2.2k, GB ~830.
+- Usage policy: identify with a User-Agent, one query at a time, well under 10k a day. A busy instance answers 429/504, or 200 with a `remark` containing "runtime error" and partial data: treat both as busy (`ErrOverpassBusy`) and retry later, never store a partial result.
+- Tag quality: `addr:city` is missing for ~1/3 of US and ~4/5 of Indian cinemas (filled from the nearest `place=city|town` node); `wikidata` on branches is often the chain's ID (same as `brand:wikidata`, or repeated across branches) so it is ignored then; Indian multiplexes are often just "PVR Cinemas" or "INOX", so the city is what tells them apart.
+- Time zones come from coordinates via `tzf` (embedded boundaries); no network.
+- Data is ODbL: credit "© OpenStreetMap contributors" where it is shown.
+
+## Wikidata action API (`client/wikidata_api.go`, historic cinemas)
+
+- For "every X in a country", SPARQL times out (60 s) on the US and India even with a forced join order, and a timed-out query gets you throttled (502s). Use the action API instead: `list=search` with `haswbstatement:` filters (`|` means OR, a bare property means "has it") returns IDs in ~0.2 s, 500 a page, but stops at offset 10,000, so read `srsort=create_timestamp_asc` then `_desc` to reach up to 20,000; then `wbgetentities` 50 IDs at a time with `props=labels|claims`.
+- Send `maxlag=5`; a `maxlag` error or 429/5xx means wait and retry.
+- Dates come as `+1909-11-08T00:00:00Z` with a precision (11 day, 10 month, 9 year); a year-precision date has `-00-00`. Never store a day you weren't given.
+- Closed cinemas: P5817 state of use Q104664889 (permanently closed) or Q56556915 (demolished), or P576. ~13,000 in the US and ~2,800 in GB (mostly from Cinema Treasures, P4129), 3 in India.
+
 ## How mapping works (`titles.enrich`: `title_enrich.go` + `title_matcher.go`)
 
 Scrapes only record titles (`match_status = pending`) and queue `titles.enrich` for them.

@@ -194,13 +194,13 @@ make reports-open
 | POST   | `/api/v1/auth/login`, `/api/v1/auth/logout` | Sign a user in (session cookie + token) or out ([access](#public-api-access)) |
 | GET    | `/api/v1/auth/me`                           | Who the request is authenticated as (user or API key) |
 | GET    | `/api/v1/auth/session`                      | For the console: whether admin sign-in is required and who is signed in |
-| GET    | `/api/v1/top10/{movies\|tv-shows}/:country[/:provider]` | Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`, and for TV `season_number` + `season_source` when known) |
+| GET    | `/api/v1/top10/{movies\|tv-shows}/:country[/:provider]` | Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`, the TMDB `poster_path` once the title has metadata, and for TV `season_number` + `season_source` when known) |
 | GET    | `/api/v1/top10/:country`                    | Every provider's movie + TV chart of a country in one call |
 | GET    | `/api/v1/top10/{movies\|tv-shows}/:country/:provider/history` | One chart over a range (`from`, `to`; ≤ 92 days) |
 | GET    | `/api/v1/top10/global/:provider`            | A provider's titles across all countries by points (`date`, `category`, `kind`) |
 | GET    | `/api/v1/charts`, `/api/v1/charts/:country/:provider/dates` | Stored charts with date ranges and freshness; stored dates |
 | GET    | `/api/v1/changes?since=`                    | Charts stored / re-scraped since a time (poll this) |
-| GET    | `/api/v1/movers`                            | Climbers, fallers, debuts, re-entries, exits (`country`, `provider`, `date`) |
+| GET    | `/api/v1/movers`                            | Climbers, fallers, debuts, re-entries, exits (`country`, `provider`, `date`). Like every chart-derived list (history, breakouts, leaderboards, analytics items), each title carries `poster_path` (TMDB path, null until it has metadata) |
 | GET    | `/api/v1/discover/:country/hidden-gems`     | Highly rated titles (IMDb ≥ `min_rating` 7.5 from ≥ `min_votes` 5,000) streamable in the country that weren't in its Top 10 over `days` (90), ranked by a vote-weighted rating (`kind`, `provider_id`, `limit`) |
 | GET    | `/api/v1/discover/:country/elsewhere`       | Titles in other countries' Top 10s over `days` (7) with no subscription / free / ads offer in the country, with where they chart and rent / buy offers here (`kind`, `limit`) |
 | GET    | `/api/v1/discover/:country/rotation`        | Which subscription services to pay for (plans and channels grouped per service; `include_other=true` adds TV bundles and niche services): each scored on its titles' chart points, upcoming episodes, arrivals and top-rated titles over `days` (30), with `subscribe` / `skip` (or `keep` / `pause` / `add` given `subscribed=8,9`) for the best `slots` (2) |
@@ -217,7 +217,7 @@ make reports-open
 | GET    | `/api/v1/titles/tmdb/:kind/:id/availability/history` | When the title arrived on / left each service per country (`added` / `removed` between two TMDB refreshes; `country` optional) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/history`     | Ratings, TMDB popularity and English Wikipedia pageviews over time (`from`, `to`; default last 90 days, ≤ 366): IMDb dataset, each provider's rating sources (a point when a value changed) and daily TMDB popularity |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/credits`     | Top 25 cast and key crew (directors, writers, creators, composers, cinematographers) from TMDB; TV with episodes credited |
-| GET    | `/api/v1/people/:id`                        | A TMDB person and their titles metareel knows, with roles and each title's chart record (points, days, best rank, countries) |
+| GET    | `/api/v1/people/:id`                        | A TMDB person: profile and full filmography live from TMDB (cached 12 h; `details_status` says why they're missing), and their titles metareel knows with roles and each title's chart record (points, days, best rank, countries) |
 | GET    | `/api/v1/titles/tmdb/movie/:id/releases`    | A movie's premiere, theatrical (limited / wide), digital (PVOD), physical and TV dates per country from TMDB, the observed streaming arrival (first offer seen arriving, or first chart day) and the windows between them in days (`country`) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/timeline`    | Everything that happened to a title, newest first: chart debuts, peaks, #1 runs and re-entries, availability added/removed, rating changes, Wikipedia pageview spikes, Netflix Top 10 weeks and engagement periods, season premieres, release (`types`, `country`, `from`, `to`, `limit`) |
 | GET    | `/api/v1/calendar/:country`                 | Upcoming episodes of shows streamable in the country (subscription / free / ads), one entry per show, season and day with the services (`from`, `to`: default the next 14 days, ≤ 62; `provider_id`) |
@@ -227,7 +227,7 @@ make reports-open
 | GET    | `/api/v1/titles/tmdb/rankings?ids=movie:425,tv:1` | Batch ranking history (max 50 ids)    |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/ratings`     | IMDb + Rotten Tomatoes ratings by TMDB ID, cached for `RATINGS_TTL` (`?refresh=true` to force); IMDb's own dataset wins for IMDb |
 | GET    | `/api/v1/titles/tmdb/ratings?ids=`          | Batch ratings (max 50; refreshes up to 10 uncached) |
-| GET    | `/api/v1/netflix/top10[/:country]`, `/api/v1/netflix/most-popular` | Netflix's official weekly Top 10 and most-popular lists (rows carry `season_number` / `season_source`) |
+| GET    | `/api/v1/netflix/top10[/:country]`, `/api/v1/netflix/most-popular` | Netflix's official weekly Top 10 and most-popular lists (rows carry `season_number` / `season_source`, and the mapped TMDB title's `poster_path`) |
 | GET    | `/api/v1/analytics/{decay,country-similarity,release-lag,ratings-vs-popularity,genres,netflix-calibration}` | Analytics over a range (`from`, `to`, `country`, `provider`, `category`, `kind`) |
 | GET    | `/api/v1/analytics/release-patterns`        | How long TV seasons stay in the Top 10 by release pattern (`binge` / `batch` / `weekly` / `daily` / `irregular`, from TMDB episode air dates), over `window` days (30–180, default 60) after each premiere; `from`, `to` = premiere range (default last 365 days), `country`, `provider` |
 | GET    | `/api/v1/analytics/spread-lag`              | How many days after a title first charts in one country it charts in the others: overall and per-country lags, origin → destination routes, titles never reached within `window` days (7–90, default 30). Debuts between `from` and `to` (default last 90 days, ≤ 180); `country` = debuted there; `provider`, `category`, `kind` |
@@ -245,11 +245,55 @@ make reports-open
 | GET    | `/api/v1/admin/mapping-refs?tmdb_kind=movie\|tv&mapped=true` | The mapping reference (view `mapping_refs`): one row per chart title with its TMDB title and every ID (IMDb, Wikidata, RT, Metacritic, Letterboxd, JustWatch, Netflix), FlixPatrol slug / kind and Netflix title / kind |
 | GET    | `/api/v1/admin/mapping-events?subject=flixpatrol:12\|netflix:34&tmdb=movie:550&limit=` | History of mapping changes, newest first: action, TMDB title before / after, source and who made it (job, `mapping.sync`, `admin`) |
 | PATCH  | `/api/v1/admin/netflix/seasons/:id`         | Set a Netflix season title's season number by hand (`{"season_number": 2}`) or hand it back (`{"auto": true}`) |
+| GET/POST/PATCH | `/api/v1/admin/watch-formats[/:id]`  | The premium-format taxonomy (console: Premium formats): cinema axes (`brand`, `projection`, `sound`, `motion`, `dimension`) plus home media (`disc`: DVD, Blu-ray, 4K UHD Blu-ray; `label`: Criterion, Arrow…). A format is retired with `active: false`, never deleted. `logo_display` is `original` or `mono` (clients draw a dark logo white). Logos to collect: [docs/format-logos.md](docs/format-logos.md) |
+| POST   | `/api/v1/admin/venues/:id/merge`            | Merge a duplicate cinema into another (`{"into": id}`): watches, screens, former names and outside ids move, its name becomes a former name, it is deleted |
+| GET/POST/PUT/DELETE | `/api/v1/admin/venues[/:id[/screens[/:screen_id]\|/aliases[/:alias_id]]]` | Cinemas for the console's Cinemas page: search, add, correct, close (status `closed`), delete one nobody watched at; screens and former names. The same handlers as `/api/v1/me/venues` |
+| PUT/DELETE | `/api/v1/admin/watch-formats/:id/logo`   | Upload a format's logo (raw image body: PNG, JPEG, WebP or GIF ≤ 4096 px a side, or an SVG of drawing elements only; ≤ 512 KB; type taken from the bytes) or remove it |
 | GET/POST/PATCH/DELETE | `/api/v1/admin/webhooks[/:id[/test\|/rotate-secret\|/deliveries]]`, `/api/v1/admin/webhook-deliveries/:id[/retry]` | Outbound webhooks (see [Webhooks](#webhooks)) |
-| GET    | `/` (and any unmatched path)                | Serves `web/dist/` SPA if present           |
+| GET    | `/api/v1/me/titles/search?q=&kind=`         | Search TMDB for anything to track (not only titles metareel has charted); needs a signed-in user |
+| GET    | `/api/v1/me/people/search?q=`               | Search TMDB for actors and crew by name (opens `/people/:id`); needs a signed-in user |
+| GET    | `/api/v1/me/titles`                         | The user's tracked titles (`status`, `kind`, `favorite`, `sort`, `limit`, `offset`) |
+| GET/PUT/DELETE | `/api/v1/me/titles/{movie\|tv}/:id`  | One title: its TMDB metadata plus the user's status, favourite flag, watchlist note and watch roll-up |
+| GET    | `/api/v1/me/watchlist`                      | The watchlist, in list order |
+| PUT/DELETE | `/api/v1/me/watchlist/{movie\|tv}/:id` | Put a title on the watchlist or take it off (watches and favourites are kept) |
+| GET/POST | `/api/v1/me/watches`                      | The watch log (diary), newest local day first (cursor paged); log a watch |
+| GET/PUT/DELETE | `/api/v1/me/watches/:id`            | One watch: read, replace, or delete it for good |
+| GET    | `/api/v1/me/tags`                           | The user's tags with how many watches carry each |
+| DELETE | `/api/v1/me/tags/:id`                       | Delete a tag and detach it from every watch |
+| GET    | `/api/v1/me/account`                        | Your user and where you're signed in (sessions, `current` marks this one) |
+| POST   | `/api/v1/me/password`                       | Change your password (`current_password`, `new_password`); ends your other sessions |
+| DELETE | `/api/v1/me/sessions[/:id]`                 | Sign one of your other sessions out, or (no id) every session but this one |
+| GET/PUT | `/api/v1/me/preferences`                   | Preferences that follow you: default `country` + `provider`, `currency`, `screen_unit` (m/ft), `stale_days` for `/me/shows`, `services` you pay for (TMDB provider IDs); PUT replaces them |
+| GET    | `/api/v1/me/shows`                          | Every show you track, sorted into stages (`watching`, `stalled` after `stale_days` (30) without a watch, `not_started`, `on_hold`, `dropped`, `caught_up`) with progress, the next episode and the next air date |
+| GET    | `/api/v1/me/upcoming`                       | Episodes still to air of your shows, soonest first (`days`: 90, ≤ 365); on hold, dropped and unwanted shows left out |
+| GET    | `/api/v1/me/shows/:id`                      | A show with the user's progress: seasons, episodes, watch counts (`include_specials`) |
+| POST   | `/api/v1/me/shows/:id/watched`              | Mark episodes watched: `scope` = `episode` / `season` / `up_to` / `all` |
+| DELETE | `/api/v1/me/shows/:id/watched`              | Unmark episodes (`scope`, `season`, `episode`, `include_specials`); deletes their watches |
+| GET    | `/api/v1/me/up-next`                        | The next episode to watch of each show in progress |
+| GET    | `/api/v1/me/formats`                        | The premium formats a watch can carry (IMAX, Dolby Cinema, 4DX, 70mm, Atmos…), each with a versioned `logo_url` once it has a logo |
+| GET    | `/api/v1/formats/:slug/logo`                | A format's logo image (use the format's `logo_url`; cached for a year at its current `?v=`, served with a sandboxing CSP) |
+| GET/POST | `/api/v1/me/venues`                       | Search cinemas (`q`: every word in the name, chain, city or address, e.g. `pvr mumbai`; `country`, `include_closed`); add one |
+| GET/PUT/DELETE | `/api/v1/me/venues/:id`             | One cinema with its screens, former names and outside ids; delete is refused while watches point at it |
+| POST/DELETE | `/api/v1/me/venues/:id/aliases[/:alias_id]` | Record or remove a name a cinema used to have |
+| POST   | `/api/v1/me/venues/:id/screens`             | Add an auditorium (size, seats, aspect ratio) |
+| PUT/DELETE | `/api/v1/me/venues/:id/screens/:screen_id` | Edit or remove an auditorium |
+| GET/POST | `/api/v1/me/subscriptions`                | Your cinema subscriptions (plan, chain, price per month or year, start and end) and well-known plans; add one |
+| PUT/DELETE | `/api/v1/me/subscriptions/:id`          | Replace (e.g. end) or delete a plan; deleting keeps its watches, uncovered |
+| GET    | `/api/v1/me/subscriptions/savings`          | Per plan: bills paid against covered tickets' face value (or your usual ticket price), extras, savings, break-even, month by month; and what a plan would have to cost at chains you paid at |
+| GET    | `/api/v1/me/stats/summary`                  | Totals, where you watched, formats, spend (`from`, `to`) |
+| GET    | `/api/v1/me/stats/calendar`                 | Day-by-day heatmap and streaks |
+| GET    | `/api/v1/me/stats/year`                     | Year in review (`year`, default this year) |
+| GET    | `/api/v1/me/stats/ratings`                  | Your rating distribution and how it compares with TMDB, IMDb and RT |
+| GET    | `/api/v1/me/stats/spend`                    | Money per currency, per cinema, per format |
+| GET    | `/api/v1/me/stats/people`                   | Top cast or crew (`job=Director`, `limit`) |
+| GET    | `/api/v1/me/watchlist/insights`             | What your watchlist is doing on the charts and on streaming (`country`, `days`) |
+| GET    | `/admin` (and `/admin/...`)                 | The admin console SPA from `web/dist/` (`UI_STATIC_DIR`) |
+| GET    | `/` (and any unmatched path)                | The user app SPA from `app/dist/` (`APP_STATIC_DIR`); redirects to `/admin/` when the app isn't built |
 
 GET responses under `/api/v1` carry an `ETag`; send it back as
-`If-None-Match` to get `304 Not Modified` when nothing changed.
+`If-None-Match` to get `304 Not Modified` when nothing changed. The one
+exception is `/api/v1/me/...`: those responses are per-user, so they carry
+`Cache-Control: private, no-store` and no `ETag` instead.
 
 ## Jobs
 
@@ -265,7 +309,8 @@ on demand from Data health or `POST /api/v1/admin/jobs/:type/run`.
 | `netflix.top10.import` | 21:00 | Netflix's official weekly Top 10 (global, per country, most popular); skipped when unchanged. Matches up to 400 new titles (see [TMDB mapping](#tmdb-mapping)) and maps season titles to season numbers. |
 | `netflix.titles.match` | 09:00 | Works through the backlog of unmatched Netflix titles (retrying after 1, 3, 7, then every 30 days; `manual` titles are never touched), looks up Netflix IDs of up to 200 more titles (fixing earlier name matches), then remaps seasons. Also queued by "Match again" in the admin UI. |
 | `imdb.ratings.import` | 06:00 | IMDb's daily ratings dataset for the IMDb IDs metareel knows (also kept as history: a row whenever a title's rating or votes changed). |
-| `tmdb.credits.refresh` | 05:30 | TMDB cast (top 25) and key crew of the titles metareel knows: never-fetched titles first, each again after 60 days, at most 1,000 a run (one request per title). Feeds `/titles/tmdb/:kind/:id/credits`, `/people/:id` and `/analytics/people`. |
+| `tmdb.credits.refresh` | 05:30 | TMDB cast (top 25) and key crew of the titles metareel knows: never-fetched titles first, each again after 60 days, at most 1,000 a run (one request per title). Feeds `/titles/tmdb/:kind/:id/credits` (which asks TMDB live for titles it hasn't stored), `/people/:id` and `/analytics/people`. |
+| `venues.import` | — (by hand) | Every cinema OpenStreetMap has in `VENUES_IMPORT_COUNTRIES` (default US, GB, IN; or `{"countries": ["IN"]}`), via the Overpass API, as venues to pick when logging a watch: name, chain (`brand`), address, coordinates, time zone from the coordinates, and the city (or the nearest city or town node within 20 km). Then the country's closed and demolished cinemas from Wikidata (largely Cinema Treasures; ~13,000 in the US, ~2,800 in GB), imported closed with their dates. Matches venues entered before by OSM ID, Wikidata ID or the same name nearby; re-runs only fill empty fields and never delete. Also on the console's Cinemas page. Data © OpenStreetMap contributors (ODbL). |
 | `tmdb.episodes.refresh` | 05:00 | TMDB episodes (air dates, names, finales) of the TV shows metareel knows: seasons from the last three years, undated ones and the latest, one request per show (20 seasons each). Airing shows daily, returning shows weekly, ended shows monthly; at most 1,500 shows a run. Feeds `/calendar/:country` and `/analytics/release-patterns`. |
 | `wikipedia.pageviews.import` | 10:00 | Daily English Wikipedia user pageviews of every title with an article (the metadata job finds it on Wikidata), since the last stored day (90 days for a new title), for `/history`. Paced for Wikimedia's 200 requests/minute limit (about 15 minutes for 2,500 titles). |
 | `netflix.engagement.import` | 07:00 | Netflix's "What We Watched" reports (hours viewed, views, runtime and the premiere date of originals for every title watched 50k+ hours in six months) from the list in `app_settings` `netflix.engagement.urls` (seeded with H2 2025 and H1 2026; skipped when unchanged). Run it with `{"url": "https://…xlsx"}` to add a new report. Rows are linked to Netflix Top 10 titles by name and shown in `/titles/tmdb/:kind/:id/netflix` (`engagement`); their premiere dates mark Netflix originals for the chart `origin` and `/analytics/origins`. |
@@ -463,6 +508,218 @@ token=$(curl -s -X POST -H 'Content-Type: application/json' \
 curl -H "Authorization: Bearer $token" http://localhost:8080/api/v1/top10/movies/US
 ```
 
+## Tracking (watchlist and watch log)
+
+`/api/v1/me/...` is one signed-in user's own data: what they want to watch,
+what they have watched, and the tags on each watch. It is a separate
+namespace from the shared data routes, and it behaves differently from them
+in three ways worth knowing:
+
+- **A user's session only.** An API key opens the rest of the public API but
+  is refused here with 401: a key identifies an integration, not a person.
+  Clients sign in with `POST /api/v1/auth/login` and send the session token
+  as `Authorization: Bearer mrs_...`, or let a same-origin browser send the
+  `metareel_session` cookie. Writes also require a same-origin request, so
+  another site cannot drive them from a visitor's browser.
+- **Nothing is cached.** These responses carry `Cache-Control: private,
+  no-store` and `Vary: Authorization, Cookie`, and no `ETag`.
+- **Anything on TMDB can be tracked.** Titles that never appeared on a chart
+  are searched and fetched from TMDB on demand and their display metadata is
+  cached in `tracked_titles`. That cache is deliberately separate from
+  `tmdb_titles`, so user-tracked titles are never picked up by the mapping,
+  metadata, credits or ratings jobs.
+
+### The watch log
+
+Every watch is its own row, so a rewatch is a second watch with its own
+rating and tags rather than an edit of the first. `watch_number` counts them
+and `is_rewatch` marks everything after the first.
+
+A user's rating for a title is the rating on their **most recent rated
+watch**; it is kept on the title's state row and recomputed whenever a watch
+is logged, edited or deleted. Setting a rating directly on a title is
+refused, so there is only ever one place a rating comes from.
+
+`client_key` makes logging idempotent: sending one again returns the watch
+stored the first time (with `200` rather than `201`), so a retry from a flaky
+connection cannot create a duplicate. Keys are per user, and a genuine
+rewatch uses a new one.
+
+Deletes are permanent; there is no trash.
+
+### Shows and episodes
+
+A show is watched one episode at a time: a watch of `tmdb_kind: "tv"` carries
+`season_number` and `episode_number`, and `POST /api/v1/me/watches` refuses a
+show without them.
+
+The episodes of a tracked show are fetched from TMDB on demand and cached in
+`tracked_episodes`. That is a separate table from `tmdb_episodes`, which the
+chart jobs fill with recent, upcoming and latest seasons only -- right for the
+calendar, useless for marking a show watched, which needs every season.
+
+`POST /api/v1/me/shows/{id}/watched` marks a run of episodes. `scope` is
+`episode` (just this one), `season`, `up_to` (everything up to and including
+it, across earlier seasons) or `all`. It marks only episodes that **have
+aired** and that you have **not already seen**, so marking a season never
+piles rewatches onto the episodes you have. One time applies to every episode
+marked, which is why its precision defaults to a whole day; log episodes
+individually when the exact times matter. `DELETE` on the same path takes
+them back, deleting those watches for good.
+
+Marking and unmarking also move a show between `watching` and `completed`, so
+the up-next queue works without setting a status by hand. A status you chose
+yourself -- `dropped`, `on_hold`, `not_interested` -- is never overwritten.
+
+Progress is counted against the episodes that have **aired**, and that
+denominator moves as a show airs: 100% today can be 96% next week. Specials
+(season 0) are left out unless `include_specials` is set. `watched_episodes`
+counts distinct episodes, so a rewatch is not extra progress.
+
+`GET /api/v1/me/up-next` is the first aired, unwatched episode of every show
+you have started and not finished, most recently aired first.
+
+`GET /api/v1/me/shows` puts every show you track into one stage, in this
+order: `watching` (part way through and watched within `stale_days`, 30 by
+default), `stalled` (part way through, nothing watched for longer),
+`not_started`, `on_hold`, `dropped` and `caught_up` (every aired episode
+seen). A status you chose -- on hold, dropped -- decides the stage;
+otherwise the episodes do, so a completed show whose new episode has aired
+is back to `watching`. `GET /api/v1/me/upcoming` lists the episodes still to
+air of every show that is not on hold, dropped or unwanted. Both refresh
+episode lists older than a day from TMDB on the way, at most 12 shows a
+request, and fall back to the cache if TMDB fails.
+
+### Time
+
+Clients send UTC instants, and the server stores UTC. What a client logs is
+`ended_at`, when the watch finished; `started_at` is optional and stored only
+when it is sent.
+
+`tz` is the IANA zone the watch happened in, e.g. `America/New_York`. It
+decides which **local day** the watch belongs to, and the UTC offset in force
+at that instant is derived from it and stored next to it. Send `tz` rather
+than `utc_offset_minutes`: an offset on its own cannot be recomputed after an
+edit that crosses a daylight-saving change. Because clients send instants and
+not local wall-clock times, the two ambiguous cases never arise -- the hour
+that happens twice each autumn is two distinct instants, and the hour that is
+skipped each spring is no instant at all.
+
+`watched_on` is the local day a watch counts towards, taken from the local
+day of its **start**: `started_at` when it was sent, otherwise `ended_at`
+minus the title's runtime. It is computed once when the watch is written and
+then left alone, so a later TMDB runtime revision cannot quietly move an
+entry to another day and reshuffle a diary. `runtime_minutes_used` and
+`runtime_source` record which runtime was used, so a day can be explained.
+
+`time_precision` (`minute`, `day`, `month`, `year`) says how precisely the
+time is known. Anything less precise than a minute is stored at the earliest
+instant it could mean -- 1 January, the 1st, 00:00 local -- and no runtime is
+subtracted from it, so "sometime in 2019" cannot land in 2018.
+
+### Where and how a watch happened
+
+Every field below is optional; a watch with none of them is still a watch.
+
+**Premium formats.** One screening mixes independent things -- a brand
+(IMAX, Dolby Cinema, Cinemark XD), a projection (70mm, laser, high frame
+rate), a sound system (Atmos, DTS:X), a motion rig (4DX, D-BOX) and 2D or 3D
+-- so a watch carries a list of format slugs rather than one label, and each
+format records which axis it is on. That is what keeps "all my 70mm
+screenings" and "IMAX hours this year" answerable later. Admins maintain the
+list in the console under **Premium formats**; a format is **retired**, never
+deleted, so a watch logged with one keeps its meaning.
+
+**Venues and screens.** Cinemas are shared reference data, not per-user rows:
+a cinema is a place, not an opinion, and one row per cinema is what keeps a
+diary from filling with near-duplicates. Screen geometry (size, seats, aspect
+ratio) belongs to the **screen**, so it is entered once and screens can be
+compared; a watch that names a screen inherits it.
+
+History is handled rather than overwritten:
+
+- a watch snapshots `venue_name_at_watch` and `venue_city_at_watch`, so a
+  later rename never rewrites what the diary says you went to;
+- `venue_aliases` records what a cinema used to be called and when;
+- `status` and `replaced_by_venue_id` record a closure or a rebuild, and a
+  cinema watches point at cannot be deleted -- close it instead;
+- a screen that is retrofitted gets `effective_from` / `effective_to` rather
+  than having its old geometry overwritten.
+
+A cinema's ids in outside catalogues live in `venue_refs`, keyed by source
+(`google_place_id`, `osm_id`, `wikidata_id`, `fsq_id`, `overture_id`), the
+same pattern the title mapping uses. Only Google's **place id** may be stored
+indefinitely under their terms -- their other place data may not -- which is
+why nothing else from Google is kept.
+
+A venue can carry an IANA `timezone`, and a watch there takes it when the
+client sends none. That is what makes the local day right when you are away
+from home.
+
+**Money** is in minor units (paise, cents) as integers, never floats, with an
+ISO 4217 `currency` that is required whenever an amount is given. Ticket
+price, booking fees and concessions are separate, and totals are reported per
+currency rather than converted.
+
+**Aspect ratios** are the viewer's own: TMDB has no aspect-ratio data at all.
+Send `content_aspect_ratio` as written (`"1.43:1"`, `"16:9"`, `"1.9"`) and it
+is stored both as text and as a number so it can be compared;
+`content_aspect_variable` covers the films that change ratio part way
+through.
+
+### Stats
+
+`/api/v1/me/stats/...` aggregates your own log. A few things are worth
+knowing about how the numbers are arrived at.
+
+**Time watched.** How long a watch was is not stored on every row:
+`runtime_minutes_used` is only set when a start was derived from it. The
+totals fall back to the episode's runtime, then the title's, so an imprecise
+watch still counts. A title with no runtime anywhere contributes zero
+minutes rather than a guess.
+
+**Streaks** come from the days you watched, and a streak that ran to
+*yesterday* still counts as current -- otherwise it would look broken every
+morning until you watched something.
+
+**Hours of the day** use the UTC offset stored with each watch, not UTC, so
+an evening at home is an evening. Only watches logged to the minute can be
+placed in an hour; imprecise ones are left out of that breakdown alone.
+
+**Your rating vs the crowd.** A rating is 1-10 half-stars, which is already a
+0-10 scale, so TMDB and IMDb compare directly and a Rotten Tomatoes
+percentage is divided by ten. A title nobody has scored is **left out** of
+the comparison rather than counted as a zero, which would drag every gap
+upwards.
+
+**Genres, countries and languages** come from `tmdb_titles`, which metareel
+fills for titles it has charted. A title known only from the on-demand cache
+contributes nothing to those three rather than being counted as "unknown".
+**Decades** are broader: they use the release date, which the cache does
+store, so every tracked title counts. The **people** breakdowns need credits,
+which are fetched for charted titles, so they describe the charted part of a
+diary rather than all of it.
+
+**Money** is reported per currency and never converted: there is no rate
+stored to do it honestly with.
+
+### Watchlist insights
+
+`/api/v1/me/watchlist/insights?country=IN` is the join that only works
+because the charts and your watchlist live in one database: which of the
+titles you mean to watch have **charted**, which you can **stream now**, and
+which have **come off** a service.
+
+"Leaving soon" is deliberately not there. metareel records availability
+changes it has observed, not departures a service has scheduled, so the
+honest version of that question is what has already gone.
+
+### Ratings
+
+Five stars, in half-star steps, stored as an integer 1-10: `1` is half a
+star and `10` is five stars. There is no zero, as on Letterboxd; an unrated
+watch has `rating: null`.
+
 ## Webhooks
 
 Instead of polling `/api/v1/changes`, a client can register a URL (admin UI
@@ -471,7 +728,7 @@ Instead of polling `/api/v1/changes`, a client can register a URL (admin UI
 
 | Event | When | `data` |
 |---|---|---|
-| `chart.updated` | A chart was stored or its content changed | country, provider, category, date, `entries` (as in `/top10`, with `origin`) |
+| `chart.updated` | A chart was stored or its content changed | country, provider, category, date, `entries` (as in `/top10`, with `origin` and `poster_path`) |
 | `title.entered` | A title is on a chart that it was not on at the chart's previous date (`first_time`: never before) | `chart`, `entry` |
 | `title.number_one` | A new #1 on a chart | `chart`, `entry` |
 | `availability.added` / `availability.removed` | A title arrived on / left a service in a country (between two TMDB refreshes) | as in `/availability/changes` |
@@ -502,19 +759,99 @@ refuses requests that change data when a browser marks them as coming from
 another site (`Sec-Fetch-Site` / `Origin`), so a web page a LAN user opens
 can't drive it; curl and scripts are unaffected.
 
-## Adding a future UI
+## Web apps
 
-Build your SPA (Vite, Next export, SvelteKit static, etc.) into static files
-and either:
+Two Svelte 5 + Vite single-page apps ship with the server:
 
-1. **Copy into `web/dist/`** in the repo – the Dockerfile doesn't bake UI
-   files in, so mount them via the `./web/dist:/app/web/dist:ro` volume
-   commented out in `docker-compose.yml`, or
-2. **Bake them into the image** – uncomment a `COPY web/dist /app/web/dist`
-   line in the Dockerfile runtime stage.
+| App | Source | Served at | Talks to |
+|---|---|---|---|
+| Admin console | `web/` → `web/dist` (`UI_STATIC_DIR`) | `/admin` (Vite `base: '/admin/'`) | `/api/v1/admin` |
+| User app | `app/` → `app/dist` (`APP_STATIC_DIR`) | `/` | the public API and `/api/v1/me`, with the session cookie |
 
-`internal/router/router.go` already serves `/` from `UI_STATIC_DIR` and falls
-back to `index.html` for unknown paths (standard SPA history routing).
+The user app needs a signed-in user (accounts are created in the admin console)
+and never sends an API key. Its design system is **Screening Room**: dark first
+with a light mode, artwork-led, with the analytics on every screen. Tokens live
+in `app/src/tokens.css`. Colour roles are fixed: white for the primary action,
+green and red for movement, blue for new entries, orange for your own titles,
+and tan for stale data. It has Home (breakout, KPIs with 14-day trends, the
+Top 10, movement, your list, breakouts), Charts (Top 10 with trend, days,
+IMDb, RT and origin), title pages (attention, timeline, In numbers, positions,
+where to watch), Watchlist (your list joined with `/me/watchlist/insights`:
+charting in a 30-day, 90-day or one-year window, streaming on a subscription
+now, or recently gone from a service), Library (everything you track, with
+status chips that filter, your average rating and its half-star spread,
+favourites, a poster grid or a list, and a per-title menu that sets the
+status or favourite through `PUT /me/titles/{kind}/{id}` or clears it) and
+Diary (every watch grouped by its
+local day, this year's totals, a year heatmap from `/me/stats/calendar`, and
+edit and delete; deletes are permanent and ask first), Up next (shows by
+stage from `/me/shows` -- continue watching, haven't watched in a while, not
+started, on hold, dropped -- each with its next episode, progress and a
+one-click "Watched", then an Upcoming timeline from `/me/upcoming` with
+episodes per week; a Movies tab lists released watchlist movies and ones not
+out yet), a show page (`#/show/:id`: a map of every episode, season tabs,
+tick to mark, untick to delete after asking, "watched up to here"), a person page (`#/person/:id`
+from `/people/:id`: photo, born/died, biography, IMDb link; credits, their charted titles and
+what you've seen and bookmarked of their work; the titles of theirs that charted; and the
+filmography by department with a Coming up list, film/series filter, newest/popular/top-rated
+sort and appearances as themselves hidden by default; title pages link their cast and crew
+here, and so do Stats' people) and Stats (one year at a
+time from `/me/stats/year` and `/me/stats/ratings`: watches, hours, titles and
+streaks; watches per month, weekday and hour; your rating spread and how far
+you sit from TMDB, IMDb and RT, overall and per title; genres, decades,
+countries and languages; most watched; where you watched; and people and spend
+once there is data for them). Search (⌘K / Ctrl K
+or `/`) keeps three result lists apart: titles with chart data (`/api/v1/search`,
+with when they last charted), all of TMDB (`/me/titles/search`, for logging
+anything) and people (`/me/people/search`, opening their person page); a pasted IMDb ID or an IMDb, TMDB or Netflix link resolves through
+`/titles/lookup`. ↵ opens, ⌘/Ctrl ↵ logs a watch, ⇧ ↵ toggles the watchlist.
+Watchlist toggles and "Log a watch" write through `/api/v1/me`. The log
+dialog takes the time to the minute, day, month or year; a rating, tags and
+notes; and where you watched, which opens that place's fields: a cinema
+(searched in `/me/venues`, closed and demolished ones included after open
+ones, or added there), its screen, seat, screening type,
+premium formats (`/me/formats`, with their logos) and tickets with fees and snacks in one
+currency, or "covered by" one of your cinema subscriptions (picked for you at
+the plan's chain) with the ticket's face value; a streaming service and plan, with a price for rentals and
+purchases; a physical-media watch's disc (4K UHD Blu-ray, Blu-ray or DVD, with
+their logos; or VHS, a file or a film print), its label (Criterion, Arrow Video,
+Kino Lorber… with logos) and edition; a TV channel. Picture and sound
+(3D, resolution, HDR, audio, languages, aspect ratios, screen size) are
+optional and folded away. A watch at a cinema is entered and filed in the
+cinema's time zone. Discover (`#/discover`, for the top bar's country) has
+eight tabs: new & upcoming on the top bar's service (`/titles/new` and
+`/titles/upcoming`, by day), the episode calendar (`/calendar/:country`,
+your shows marked), leaderboards (`/leaderboards` for the service, the
+country or the world), the Netflix Top 10 (global and country weeks with
+views, and the all-time most popular), trends (`/analytics/genres`,
+`decay`, `release-lag`, `origins`), hidden gems (the best 200 from `/discover/:country/hidden-gems`,
+filtered in the browser by kind, IMDb rating and service, hiding what you've
+seen, with per-service and genre tallies), popular elsewhere (where each
+title charts abroad and any rent or buy offers here) and which services to
+pay for (`/rotation` with the services you pay for, a preference, so the
+advice is keep, pause or add; each score broken into chart points, shows with
+new episodes, arrivals and top-rated titles). Offers are grouped into the
+service you'd pay for using the provider ids the rotation lists per service.
+Settings (`#/settings`, from the account menu) holds the
+account (sign out), preferences saved to the account (default charts for a new
+device, currency, screen unit, when a show counts as not watched in a while),
+the theme for this device (dark, light or match the system), a password
+change, every signed-in session with sign out per device or everywhere
+else, and your cinema subscriptions (`/me/subscriptions`: AMC Stubs A-List,
+Regal Unlimited, ODEON Limitless… with price per month or year, chain and
+dates). Stats weighs each plan's covered tickets at face value against what it
+cost, month by month with the break-even, and says what a plan would have had
+to cost to pay off at the chains you buy tickets from
+(`/me/subscriptions/savings`).
+
+```bash
+make dev-ui      # admin console at http://localhost:5173/admin/
+make dev-app     # user app at http://localhost:5174
+(cd web && npm run build) && (cd app && npm run build)   # production builds
+```
+
+The Docker image builds both. `UI_SERVE_STATIC=false` turns static serving
+off (for example when a reverse proxy serves the files).
 
 ## Migrations
 

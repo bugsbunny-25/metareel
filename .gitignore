@@ -25,5 +25,7 @@ vendor/
 
 # Frontend
 web/node_modules/
+app/node_modules/
+app/dist/
 web/dist/
 !web/dist/.gitkeep

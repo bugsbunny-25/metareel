@@ -47,6 +47,8 @@ var taskTypeInfo = map[string]TaskTypeInfo{
 		Description: "Stores the episodes (air dates, names, finales) of the TV shows metareel knows from TMDB: recent, upcoming and latest seasons; airing shows daily, returning shows weekly, ended shows monthly (needs TMDB_API_KEY). Force refetches every show. Feeds the episode calendar and release patterns."},
 	tasks.TypeTMDBCredits: {Label: "TMDB credits",
 		Description: "Stores the top-billed cast and key crew (directors, writers, creators, composers, cinematographers) of the titles metareel knows from TMDB, new titles first, each again after 60 days, at most 1,000 a run (needs TMDB_API_KEY). Force refetches every title. Feeds title credits, people and people analytics."},
+	tasks.TypeVenuesImport: {Label: "Cinema import (OpenStreetMap)",
+		Description: "Imports every cinema OpenStreetMap has in each country (VENUES_IMPORT_COUNTRIES, or countries given to the run) as a venue to pick when logging a watch, with its address, coordinates and time zone. Matches venues entered before by OSM ID, Wikidata ID or the same name nearby; re-runs only fill empty fields and never delete. Run it by hand now and then; data © OpenStreetMap contributors (ODbL)."},
 	tasks.TypeMappingRefresh: {Label: "Mapping refresh",
 		Description: "Follows up mapping changes (queued automatically): shares mappings over links, fetches TMDB details and Wikidata IDs of the TMDB titles now mapped to, fills mapped titles' missing IMDb / Wikidata IDs and remaps season numbers. Run by hand, it shares mappings and fills IDs."},
 	tasks.TypeMaintenance: {Label: "Maintenance",
@@ -69,6 +71,8 @@ type RunJobInput struct {
 	TitleIDs []int64 `json:"title_ids,omitempty"` // titles.enrich (FlixPatrol title IDs) or netflix.titles.match (Netflix title IDs)
 	Force    bool    `json:"force,omitempty"`     // imports: re-import unchanged files
 	URL      string  `json:"url,omitempty"`       // netflix.engagement.import: a report to add
+	// venues.import: countries (ISO 3166-1 alpha-2) to import instead of the configured ones.
+	Countries []string `json:"countries,omitempty"`
 }
 
 // RunJob enqueues an ad-hoc run of a non-FlixPatrol job type.
@@ -88,10 +92,25 @@ func (s *TaskScheduleAdminService) RunJob(ctx context.Context, taskType string, 
 			return nil, err
 		}
 	}
+	if len(in.Countries) > 0 {
+		if taskType != tasks.TypeVenuesImport {
+			return nil, &ValidationError{Message: "countries only apply to venues.import"}
+		}
+		if len(in.Countries) > 30 {
+			return nil, &ValidationError{Message: "at most 30 countries"}
+		}
+		for i, cc := range in.Countries {
+			cc = strings.ToUpper(strings.TrimSpace(cc))
+			if !isCountryCode(cc) {
+				return nil, &ValidationError{Message: fmt.Sprintf("country %q must be an ISO 3166-1 alpha-2 code, e.g. IN", in.Countries[i])}
+			}
+			in.Countries[i] = cc
+		}
+	}
 	if len(in.TitleIDs) > 500 {
 		return nil, &ValidationError{Message: "at most 500 title_ids"}
 	}
-	task, err := tasks.NewJobTask(taskType, tasks.JobPayload{TitleIDs: in.TitleIDs, Force: in.Force, URL: in.URL, RequestDelaySeconds: 5, Reason: "started from the admin API"})
+	task, err := tasks.NewJobTask(taskType, tasks.JobPayload{TitleIDs: in.TitleIDs, Force: in.Force, URL: in.URL, Countries: in.Countries, RequestDelaySeconds: 5, Reason: "started from the admin API"})
 	if err != nil {
 		return nil, &ValidationError{Message: err.Error()}
 	}
@@ -245,4 +264,8 @@ func (s *TaskScheduleAdminService) freeFailedDuplicate(task *asynq.Task) (bool, 
 		}
 	}
 	return freed, nil
+}
+
+func isCountryCode(s string) bool {
+	return len(s) == 2 && s[0] >= 'A' && s[0] <= 'Z' && s[1] >= 'A' && s[1] <= 'Z'
 }

@@ -183,6 +183,13 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	engagementRepo := repository.NewEngagementRepository(readDB)
 	episodesRepo := repository.NewEpisodesRepository(readDB)
 	creditsRepo := repository.NewCreditsRepository(readDB)
+	// Tracking writes go through the single writer connection; its list and
+	// diary reads use the read-only pool, like the other read services.
+	trackingWrite := repository.NewTrackingRepository(db)
+	trackingRead := repository.NewTrackingRepository(readDB)
+	trackedTitles := service.NewTrackedTitleService(log, client.NewTMDB(httpClient, cfg.TMDB.APIKey), trackingWrite, trackingRead)
+	tracking := service.NewTrackingService(log, trackingWrite, trackingRead, trackedTitles)
+
 	h := &handler.Handler{
 		Top10:      top10Read,
 		AdminTasks: taskScheduleAdmin,
@@ -212,11 +219,12 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		History:        service.NewHistoryService(historyRepo, readMetadataRepo),
 		Calendar:       service.NewCalendarService(episodesRepo),
 		Breakouts:      breakouts,
-		Credits:        service.NewCreditsService(creditsRepo, readMetadataRepo),
+		Credits:        service.NewCreditsService(creditsRepo, readMetadataRepo).WithTMDB(client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
 		Discover:       service.NewDiscoverService(repository.NewDiscoverRepository(readDB), analyticsRepo, episodesRepo, readMetadataRepo),
 		ReleaseWindows: service.NewReleaseWindowsService(repository.NewReleaseDatesRepository(readDB), readMetadataRepo, analyticsRepo),
 		Timeline:       service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),
 		Search:         service.NewSearchService(repository.NewSearchRepository(readDB)),
+		Tracking:       tracking,
 		Webhooks:       webhooks,
 		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,
 			taskScheduleRepo, taskBootstrap.Maintenance).WithMapping(repository.NewMappingRepository(db)),

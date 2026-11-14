@@ -13,6 +13,8 @@
   import Schedules from './pages/Schedules.svelte'
   import Runs from './pages/Runs.svelte'
   import Settings from './pages/Settings.svelte'
+  import WatchFormats from './pages/WatchFormats.svelte'
+  import Cinemas from './pages/Cinemas.svelte'
   import Insights from './pages/Insights.svelte'
   import DataHealth from './pages/DataHealth.svelte'
   import MappingHub from './pages/MappingHub.svelte'
@@ -34,6 +36,8 @@
     { path: '/schedules', label: 'Schedules', icon: 'clock', page: Schedules },
     { path: '/runs', label: 'Job runs', icon: 'list', page: Runs, badge: 'running' },
     { section: 'System' },
+    { path: '/watch-formats', label: 'Premium formats', icon: 'sparkles', page: WatchFormats },
+    { path: '/cinemas', label: 'Cinemas', icon: 'film', page: Cinemas },
     { path: '/settings', label: 'Settings & API keys', icon: 'settings', page: Settings },
     { path: '/users', label: 'Users & sessions', icon: 'users', page: Users },
   ]

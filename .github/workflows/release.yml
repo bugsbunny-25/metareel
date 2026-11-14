@@ -125,7 +125,7 @@ jobs:
       IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
     steps:
       - name: Download SBOM
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: sbom-cyclonedx
 

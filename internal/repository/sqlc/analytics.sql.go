@@ -323,7 +323,8 @@ SELECT CAST(r.ranked_on AS TEXT) AS ranked_on,
        t.name,
        t.kind,
        t.tmdb_id,
-       m.imdb_id
+       m.imdb_id,
+       m.poster_path
 FROM rankings r
 JOIN titles t ON t.id = r.title_id
 LEFT JOIN tmdb_titles m ON m.tmdb_kind = CASE t.kind WHEN 'tv_show' THEN 'tv' ELSE 'movie' END AND m.tmdb_id = t.tmdb_id
@@ -357,6 +358,7 @@ type ListChartEntriesRow struct {
 	Kind              string         `json:"kind"`
 	TmdbID            sql.NullString `json:"tmdb_id"`
 	ImdbID            sql.NullString `json:"imdb_id"`
+	PosterPath        sql.NullString `json:"poster_path"`
 }
 
 // Chart entries over a date range, for history, movers, leaderboards and
@@ -390,6 +392,7 @@ func (q *Queries) ListChartEntries(ctx context.Context, arg ListChartEntriesPara
 			&i.Kind,
 			&i.TmdbID,
 			&i.ImdbID,
+			&i.PosterPath,
 		); err != nil {
 			return nil, err
 		}
@@ -466,7 +469,7 @@ func (q *Queries) ListNetflixCountriesByTmdb(ctx context.Context, arg ListNetfli
 }
 
 const listNetflixCountryWeek = `-- name: ListNetflixCountryWeek :many
-SELECT c.country, c.week, c.category, c.weekly_rank, c.netflix_title_id, c.show_title, c.season_title, c.cumulative_weeks, n.tmdb_id, tm.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
+SELECT c.country, c.week, c.category, c.weekly_rank, c.netflix_title_id, c.show_title, c.season_title, c.cumulative_weeks, n.tmdb_id, tm.imdb_id, tm.poster_path, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_top10_countries c
 JOIN netflix_titles n ON n.id = c.netflix_title_id
 LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND tm.tmdb_id = n.tmdb_id
@@ -493,6 +496,7 @@ type ListNetflixCountryWeekRow struct {
 	CumulativeWeeks sql.NullInt64  `json:"cumulative_weeks"`
 	TmdbID          sql.NullString `json:"tmdb_id"`
 	ImdbID          sql.NullString `json:"imdb_id"`
+	PosterPath      sql.NullString `json:"poster_path"`
 	Kind            string         `json:"kind"`
 	SeasonNumber    sql.NullInt64  `json:"season_number"`
 	SeasonSource    sql.NullString `json:"season_source"`
@@ -518,6 +522,7 @@ func (q *Queries) ListNetflixCountryWeek(ctx context.Context, arg ListNetflixCou
 			&i.CumulativeWeeks,
 			&i.TmdbID,
 			&i.ImdbID,
+			&i.PosterPath,
 			&i.Kind,
 			&i.SeasonNumber,
 			&i.SeasonSource,
@@ -659,7 +664,7 @@ func (q *Queries) ListNetflixGlobalRange(ctx context.Context, arg ListNetflixGlo
 }
 
 const listNetflixGlobalWeek = `-- name: ListNetflixGlobalWeek :many
-SELECT g.week, g.category, g.weekly_rank, g.netflix_title_id, g.show_title, g.season_title, g.weekly_hours_viewed, g.runtime_hours, g.weekly_views, g.cumulative_weeks, n.tmdb_id, tm.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
+SELECT g.week, g.category, g.weekly_rank, g.netflix_title_id, g.show_title, g.season_title, g.weekly_hours_viewed, g.runtime_hours, g.weekly_views, g.cumulative_weeks, n.tmdb_id, tm.imdb_id, tm.poster_path, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_top10_global g
 JOIN netflix_titles n ON n.id = g.netflix_title_id
 LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND tm.tmdb_id = n.tmdb_id
@@ -687,6 +692,7 @@ type ListNetflixGlobalWeekRow struct {
 	CumulativeWeeks   sql.NullInt64   `json:"cumulative_weeks"`
 	TmdbID            sql.NullString  `json:"tmdb_id"`
 	ImdbID            sql.NullString  `json:"imdb_id"`
+	PosterPath        sql.NullString  `json:"poster_path"`
 	Kind              string          `json:"kind"`
 	SeasonNumber      sql.NullInt64   `json:"season_number"`
 	SeasonSource      sql.NullString  `json:"season_source"`
@@ -714,6 +720,7 @@ func (q *Queries) ListNetflixGlobalWeek(ctx context.Context, arg ListNetflixGlob
 			&i.CumulativeWeeks,
 			&i.TmdbID,
 			&i.ImdbID,
+			&i.PosterPath,
 			&i.Kind,
 			&i.SeasonNumber,
 			&i.SeasonSource,
@@ -732,7 +739,7 @@ func (q *Queries) ListNetflixGlobalWeek(ctx context.Context, arg ListNetflixGlob
 }
 
 const listNetflixMostPopular = `-- name: ListNetflixMostPopular :many
-SELECT p.category, p.rank, p.netflix_title_id, p.show_title, p.season_title, p.hours_viewed_91d, p.runtime_hours, p.views_91d, n.tmdb_id, tm.imdb_id, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
+SELECT p.category, p.rank, p.netflix_title_id, p.show_title, p.season_title, p.hours_viewed_91d, p.runtime_hours, p.views_91d, n.tmdb_id, tm.imdb_id, tm.poster_path, CAST(CASE n.tmdb_kind WHEN 'tv' THEN 'tv_show' WHEN 'movie' THEN 'movie' ELSE n.kind END AS TEXT) AS kind, s.season_number, s.season_source
 FROM netflix_most_popular p
 JOIN netflix_titles n ON n.id = p.netflix_title_id
 LEFT JOIN tmdb_titles tm ON tm.tmdb_kind = n.tmdb_kind AND tm.tmdb_id = n.tmdb_id
@@ -752,6 +759,7 @@ type ListNetflixMostPopularRow struct {
 	Views91d       sql.NullInt64   `json:"views_91d"`
 	TmdbID         sql.NullString  `json:"tmdb_id"`
 	ImdbID         sql.NullString  `json:"imdb_id"`
+	PosterPath     sql.NullString  `json:"poster_path"`
 	Kind           string          `json:"kind"`
 	SeasonNumber   sql.NullInt64   `json:"season_number"`
 	SeasonSource   sql.NullString  `json:"season_source"`
@@ -777,6 +785,7 @@ func (q *Queries) ListNetflixMostPopular(ctx context.Context, category string) (
 			&i.Views91d,
 			&i.TmdbID,
 			&i.ImdbID,
+			&i.PosterPath,
 			&i.Kind,
 			&i.SeasonNumber,
 			&i.SeasonSource,

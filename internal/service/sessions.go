@@ -359,3 +359,62 @@ var sessionTokenSalt = []byte("metareel/session/v1")
 func hashSessionToken(token string) string {
 	return hashToken(token, sessionTokenSalt)
 }
+
+// CheckPassword verifies a signed-in user's password without starting a
+// session (for changing it). It shares the login rate limit, so it can't be
+// used to guess a password faster than signing in.
+func (s *SessionService) CheckPassword(ctx context.Context, username, password, ip string) error {
+	if password == "" || len(password) > maxPasswordLen {
+		return ErrInvalidLogin
+	}
+	if !s.allowLogin(ip, username) {
+		return ErrLoginRateLimited
+	}
+	user, err := s.repo.GetUserByUsername(ctx, username)
+	if err != nil {
+		return err
+	}
+	release, err := acquirePasswordSlot(ctx)
+	if err != nil {
+		return err
+	}
+	ok, err := verifyPassword(password, user.PasswordHash)
+	release()
+	if err != nil || !ok {
+		s.loginFailed(username)
+		return ErrInvalidLogin
+	}
+	return nil
+}
+
+// ListForUser returns one user's active sessions, most recently used first,
+// marking current (the caller's own).
+func (s *SessionService) ListForUser(ctx context.Context, userID, current int64) ([]SessionResponse, error) {
+	all, err := s.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SessionResponse, 0, 4)
+	for _, r := range all {
+		if r.UserID == userID {
+			r.Current = r.ID == current
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+// RevokeForUser ends one of a user's own sessions; ErrSessionNotFound when
+// the id is not theirs, so nobody can end someone else's.
+func (s *SessionService) RevokeForUser(ctx context.Context, userID, id int64) error {
+	mine, err := s.ListForUser(ctx, userID, 0)
+	if err != nil {
+		return err
+	}
+	for _, r := range mine {
+		if r.ID == id {
+			return s.Revoke(ctx, id)
+		}
+	}
+	return ErrSessionNotFound
+}

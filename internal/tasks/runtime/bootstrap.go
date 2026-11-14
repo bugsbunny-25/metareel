@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"database/sql"
+	"github.com/ringsaturn/tzf/v2"
 	"log/slog"
 	"time"
 
@@ -111,6 +112,8 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 		Handle(tasks.TypeTMDBEpisodes, taskhandlers.EpisodesJob(service.NewEpisodesRefresher(log, tmdbClient, repository.NewEpisodesRepository(db)))).
 		Handle(tasks.TypeTMDBCredits, taskhandlers.CreditsJob(service.NewCreditsRefresher(log, tmdbClient, repository.NewCreditsRepository(db)))).
 		Handle(tasks.TypeMappingRefresh, taskhandlers.MappingRefreshJob(mapping)).
+		Handle(tasks.TypeVenuesImport, taskhandlers.VenuesImportJob(service.NewVenueImporter(log, client.NewOverpass(cfg.Imports.OverpassURL),
+			repository.NewTrackingRepository(db), timezoneFinder(log), cfg.Imports.VenueCountries).WithHistoric(client.NewWikidataAPI(cfg.HTTP.Timeout)))).
 		Handle(tasks.TypeMaintenance, taskhandlers.MaintenanceJob(maintenance))
 	if deps.Ratings != nil {
 		jobs.Handle(tasks.TypeRatingsPrewarm, taskhandlers.RatingsPrewarmJob(deps.Ratings, flixRepo))
@@ -171,4 +174,15 @@ func logFlareSolverrHealth(log *slog.Logger, fs *client.FlareSolverrClient, cfg 
 		return
 	}
 	log.Info("flixpatrol pages will be fetched via flaresolverr", append(attrs, slog.String("version", version))...)
+}
+
+// timezoneFinder looks up a point's IANA zone from tzf's embedded boundaries;
+// nil (venues imported without a zone) if they fail to load.
+func timezoneFinder(log *slog.Logger) service.TimezoneFinder {
+	f, err := tzf.NewDefaultFinder()
+	if err != nil {
+		log.Warn("time zone lookup unavailable; imported venues get no time zone", slog.Any("error", err))
+		return nil
+	}
+	return f
 }

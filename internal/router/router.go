@@ -52,6 +52,66 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	public := e.Group("/api/v1", h.Authenticate, handler.ETag)
 	registerReadRoutes(public, h)
 
+	// Tracking API: one user's watchlist, statuses, watch log and tags.
+	// Deliberately NOT in registerReadRoutes, which wraps the shared data
+	// routes in ETag: these responses are per-user and must never be cached
+	// or revalidated, so NoStore replaces it. SameOriginWrites is needed
+	// because the session cookie authenticates browser writes here, and
+	// RequireUser refuses API keys, which identify an integration, not a
+	// person.
+	me := e.Group("/api/v1/me", handler.SameOriginWrites, h.Authenticate, h.RequireUser, handler.NoStore)
+	me.GET("/account", h.GetAccount)
+	me.POST("/password", h.ChangePassword)
+	me.DELETE("/sessions", h.RevokeMyOtherSessions)
+	me.DELETE("/sessions/:id", h.RevokeMySession)
+	me.GET("/preferences", h.GetPreferences)
+	me.PUT("/preferences", h.SetPreferences)
+	me.GET("/titles", h.ListTrackedTitles)
+	me.GET("/titles/search", h.SearchTrackedTitles)
+	me.GET("/people/search", h.SearchPeople)
+	me.GET("/titles/:kind/:id", h.GetTrackedTitle)
+	me.PUT("/titles/:kind/:id", h.SetTrackedTitle)
+	me.DELETE("/titles/:kind/:id", h.DeleteTrackedTitle)
+	me.GET("/watchlist", h.GetWatchlist)
+	me.PUT("/watchlist/:kind/:id", h.AddToWatchlist)
+	me.DELETE("/watchlist/:kind/:id", h.RemoveFromWatchlist)
+	me.GET("/watches", h.ListWatches)
+	me.POST("/watches", h.LogWatch)
+	me.GET("/watches/:id", h.GetWatch)
+	me.PUT("/watches/:id", h.UpdateWatch)
+	me.DELETE("/watches/:id", h.DeleteWatch)
+	me.GET("/tags", h.ListWatchTags)
+	me.DELETE("/tags/:id", h.DeleteWatchTag)
+	me.GET("/formats", h.ListTrackingFormats)
+	me.GET("/subscriptions", h.ListSubscriptions)
+	me.POST("/subscriptions", h.CreateSubscription)
+	me.GET("/subscriptions/savings", h.GetSubscriptionSavings)
+	me.PUT("/subscriptions/:id", h.UpdateSubscription)
+	me.DELETE("/subscriptions/:id", h.DeleteSubscription)
+	me.GET("/venues", h.ListVenues)
+	me.POST("/venues", h.CreateVenue)
+	me.GET("/venues/:id", h.GetVenue)
+	me.PUT("/venues/:id", h.UpdateVenue)
+	me.DELETE("/venues/:id", h.DeleteVenue)
+	me.POST("/venues/:id/aliases", h.AddVenueAlias)
+	me.DELETE("/venues/:id/aliases/:alias_id", h.DeleteVenueAlias)
+	me.POST("/venues/:id/screens", h.CreateScreen)
+	me.PUT("/venues/:id/screens/:screen_id", h.UpdateScreen)
+	me.DELETE("/venues/:id/screens/:screen_id", h.DeleteScreen)
+	me.GET("/shows", h.ShowQueue)
+	me.GET("/upcoming", h.Upcoming)
+	me.GET("/shows/:id", h.GetShow)
+	me.POST("/shows/:id/watched", h.MarkEpisodes)
+	me.DELETE("/shows/:id/watched", h.UnmarkEpisodes)
+	me.GET("/up-next", h.UpNext)
+	me.GET("/stats/summary", h.GetStatsSummary)
+	me.GET("/stats/calendar", h.GetStatsCalendar)
+	me.GET("/stats/year", h.GetStatsYear)
+	me.GET("/stats/ratings", h.GetStatsRatings)
+	me.GET("/stats/spend", h.GetStatsSpend)
+	me.GET("/stats/people", h.GetStatsPeople)
+	me.GET("/watchlist/insights", h.GetWatchlistInsights)
+
 	// Admin API and UI. The UI reads the same data through these admin
 	// copies of the public routes, so it needs no API key. With
 	// AUTH_REQUIRE_ADMIN_LOGIN only signed-in admins may use it; without, it
@@ -112,11 +172,29 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	admin.POST("/users/:username/logout", h.LogoutUser)
 	admin.GET("/sessions", h.ListSessions)
 	admin.DELETE("/sessions/:id", h.RevokeSession)
+	admin.GET("/watch-formats", h.ListWatchFormatsAdmin)
+	admin.POST("/watch-formats", h.CreateWatchFormat)
+	admin.PATCH("/watch-formats/:id", h.UpdateWatchFormat)
+	admin.PUT("/watch-formats/:id/logo", h.PutWatchFormatLogo)
+	// Cinemas, for the console's Cinemas page. The same handlers as the /me
+	// routes users add cinemas through while logging; venues are shared data.
+	admin.GET("/venues", h.ListVenues)
+	admin.POST("/venues", h.CreateVenue)
+	admin.GET("/venues/:id", h.GetVenue)
+	admin.PUT("/venues/:id", h.UpdateVenue)
+	admin.DELETE("/venues/:id", h.DeleteVenue)
+	admin.POST("/venues/:id/merge", h.MergeVenue) // admin only: rewrites other users' watches
+	admin.POST("/venues/:id/aliases", h.AddVenueAlias)
+	admin.DELETE("/venues/:id/aliases/:alias_id", h.DeleteVenueAlias)
+	admin.POST("/venues/:id/screens", h.CreateScreen)
+	admin.PUT("/venues/:id/screens/:screen_id", h.UpdateScreen)
+	admin.DELETE("/venues/:id/screens/:screen_id", h.DeleteScreen)
+	admin.DELETE("/watch-formats/:id/logo", h.DeleteWatchFormatLogo)
 	admin.GET("/settings", h.GetSettings)
 	admin.PATCH("/settings", h.PatchSettings)
 
 	if cfg.UI.ServeStatic {
-		registerStatic(e, cfg.UI.StaticDir)
+		registerStatic(e, cfg.UI.StaticDir, cfg.UI.AppStaticDir)
 	}
 }
 
@@ -170,6 +248,9 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/countries", h.GetCountries)
 	g.GET("/providers", h.GetProviders)
 
+	// Premium-format logos: images, served under both mounts so the user app
+	// and the admin console each load them with their own credentials.
+	g.GET("/formats/:slug/logo", h.GetFormatLogo)
 	g.GET("/netflix/top10", h.GetNetflixTop10)
 	g.GET("/netflix/top10/:country", h.GetNetflixTop10)
 	g.GET("/netflix/most-popular", h.GetNetflixMostPopular)
@@ -231,21 +312,44 @@ func registerOpenAPI(e *echo.Echo) {
 	})
 }
 
-// registerStatic serves the built SPA from `dir`.
-// Real asset files (JS, CSS, etc.) are served directly; any other path falls
-// back to index.html so client-side routing works.
-func registerStatic(e *echo.Echo, dir string) {
-	if _, err := os.Stat(dir); err != nil {
-		return
+// registerStatic serves the two single-page apps.
+//
+// The admin console (adminDir, built with base /admin/) lives under /admin:
+// its assets are /admin/assets/..., and any other /admin path loads its
+// index.html (it uses a hash router). The user app (appDir) owns the rest of
+// the site: real files are served as they are and any other path falls back
+// to its index.html. Without a user app build, / redirects to the console so
+// a deployment that only built the admin UI still opens somewhere useful.
+//
+// Paths stay relative to the working directory: echo binds its filesystem
+// root at echo.New(), so c.File never resolves an absolute path.
+func registerStatic(e *echo.Echo, adminDir, appDir string) {
+	adminOK := isDir(adminDir)
+	if adminOK {
+		e.GET("/admin", spa(adminDir))
+		e.GET("/admin/*", spa(adminDir))
 	}
+	switch {
+	case isDir(appDir):
+		e.GET("/*", spa(appDir))
+	case adminOK:
+		e.GET("/", func(c *echo.Context) error { return c.Redirect(http.StatusFound, "/admin/") })
+	}
+}
 
+// spa serves a file from dir when the wildcard names one, else dir/index.html.
+func spa(dir string) echo.HandlerFunc {
 	indexPath := filepath.Join(dir, "index.html")
-
-	e.GET("/*", func(c *echo.Context) error {
+	return func(c *echo.Context) error {
 		filePath := filepath.Join(dir, filepath.Clean("/"+c.Param("*")))
 		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
 			return c.File(filePath)
 		}
 		return c.File(indexPath)
-	})
+	}
+}
+
+func isDir(dir string) bool {
+	info, err := os.Stat(dir)
+	return err == nil && info.IsDir()
 }

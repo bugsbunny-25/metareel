@@ -127,6 +127,39 @@ export const listSessions = () => req('/sessions')
 export const revokeSession = (id) => req(`/sessions/${id}`, { method: 'DELETE' })
 
 // ── Settings & API keys ─────────────────────────────────────────────
+// Premium formats a watch can carry (IMAX, Dolby Cinema, 4DX, 70mm, ...).
+// The admin list includes retired ones; the user-facing list does not.
+export const listWatchFormats = () => req('/watch-formats')
+export const createWatchFormat = (body) => req('/watch-formats', { method: 'POST', body })
+export const updateWatchFormat = (id, body) => req(`/watch-formats/${id}`, { method: 'PATCH', body })
+// ── Cinemas (shared venue data; the same routes users add cinemas through) ──
+export const listVenues = (query) => req('/venues', { query: { limit: 200, ...query } })
+export const getVenue = (id) => req(`/venues/${id}`)
+export const createVenue = (body) => req('/venues', { method: 'POST', body })
+export const updateVenue = (id, body) => req(`/venues/${id}`, { method: 'PUT', body })
+export const deleteVenue = (id) => req(`/venues/${id}`, { method: 'DELETE' })
+// Folds venue id into `into` (watches, screens, former names, outside ids move; id is deleted).
+export const mergeVenue = (id, into) => req(`/venues/${id}/merge`, { method: 'POST', body: { into } })
+export const addVenueAlias = (id, body) => req(`/venues/${id}/aliases`, { method: 'POST', body })
+export const deleteVenueAlias = (id, aliasId) => req(`/venues/${id}/aliases/${aliasId}`, { method: 'DELETE' })
+export const createScreen = (id, body) => req(`/venues/${id}/screens`, { method: 'POST', body })
+export const updateScreen = (id, screenId, body) => req(`/venues/${id}/screens/${screenId}`, { method: 'PUT', body })
+export const deleteScreen = (id, screenId) => req(`/venues/${id}/screens/${screenId}`, { method: 'DELETE' })
+
+export const deleteWatchFormatLogo = (id) => req(`/watch-formats/${id}/logo`, { method: 'DELETE' })
+// The logo goes up as the raw image (req only sends JSON); the server works out its type.
+export async function uploadWatchFormatLogo(id, file) {
+  const res = await fetch(`${BASE}/watch-formats/${id}/logo`, {
+    method: 'PUT', cache: 'no-store', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file,
+  })
+  if (!res.ok) {
+    if (res.status === 401) onUnauthorized()
+    const data = await res.json().catch(() => ({}))
+    throw new ApiError(data.error ?? `Upload failed (HTTP ${res.status})`, res.status)
+  }
+  return res.json()
+}
+
 export const getSettings = () => req('/settings')
 export const updateSettings = (body) => req('/settings', { method: 'PATCH', body })
 export const listApiKeys = () => req('/api-keys')

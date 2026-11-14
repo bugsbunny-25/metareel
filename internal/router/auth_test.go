@@ -33,7 +33,7 @@ func newAuthEnv(t *testing.T) authEnv {
 func newAuthEnvWith(t *testing.T, requireAdminLogin bool) authEnv {
 	t.Helper()
 	ctx := context.Background()
-	db, err := repository.Open("file:" + filepath.Join(t.TempDir(), "test.db") + "?_pragma=foreign_keys(1)")
+	db, err := repository.Open("file:" + filepath.Join(tempDBDir(t), "test.db") + "?_pragma=foreign_keys(1)")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -422,7 +422,9 @@ paths:
         or netflix.titles.match (Netflix title IDs) to those titles and
         ignores their retry backoff; force re-imports unchanged files.
         mapping.refresh is queued automatically after mapping changes; run by
-        hand it first recomputes every linked title's mapping.
+        hand it first recomputes every linked title's mapping. countries limits
+        venues.import (cinemas from OpenStreetMap) to those countries instead of
+        VENUES_IMPORT_COUNTRIES.
       parameters:
         - name: type
           in: path
@@ -438,6 +440,7 @@ paths:
                 title_ids: { type: array, items: { type: integer, format: int64 }, maxItems: 500 }
                 force: { type: boolean }
                 url: { type: string, description: "netflix.engagement.import only: an https report (.xlsx) to add to the list" }
+                countries: { type: array, items: { type: string, example: IN }, maxItems: 30, description: "venues.import only: ISO 3166-1 alpha-2 codes" }
       responses:
         "202":
           description: Enqueued
@@ -1696,6 +1699,459 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PublicApiSettings"
+
+  /api/v1/admin/watch-formats:
+    get:
+      operationId: listWatchFormatsAdmin
+      tags: [Tracking]
+      summary: The premium-format taxonomy, retired formats included
+      description: >
+        The list users pick from leaves retired formats out; this one keeps
+        them, because watches logged with one still carry it.
+      responses:
+        "200":
+          description: Every format, in display order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  formats:
+                    type: array
+                    items: { $ref: "public.yaml#/components/schemas/WatchFormat" }
+    post:
+      operationId: createWatchFormat
+      tags: [Tracking]
+      summary: Add a premium format
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug, label, category]
+              properties:
+                slug:
+                  type: string
+                  description: >
+                    Lowercase words joined by hyphens, e.g. imax-70mm. It
+                    never changes once set, because watches reference it.
+                label: { type: string }
+                category:
+                  type: string
+                  enum: [brand, projection, sound, motion, dimension, disc, label]
+                  description: >
+                    The axis this format sits on. Keeping the axes apart is
+                    what makes "all my 70mm screenings" or "IMAX hours"
+                    answerable, rather than one flat list of names.
+                note: { type: string, nullable: true }
+                sort_order: { type: integer }
+                active: { type: boolean, default: true }
+      responses:
+        "201":
+          description: The new format
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/WatchFormat" }
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: A format with that slug already exists
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/admin/watch-formats/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    patch:
+      operationId: updateWatchFormat
+      tags: [Tracking]
+      summary: Edit or retire a premium format
+      description: >
+        The slug is fixed. A format is retired by setting active to false,
+        never deleted: it stays on every watch that already carries it, and
+        only disappears from the list users pick from.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string }
+                category: { type: string, enum: [brand, projection, sound, motion, dimension, disc, label] }
+                note: { type: string, nullable: true }
+                sort_order: { type: integer }
+                active: { type: boolean }
+                logo_display: { type: string, enum: [original, mono], description: "original colours, or mono: clients draw the logo white" }
+      responses:
+        "200":
+          description: The updated format
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/WatchFormat" }
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/admin/watch-formats/{id}/logo:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      operationId: putWatchFormatLogo
+      tags: [Tracking]
+      summary: Upload or replace a format's logo
+      description: >
+        The body is the image itself, at most 512 KB. Its type is worked out
+        from the bytes, not the Content-Type header: PNG, JPEG, WebP or GIF of
+        at most 4096 pixels a side, or a UTF-8 SVG of drawing elements and
+        plain CSS (Illustrator and Inkscape exports pass), with no script,
+        embedded image, event handler, CSS @-rule or link outside the file.
+        Fully transparent edges of a PNG or single-frame GIF are trimmed (the
+        result is stored as PNG), so a logo on a big empty canvas isn't drawn
+        tiny.
+        The returned format's logo_url carries a content hash, so a new
+        upload is a new URL.
+      requestBody:
+        required: true
+        content:
+          image/png: { schema: { type: string, format: binary } }
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/webp: { schema: { type: string, format: binary } }
+          image/gif: { schema: { type: string, format: binary } }
+          image/svg+xml: { schema: { type: string, format: binary } }
+      responses:
+        "200":
+          description: The format, with its new logo_url (pointing at the admin copy of the logo route)
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/WatchFormat" }
+        "400":
+          description: Not an accepted image, or too large
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: No such format
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      operationId: deleteWatchFormatLogo
+      tags: [Tracking]
+      summary: Remove a format's logo
+      responses:
+        "200":
+          description: The format, without a logo_url
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/WatchFormat" }
+        "404":
+          description: No such format
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/admin/venues:
+    get:
+      operationId: listVenuesAdmin
+      tags: [Tracking]
+      summary: Search cinemas (console Cinemas page)
+      description: >
+        The admin copy of GET /api/v1/me/venues: the same shared venue list
+        users add cinemas to while logging a watch.
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string }, description: Name or city }
+        - { name: country, in: query, required: false, schema: { type: string } }
+        - { name: include_closed, in: query, required: false, schema: { type: boolean } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: Matching cinemas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  venues: { type: array, items: { $ref: "public.yaml#/components/schemas/Venue" } }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    post:
+      operationId: createVenueAdmin
+      tags: [Tracking]
+      summary: Add a cinema
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "public.yaml#/components/schemas/VenueInput" }
+      responses:
+        "201":
+          description: The cinema
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/VenuePage" }
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Already stored under the same outside id
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/admin/venues/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: getVenueAdmin
+      tags: [Tracking]
+      summary: A cinema with its screens, former names, outside ids and watch count
+      responses:
+        "200":
+          description: The cinema
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/VenuePage" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    put:
+      operationId: updateVenueAdmin
+      tags: [Tracking]
+      summary: Correct a cinema
+      description: >
+        Replaces the cinema's optional fields (send them all). Watches keep
+        the name and city they were logged with, so a rename never rewrites
+        a diary. Close a cinema with status closed and closed_on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "public.yaml#/components/schemas/VenueInput" }
+      responses:
+        "200":
+          description: The cinema
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/VenuePage" }
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      operationId: deleteVenueAdmin
+      tags: [Tracking]
+      summary: Delete a cinema nobody has watched at
+      responses:
+        "204": { description: Deleted }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Watches happened here; set status closed instead
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/admin/venues/{id}/merge:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 }, description: The duplicate, deleted by the merge }
+    post:
+      operationId: mergeVenue
+      tags: [Tracking]
+      summary: Merge a duplicate cinema into the one kept
+      description: >
+        Admin only (it rewrites other users' watches). In one transaction: the
+        duplicate's watches, screens, former names and outside ids
+        (venue_refs; one the kept venue already has of that kind is dropped)
+        move to `into`, venues marked as replaced by it point at `into`, its
+        name becomes a former name of `into` (closing on its closed_on), it
+        fills `into`'s empty fields, and it is deleted. Watches keep the name
+        and city they were logged with. Returns the kept venue as
+        GET /venues/{id} does, plus `merged` counts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [into]
+              properties:
+                into: { type: integer, format: int64, description: The cinema to keep }
+      responses:
+        "200":
+          description: The kept cinema
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  venue: { type: object }
+                  screens: { type: array, items: { type: object } }
+                  aliases: { type: array, items: { type: object } }
+                  refs: { type: array, items: { type: object } }
+                  watch_count: { type: integer }
+                  merged:
+                    type: object
+                    properties:
+                      watches: { type: integer }
+                      screens: { type: integer }
+                      aliases: { type: integer }
+                      refs: { type: integer }
+                      filled: { type: boolean }
+        "400": { description: "into missing, or the same cinema" }
+        "404": { description: Either cinema doesn't exist }
+  /api/v1/admin/venues/{id}/aliases:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: addVenueAliasAdmin
+      tags: [Tracking]
+      summary: Record a former name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                from_date: { type: string, format: date }
+                to_date: { type: string, format: date }
+      responses:
+        "201":
+          description: The former name
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/VenueAlias" }
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/admin/venues/{id}/aliases/{alias_id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: alias_id, in: path, required: true, schema: { type: integer, format: int64 } }
+    delete:
+      operationId: deleteVenueAliasAdmin
+      tags: [Tracking]
+      summary: Remove a former name
+      responses:
+        "204": { description: Removed }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/admin/venues/{id}/screens:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: createScreenAdmin
+      tags: [Tracking]
+      summary: Add a screen
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "public.yaml#/components/schemas/ScreenInput" }
+      responses:
+        "201":
+          description: The screen
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/VenueScreen" }
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/admin/venues/{id}/screens/{screen_id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: screen_id, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      operationId: updateScreenAdmin
+      tags: [Tracking]
+      summary: Correct a screen (replaces its optional fields)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "public.yaml#/components/schemas/ScreenInput" }
+      responses:
+        "200":
+          description: The screen
+          content:
+            application/json:
+              schema: { $ref: "public.yaml#/components/schemas/VenueScreen" }
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      operationId: deleteScreenAdmin
+      tags: [Tracking]
+      summary: Delete a screen
+      description: Watches logged in it keep their screen size and shape but lose the link.
+      responses:
+        "204": { description: Deleted }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
 components:
   securitySchemes:

@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/air-verse/air v1.67.4
-	github.com/alicebob/miniredis/v2 v2.39.0
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/go-delve/delve v1.27.2
 	github.com/hibiken/asynqmon v0.7.2
 )

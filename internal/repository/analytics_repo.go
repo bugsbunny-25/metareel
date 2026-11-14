@@ -34,6 +34,7 @@ type ChartEntryRow struct {
 	Kind         string // movie | tv_show
 	TmdbID       *string
 	ImdbID       *string
+	PosterPath   *string // TMDB path (e.g. /abc.jpg); nil until the title has TMDB metadata
 }
 
 // ChartEntryFilter narrows ChartEntries; empty strings match all.
@@ -55,6 +56,7 @@ func (r *AnalyticsRepository) ChartEntries(ctx context.Context, f ChartEntryFilt
 			Date: dateText(row.RankedOn), Country: row.Country, Provider: row.StreamingProvider, Category: row.Category,
 			Rank: row.Rank, SeasonNumber: nullInt64Ptr(row.SeasonNumber), SeasonSource: nullStringPtr(row.SeasonSource), TitleID: row.TitleID, Slug: row.Slug,
 			Name: row.Name, Kind: row.Kind, TmdbID: nullStringPtr(row.TmdbID), ImdbID: nullStringPtr(row.ImdbID),
+			PosterPath: emptyNil(row.PosterPath.String),
 		})
 	}
 	return out, nil
@@ -172,6 +174,7 @@ type NetflixWeekRow struct {
 	Kind            string   `json:"kind,omitempty"`
 	TmdbID          *string  `json:"tmdb_id,omitempty"`
 	IMDbID          *string  `json:"imdb_id,omitempty"`
+	PosterPath      *string  `json:"poster_path,omitempty"` // TMDB poster of the mapped title
 	NetflixTitleID  int64    `json:"netflix_title_id,omitempty"`
 }
 
@@ -186,7 +189,7 @@ func (r *AnalyticsRepository) NetflixGlobalWeek(ctx context.Context, week, categ
 			SeasonTitle: nullStringPtr(row.SeasonTitle), SeasonNumber: nullInt64Ptr(row.SeasonNumber), SeasonSource: nullStringPtr(row.SeasonSource),
 			HoursViewed: nullInt64Ptr(row.WeeklyHoursViewed), RuntimeHours: nullFloatPtr(row.RuntimeHours),
 			Views: nullInt64Ptr(row.WeeklyViews), CumulativeWeeks: nullInt64Ptr(row.CumulativeWeeks), Kind: row.Kind,
-			TmdbID: nullStringPtr(row.TmdbID), IMDbID: nullStringPtr(row.ImdbID), NetflixTitleID: row.NetflixTitleID})
+			TmdbID: nullStringPtr(row.TmdbID), IMDbID: nullStringPtr(row.ImdbID), PosterPath: nullStringPtr(row.PosterPath), NetflixTitleID: row.NetflixTitleID})
 	}
 	return out, nil
 }
@@ -201,7 +204,7 @@ func (r *AnalyticsRepository) NetflixCountryWeek(ctx context.Context, country, w
 		out = append(out, NetflixWeekRow{Week: row.Week, Country: row.Country, Category: row.Category, Rank: row.WeeklyRank,
 			ShowTitle: row.ShowTitle, SeasonTitle: nullStringPtr(row.SeasonTitle), SeasonNumber: nullInt64Ptr(row.SeasonNumber),
 			SeasonSource: nullStringPtr(row.SeasonSource), CumulativeWeeks: nullInt64Ptr(row.CumulativeWeeks),
-			Kind: row.Kind, TmdbID: nullStringPtr(row.TmdbID), IMDbID: nullStringPtr(row.ImdbID), NetflixTitleID: row.NetflixTitleID})
+			Kind: row.Kind, TmdbID: nullStringPtr(row.TmdbID), IMDbID: nullStringPtr(row.ImdbID), PosterPath: nullStringPtr(row.PosterPath), NetflixTitleID: row.NetflixTitleID})
 	}
 	return out, nil
 }
@@ -228,6 +231,7 @@ type NetflixPopularRow struct {
 	Kind           string   `json:"kind"`
 	TmdbID         *string  `json:"tmdb_id"`
 	IMDbID         *string  `json:"imdb_id"`
+	PosterPath     *string  `json:"poster_path"` // TMDB poster of the mapped title
 	NetflixTitleID int64    `json:"netflix_title_id"`
 }
 
@@ -241,7 +245,7 @@ func (r *AnalyticsRepository) NetflixMostPopular(ctx context.Context, category s
 		out = append(out, NetflixPopularRow{Category: row.Category, Rank: row.Rank, ShowTitle: row.ShowTitle,
 			SeasonTitle: nullStringPtr(row.SeasonTitle), SeasonNumber: nullInt64Ptr(row.SeasonNumber), SeasonSource: nullStringPtr(row.SeasonSource),
 			HoursViewed: nullInt64Ptr(row.HoursViewed91d), RuntimeHours: nullFloatPtr(row.RuntimeHours), Views: nullInt64Ptr(row.Views91d),
-			Kind: row.Kind, TmdbID: nullStringPtr(row.TmdbID), IMDbID: nullStringPtr(row.ImdbID), NetflixTitleID: row.NetflixTitleID})
+			Kind: row.Kind, TmdbID: nullStringPtr(row.TmdbID), IMDbID: nullStringPtr(row.ImdbID), PosterPath: nullStringPtr(row.PosterPath), NetflixTitleID: row.NetflixTitleID})
 	}
 	return out, nil
 }

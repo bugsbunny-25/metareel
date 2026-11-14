@@ -35,7 +35,7 @@ func writeData(c *echo.Context, out any, err error) error {
 		return c.JSON(http.StatusNotFound, map[string]any{"error": err.Error()})
 	case errors.Is(err, sql.ErrNoRows):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": "not found"})
-	case errors.Is(err, service.ErrRatingsUnavailable), errors.Is(err, service.ErrUpstream):
+	case errors.Is(err, service.ErrRatingsUnavailable), errors.Is(err, service.ErrUpstream), errors.Is(err, service.ErrPersonUnavailable), errors.Is(err, service.ErrCreditsUnavailable):
 		return c.JSON(http.StatusBadGateway, map[string]any{"error": err.Error()})
 	default:
 		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
@@ -617,6 +617,19 @@ func (h *Handler) GetTitleCredits(c *echo.Context) error {
 	}
 	out, err := h.Credits.TitleCredits(c.Request().Context(), ref)
 	return writeData(c, out, err)
+}
+
+// SearchPeople: GET /api/v1/me/people/search?q=&limit=
+func (h *Handler) SearchPeople(c *echo.Context) error {
+	limit, err := optionalInt(c.QueryParam("limit"), "limit")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Credits.SearchPeople(c.Request().Context(), c.QueryParam("q"), int(limit))
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"results": out})
 }
 
 // GetPerson: GET /api/v1/people/{id}

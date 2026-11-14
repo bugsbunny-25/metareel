@@ -1515,8 +1515,12 @@ paths:
         (screenplay, writer, story, novel, teleplay, characters), creators, music
         composers and cinematographers, from TMDB (movie credits; for TV the
         aggregate credits of every season, with `episodes`, and the show's
-        creators). Stored by the tmdb.credits.refresh job; empty until it has
-        fetched the title.
+        creators). Stored by the tmdb.credits.refresh job; a title without
+        stored credits (not reached by the job yet, or not one metareel knows)
+        gets the same selection live from TMDB, cached for 12 hours. `source`
+        says which: stored, tmdb or none (nothing stored and TMDB had nothing or
+        failed). 404 when neither metareel nor TMDB knows the title; 502 when
+        TMDB fails for a title metareel doesn't know.
       parameters:
         - $ref: "#/components/parameters/TmdbKindParam"
         - $ref: "#/components/parameters/TmdbIDParam"
@@ -1528,16 +1532,28 @@ paths:
               schema: { $ref: "#/components/schemas/TitleCreditsResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: TMDB failed for a title metareel doesn't know
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/people/{id}:
     get:
       operationId: getPerson
-      summary: A person (TMDB) and their titles metareel knows, with each title's chart record
+      summary: A person's TMDB profile and filmography, and their titles metareel knows with each title's chart record
       description: >-
-        The person's credits on the titles metareel knows (`roles`: "as
-        <character>" for cast, else the job) with each title's FlixPatrol
-        record over every stored chart (points, days, best rank, countries,
-        first and last day), most charted first.
+        `titles` are the person's credits on the titles metareel knows
+        (`roles`: "as <character>" for cast, else the job) with each title's
+        FlixPatrol record over every stored chart (points, days, best rank,
+        countries, first and last day), most charted first. `details` (birth,
+        death, biography, IMDb ID, ...) and `filmography` (every movie and TV
+        credit, one entry per title, newest first with titles not dated yet
+        leading) come live from TMDB and are cached in memory for 12 hours;
+        `details_status` says why they are missing (`not_configured`: no TMDB
+        key, `unavailable`: TMDB failed, `not_found`). A person metareel has no
+        credits for is still returned when TMDB knows them (`titles` empty).
+        502 when TMDB fails for such a person.
       parameters:
         - name: id
           in: path
@@ -1552,6 +1568,11 @@ paths:
               schema: { $ref: "#/components/schemas/PersonResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: TMDB failed for a person metareel has no credits for
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/titles/tmdb/{kind}/{id}/releases:
     get:
@@ -1733,6 +1754,37 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/formats/{slug}/logo:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string }, description: "The format's slug, e.g. imax" }
+      - { name: v, in: query, required: false, schema: { type: string }, description: "The logo version from logo_url; with the current one the response is cacheable for a year" }
+    get:
+      operationId: getFormatLogo
+      tags: [Tracking]
+      summary: A premium format's logo
+      description: >
+        The image an admin uploaded (PNG, JPEG, WebP, GIF or SVG), served
+        with a sandboxing Content-Security-Policy and nosniff. Use the
+        logo_url a format carries rather than building the URL: it includes
+        the version, and the immutable caching that comes with it. Logos are
+        often white on transparent, so show them on a dark background. The
+        same route is under /api/v1/admin for the console.
+      responses:
+        "200":
+          description: The image
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            image/gif: { schema: { type: string, format: binary } }
+            image/svg+xml: { schema: { type: string, format: binary } }
+        "401":
+          description: No API key or session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/netflix/top10:
     get:
       operationId: getNetflixGlobalTop10
@@ -1813,6 +1865,7 @@ paths:
                         kind: { type: string }
                         tmdb_id: { type: string, nullable: true }
                         imdb_id: { type: string, nullable: true }
+                        poster_path: { type: string, nullable: true, description: TMDB poster of the mapped title }
                         netflix_title_id: { type: integer, format: int64 }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -2137,6 +2190,1324 @@ paths:
                 $ref: "#/components/schemas/AnalyticsResult"
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /api/v1/me/people/search:
+    get:
+      operationId: searchPeople
+      tags: [Tracking]
+      summary: Search TMDB for a person
+      description: >
+        Actors and crew by name, most popular first, to open their page
+        (/people/{id}). Needs a signed-in user and a TMDB key on the server.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 100 }, description: A name }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 8, maximum: 20 } }
+      responses:
+        "200":
+          description: People
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        person_id: { type: integer }
+                        name: { type: string }
+                        profile_path: { type: string, nullable: true }
+                        known_for: { type: string, nullable: true, description: "TMDB department, e.g. Acting" }
+                        known_titles: { type: array, items: { type: string }, description: Up to three titles TMDB shows them for }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "502":
+          description: TMDB is unavailable or no TMDB key is configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/me/titles/search:
+    get:
+      operationId: searchTrackedTitles
+      tags: [Tracking]
+      summary: Search TMDB for a movie or show to track
+      description: >
+        Searches TMDB directly, so anything on TMDB can be tracked, not only
+        the titles metareel knows from a chart. Needs a signed-in user and a
+        TMDB key on the server.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string }, description: Search text }
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [movie, tv] }, description: Limit to movies or shows }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 20, maximum: 50 } }
+      responses:
+        "200":
+          description: Search hits, most relevant first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/TitleSearchResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "502":
+          description: TMDB is unavailable or no TMDB key is configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/titles:
+    get:
+      operationId: listTrackedTitles
+      tags: [Tracking]
+      summary: The signed-in user's tracked titles
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: status, in: query, required: false, schema: { $ref: "#/components/schemas/TrackingStatus" } }
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [movie, tv] } }
+        - { name: favorite, in: query, required: false, schema: { type: boolean }, description: Only favourites }
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [position_asc, rating_desc, watched_desc, title_asc] } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, required: false, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: A page of tracked titles
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrackedTitlePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/titles/{kind}/{id}:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [movie, tv] } }
+      - { name: id, in: path, required: true, schema: { type: string }, description: "TMDB ID (numeric)" }
+    get:
+      operationId: getTrackedTitle
+      tags: [Tracking]
+      summary: The user's state for one title, with its TMDB metadata
+      description: >
+        Resolves the title from TMDB and caches its display metadata the first
+        time it is asked for, so later reads need no TMDB call.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Title metadata and the user's state (state is null when they track nothing on it)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrackedTitleResponse" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: setTrackedTitle
+      tags: [Tracking]
+      summary: Set a title's status, favourite flag or watchlist note
+      description: >
+        A rating is not accepted here: a user's rating is the rating on their
+        most recent watch, so ratings are set by logging or editing a watch.
+        Moving a title onto the watchlist puts it at the end of the list.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrackedTitleUpdate" }
+      responses:
+        "200":
+          description: The stored state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrackedTitleResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteTrackedTitle
+      tags: [Tracking]
+      summary: Clear the user's state for a title
+      description: Watches are kept; only the status, favourite flag and watchlist note go.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Cleared }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/watchlist:
+    get:
+      operationId: getWatchlist
+      tags: [Tracking]
+      summary: The user's watchlist, in list order
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [movie, tv] } }
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [position_asc, rating_desc, watched_desc, title_asc] } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, required: false, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: A page of the watchlist
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrackedTitlePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/watchlist/{kind}/{id}:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [movie, tv] } }
+      - { name: id, in: path, required: true, schema: { type: string }, description: "TMDB ID (numeric)" }
+    put:
+      operationId: addToWatchlist
+      tags: [Tracking]
+      summary: Put a title on the watchlist
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                watchlist_note: { type: string, nullable: true }
+      responses:
+        "200":
+          description: The stored state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrackedTitleResponse" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: removeFromWatchlist
+      tags: [Tracking]
+      summary: Take a title off the watchlist
+      description: Keeps any favourite flag and every watch; only the watchlist status goes.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/watches:
+    get:
+      operationId: listWatches
+      tags: [Tracking]
+      summary: The user's watch log (diary), newest day first
+      description: >
+        Paged by cursor: pass the `next_cursor` of a response back as
+        `cursor` for the following page. The last page has no `next_cursor`.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: tmdb_kind, in: query, required: false, schema: { type: string, enum: [movie, tv] } }
+        - { name: tmdb_id, in: query, required: false, schema: { type: string }, description: Only watches of this title }
+        - { name: from, in: query, required: false, schema: { type: string, format: date }, description: "Earliest local day (YYYY-MM-DD)" }
+        - { name: to, in: query, required: false, schema: { type: string, format: date }, description: "Latest local day (YYYY-MM-DD)" }
+        - { name: rated, in: query, required: false, schema: { type: boolean }, description: Only watches that carry a rating }
+        - { name: cursor, in: query, required: false, schema: { type: string }, description: The next_cursor of the previous page }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        "200":
+          description: A page of the diary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiaryPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+    post:
+      operationId: logWatch
+      tags: [Tracking]
+      summary: Log a watch
+      description: >
+        Records one watch. A rewatch is another watch, with its own rating and
+        tags, so this is called again rather than updating the first.
+        Sending the same `client_key` twice returns the watch stored the first
+        time with 200 instead of creating a duplicate, which makes a retried
+        request safe.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WatchInput" }
+      responses:
+        "201":
+          description: The watch that was stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WatchEntry" }
+        "200":
+          description: This client_key was already used; the existing watch is returned unchanged
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WatchEntry" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404":
+          description: TMDB has no such title
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/watches/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: getWatch
+      tags: [Tracking]
+      summary: One of the user's watches
+      description: Another user's watch is reported as missing, not as forbidden, so ids do not leak.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The watch
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WatchEntry" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: updateWatch
+      tags: [Tracking]
+      summary: Replace the contents of a watch
+      description: >
+        The title of a watch cannot be changed; delete it and log another.
+        `tmdb_kind` and `tmdb_id` in the body are ignored.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WatchInput" }
+      responses:
+        "200":
+          description: The updated watch
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WatchEntry" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteWatch
+      tags: [Tracking]
+      summary: Delete a watch
+      description: Permanent, there is no trash. The title's rating and watch count are recomputed.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/tags:
+    get:
+      operationId: listWatchTags
+      tags: [Tracking]
+      summary: The user's tags, with how many watches carry each
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The user's tags, by name
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tags:
+                    type: array
+                    items: { $ref: "#/components/schemas/WatchTag" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/tags/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    delete:
+      operationId: deleteWatchTag
+      tags: [Tracking]
+      summary: Delete a tag and detach it from every watch
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/shows/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string }, description: "TMDB TV show ID (numeric)" }
+      - { name: include_specials, in: query, required: false, schema: { type: boolean, default: false }, description: Count season 0 towards progress }
+    get:
+      operationId: getShow
+      tags: [Tracking]
+      summary: A show with the user's progress through it
+      description: >
+        Caches every season of the show from TMDB the first time it is asked
+        for, so progress can be counted against the whole show rather than
+        the recent seasons the chart jobs keep.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The show, the user's state, their progress and the seasons
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShowPage" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/shows/{id}/watched:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string }, description: "TMDB TV show ID (numeric)" }
+    post:
+      operationId: markEpisodes
+      tags: [Tracking]
+      summary: Mark episodes watched
+      description: >
+        Marks every episode the scope selects that has aired and that the user
+        has not already seen, so marking a season never piles rewatches onto
+        the episodes they have. One time applies to all of them, which is why
+        the precision defaults to a whole day; log episodes one at a time
+        through POST /api/v1/me/watches when the exact times matter.
+        Marking also moves the show between "watching" and "completed"; a
+        status the user chose (dropped, on_hold, not_interested) is left alone.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MarkEpisodesInput" }
+      responses:
+        "200":
+          description: How many were marked, with the show's new progress
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ShowPage"
+                  - type: object
+                    properties:
+                      marked: { type: integer, description: How many episodes were newly marked }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: unmarkEpisodes
+      tags: [Tracking]
+      summary: Unmark episodes
+      description: >
+        Deletes every watch of the episodes the scope selects, permanently.
+        Unlike marking, this covers episodes whether or not they have aired.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: scope, in: query, required: false, schema: { type: string, enum: [episode, season, up_to, all], default: episode } }
+        - { name: season, in: query, required: false, schema: { type: integer }, description: Required for every scope but all }
+        - { name: episode, in: query, required: false, schema: { type: integer }, description: Required for the episode and up_to scopes }
+        - { name: include_specials, in: query, required: false, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: How many watches were removed, with the show's new progress
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ShowPage"
+                  - type: object
+                    properties:
+                      removed: { type: integer, description: How many watches were deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/up-next:
+    get:
+      operationId: upNext
+      tags: [Tracking]
+      summary: The next episode to watch of each show in progress
+      description: >
+        The first aired, unwatched episode of every show the user has started
+        and not finished, most recently aired first. Specials are left out,
+        and rewatching an episode already seen does not move the queue on.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: One episode per show in progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  episodes:
+                    type: array
+                    items: { $ref: "#/components/schemas/UpNextEpisode" }
+                  limit: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/account:
+    get:
+      operationId: getAccount
+      tags: [Account]
+      summary: Your account and where you're signed in
+      description: >
+        The signed-in user and their active sessions, most recently used
+        first; `current` marks the session making the request.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The user and their sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: "#/components/schemas/AccountUser" }
+                  sessions:
+                    type: array
+                    items: { $ref: "#/components/schemas/AccountSession" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/password:
+    post:
+      operationId: changePassword
+      tags: [Account]
+      summary: Change your password
+      description: >
+        Needs the current password (and shares the sign-in rate limit, so it
+        can't be used to guess one). Every other session of the user is
+        ended; the one making the change stays signed in. A wrong current
+        password is a 400, not a 401, so a client does not mistake it for a
+        lost session.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, minLength: 10, description: "At least 10 characters, at most 256 bytes" }
+      responses:
+        "200":
+          description: Changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  other_sessions_ended: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "429": { description: Too many password attempts; try again later }
+
+  /api/v1/me/sessions:
+    delete:
+      operationId: endOtherSessions
+      tags: [Account]
+      summary: Sign out everywhere else
+      description: Ends every session of the user except the one making the request.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: How many sessions ended
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ended: { type: integer }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+
+  /api/v1/me/sessions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    delete:
+      operationId: endSession
+      tags: [Account]
+      summary: Sign one of your other sessions out
+      description: >
+        Only the user's own sessions; any other id is a 404. The current
+        session signs out through POST /api/v1/auth/logout (which also clears
+        the cookie), so its id here is a 400.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Signed out }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/preferences:
+    get:
+      operationId: getPreferences
+      tags: [Account]
+      summary: Your preferences
+      description: >
+        Settings that follow the user to every device. Each is optional; an
+        unset one falls back to the client's default. Device-only choices
+        (the theme) are not stored here.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The preferences, and when they were last saved (absent if never)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preferences: { $ref: "#/components/schemas/Preferences" }
+                  updated_at: { type: string }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+    put:
+      operationId: setPreferences
+      tags: [Account]
+      summary: Replace your preferences
+      description: Replaces them as a whole; a field left out is cleared.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Preferences" }
+      responses:
+        "200":
+          description: The stored preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preferences: { $ref: "#/components/schemas/Preferences" }
+                  updated_at: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+
+  /api/v1/me/shows:
+    get:
+      operationId: showQueue
+      tags: [Tracking]
+      summary: Every show in the library, sorted into stages
+      description: >
+        Each show the user tracks (except ones they are not interested in)
+        with its progress, the next aired episode they have not seen and the
+        next air date, in stage order: watching, stalled, not_started,
+        on_hold, dropped, caught_up. A status the user chose (on hold,
+        dropped) decides the stage; otherwise the episodes do, so a
+        "completed" show with a new episode out is back to watching. Counts
+        leave specials out. Episode lists missing or older than a day are
+        re-fetched from TMDB on the way, up to 12 shows per request; a TMDB
+        failure leaves those shows on cached data instead of failing the call.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: stale_days, in: query, required: false, schema: { type: integer, minimum: 7, maximum: 365 }, description: "Days without a watch after which a show part way through is stalled rather than watching; defaults to the user's stale_days preference, else 30" }
+      responses:
+        "200":
+          description: The shows, ordered by stage and then within it
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stale_days: { type: integer }
+                  today: { type: string, format: date, description: The UTC day aired-ness is measured against }
+                  counts:
+                    type: object
+                    description: Shows per stage, every stage present
+                    additionalProperties: { type: integer }
+                  shows:
+                    type: array
+                    items: { $ref: "#/components/schemas/ShowQueueItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/upcoming:
+    get:
+      operationId: upcomingEpisodes
+      tags: [Tracking]
+      summary: Episodes still to air of the shows the user follows
+      description: >
+        Episodes airing after today and within `days` of the user's shows,
+        soonest first, leaving out shows on hold, dropped or not wanted.
+        Today's episodes count as aired, so they are in the queue instead.
+        Specials are left out. At most 500 episodes; `truncated` says when
+        the window held more.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer, default: 90, minimum: 1, maximum: 365 } }
+      responses:
+        "200":
+          description: The episodes, soonest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from: { type: string, format: date }
+                  to: { type: string, format: date }
+                  days: { type: integer }
+                  truncated: { type: boolean }
+                  episodes:
+                    type: array
+                    items: { $ref: "#/components/schemas/UpcomingEpisode" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/formats:
+    get:
+      operationId: listTrackingFormats
+      tags: [Tracking]
+      summary: The premium formats a watch can carry
+      description: >
+        One screening mixes independent things -- a brand, a projection, a
+        sound system, a motion rig, 2D or 3D -- so a watch can carry several,
+        and each format says which axis it is on. Retired formats are left
+        out here; admins still see them.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The formats on offer, in display order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  formats:
+                    type: array
+                    items: { $ref: "#/components/schemas/WatchFormat" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/subscriptions:
+    get:
+      operationId: listCinemaSubscriptions
+      tags: [Tracking]
+      summary: Your cinema subscriptions, and well-known plans to pick from
+      description: >
+        Plans like AMC Stubs A-List, Regal Unlimited or ODEON Limitless, current
+        ones first. `plans` lists well-known ones (name, chain, country,
+        currency; no prices, which vary and change).
+      security: [{ BearerSession: [] }, { SessionCookie: [] }]
+      responses:
+        "200":
+          description: Plans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions: { type: array, items: { $ref: "#/components/schemas/CinemaSubscription" } }
+                  plans:
+                    type: array
+                    items:
+                      type: object
+                      properties: { plan: { type: string }, chain: { type: string }, country: { type: string }, currency: { type: string } }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+    post:
+      operationId: createCinemaSubscription
+      tags: [Tracking]
+      summary: Add a cinema subscription
+      security: [{ BearerSession: [] }, { SessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CinemaSubscriptionInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CinemaSubscription" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+  /api/v1/me/subscriptions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      operationId: updateCinemaSubscription
+      tags: [Tracking]
+      summary: Replace a cinema subscription (e.g. set ended_on to end it)
+      security: [{ BearerSession: [] }, { SessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CinemaSubscriptionInput" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CinemaSubscription" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteCinemaSubscription
+      tags: [Tracking]
+      summary: Delete a cinema subscription; its watches stay, no longer covered
+      security: [{ BearerSession: [] }, { SessionCookie: [] }]
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/me/subscriptions/savings:
+    get:
+      operationId: getCinemaSubscriptionSavings
+      tags: [Tracking]
+      summary: Whether each cinema subscription paid off, and what a plan would have had to cost
+      description: >
+        All time, per plan: `bills` (the start day and each month or year after
+        it, up to today or ended_on) times the price is `paid_minor`; covered
+        watches in the plan's currency are valued at face_value_minor, or at
+        `usual_ticket_minor` (the median single ticket you paid for at the
+        plan's chain, else at any cinema, in that currency; `estimated` counts
+        these); `extras_minor` is what you paid on top of covered tickets;
+        `saved_minor` = value - paid - extras (negative: it cost more than
+        buying tickets). `break_even_watches` is how many covered watches a
+        period needs at your average ticket, `months` the month-by-month
+        balance. `what_if` sums, per well-known plan's chain, the tickets you
+        paid for there in the last 12 months (one per watch, with fees): a plan
+        costing less than `per_month_minor` a month would have paid off.
+        Amounts are never converted between currencies.
+      security: [{ BearerSession: [] }, { SessionCookie: [] }]
+      responses:
+        "200":
+          description: Savings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/CinemaSubscription"
+                        - type: object
+                          properties:
+                            active: { type: boolean }
+                            bills: { type: integer }
+                            paid_minor: { type: integer }
+                            watches: { type: integer }
+                            value_minor: { type: integer }
+                            estimated: { type: integer }
+                            unvalued: { type: integer }
+                            other_currency: { type: integer }
+                            extras_minor: { type: integer }
+                            saved_minor: { type: integer }
+                            avg_ticket_minor: { type: integer, nullable: true }
+                            usual_ticket_minor: { type: integer, nullable: true }
+                            break_even_watches: { type: integer, nullable: true }
+                            watches_per_period: { type: number }
+                            months:
+                              type: array
+                              items:
+                                type: object
+                                properties: { month: { type: string }, watches: { type: integer }, value_minor: { type: integer }, cost_minor: { type: integer }, net_minor: { type: integer } }
+                  what_if:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        plan: { type: string }
+                        chain: { type: string }
+                        currency: { type: string }
+                        watches: { type: integer }
+                        spent_minor: { type: integer }
+                        per_month_minor: { type: integer }
+                        avg_ticket_minor: { type: integer }
+                        have_subscription: { type: boolean }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+  /api/v1/me/venues:
+    get:
+      operationId: listVenues
+      tags: [Tracking]
+      summary: Search cinemas
+      description: >
+        Venues are shared reference data rather than per-user rows: a cinema
+        is a place, not an opinion, and one row per cinema is what keeps a
+        diary from filling with near-duplicates.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string }, description: "Words (up to four, e.g. pvr mumbai) each matched in the name, chain, city or address; names starting with the first word come first" }
+        - { name: country, in: query, required: false, schema: { type: string }, description: ISO 3166-1 alpha-2 }
+        - { name: include_closed, in: query, required: false, schema: { type: boolean, default: false } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, required: false, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Matching cinemas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  venues:
+                    type: array
+                    items: { $ref: "#/components/schemas/Venue" }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+    post:
+      operationId: createVenue
+      tags: [Tracking]
+      summary: Add a cinema
+      description: >
+        A cinema already stored under the same outside id is refused with 409
+        rather than added twice. Only Google's place id may be kept
+        indefinitely under their terms, which is why no other Google place
+        data is stored here.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VenueInput" }
+      responses:
+        "201":
+          description: The stored cinema with its screens, former names and outside ids
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VenuePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "409":
+          description: A cinema with one of those outside ids is already stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/venues/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: getVenue
+      tags: [Tracking]
+      summary: A cinema with its screens, former names and outside ids
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The cinema
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VenuePage" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: updateVenue
+      tags: [Tracking]
+      summary: Correct a cinema
+      description: >
+        Watches keep the name and city they were logged with, so a rename
+        here never rewrites what the diary says you went to.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VenueInput" }
+      responses:
+        "200":
+          description: The updated cinema
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VenuePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteVenue
+      tags: [Tracking]
+      summary: Remove a cinema nothing points at
+      description: >
+        A cinema watches happened at is refused with 409; set its status to
+        closed instead, so the diary keeps its meaning.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Watches happened at this cinema
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/venues/{id}/aliases:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: addVenueAlias
+      tags: [Tracking]
+      summary: Record a name a cinema used to have
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                from_date: { type: string, format: date, nullable: true }
+                to_date: { type: string, format: date, nullable: true }
+      responses:
+        "201":
+          description: The former name
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VenueAlias" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/venues/{id}/aliases/{alias_id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: alias_id, in: path, required: true, schema: { type: integer, format: int64 } }
+    delete:
+      operationId: deleteVenueAlias
+      tags: [Tracking]
+      summary: Remove a former name
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/venues/{id}/screens:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: createScreen
+      tags: [Tracking]
+      summary: Add an auditorium
+      description: >
+        Screen geometry belongs to the screen, not to each visit, so it is
+        entered once and screens can be compared. A screen that is later
+        retrofitted gets effective dates rather than a rewrite.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScreenInput" }
+      responses:
+        "201":
+          description: The auditorium
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VenueScreen" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/venues/{id}/screens/{screen_id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: screen_id, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      operationId: updateScreen
+      tags: [Tracking]
+      summary: Edit an auditorium
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScreenInput" }
+      responses:
+        "200":
+          description: The auditorium
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VenueScreen" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteScreen
+      tags: [Tracking]
+      summary: Remove an auditorium
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/stats/summary:
+    get:
+      operationId: getStatsSummary
+      tags: [Tracking]
+      summary: Headline totals, where you watched, in what formats and at what cost
+      description: >
+        How long a watch was is not stored on every row -- runtime_minutes_used
+        is only set when a start was derived from it -- so time is counted
+        from the episode's runtime, then the title's. An imprecise watch
+        still counts towards the total.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date }, description: Earliest local day }
+        - { name: to, in: query, required: false, schema: { type: string, format: date }, description: Latest local day }
+      responses:
+        "200":
+          description: Totals with breakdowns
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatsSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/stats/calendar:
+    get:
+      operationId: getStatsCalendar
+      tags: [Tracking]
+      summary: The day-by-day heatmap, and the streaks that come out of it
+      description: >
+        A streak that ran to yesterday still counts as current, so it does
+        not look broken all morning.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date }, description: Earliest local day }
+        - { name: to, in: query, required: false, schema: { type: string, format: date }, description: Latest local day }
+      responses:
+        "200":
+          description: One row per day watched, with streaks
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatsCalendar" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/stats/year:
+    get:
+      operationId: getStatsYear
+      tags: [Tracking]
+      summary: The look back over one year
+      description: >
+        Months, weekdays, hours, venues, formats, spend, genres, countries,
+        decades, languages, the people behind it all and the most-watched
+        titles. Genres, countries and languages come from tmdb_titles, which
+        metareel fills for titles it has charted, so a title known only from
+        the on-demand cache contributes nothing to those three. Decades use
+        the release date, which the cache does store, so every tracked title
+        counts. The people breakdowns need credits, which only charted titles
+        have.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: year, in: query, required: false, schema: { type: integer }, description: Defaults to the current year }
+      responses:
+        "200":
+          description: The year in review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatsYear" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/stats/ratings:
+    get:
+      operationId: getStatsRatings
+      tags: [Tracking]
+      summary: How you rate, and how that compares with the crowd
+      description: >
+        A rating is 1-10 half-stars, which is already a 0-10 scale, so TMDB
+        and IMDb compare directly and a Rotten Tomatoes percentage is divided
+        by ten. A title nobody has scored is left out of the comparison
+        rather than counted as a zero, which would drag every gap upwards.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date }, description: Earliest local day }
+        - { name: to, in: query, required: false, schema: { type: string, format: date }, description: Latest local day }
+      responses:
+        "200":
+          description: The distribution, the comparison and every rated title
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatsRatings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/stats/spend:
+    get:
+      operationId: getStatsSpend
+      tags: [Tracking]
+      summary: Money, per currency, per cinema and per format
+      description: >
+        Amounts are minor units and are never converted between currencies:
+        there is no rate stored to do it honestly with.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date }, description: Earliest local day }
+        - { name: to, in: query, required: false, schema: { type: string, format: date }, description: Latest local day }
+      responses:
+        "200":
+          description: Spend broken down
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatsSpend" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/stats/people:
+    get:
+      operationId: getStatsPeople
+      tags: [Tracking]
+      summary: The people behind what you watched
+      description: >
+        Only titles metareel has credits for can appear, and credits are
+        fetched for charted titles, so this is a view of the charted part of
+        a diary rather than all of it.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: job, in: query, required: false, schema: { type: string }, description: 'Empty for cast, or a crew job such as Director or Screenplay' }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 10, maximum: 25 } }
+        - { name: from, in: query, required: false, schema: { type: string, format: date }, description: Earliest local day }
+        - { name: to, in: query, required: false, schema: { type: string, format: date }, description: Latest local day }
+      responses:
+        "200":
+          description: People ranked by how many of your titles they worked on
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  range: { $ref: "#/components/schemas/StatsRangeEcho" }
+                  job: { type: string }
+                  people:
+                    type: array
+                    items: { $ref: "#/components/schemas/PersonStat" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/watchlist/insights:
+    get:
+      operationId: getWatchlistInsights
+      tags: [Tracking]
+      summary: What your watchlist is doing in metareel's chart and availability data
+      description: >
+        The join that only works because the charts and the watchlist live in
+        one database: which of the titles you mean to watch have charted,
+        which you can stream now, and which have come off a service.
+        "Leaving soon" is deliberately absent: metareel records availability
+        changes it has observed, not departures a service has scheduled, so
+        the honest version of that question is what has already gone.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: country, in: query, required: true, schema: { type: string }, description: ISO 3166-1 alpha-2 }
+        - { name: days, in: query, required: false, schema: { type: integer, default: 30, maximum: 365 }, description: How far back to look }
+      responses:
+        "200":
+          description: Watchlist crossovers
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WatchlistInsights" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
 components:
   securitySchemes:
     ApiKeyHeader:
@@ -2152,7 +3523,28 @@ components:
       in: cookie
       name: metareel_session
       description: Session cookie set by POST /api/v1/auth/login
+    BearerSession:
+      type: http
+      scheme: bearer
+      description: 'A session token from /api/v1/auth/login (mrs_...). The tracking API accepts only this and the session cookie, never an API key.'
   responses:
+    TrackingUnauthorized:
+      description: >
+        No signed-in user. The tracking API needs a user's session; an API key
+        identifies an integration, not a person, so it is refused here even
+        though it opens the rest of the public API.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TrackingCrossSite:
+      description: >
+        A write from another site. Tracking writes are authenticated by the
+        session cookie, so they must come from the same origin.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     BadRequest:
       description: Validation error
       content:
@@ -2278,6 +3670,897 @@ components:
         description: Last chart date to include (YYYY-MM-DD)
 
   schemas:
+    StatsRangeEcho:
+      type: object
+      description: The range the figures cover; absent bounds mean unbounded.
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+    StatsTotals:
+      type: object
+      properties:
+        watches: { type: integer }
+        movie_watches: { type: integer }
+        episode_watches: { type: integer }
+        rewatches: { type: integer }
+        distinct_titles: { type: integer }
+        minutes: { type: integer, description: Counted from the stored runtime, else the episode's, else the title's }
+        hours: { type: number }
+        days: { type: integer, description: Days with at least one watch }
+        rated: { type: integer }
+        liked: { type: integer }
+    LabelledStat:
+      type: object
+      properties:
+        label: { type: string }
+        watches: { type: integer }
+        minutes: { type: integer }
+    FormatStat:
+      type: object
+      properties:
+        slug: { type: string }
+        label: { type: string }
+        category: { type: string }
+        watches: { type: integer }
+        minutes: { type: integer }
+    CurrencySpend:
+      type: object
+      description: Money in one currency. Currencies are never converted into one another.
+      properties:
+        currency: { type: string }
+        price_minor: { type: integer }
+        fees_minor: { type: integer }
+        concessions_minor: { type: integer }
+        total_minor: { type: integer }
+        watches: { type: integer }
+        tickets: { type: integer }
+    VenueSpend:
+      type: object
+      properties:
+        venue: { type: string, description: The cinema's name as it was on the night }
+        currency: { type: string }
+        watches: { type: integer }
+        total_minor: { type: integer }
+    PersonStat:
+      type: object
+      properties:
+        person_id: { type: integer }
+        name: { type: string }
+        profile_path: { type: string }
+        titles: { type: integer, description: Distinct titles of yours they worked on }
+        watches: { type: integer }
+    StatsSummary:
+      type: object
+      properties:
+        range: { $ref: "#/components/schemas/StatsRangeEcho" }
+        totals: { $ref: "#/components/schemas/StatsTotals" }
+        by_venue:
+          type: array
+          description: Cinema, streaming, home; watches with no venue kind are grouped as "unspecified".
+          items: { $ref: "#/components/schemas/LabelledStat" }
+        formats:
+          type: array
+          items: { $ref: "#/components/schemas/FormatStat" }
+        spend:
+          type: array
+          items: { $ref: "#/components/schemas/CurrencySpend" }
+    DayStat:
+      type: object
+      properties:
+        day: { type: string, format: date }
+        watches: { type: integer }
+        minutes: { type: integer }
+    StatsCalendar:
+      type: object
+      properties:
+        range: { $ref: "#/components/schemas/StatsRangeEcho" }
+        days:
+          type: array
+          description: Only days with a watch appear; the client fills the gaps.
+          items: { $ref: "#/components/schemas/DayStat" }
+        streaks:
+          type: object
+          properties:
+            longest: { type: integer }
+            longest_ended: { type: string, format: date }
+            current: { type: integer, description: Counts a streak that ran to yesterday }
+            days_watched: { type: integer }
+    RatingBucket:
+      type: object
+      properties:
+        rating: { type: integer, description: 1-10 half-stars }
+        stars: { type: number, description: The same value in stars out of five }
+        watches: { type: integer }
+    RatingComparison:
+      type: object
+      description: One title you rated, with the crowd's scores on the same 0-10 scale. A score is absent where nobody has given one.
+      properties:
+        tmdb_kind: { type: string }
+        tmdb_id: { type: string }
+        title: { type: string }
+        user_rating: { type: integer }
+        tmdb_rating: { type: number }
+        imdb_rating: { type: number }
+        rt_rating: { type: number, description: The Rotten Tomatoes percentage divided by ten }
+    CrowdGap:
+      type: object
+      properties:
+        compared: { type: integer, description: Titles where both you and this source have a score }
+        above_the_crowd: { type: integer }
+        average_gap: { type: number, description: Your score minus theirs, averaged. Absent with nothing to compare. }
+    StatsRatings:
+      type: object
+      properties:
+        range: { $ref: "#/components/schemas/StatsRangeEcho" }
+        rated: { type: integer }
+        average: { type: number }
+        distribution:
+          type: array
+          items: { $ref: "#/components/schemas/RatingBucket" }
+        vs_crowd:
+          type: object
+          properties:
+            tmdb: { $ref: "#/components/schemas/CrowdGap" }
+            imdb: { $ref: "#/components/schemas/CrowdGap" }
+            rotten_tomatoes: { $ref: "#/components/schemas/CrowdGap" }
+        titles:
+          type: array
+          items: { $ref: "#/components/schemas/RatingComparison" }
+    StatsSpend:
+      type: object
+      properties:
+        range: { $ref: "#/components/schemas/StatsRangeEcho" }
+        by_currency:
+          type: array
+          items: { $ref: "#/components/schemas/CurrencySpend" }
+        by_venue:
+          type: array
+          items: { $ref: "#/components/schemas/VenueSpend" }
+        by_format:
+          type: array
+          items: { $ref: "#/components/schemas/FormatStat" }
+    TasteCount:
+      type: object
+      description: One genre, country, decade or language, with how many of your titles it covers.
+      properties:
+        titles: { type: integer }
+    WatchedTitleStat:
+      type: object
+      properties:
+        tmdb_kind: { type: string }
+        tmdb_id: { type: string }
+        title: { type: string }
+        watches: { type: integer }
+        minutes: { type: integer }
+        release_date: { type: string }
+        genres:
+          type: array
+          items: { type: string }
+        countries:
+          type: array
+          items: { type: string }
+        language: { type: string }
+    StatsYear:
+      type: object
+      properties:
+        year: { type: integer }
+        range: { $ref: "#/components/schemas/StatsRangeEcho" }
+        totals: { $ref: "#/components/schemas/StatsTotals" }
+        by_month:
+          type: array
+          items: { $ref: "#/components/schemas/LabelledStat" }
+        by_weekday:
+          type: array
+          items:
+            type: object
+            properties:
+              weekday: { type: string, description: 0 is Sunday }
+              name: { type: string }
+              watches: { type: integer }
+        by_hour:
+          type: array
+          description: The local hour a watch ended, from the offset stored with it. Only watches logged to the minute can be placed in an hour.
+          items: { $ref: "#/components/schemas/LabelledStat" }
+        by_venue:
+          type: array
+          items: { $ref: "#/components/schemas/LabelledStat" }
+        formats:
+          type: array
+          items: { $ref: "#/components/schemas/FormatStat" }
+        spend:
+          type: array
+          items: { $ref: "#/components/schemas/CurrencySpend" }
+        genres:
+          type: array
+          items: { $ref: "#/components/schemas/TasteCount" }
+        countries:
+          type: array
+          items: { $ref: "#/components/schemas/TasteCount" }
+        decades:
+          type: array
+          items: { $ref: "#/components/schemas/TasteCount" }
+        languages:
+          type: array
+          items: { $ref: "#/components/schemas/TasteCount" }
+        people:
+          type: object
+          properties:
+            cast:
+              type: array
+              items: { $ref: "#/components/schemas/PersonStat" }
+            directors:
+              type: array
+              items: { $ref: "#/components/schemas/PersonStat" }
+            writers:
+              type: array
+              items: { $ref: "#/components/schemas/PersonStat" }
+        most_watched:
+          type: array
+          items: { $ref: "#/components/schemas/WatchedTitleStat" }
+        streaks:
+          type: object
+          properties:
+            longest: { type: integer }
+            longest_ended: { type: string }
+            days_watched: { type: integer }
+    WatchlistInsights:
+      type: object
+      properties:
+        country: { type: string }
+        days: { type: integer }
+        charting:
+          type: array
+          description: Watchlist titles that have been on a Top 10 in the window.
+          items:
+            type: object
+            properties:
+              tmdb_kind: { type: string }
+              tmdb_id: { type: string }
+              title: { type: string }
+              country: { type: string }
+              provider: { type: string }
+              category: { type: string }
+              best_rank: { type: integer }
+              ranked_on: { type: string }
+        streaming_now:
+          type: array
+          description: Watchlist titles on a subscription service in that country now.
+          items:
+            type: object
+            properties:
+              tmdb_kind: { type: string }
+              tmdb_id: { type: string }
+              title: { type: string }
+              provider_id: { type: integer }
+              provider_name: { type: string }
+              monetization: { type: string }
+              link: { type: string }
+        recently_left:
+          type: array
+          description: >
+            Watchlist titles observed coming off a service. These have
+            already gone: metareel has no schedule of future departures.
+          items:
+            type: object
+            properties:
+              tmdb_kind: { type: string }
+              tmdb_id: { type: string }
+              title: { type: string }
+              provider_name: { type: string }
+              monetization: { type: string }
+              country: { type: string }
+              observed_at: { type: string }
+    WatchFormat:
+      type: object
+      description: >
+        One premium format. category is the axis it sits on, which is what
+        keeps "all my 70mm screenings" answerable. Home media uses two more
+        axes: disc (DVD, Blu-ray, 4K UHD Blu-ray) and label (who released
+        it, e.g. Criterion); a physical-media watch carries one of each.
+      properties:
+        id: { type: integer, format: int64 }
+        slug: { type: string, description: Stable identifier used when logging a watch, e.g. imax-70mm }
+        label: { type: string }
+        category: { type: string, enum: [brand, projection, sound, motion, dimension, disc, label] }
+        note: { type: string, nullable: true }
+        sort_order: { type: integer }
+        active: { type: boolean, description: Retired formats stay on the watches that carry them but cannot be chosen for new ones }
+        created_at: { type: string }
+        updated_at: { type: string }
+        logo_url: { type: string, description: "Where its logo is served, versioned (e.g. /api/v1/formats/imax/logo?v=3f2a...); absent without a logo" }
+        logo_display:
+          type: string
+          enum: [original, mono]
+          description: >
+            How to show the logo on a dark background: in its original colours,
+            or mono (draw it white, e.g. CSS filter: brightness(0) invert(1)),
+            for dark logos that would otherwise vanish. The file is the same
+            either way.
+    Venue:
+      type: object
+      description: A cinema. Shared reference data, not a per-user row.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        chain: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        region: { type: string, nullable: true }
+        country: { type: string, nullable: true, description: ISO 3166-1 alpha-2, stored uppercase }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        timezone: { type: string, nullable: true, description: IANA zone; a watch here takes it when the client sends none }
+        opened_on: { type: string, nullable: true }
+        closed_on: { type: string, nullable: true }
+        status: { type: string, enum: [open, closed, renamed, rebuilt] }
+        replaced_by_venue_id: { type: integer, format: int64, nullable: true, description: The cinema that took this one's place }
+        note: { type: string, nullable: true }
+        created_by: { type: integer, format: int64, nullable: true }
+        created_at: { type: string }
+        updated_at: { type: string }
+        screen_count: { type: integer }
+    VenueInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        chain: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        region: { type: string, nullable: true }
+        country: { type: string, nullable: true, description: ISO 3166-1 alpha-2 }
+        latitude: { type: number, nullable: true, description: Goes together with longitude }
+        longitude: { type: number, nullable: true }
+        timezone: { type: string, nullable: true, description: IANA zone name }
+        opened_on: { type: string, format: date, nullable: true }
+        closed_on: { type: string, format: date, nullable: true }
+        status: { type: string, enum: [open, closed, renamed, rebuilt] }
+        replaced_by_venue_id: { type: integer, format: int64, nullable: true }
+        note: { type: string, nullable: true }
+        refs:
+          type: object
+          additionalProperties: { type: string }
+          description: >
+            This cinema's ids in outside catalogues, keyed by source:
+            google_place_id, osm_id, wikidata_id, fsq_id, overture_id.
+            Google's place id may be stored indefinitely; its other place
+            data may not, so none of it is kept here.
+    VenueAlias:
+      type: object
+      description: A name a cinema used to have, so an old watch can still be explained.
+      properties:
+        id: { type: integer, format: int64 }
+        venue_id: { type: integer, format: int64 }
+        name: { type: string }
+        from_date: { type: string, nullable: true }
+        to_date: { type: string, nullable: true }
+    VenueRef:
+      type: object
+      properties:
+        source: { type: string, enum: [google_place_id, osm_id, wikidata_id, fsq_id, overture_id] }
+        ref: { type: string }
+    VenueScreen:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        venue_id: { type: integer, format: int64 }
+        name: { type: string }
+        number: { type: integer, nullable: true }
+        seats: { type: integer, nullable: true }
+        width: { type: number, nullable: true, description: As entered, in dim_unit }
+        height: { type: number, nullable: true }
+        dim_unit: { type: string, nullable: true, enum: [m, ft] }
+        width_m: { type: number, nullable: true, description: Normalised to metres so screens compare }
+        height_m: { type: number, nullable: true }
+        aspect_ratio: { type: number, nullable: true, description: 1.9 for a 1.90:1 screen }
+        effective_from: { type: string, nullable: true }
+        effective_to: { type: string, nullable: true, description: Set when a screen is retrofitted rather than rewriting it }
+        note: { type: string, nullable: true }
+        created_at: { type: string }
+        updated_at: { type: string }
+    ScreenInput:
+      type: object
+      properties:
+        name: { type: string }
+        number: { type: integer, nullable: true }
+        seats: { type: integer, nullable: true }
+        width: { type: number, nullable: true, description: Needs dim_unit }
+        height: { type: number, nullable: true }
+        dim_unit: { type: string, enum: [m, ft], nullable: true }
+        aspect_ratio: { type: string, nullable: true, description: 'As written: "1.43:1", "16:9" or "1.9"' }
+        effective_from: { type: string, format: date, nullable: true }
+        effective_to: { type: string, format: date, nullable: true }
+        note: { type: string, nullable: true }
+    VenuePage:
+      type: object
+      properties:
+        venue: { $ref: "#/components/schemas/Venue" }
+        screens:
+          type: array
+          items: { $ref: "#/components/schemas/VenueScreen" }
+        aliases:
+          type: array
+          items: { $ref: "#/components/schemas/VenueAlias" }
+        refs:
+          type: array
+          items: { $ref: "#/components/schemas/VenueRef" }
+        watch_count: { type: integer, description: How many watches point at this cinema }
+    CinemaSubscription:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        plan: { type: string, example: AMC Stubs A-List }
+        chain: { type: string, nullable: true, description: Matched against a venue's chain or name to suggest the plan when logging }
+        price_minor: { type: integer, description: Per period, minor units }
+        currency: { type: string, example: USD }
+        period: { type: string, enum: [month, year] }
+        started_on: { type: string, format: date, description: The first billing day }
+        ended_on: { type: string, format: date, nullable: true }
+        note: { type: string, nullable: true }
+        created_at: { type: string }
+        updated_at: { type: string }
+    CinemaSubscriptionInput:
+      type: object
+      required: [plan, price_minor, currency, started_on]
+      properties:
+        plan: { type: string, maxLength: 100 }
+        chain: { type: string, nullable: true, maxLength: 100 }
+        price_minor: { type: integer, minimum: 0 }
+        currency: { type: string, description: ISO 4217 }
+        period: { type: string, enum: [month, year], default: month }
+        started_on: { type: string, format: date }
+        ended_on: { type: string, format: date, nullable: true }
+        note: { type: string, nullable: true, maxLength: 500 }
+    WatchContext:
+      type: object
+      description: >
+        Where and how a watch happened. These fields sit at the top level of
+        a watch and of the body that logs one; all of them are optional.
+      properties:
+        venue_id: { type: integer, format: int64, nullable: true }
+        screen_id: { type: integer, format: int64, nullable: true, description: Must belong to venue_id }
+        venue_name_at_watch:
+          type: string
+          nullable: true
+          description: >
+            The cinema's name on the night, snapshotted when the watch is
+            stored, so a later rename cannot rewrite the diary. Read only.
+        venue_city_at_watch: { type: string, nullable: true, description: Read only }
+        seat: { type: string, nullable: true }
+        screening_type: { type: string, nullable: true, enum: [regular, preview, premiere, festival, press, rerelease, marathon] }
+        event_name: { type: string, nullable: true }
+        with_qa: { type: boolean }
+        price_minor:
+          type: integer
+          nullable: true
+          description: Ticket price in minor units (paise, cents) so money is never a float. Needs currency.
+        fees_minor: { type: integer, nullable: true, description: Booking fees, separate from the ticket }
+        concessions_minor: { type: integer, nullable: true }
+        currency: { type: string, nullable: true, description: ISO 4217, stored uppercase. Required when an amount is given. }
+        tickets_count: { type: integer, nullable: true }
+        booking_source: { type: string, nullable: true }
+        subscription_id: { type: integer, nullable: true, description: "One of your cinema subscriptions (/me/subscriptions) that covered the ticket; price_minor is then what you paid on top (an upcharge)" }
+        face_value_minor: { type: integer, nullable: true, description: "What the covered ticket would have cost, for the savings analysis. Needs currency; blank is valued at your usual ticket price" }
+        provider_id: { type: integer, nullable: true, description: TMDB / JustWatch provider id, so a streaming watch lines up with availability data }
+        provider_name: { type: string, nullable: true }
+        monetization: { type: string, nullable: true, enum: [flatrate, free, ads, rent, buy] }
+        media: { type: string, nullable: true, enum: [bluray_4k, bluray, dvd, vhs, digital_file, 35mm, 70mm] }
+        edition: { type: string, nullable: true, description: 'Which cut: theatrical, extended, directors, ...' }
+        device: { type: string, nullable: true }
+        dimension: { type: string, nullable: true, enum: [2d, 3d, 3d_hfr] }
+        resolution: { type: string, nullable: true, enum: [sd, hd, fhd, 4k, 8k] }
+        hdr: { type: string, nullable: true, enum: [none, hdr10, hdr10_plus, dolby_vision, hlg] }
+        audio_format: { type: string, nullable: true }
+        frame_rate: { type: number, nullable: true }
+        audio_language: { type: string, nullable: true }
+        subtitle_language: { type: string, nullable: true }
+        content_aspect_ratio:
+          type: string
+          nullable: true
+          description: >
+            What the film looked like, as written ("1.90:1", "16:9", "1.9").
+            TMDB has no aspect-ratio data, so this is the viewer's own. On a
+            stored watch it comes back as content_aspect_ratio_text plus a
+            number in content_aspect_ratio.
+        content_aspect_ratio_text: { type: string, nullable: true, description: Read only, as written }
+        content_aspect_variable: { type: boolean, description: For the films that change ratio part way through }
+        screen_aspect_ratio: { type: string, nullable: true, description: Defaults to the screen's own when one is given }
+        screen_width: { type: number, nullable: true, description: Needs screen_dim_unit; defaults to the screen's own }
+        screen_height: { type: number, nullable: true }
+        screen_dim_unit: { type: string, nullable: true, enum: [m, ft] }
+        screen_width_m: { type: number, nullable: true, description: Read only, normalised to metres }
+        screen_height_m: { type: number, nullable: true, description: Read only }
+    TrackedEpisode:
+      type: object
+      properties:
+        season_number: { type: integer, description: 0 is specials }
+        episode_number: { type: integer }
+        tmdb_episode_id: { type: string, nullable: true, description: Stable across TMDB renumbering }
+        name: { type: string }
+        air_date: { type: string, nullable: true, description: "YYYY-MM-DD; null means TBA, which counts as not aired" }
+        episode_type: { type: string, nullable: true, enum: [standard, finale, mid_season] }
+        runtime: { type: integer, nullable: true, description: Minutes }
+        watch_count: { type: integer, description: How often this user has watched it }
+        last_watched_at: { type: string, nullable: true }
+    ShowSeason:
+      type: object
+      properties:
+        season_number: { type: integer }
+        total_episodes: { type: integer }
+        watched_episodes: { type: integer }
+        episodes:
+          type: array
+          items: { $ref: "#/components/schemas/TrackedEpisode" }
+    ShowProgress:
+      type: object
+      description: >
+        Progress is counted against the episodes that have aired, and that
+        denominator moves as a show airs: 100% today can be 96% next week.
+      properties:
+        total_episodes: { type: integer }
+        aired_episodes: { type: integer }
+        watched_episodes: { type: integer, description: Distinct episodes seen at least once; a rewatch is not extra progress }
+        percent: { type: integer, description: watched_episodes against aired_episodes, rounded down }
+        include_specials: { type: boolean }
+        next_air_date: { type: string, description: The next episode's air date, absent when nothing is scheduled }
+    ShowPage:
+      type: object
+      properties:
+        title: { $ref: "#/components/schemas/TrackedTitleMeta" }
+        state: { $ref: "#/components/schemas/TrackedTitleState" }
+        progress: { $ref: "#/components/schemas/ShowProgress" }
+        seasons:
+          type: array
+          items: { $ref: "#/components/schemas/ShowSeason" }
+    MarkEpisodesInput:
+      type: object
+      properties:
+        scope:
+          type: string
+          enum: [episode, season, up_to, all]
+          default: episode
+          description: >
+            episode marks just this one; season marks this whole season;
+            up_to marks everything up to and including it, across earlier
+            seasons; all marks the whole show.
+        season_number: { type: integer, nullable: true, description: Required for every scope but all }
+        episode_number: { type: integer, nullable: true, description: Required for the episode and up_to scopes }
+        include_specials: { type: boolean, default: false }
+        ended_at: { type: string, format: date-time, description: UTC instant; defaults to now }
+        tz: { type: string, nullable: true, description: IANA zone deciding the local day }
+        utc_offset_minutes: { type: integer, nullable: true }
+        time_precision:
+          type: string
+          enum: [minute, day, month, year]
+          default: day
+          description: A bulk mark says which day, not which minute, so this defaults to day.
+        rating: { type: integer, nullable: true, minimum: 1, maximum: 10, description: Applied to every episode marked }
+        liked: { type: boolean }
+        notes: { type: string, nullable: true }
+        venue_kind: { type: string, nullable: true, enum: [theater, streaming, physical, broadcast, other] }
+    UpNextEpisode:
+      type: object
+      properties:
+        tmdb_id: { type: string, description: The show }
+        show_title: { type: string }
+        poster_path: { type: string }
+        season_number: { type: integer }
+        episode_number: { type: integer }
+        name: { type: string }
+        air_date: { type: string, nullable: true }
+        episode_type: { type: string, nullable: true }
+        runtime: { type: integer, nullable: true }
+    AccountUser:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        role: { type: string, enum: [admin, reader] }
+        disabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        last_login_at: { type: string, format: date-time, nullable: true }
+    AccountSession:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        username: { type: string }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        user_agent: { type: string }
+        ip: { type: string }
+        current: { type: boolean, description: The session making the request }
+    Preferences:
+      type: object
+      properties:
+        country: { type: string, description: "ISO 3166-1 alpha-2; the country a new device opens on" }
+        provider: { type: string, description: "Chart service slug (netflix, amazon-prime, ...) a new device opens on" }
+        currency: { type: string, description: "ISO 4217; prefilled for ticket and rental prices" }
+        screen_unit: { type: string, enum: [m, ft] }
+        stale_days: { type: integer, minimum: 7, maximum: 365, description: "Default stale_days for GET /api/v1/me/shows" }
+        services:
+          type: array
+          maxItems: 20
+          items: { type: integer }
+          description: "TMDB provider IDs of the streaming services the user pays for (the rotation's subscribed)"
+    QueueEpisode:
+      type: object
+      properties:
+        season_number: { type: integer }
+        episode_number: { type: integer }
+        name: { type: string }
+        air_date: { type: string, format: date, nullable: true }
+        runtime: { type: integer, nullable: true }
+        episode_type: { type: string, nullable: true, description: "TMDB's type, e.g. standard, finale, mid_season" }
+    ShowQueueItem:
+      type: object
+      properties:
+        tmdb_id: { type: string }
+        title: { type: string }
+        poster_path: { type: string }
+        status: { $ref: "#/components/schemas/TrackingStatus" }
+        favorite: { type: boolean }
+        stage:
+          type: string
+          enum: [watching, stalled, not_started, on_hold, dropped, caught_up]
+        total_episodes: { type: integer, description: Episodes TMDB lists, aired or not }
+        aired_episodes: { type: integer }
+        watched_episodes: { type: integer, description: Distinct aired episodes seen at least once }
+        remaining_episodes: { type: integer, description: Aired episodes not seen yet }
+        minutes_left: { type: integer, description: Runtime of the aired episodes not seen yet }
+        percent: { type: integer, description: Watched of aired, rounded down }
+        last_watched_at: { type: string, nullable: true, description: "UTC; a watch logged to the day is stored as local midnight" }
+        added_at: { type: string }
+        watchlist_position: { type: integer, nullable: true }
+        next_episode:
+          allOf: [{ $ref: "#/components/schemas/QueueEpisode" }]
+          nullable: true
+          description: The first aired episode not seen yet
+        next_air_date: { type: string, format: date, nullable: true, description: The next episode still to air }
+    UpcomingEpisode:
+      allOf:
+        - $ref: "#/components/schemas/QueueEpisode"
+        - type: object
+          properties:
+            tmdb_id: { type: string, description: The show }
+            show_title: { type: string }
+            poster_path: { type: string }
+            status: { $ref: "#/components/schemas/TrackingStatus" }
+    TrackingStatus:
+      type: string
+      description: >
+        What a user is doing with a title. An empty string means they track
+        it without a status (for example they have only watched it).
+      enum: ["", watchlist, watching, completed, dropped, on_hold, not_interested]
+    TitleSearchResult:
+      type: object
+      properties:
+        tmdb_kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        title: { type: string }
+        original_title: { type: string }
+        year: { type: integer }
+        release_date: { type: string, description: "YYYY-MM-DD, empty when TMDB has no date" }
+        poster_path: { type: string }
+    TrackedTitleMeta:
+      type: object
+      description: What is known about a title, from metareel when it has charted, else from TMDB on demand.
+      properties:
+        tmdb_kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        title: { type: string }
+        release_date: { type: string }
+        poster_path: { type: string }
+        runtime: { type: integer, description: "Minutes; for a show, a typical episode" }
+        number_of_seasons: { type: integer }
+        number_of_episodes: { type: integer }
+        charted: { type: boolean, description: Whether metareel knows this title from a chart }
+    TrackedTitleState:
+      type: object
+      nullable: true
+      description: One user's state for one title. The watch roll-up is derived from their watches.
+      properties:
+        tmdb_kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        status: { $ref: "#/components/schemas/TrackingStatus" }
+        rating:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 10
+          description: >
+            The rating on the user's most recent rated watch, in half-stars
+            out of five (1 = half a star, 10 = five stars).
+        favorite: { type: boolean }
+        watchlist_position: { type: integer, nullable: true }
+        watchlist_note: { type: string, nullable: true }
+        first_watched_at: { type: string, nullable: true, description: "UTC, YYYY-MM-DD HH:MM:SS" }
+        last_watched_at: { type: string, nullable: true, description: "UTC, YYYY-MM-DD HH:MM:SS" }
+        watch_count: { type: integer, description: Watches, rewatches included }
+        episodes_watched:
+          type: integer
+          description: >
+            Distinct episodes of a show seen at least once, so a rewatch is
+            not extra progress. 0 for a movie.
+        created_at: { type: string }
+        updated_at: { type: string }
+        title: { type: string, description: Display metadata, on list responses only }
+        release_date: { type: string }
+        poster_path: { type: string }
+        runtime: { type: integer }
+    TrackedTitleResponse:
+      type: object
+      properties:
+        title: { $ref: "#/components/schemas/TrackedTitleMeta" }
+        state: { $ref: "#/components/schemas/TrackedTitleState" }
+    TrackedTitlePage:
+      type: object
+      properties:
+        titles:
+          type: array
+          items: { $ref: "#/components/schemas/TrackedTitleState" }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+    TrackedTitleUpdate:
+      type: object
+      properties:
+        status: { $ref: "#/components/schemas/TrackingStatus" }
+        favorite: { type: boolean }
+        watchlist_note: { type: string, nullable: true }
+    WatchInput:
+      type: object
+      required: [tmdb_kind, tmdb_id, ended_at]
+      properties:
+        client_key:
+          type: string
+          nullable: true
+          description: >
+            An idempotency key chosen by the client. Sending the same one
+            again returns the watch stored the first time, so a retry cannot
+            create a duplicate. A rewatch is a new watch with a new key.
+        tmdb_kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string, description: "TMDB ID (numeric); for a show, the show's ID" }
+        season_number:
+          type: integer
+          nullable: true
+          description: Required with tmdb_kind tv (0 is specials). A show is watched one episode at a time.
+        episode_number:
+          type: integer
+          nullable: true
+          description: Required with tmdb_kind tv.
+        ended_at:
+          type: string
+          format: date-time
+          description: >
+            When the watch ended, as an RFC 3339 instant in UTC, e.g.
+            2026-11-12T23:00:00Z. This is the time clients log.
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Optional. When given it is stored and used as the start; when not,
+            the start is taken as ended_at minus the title's runtime.
+        tz:
+          type: string
+          nullable: true
+          description: >
+            The IANA time zone the watch happened in, e.g. America/New_York.
+            It decides which local day the watch belongs to, and the UTC
+            offset in force at that instant is derived from it and stored.
+        utc_offset_minutes:
+          type: integer
+          nullable: true
+          description: >
+            Used only when tz is absent. Prefer tz: an offset alone cannot be
+            recomputed after an edit that crosses a daylight-saving change.
+        time_precision:
+          type: string
+          enum: [minute, day, month, year]
+          default: minute
+          description: >
+            How precisely the time is known. Anything less precise than a
+            minute is stored at the earliest instant it could mean (1 January,
+            the 1st, 00:00 local) and no runtime is subtracted from it.
+        rating:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 10
+          description: Half-stars out of five (1 = half a star, 10 = five stars), or null for unrated.
+        liked: { type: boolean }
+        notes: { type: string, nullable: true }
+        venue_kind:
+          type: string
+          nullable: true
+          enum: [theater, streaming, physical, broadcast, other]
+        tags:
+          type: array
+          description: Tags for this watch; a rewatch can carry different ones. Created on first use.
+          items: { type: string }
+        formats:
+          type: array
+          description: >
+            Premium-format slugs from GET /api/v1/me/formats. Several are
+            allowed, because a screening mixes a brand, a projection, a
+            sound system and a motion rig.
+          items: { type: string }
+      allOf:
+        - $ref: "#/components/schemas/WatchContext"
+    WatchEntry:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        client_key: { type: string, nullable: true }
+        subject_kind: { type: string, enum: [movie, episode] }
+        tmdb_kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        season_number: { type: integer, nullable: true }
+        episode_number: { type: integer, nullable: true }
+        ended_at: { type: string, description: "UTC, YYYY-MM-DD HH:MM:SS" }
+        started_at: { type: string, nullable: true, description: Stored only when the client sent one }
+        runtime_minutes_used:
+          type: integer
+          nullable: true
+          description: The runtime used to derive a start, kept so the chosen day can be explained.
+        runtime_source: { type: string, nullable: true, enum: [tmdb_title, tmdb_episode, user, unknown] }
+        tz: { type: string, nullable: true }
+        utc_offset_minutes: { type: integer, nullable: true }
+        watched_on:
+          type: string
+          format: date
+          description: >
+            The local day the watch belongs to, from the local day of its
+            start. Computed once when the watch is written and then fixed, so
+            a later TMDB runtime change cannot move it to another day.
+        time_precision: { type: string, enum: [minute, day, month, year] }
+        rating: { type: integer, nullable: true, minimum: 1, maximum: 10 }
+        liked: { type: boolean }
+        is_rewatch: { type: boolean, description: "watch_number > 1" }
+        watch_number:
+          type: integer
+          description: >
+            Where this watch falls in time among the user's watches of the same
+            title (of the same episode, for a show): 1 for the earliest, then
+            2, 3 … ordered by ended_at and then id. Not the order they were
+            logged: a watch logged late for an earlier date takes its place,
+            and creating, editing or deleting a watch renumbers the rest.
+        notes: { type: string, nullable: true }
+        venue_kind: { type: string, nullable: true }
+        source: { type: string, description: How the watch got here, e.g. manual }
+        tags:
+          type: array
+          items: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        formats:
+          type: array
+          description: The premium formats on this watch.
+          items: { $ref: "#/components/schemas/WatchFormat" }
+        title: { type: string, description: Display metadata, on diary responses only }
+        release_date: { type: string }
+        poster_path: { type: string }
+      allOf:
+        - $ref: "#/components/schemas/WatchContext"
+    DiaryPage:
+      type: object
+      properties:
+        watches:
+          type: array
+          items: { $ref: "#/components/schemas/WatchEntry" }
+        limit: { type: integer }
+        next_cursor:
+          type: string
+          description: Pass back as `cursor` for the next page. Absent on the last page.
+    WatchTag:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        watch_count: { type: integer }
+        created_at: { type: string }
     ChartTitle:
       type: object
       properties:
@@ -2287,6 +4570,14 @@ components:
         kind: { type: string, enum: [movie, tv_show] }
         tmdb_id: { type: string, nullable: true }
         imdb_id: { type: string, nullable: true }
+        poster_path:
+          type: string
+          nullable: true
+          example: /x9a8tZ3cAqkR1sQpQWz6Vt1mJcE.jpg
+          description: >
+            TMDB poster path, not a URL; build one as
+            https://image.tmdb.org/t/p/{size}{poster_path} (e.g. w342). Null
+            until the title has TMDB metadata.
 
     Top10Combined:
       type: object
@@ -2784,6 +5075,7 @@ components:
     TitleCreditsResponse:
       type: object
       properties:
+        source: { type: string, enum: [stored, tmdb, none], description: Stored by the credits job, fetched live from TMDB, or nothing }
         kind: { type: string, enum: [movie, tv] }
         tmdb_id: { type: string }
         title: { type: string, nullable: true }
@@ -2835,6 +5127,38 @@ components:
               countries: { type: integer }
               first_charted: { type: string, format: date, nullable: true }
               last_charted: { type: string, format: date, nullable: true }
+        details_status: { type: string, enum: [ok, not_configured, unavailable, not_found] }
+        details:
+          type: object
+          nullable: true
+          description: TMDB profile; null unless details_status is ok
+          properties:
+            biography: { type: string, nullable: true }
+            birthday: { type: string, format: date, nullable: true }
+            deathday: { type: string, format: date, nullable: true }
+            place_of_birth: { type: string, nullable: true }
+            known_for: { type: string, nullable: true, description: "TMDB department, e.g. Acting, Directing" }
+            homepage: { type: string, nullable: true }
+            imdb_id: { type: string, nullable: true }
+            also_known_as: { type: array, items: { type: string } }
+        filmography:
+          type: array
+          description: Every movie and TV credit on TMDB, one entry per title; empty unless details_status is ok
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [movie, tv] }
+              tmdb_id: { type: string }
+              title: { type: string }
+              date: { type: string, format: date, nullable: true, description: Release or first air date; null if not announced }
+              year: { type: integer, nullable: true }
+              poster_path: { type: string, nullable: true }
+              roles: { type: array, items: { type: string }, description: '"as <character>" for cast, else the job' }
+              departments: { type: array, items: { type: string } }
+              episodes: { type: integer, nullable: true, description: "TV: most episodes of any of the roles" }
+              popularity: { type: number }
+              vote_average: { type: number }
+              vote_count: { type: integer }
     PeopleResponse:
       type: object
       properties:
@@ -3307,6 +5631,7 @@ components:
         kind: { type: string, description: "movie | tv_show: the TMDB namespace of tmdb_id when mapped (a special in the TV list can be a movie), else Netflix's list" }
         tmdb_id: { type: string, nullable: true }
         imdb_id: { type: string, nullable: true }
+        poster_path: { type: string, nullable: true, description: "TMDB poster of the mapped title (absent when unmapped)" }
         netflix_title_id: { type: integer, format: int64 }
 
     NetflixSeasonSource:
@@ -3598,6 +5923,13 @@ components:
         rotten_tomatoes_url:
           type: string
           nullable: true
+        poster_path:
+          type: string
+          example: /x9a8tZ3cAqkR1sQpQWz6Vt1mJcE.jpg
+          description: >
+            TMDB poster path, not a URL; build one as
+            https://image.tmdb.org/t/p/{size}{poster_path} (e.g. w342).
+            Omitted until the title has TMDB metadata.
         season_number:
           type: integer
           description: TV only, when known

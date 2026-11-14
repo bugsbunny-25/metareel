@@ -157,6 +157,7 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
 | `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz`; known IDs also go to `imdb_rating_history` when changed |
+| `venues.import` | `VenueImporter` | Cinemas from OpenStreetMap (see [Cinema import](#cinema-import-servicevenue_importgo)); run by hand, no schedule |
 | `tmdb.credits.refresh` | `CreditsRefresher` | `tmdb_people` + `tmdb_credits` of every TMDB title: `/movie/{id}/credits`, or `/tv/{id}?append_to_response=aggregate_credits` (with `created_by` as Creator); keeps the top 25 cast and the jobs in `creditJobs` (TV: 10 per job by episodes); never-fetched first, again after 60 days (`tmdb_titles.credits_fetched_at`), 1,000 a run, 250 ms apart; each title replaced in one transaction |
 | `tmdb.episodes.refresh` | `EpisodesRefresher` | `tmdb_episodes` of TV shows with a stored TMDB season list: seasons aired in the last 3 years, undated and the latest (`append_to_response=season/N`, 20 per request, 250 ms apart); due daily when an episode airs within -14..+60 days or a season starts within 30 days, weekly for returning statuses, else monthly (`tmdb_titles.episodes_fetched_at`); each fetched season replaced in one transaction |
 | `wikipedia.pageviews.import` | `PageviewsImporter` | English Wikipedia daily user views (Wikimedia REST, `client.Wikimedia`) of titles with `tmdb_titles.enwiki_title`, since the last stored day (90 days first); 350 ms apart (200 requests/minute limit), `Retry-After` honoured on 429 |
@@ -522,11 +523,90 @@ usually the original network or service release, not per country.
   premiere from `rankings` (tagged with the season, or untagged), counting a
   chart only when `chart_snapshots` cover the whole window.
 
+## Cinema import (`service/venue_import.go`)
+
+`venues.import` reads every `amenity=cinema` node, way and relation of a
+country from an Overpass API instance (`client/overpass.go`, one query per
+country, `out center tags`, 5 s apart; a 429/504 or a timed-out query is
+retried twice, 30 s apart). Each becomes a venue: `name` (`name:en` when the
+name has no Latin letters), `brand` as chain, `addr:*`, the element's
+coordinates, the IANA zone at them (`tzf`, embedded boundaries, no network)
+and `start_date` / `opening_date` when it is a full date. Unnamed and
+`access=private|no` elements are skipped; one cinema mapped as a node and its
+building (same name within 150 m) is imported once. A cinema without
+`addr:city` takes the nearest `place=city|town` node within 20 km (a second
+query, only when needed).
+
+Matching, in order: `venue_refs` `osm_id` (`node/123`); the `wikidata` tag
+against a venue's `wikidata_id` (ignored when several cinemas carry the same
+ID, or it equals `brand:wikidata`: that is the chain's); the same normalised
+name within 300 m, or in the same city for a venue without coordinates, when
+exactly one venue qualifies. Matches only fill empty fields
+(`FillVenueBlanks`) and gain the refs they lack (`AddVenueRefIfFree`, which
+never moves a ref held by another venue); everything else is created. Nothing
+is deleted: a cinema gone from OSM is counted (`gone`) and kept, since watches
+may point at it. Each country is written in one transaction; a failing
+country is reported and the others still run.
+
+Historic cinemas follow, per country (`venue_import_historic.go`, skipped
+with a warning if Wikidata fails): Wikidata's closed cinemas
+(`client/wikidata_api.go`), found with the action API's search
+(`haswbstatement:P31=Q41253 haswbstatement:P17=<country>` plus state of use
+permanently closed or demolished, or a dissolved date; read oldest-first and
+newest-first because search stops at 10,000) and fetched with
+`wbgetentities`, 50 at a time. SPARQL was tried first and times out on a
+country this size. Each needs a name and coordinates; it gets the address
+(P6375), the nearest town, the zone, `opened_on`/`closed_on` when the date is
+to the day (P1619 or P571; P3999 or P576), and year- or month-precision dates
+and "demolished" in the note. It matches a venue holding its Wikidata ID, or
+one of the same name nearby without one; a match OSM shows open only gains
+the opening date and address, so a rebuilt or reopened cinema is never
+closed. Unmatched ones are created `closed`.
+
+Venue search (`ListVenues`) matches up to four words, each anywhere in the
+name, chain, city or address, and ranks names starting with the first word
+first, then open cinemas before closed ones. The user app's picker includes
+closed cinemas.
+
+Merging (`POST /admin/venues/{id}/merge`, `repository/venue_merge_repo.go`)
+folds a duplicate into the cinema kept in one transaction: watches, screens
+and former names move, the duplicate's name becomes a former name (to its
+closed_on), its refs move unless the kept venue has one of that source,
+`replaced_by_venue_id` pointers move, empty fields are filled from it, and it
+is deleted. Watches keep their `venue_name_at_watch`.
+
+## Cinema subscriptions (`service/tracking_subscriptions.go`)
+
+`cinema_subscriptions` (migration 35) holds a user's plans: name, chain,
+price per `month` or `year` in minor units with a currency, `started_on`
+(first billing day) and `ended_on`. A watch has `subscription_id` (only the
+user's own plan; checked on write) and `face_value_minor`, what the ticket
+would have cost; `price_minor` stays what was paid (an upcharge).
+`GET /me/subscriptions/savings` works it out on read: bills are the start
+day and each month or year after it (clamped to month ends) up to today or
+the end; covered watches in the plan's currency are valued at their face
+value or the median single ticket paid at the plan's chain (venue chain or
+name containing it), else at any cinema, in that currency; savings = value -
+bills - extras paid on covered watches. The what-if sums the last 12 months
+of paid tickets at each well-known plan's chain. No currency conversion.
+
 ## Credits and people (`service/credits.go`)
 
-`GET /api/v1/titles/tmdb/{kind}/{id}/credits` reads the stored credits.
+`GET /api/v1/titles/tmdb/{kind}/{id}/credits` reads the stored credits; a
+title with none stored (or one metareel doesn't know) gets the same
+selection (`keepCredits`) live from TMDB, cached in memory with the people
+(`tmdbCache`: 12 hours, misses an hour, 1,000 entries each), `source: tmdb`.
+`GET /api/v1/me/people/search` is TMDB's person search, for the user app's
+search palette.
 `GET /api/v1/people/{id}` lists a person's credited titles with each title's
-FlixPatrol record (`ListPersonChartStats`, all stored charts).
+FlixPatrol record (`ListPersonChartStats`, all stored charts), and adds their
+TMDB profile and filmography (`service/credits_person.go`): one
+`/person/{id}?append_to_response=combined_credits,external_ids` request,
+merged to one entry per title, kept in memory for 12 hours (a miss for an
+hour; at most 1,000 people; concurrent requests for one person share a fetch).
+Nothing of it is stored. A TMDB failure leaves `details` null with
+`details_status: unavailable` for a person metareel has credits for, and is a
+502 for one it doesn't; a person known only to TMDB is still returned.
 `GET /api/v1/analytics/people` sums each title's chart points in the range
 (`ChartEntries` with the usual filters) and credits them in full to every
 person credited in the role (actors: billing order under 10), once per
@@ -551,6 +631,122 @@ wide theatrical date (type 3), else the limited one (type 2).
 `GET /api/v1/titles/tmdb/movie/{id}/releases` shows one movie per country;
 `GET /api/v1/analytics/release-windows` sums up the movies released in theaters
 in a country in a range.
+
+## Static UI routes
+
+`registerStatic` serves two SPAs, with paths relative to the working
+directory (echo binds its filesystem root at `echo.New()`, so `c.File` never
+resolves an absolute path):
+
+- **Admin console** from `UI_STATIC_DIR` (`web/dist`) on `/admin` and
+  `/admin/*`. It is built with Vite `base: '/admin/'`, so its assets are
+  `/admin/assets/...`; any other path under `/admin` loads its `index.html`
+  (hash router).
+- **User app** from `APP_STATIC_DIR` (`app/dist`) on the `/*` catch-all: real
+  files are served as they are, anything else loads its `index.html` (hash
+  router). Without a user app build, `/` redirects to `/admin/`.
+
+`filepath.Clean("/"+param)` keeps every lookup inside its app directory (`..`
+can't climb out); `internal/router/static_test.go` covers both apps, the
+fallbacks and traversal.
+
+The user app (`app/`) calls the public routes and `/api/v1/me` with the
+session cookie set by `/api/v1/auth/login`, so it needs a signed-in user and
+never holds an API key. Its view model joins three things client-side: the
+Top 10 (which carries `poster_path`), the batch ratings endpoint, and the
+user's `/me/titles` map. Chart screens therefore cost a fixed handful of
+requests, not one per title. The Watchlist page reads that same map (so a
+toggle anywhere shows at once) plus one `/me/watchlist/insights` call; the
+Diary pages `/me/watches` by cursor and groups by `watched_on`, never
+`ended_at`. The Library page is the same map filtered and sorted client-side;
+its menu writes status and favourite with `PUT /me/titles/{kind}/{id}` and
+clears them with `DELETE` (watches stay; a title with none leaves the map).
+Stats makes two calls per year (`/me/stats/year`, `/me/stats/ratings` for that
+calendar year) and joins posters from the map; panels with no data behind them
+(people before credits are fetched, spend without ticket prices) are left out
+rather than shown empty, and amounts are never converted between currencies.
+The log dialog builds the whole `WatchInput`, context included. Because
+`PUT /me/watches/{id}` replaces a watch and the diary list returns a slimmer
+watch (no seat, fees, picture fields), editing first fetches
+`GET /me/watches/{id}` and keeps Save disabled until it has; a watch is
+re-expressed in the zone it was filed in, so an untouched save changes only
+`updated_at`. Times are entered as wall time in one zone -- the chosen
+cinema's (`venues.timezone`), else the watch's own `tz`, else the browser's
+-- converted to an instant client-side and sent with that `tz`. Amounts are
+typed in major units and sent as minor units using the currency's fraction
+digits (`Intl.NumberFormat`). Streaming services are stored by name
+(`provider_name`), suggested from `/services/{country}`; a stored
+`provider_id` is kept only while the name is unchanged.
+Home media reuses the format taxonomy: categories `disc` (`dvd`, `blu-ray`,
+`uhd-blu-ray`) and `label` (Criterion, Arrow Video, …; migration 33, which
+also adds common cinema formats). A physical-media watch carries its disc and
+label as formats, so they get admin-managed logos and show on the diary and
+in Stats like cinema formats; `media` is still set (`bluray_4k`, `bluray`,
+`dvd`, or VHS / file / print without a disc format) so older readers keep
+working. The console's Cinemas page edits venues through admin copies of the
+`/me/venues` routes; the same rules apply (watches snapshot the name and
+city; a venue with watches is closed, not deleted). Admins can upload format
+logos in bulk: the console matches each file to a format by its name
+(`<slug>.<ext>`); the logo checklist is `docs/format-logos.md`.
+
+Premium-format logos are uploaded in the console (Premium formats) as the
+raw image to `PUT /admin/watch-formats/{id}/logo` and kept in SQLite
+(`watch_format_logos`, migration 32), so they're backed up with everything
+else. The type comes from the bytes (`logoType`): PNG, JPEG, WebP or GIF by
+signature, with the dimensions read from the header and capped (a small file
+must not decode to a huge bitmap in every viewer's browser), or an SVG that
+`checkSVG` parses and allow-lists. It must be UTF-8 (UTF-16 or another
+charset could hide markup), have no DOCTYPE internal subset or stylesheet
+instruction, and use only drawing elements (plus `<style>`), matched on local
+name so a namespace prefix can't smuggle a `script`; editor bookkeeping
+(Inkscape, Sodipodi, RDF metadata) is skipped, but an SVG or XHTML element
+hidden inside it is still checked. Attributes are checked after the parser
+decodes character references: no `on*`, and `href`/`url()` only to `#` ids.
+CSS (in `<style>` or `style`) may not use `@`-rules, escapes or outside
+`url()`s. The allow-list is one layer; the sandboxing CSP and `<img>`-only
+rendering are the others. `watch_formats.
+logo_version` (a content hash) is put into every format's `logo_url`, so a
+logo URL is immutable and a new upload is a new URL; `GET /formats/{slug}/
+logo` sends `Cache-Control: immutable` only for the current version, plus a
+sandboxing CSP and nosniff, so even an SVG opened directly can't run
+anything. The route sits in `registerReadRoutes`: the user app loads it
+under `/api/v1` with its session, the console under `/api/v1/admin` (list,
+create and update responses there rewrite `logo_url` to that copy). The ETag
+middleware keeps a `Cache-Control` a handler set only when it is `private`
+or `no-store`, so nothing on the keyed API can become shared-cacheable. The apps draw logos on
+a dark plate; `watch_formats.logo_display` (migration 34) says whether to show
+a logo in its colours or `mono` (clients draw it white with a CSS filter; the
+file is unchanged). The console sets `mono` after an upload when 40% or more of
+the logo's visible pixels are dark and its corners are transparent, measuring
+an SVG with its `<foreignObject>` removed (Chrome won't read pixels back from
+one that has it). PNG and single-frame GIF uploads have fully transparent edges
+trimmed server-side (`trimTransparent`, re-encoded as PNG). `checkSVG` accepts
+Illustrator exports: an internal DTD subset of plain URL-valued entities (its
+namespace declarations, fed to the parser), `<switch>`, Adobe's namespaces as
+editor data, and a `<foreignObject>` whose contents are only editor data or
+drawing elements; a `<style>` inside skipped content is refused.
+Discover reads the three `/discover/:country/*` routes. The page loads
+`/rotation` once (with the user's `services` preference as `subscribed`) and
+shares its services: their `provider_ids` map plan and channel offers
+("HBO Max Amazon Channel") to the service you'd pay for, on every tab, with a
+name-tidying fallback for providers outside the main services. Hidden gems
+fetches the best 200 once and filters client-side, so filters are instant
+and the per-service tally shows what each service would leave.
+Settings splits what follows the user from what belongs to a device.
+Preferences are one JSON object per user in `user_preferences` (validated in
+`TrackingService.SetPreferences`, so a new key needs no table rebuild); the
+app loads them after the reference lists and applies the default
+country/service only on a browser that has none of its own, so the top-bar
+pickers keep working per device. `ShowQueue` uses `stale_days` when the
+request has none. The theme stays in `localStorage`. Account routes reuse the
+session and user services: `CheckPassword` verifies the current password
+under the sign-in rate limit, `ChangeOwnPassword` ends the user's other
+sessions, and `RevokeForUser` refuses ids that aren't the caller's, so one
+user can never end another's session.
+Search queries both search endpoints in parallel (debounced, older
+requests aborted) and drops TMDB hits already listed as charted; an ID or link
+skips text search and goes to `/titles/lookup`, which only knows titles in
+metareel's catalogue.
 
 ## Admin UI for the newer data
 
@@ -648,6 +844,191 @@ the self-protection rules) but nothing is refused.
 - Startup logs `admin console access` with the number of enabled admins, and
   an error when sign-in is required but none exists.
 
+## Tracking (`service/tracking.go`, `service/tracking_titles.go`)
+
+`/api/v1/me/...` is one user's watchlist, statuses, watch log and tags. The
+group is wired in `router.Register` as
+`SameOriginWrites, h.Authenticate, h.RequireUser, handler.NoStore` and is
+deliberately **not** part of `registerReadRoutes`:
+
+- `RequireUser` (`handler/tracking.go`) refuses an `api_key` or `anonymous`
+  principal with 401. An API key identifies an integration, not a person, so
+  it cannot act for a user. `Authenticate` still runs first, so the rate
+  limit applies as usual.
+- `NoStore` replaces `handler.ETag`, which wraps the shared read routes:
+  these responses are per-user and must never be cached or revalidated
+  (`Cache-Control: private, no-store`, `Vary: Authorization, Cookie`).
+- `SameOriginWrites` is required because the session cookie authenticates
+  browser writes here.
+- Every repository method takes the user's id and every statement in
+  `db/queries/tracking.sql` is scoped by it. A row belonging to someone else
+  is reported as missing (404), never as forbidden, so ids do not leak.
+
+Writes go through `TrackingRepository` on the **writer** connection, in one
+transaction each (insert or update, replace tags, recompute the roll-up);
+list and diary reads use a second instance of the same repository on the
+read-only pool, like the other read services.
+
+`TrackedTitleService` searches TMDB (`/search/movie`, `/search/tv`) and
+resolves a `(kind, id)` on demand: it serves the stored snapshot while it is
+fresh, else fetches `TitleDetails` and caches it in `tracked_titles`. A TMDB
+404 becomes `ErrTrackedTitleUnknown` (HTTP 404), so a mistyped id cannot be
+stored; a TMDB outage falls back to the cached snapshot, and with no
+`TMDB_API_KEY` tracking keeps working with empty metadata instead of failing.
+
+### Time
+
+Clients send UTC instants and the server stores UTC text in
+`CURRENT_TIMESTAMP` format (`repository.FormatTimestamp`), so stored values
+compare against `datetime('now')`. `ended_at` is what a client logs;
+`started_at` is stored only when sent.
+
+`tz` is an IANA zone name, validated with `time.LoadLocation` (which works in
+the `scratch` image because `cmd/server/main.go` imports `_ "time/tzdata"`).
+The offset in force at that instant is derived from it and stored in
+`utc_offset_minutes`. Both are kept: the name so an edit crossing a DST
+change can be recomputed, the offset so SQLite can do date arithmetic without
+a zone database, and so a later tzdata revision of historical rules cannot
+move stored days.
+
+`watched_on` is the local day of the watch's **start** (`started_at`, else
+`ended_at` minus the title's runtime). It is computed once at write time and
+then fixed, so a TMDB runtime revision cannot move an entry to another day;
+`runtime_minutes_used` / `runtime_source` record which runtime was used. An
+imprecise `time_precision` (`day` / `month` / `year`) is normalised to the
+earliest instant it could mean, local midnight on the 1st of January as
+needed, and no runtime is subtracted.
+
+Because clients send instants rather than local wall-clock times, the two
+ambiguous local times cannot arise: the repeated hour each autumn is two
+distinct instants, and the skipped hour each spring is none. This is covered
+by `TestLogWatchHandlesDSTEdges`.
+
+### Ratings and rewatches
+
+A rating belongs to a watch. "My rating" for a title is the rating of the
+most recent rated watch, maintained on `user_titles.rating` by
+`RollupUserTitle`; `SetTitleState` refuses a rating outright so there is only
+one place one can come from. Ratings are integers 1-10, half-stars out of
+five, with no zero (as on Letterboxd).
+
+`client_key` is the client's idempotency key: a replay returns the stored
+watch with 200 instead of creating a duplicate. Deletes are permanent.
+
+### Episodes
+
+A show is watched one episode at a time: `LogWatch` refuses a `tv` title
+without `season_number` and `episode_number`, and resolves the episode (for
+its own runtime and TMDB episode ID) before storing the watch.
+
+`TrackedTitleService.ResolveEpisodes` caches every season of a show from
+TMDB, reusing `client.TVSeasonEpisodes`, which batches up to 20 seasons per
+request through `append_to_response`. The season list comes from the show's
+own details, which include season 0; `number_of_seasons` does not.
+`trackedEpisodesTTL` is a day, shorter than the title TTL, because an episode
+missing from the cache is an episode missing from up-next.
+
+Bulk marking (`POST /me/shows/{id}/watched`) selects episodes with
+`ListMarkableEpisodes`, whose `scope` is `episode`, `season`, `up_to` or
+`all`. Marking sets `AiredOnly` and `OnlyUnwatched`, so it never rewatches
+what the user has already seen and never marks an unaired episode; unmarking
+sets neither. All the episodes in one mark share a time, which is why the
+precision defaults to a day.
+
+`advanceShowStatus` moves a show between `watching` and `completed` as
+episodes are marked and unmarked, so the up-next queue works without a status
+being set by hand. It only ever changes a status that is empty, `watchlist`,
+`watching` or `completed`; one the user chose is left alone.
+
+Progress is counted, not stored: the denominator is the episodes that have
+aired, and it moves as a show airs. `UpNext` picks the first aired, unwatched
+episode per show with a `ROW_NUMBER()` window, skipping specials.
+
+`ShowQueue` (`GET /me/shows`) is one query, `ListShowQueue`: per show, the
+cached episodes (seasons 1+) flagged aired and seen, aggregated into counts,
+minutes left and the next air date, joined to the first aired unseen episode.
+`stageOf` then sorts each show into a stage in Go: a chosen `on_hold` or
+`dropped` wins, else no episode seen is `not_started` (a `completed` with
+nothing logged is `caught_up`), else no aired episode left is `caught_up`,
+else `last_watched_at` against `stale_days` picks `watching` or `stalled`.
+Stages come from episodes rather than the stored status because a new episode
+can air after `advanceShowStatus` last ran. `Upcoming` (`GET /me/upcoming`)
+lists cached episodes after today for shows not on hold, dropped or unwanted.
+
+Both first call `refreshShowEpisodes`, because the queue is only as good as
+the cache and nothing else refreshes `tracked_episodes`: it re-fetches up to
+12 shows whose lists are missing or older than `trackedEpisodesTTL`
+(never-fetched first, four at a time), logs failures and carries on. A
+package mutex makes the two calls a page makes together share one refresh.
+
+### Where and how a watch happened
+
+`SetWatchEntryContext` writes the ~36 context columns in one statement,
+separate from `InsertWatchEntry`, so the insert keeps a readable parameter
+list; both run inside the same transaction as the tags, formats and roll-up.
+
+`TrackingService.resolveContext` validates the enums in Go (not by CHECK
+constraints, so a new value needs no table rebuild), normalises what should
+be normalised and fills in what the venue and screen already know:
+
+- the venue's name and city are **snapshotted onto the watch**, so a later
+  rename or closure cannot rewrite what the diary says you went to;
+- the venue's IANA `timezone` becomes the watch's zone when the client sends
+  none, which is what makes the local day right when you are away;
+- the screen's aspect ratio and geometry fill in anything the watch did not
+  carry;
+- aspect ratios are parsed from what the viewer wrote (`1.43:1`, `16:9`,
+  `1.9`) into a number as well as the text, because TMDB has no
+  aspect-ratio data at all;
+- screen sizes are stored as entered **and** normalised to metres, so a
+  screen measured in feet still compares with one measured in metres;
+- money is integer minor units with an ISO 4217 currency that is required
+  whenever an amount is given, so nothing is ever a float.
+
+Formats are referenced by slug and resolved to ids, refusing unknown or
+retired ones. `venue_refs` follows the same multi-source pattern as the title
+mapping. Only Google's place id may be stored indefinitely under their terms,
+which is why no other Google place data is kept.
+
+A venue watches point at cannot be deleted (409); its status is set to closed
+instead, so the diary keeps its meaning.
+
+### Stats (`service/tracking_stats.go`)
+
+The `/me/stats/...` endpoints aggregate one user's log. They add no tables:
+everything is computed from `watch_entries` and the chart-side tables, read
+through the read-only pool.
+
+- **Time watched** is not a stored column. `runtime_minutes_used` is only set
+  when a start was derived from it, so every aggregate resolves minutes as
+  `COALESCE(runtime_minutes_used, episode runtime, title runtime, 0)` through
+  left joins to `tracked_episodes`, `tmdb_titles` and `tracked_titles`.
+- **Hour of day** uses the offset stored with the watch:
+  `strftime('%H', datetime(ended_at, utc_offset_minutes || ' minutes'))`.
+  Only minute-precision watches are bucketed, since an imprecise one has no
+  meaningful hour.
+- **Streaks** are computed in Go from the per-day rows rather than in SQL. A
+  streak that ran to yesterday counts as current.
+- **Genres, countries, decades and languages** are decoded in Go from
+  `tmdb_titles`' JSON columns, following the same approach as the chart-side
+  genre analytics rather than relying on SQLite's JSON functions.
+- **Ratings against the crowd** compare a 1-10 half-star rating directly with
+  TMDB and IMDb (both 0-10) and with a Rotten Tomatoes percentage divided by
+  ten. TMDB and IMDb come back nullable; the Rotten Tomatoes value arrives
+  through a scalar subquery, which sqlc types as non-null, so it carries -1
+  as its "unknown" sentinel and the repository turns that back into nil. A
+  missing score is excluded from the average gap rather than treated as zero.
+- **Watchlist insights** join `user_titles` to `rankings`,
+  `tmdb_watch_providers` and `watch_provider_events`. These are read-only
+  joins by `(tmdb_kind, tmdb_id)`; tracking still holds no foreign key into
+  the chart domain. `watch_provider_events` records changes already observed,
+  so there is no "leaving soon" to offer -- only what has gone.
+
+Not yet available: the Letterboxd / TV Time imports. Venue data is entered by
+hand or by outside id for now; a bulk seed from Overture or Foursquare OS
+Places, and Wikidata enrichment for historic cinemas, would land on the
+existing schema without changing it.
+
 ## Read API Flow
 
 ```mermaid
@@ -668,7 +1049,8 @@ sequenceDiagram
     FlixRepo->>SQLite: SELECT rankings JOIN titles WHERE country=? AND category=?\nAND ranked_on = COALESCE(date, each provider's latest date)\n+ previous_rank (rank on the chart's previous scraped date)\n+ days_in_top10 (dates on the chart so far)
     SQLite-->>FlixRepo: rows
     FlixRepo-->>Top10Svc: []Top10Item
-    Top10Svc-->>Handler: *Top10Response{items: [{date, rank, previous_rank, days_in_top10, provider, slug, name, kind, tmdb_id, imdb_id}]}
+    Top10Svc->>Top10Svc: withTitleMetadata — one batch read of tmdb_titles\nfor origin + poster_path
+    Top10Svc-->>Handler: *Top10Response{items: [{date, rank, previous_rank, days_in_top10, provider, slug, name, kind, tmdb_id, imdb_id, poster_path, origin}]}
     Handler-->>Client: 200 JSON
 ```
 
@@ -788,6 +1170,16 @@ Added since the diagram below:
 | `tmdb_popularity_history` | TMDB popularity per title per day from the daily exports |
 | `tmdb_release_dates` | Movies' TMDB release dates: earliest date (and note) per country and type 1-6 (premiere, theatrical limited, theatrical, digital, physical, TV), replaced on every details refresh; migration 24 seeded type 4 from `tmdb_titles.digital_release_dates`, which is still written |
 | `tmdb_people`, `tmdb_credits`, `tmdb_titles.credits_fetched_at` | TMDB people (name, profile, known-for department) and their cast / crew credits per title (job, character, billing order, TV episodes), migration 25; read by title credits, people and people analytics |
+| `users`, `sessions` | Accounts that can sign in (argon2id hashes) and their sessions (PBKDF2 token digests) |
+| `tracked_titles` | On-demand TMDB snapshot (title, year, poster, runtime, season / episode counts) of titles a user tracks. Display only, refreshed after `trackedTitleTTL`. Deliberately NOT `tmdb_titles`: a user can track anything on TMDB, and those rows must never be picked up by the mapping, metadata, credits or ratings jobs. Reads prefer the richer `tmdb_titles` row when the title has charted |
+| `user_titles` | One user's state per title: `status` (watchlist / watching / completed / dropped / on_hold / not_interested, validated in Go), `favorite`, `watchlist_position` / `watchlist_note`, and the roll-up of their watches (`watch_count`, `first_watched_at`, `last_watched_at`, `rating` = the most recent rated watch), recomputed by `RollupUserTitle` on every write |
+| `watch_entries` | One row per watch, so a rewatch is another row with its own rating and tags (`watch_number`, `is_rewatch`). `watch_number` is the watch's place in time among the title's watches (per episode for a show), ordered by `ended_at` then `id`; every write renumbers the title in the same transaction (`rollup` → `RenumberWatches`), and migration 000030 repaired rows numbered by log order. Instants are UTC text in `CURRENT_TIMESTAMP` format; `watched_on` is the frozen local day. `UNIQUE(user_id, client_key)` makes logging idempotent. Episode watches (`subject_kind = episode`) fill the season / episode columns |
+| `user_tags`, `watch_entry_tags` | A user's tags (unique per user, `NOCASE`) attached per watch, not per title |
+| `tracked_episodes`, `tracked_titles.episodes_fetched_at` | Every season's episodes of a tracked show (migration 28), fetched on demand. Separate from `tmdb_episodes`, which `tmdb.episodes.refresh` fills with recent / upcoming / latest seasons only: that is right for the calendar but cannot answer "have I seen all of season 2". Carries TMDB's episode ID, which survives renumbering |
+| `user_titles.episodes_watched` | Distinct episodes of a show seen at least once, so progress ignores rewatches; maintained by `RollupUserTitle` next to `watch_count` |
+| `watch_formats`, `watch_entry_formats` | The premium-format taxonomy admins maintain (migration 29), seeded with 19 rows. `category` (brand / projection / sound / motion / dimension) separates the independent axes a cinema format mixes, which is what keeps "all my 70mm screenings" answerable. Rows are deactivated, never deleted, because watches reference them for good |
+| `venues`, `venue_aliases`, `venue_refs`, `venue_screens` | Cinemas as shared reference data, their former names, their ids in outside catalogues (`google_place_id`, `osm_id`, `wikidata_id`, `fsq_id`, `overture_id`) and their auditoriums. Screen geometry lives on the screen, normalised to metres (`width_m`) so screens compare; `effective_from` / `effective_to` cover a retrofit |
+| `watch_entries` (context columns) | Where and how a watch happened: venue and screen plus a snapshot of the venue's name and city on the night, seat, screening type, money in minor units with an ISO 4217 currency, streaming provider, physical media and edition, dimension / resolution / HDR / audio, and both aspect ratios as written and as numbers |
 | `tmdb_episodes`, `tmdb_titles.episodes_fetched_at` | TV episodes per show / season / episode: name, air date (TMDB's, NULL = TBA), `episode_type` (standard / finale / mid_season), runtime (migration 23); read by the episode calendar and release patterns |
 | `tmdb_titles.enwiki_title`, `wikipedia_pageviews` | English Wikipedia article from Wikidata (sitelink, looked up monthly by `titles.metadata`, migration 20) and its daily user pageviews per project |
 | `tmdb_titles.netflix_premiere`, `netflix_premiere_source` | Earliest Netflix premiere of a Netflix-branded title per the engagement reports (`linked` through a Netflix Top 10 title, or `name`), migration 22; marks Netflix originals for the origin classifier |
@@ -886,6 +1278,11 @@ Key constraints:
 - `titles` is keyed on `slug` (FlixPatrol URL slug). Its TMDB ID is computed from evidence; other IDs live on `tmdb_titles` and are only replaced by an equal or stronger source.
 - `task_schedules.name` is unique — the admin API returns `409 Conflict` on duplicates.
 - The writer pool is capped at 1 (`SetMaxOpenConns(1)`) to serialize writes; a separate read-only pool (`DATABASE_READ_CONNS`, `query_only`) serves the read API alongside it (WAL).
+- The tracking tables have no foreign keys into the chart domain: they
+  reference TMDB by `(tmdb_kind, tmdb_id)` text, so a user can log a title
+  metareel has never charted, and nothing a job does to `titles` /
+  `tmdb_titles` can touch user data. Their only foreign key is `users(id)`,
+  `ON DELETE CASCADE`, so deleting a user takes their tracking data with it.
 
 ---
 
@@ -977,7 +1374,8 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `FLARESOLVERR_MAX_TIMEOUT` | `60s` | Max time FlareSolverr may spend on one page |
 | `FLARESOLVERR_SESSION` | `metareel` | FlareSolverr browser session reused across requests (blank = new browser per page) |
 | `FLARESOLVERR_SESSION_TTL` | `30m` | FlareSolverr recreates the session after this long |
-| `UI_STATIC_DIR` | `web/dist` | Directory to serve the SPA from |
+| `UI_STATIC_DIR` | `web/dist` | Admin console build, served at `/admin` |
+| `APP_STATIC_DIR` | `app/dist` | User app build, served at `/` |
 | `UI_SERVE_STATIC` | `true` | Enable / disable static file serving |
 | `TMDB_API_KEY` | _(empty)_ | TMDB v3 API key — ID enrichment disabled when blank |
 | `RATINGS_TTL` | `12h` | How long stored ratings are served before a request refreshes them |
@@ -985,6 +1383,8 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `MDBLIST_API_KEY` | _(empty)_ | Enables MDBList as a ratings provider |
 | `SCRAPER_MIN_INTERVAL` | `2s` | Minimum gap between FlixPatrol page fetches across all jobs |
 | `NETFLIX_TOP10_COUNTRIES` | _(empty)_ | Netflix per-country Top 10 to keep: ISO codes, empty = the FlixPatrol schedules' countries, `all` = every country |
+| `VENUES_IMPORT_COUNTRIES` | `US,GB,IN` | Countries `venues.import` brings cinemas in for when a run names none (ISO codes, comma separated) |
+| `VENUES_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass API instance `venues.import` reads OpenStreetMap from |
 | `IMDB_DATASET_SCOPE` | `known` | `known` = only IMDb IDs metareel has, `all` = the whole dataset (~1.6M rows) |
 | `DOWNLOAD_TIMEOUT` | `10m` | One Netflix / IMDb file download |
 | `NETFLIX_TOP10_SEARCH` | `true` | Look Netflix titles' Netflix IDs up on Tudum's Top 10 search (an undocumented persisted GraphQL query, sent anonymously) |
