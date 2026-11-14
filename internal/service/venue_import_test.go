@@ -249,6 +249,11 @@ func TestVenueFromOSM(t *testing.T) {
 	if got := ix.nearest(19.0, 72.83); got == nil || *got != "Mumbai" {
 		t.Fatalf("nearest town = %v", got)
 	}
+	// A city within 10 km beats a nearer town.
+	boston := newTownIndex([]client.OSMPlace{osm("node", 1, 42.3555, -71.0565, "name", "Boston", "place", "city"), osm("node", 2, 42.3318, -71.1212, "name", "Brookline", "place", "town")})
+	if got := boston.nearest(42.3405, -71.0894); got == nil || *got != "Boston" {
+		t.Fatalf("city over town = %v", got)
+	}
 	if got := ix.nearest(20.5, 74.0); got != nil {
 		t.Fatalf("town 200 km away = %q", *got)
 	}

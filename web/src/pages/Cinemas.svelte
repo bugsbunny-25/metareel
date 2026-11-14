@@ -3,7 +3,7 @@
   import Drawer from '../components/Drawer.svelte'
   import Icon from '../components/Icon.svelte'
   import {
-    listVenues, getVenue, createVenue, updateVenue, deleteVenue,
+    listVenues, getVenue, createVenue, updateVenue, deleteVenue, mergeVenue,
     addVenueAlias, deleteVenueAlias, createScreen, updateScreen, deleteScreen, runJob,
   } from '../lib/api.js'
   import { route, setQuery, href } from '../lib/router.svelte.js'
@@ -126,6 +126,47 @@
       load()
     } catch (e) {
       toast.error(e.message)
+    }
+  }
+
+  // Merge a duplicate into the cinema to keep (e.g. one typed in by a user and the same one imported).
+  let mergeQ = $state('')
+  let mergeHits = $state([])
+  let merging = $state(false)
+  $effect(() => {
+    const term = mergeQ.trim(), self = detail?.venue?.id
+    if (term.length < 2 || !self) { mergeHits = []; return }
+    let cancelled = false
+    const t = setTimeout(() => {
+      listVenues({ q: term, include_closed: 'true', limit: 8 })
+        .then((d) => { if (!cancelled) mergeHits = (d.venues ?? []).filter((v) => v.id !== self).slice(0, 8) })
+        .catch(() => { if (!cancelled) mergeHits = [] })
+    }, 250)
+    return () => { cancelled = true; clearTimeout(t) }
+  })
+  $effect(() => { detail?.venue?.id; mergeQ = ''; mergeHits = [] })
+
+  async function mergeInto(target) {
+    const v = detail.venue
+    const n = detail.watch_count
+    const ok = await confirm({
+      title: `Merge ${v.name} into ${target.name}?`,
+      message: `${n} ${n === 1 ? 'watch' : 'watches'}, ${detail.screens.length} ${detail.screens.length === 1 ? 'screen' : 'screens'}, former names and outside ids move to ${target.name}${target.city ? ` (${target.city})` : ''}, and “${v.name}” becomes one of its former names. Empty fields of ${target.name} are filled from this one. ${v.name} is then deleted. Diaries keep the name each watch was logged with. This can’t be undone.`,
+      confirmLabel: 'Merge',
+      danger: true,
+    })
+    if (!ok) return
+    merging = true
+    try {
+      const out = await mergeVenue(v.id, target.id)
+      const m = out.merged ?? {}
+      toast.success(`Merged into ${target.name}: ${m.watches ?? 0} watches, ${m.screens ?? 0} screens moved`)
+      setQuery({ open: target.id })
+      load()
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      merging = false
     }
   }
 
@@ -363,6 +404,24 @@
           <button class="btn btn-sm" disabled={!alias.name.trim()} onclick={addAlias}>Add</button>
         </div>
       </section>
+
+      <section>
+        <h3>Merge into another cinema</h3>
+        <p class="muted">For a duplicate: everything here moves to the cinema you pick, and this one is deleted.</p>
+        <input class="input" bind:value={mergeQ} placeholder="Search the cinema to keep, e.g. pvr mumbai" aria-label="Cinema to merge into" />
+        {#if mergeHits.length}
+          <ul class="merge-hits">
+            {#each mergeHits as h (h.id)}
+              <li>
+                <span><b>{h.name}</b> <span class="muted">{[h.city, h.country].filter(Boolean).join(', ')}{h.status !== 'open' ? ` · ${h.status}` : ''} · id {h.id}</span></span>
+                <button class="btn btn-sm" disabled={merging} onclick={() => mergeInto(h)}>Merge into this</button>
+              </li>
+            {/each}
+          </ul>
+        {:else if mergeQ.trim().length >= 2}
+          <p class="muted">No other cinema matches.</p>
+        {/if}
+      </section>
     {/if}
 
     {#snippet footer()}
@@ -401,6 +460,8 @@
   .aliases li { display: flex; align-items: center; gap: 0.7rem; }
   .alias-form { display: grid; grid-template-columns: 1fr 140px 140px auto; gap: 0.5rem; }
   .grow { flex: 1; }
+  .merge-hits { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.3rem; }
+  .merge-hits li { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; padding: 0.35rem 0.5rem; border-radius: 6px; background: var(--surface-2); }
   .danger { color: var(--danger, #c4281c); }
   .compact td, .compact th { padding-top: 0.35rem; padding-bottom: 0.35rem; }
 </style>

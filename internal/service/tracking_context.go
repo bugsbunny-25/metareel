@@ -66,6 +66,11 @@ type WatchContextInput struct {
 	Currency         *string `json:"currency"`
 	TicketsCount     *int64  `json:"tickets_count"`
 	BookingSource    *string `json:"booking_source"`
+	// A cinema subscription (/me/subscriptions) that covered the ticket;
+	// price_minor is then what was paid on top, face_value_minor what the
+	// ticket would have cost.
+	SubscriptionID *int64 `json:"subscription_id"`
+	FaceValueMinor *int64 `json:"face_value_minor"`
 
 	ProviderID   *int64  `json:"provider_id"`
 	ProviderName *string `json:"provider_name"`
@@ -105,6 +110,7 @@ func (s *TrackingService) resolveContext(ctx context.Context, in WatchContextInp
 		SubtitleLanguage: trimmedPtr(in.SubtitleLanguage),
 		PriceMinor:       in.PriceMinor, FeesMinor: in.FeesMinor, ConcessionsMinor: in.ConcessionsMinor,
 		TicketsCount: in.TicketsCount, ProviderID: in.ProviderID, FrameRate: in.FrameRate,
+		SubscriptionID: in.SubscriptionID, FaceValueMinor: in.FaceValueMinor,
 	}
 	if in.WithQA != nil {
 		c.WithQA = *in.WithQA
@@ -144,13 +150,13 @@ func (s *TrackingService) resolveContext(ctx context.Context, in WatchContextInp
 		c.Currency = &up
 	}
 	for name, amount := range map[string]*int64{
-		"price_minor": in.PriceMinor, "fees_minor": in.FeesMinor, "concessions_minor": in.ConcessionsMinor,
+		"price_minor": in.PriceMinor, "fees_minor": in.FeesMinor, "concessions_minor": in.ConcessionsMinor, "face_value_minor": in.FaceValueMinor,
 	} {
 		if amount != nil && *amount < 0 {
 			return nil, nil, nil, &ValidationError{Message: name + " must not be negative"}
 		}
 	}
-	if (in.PriceMinor != nil || in.FeesMinor != nil || in.ConcessionsMinor != nil) && c.Currency == nil {
+	if (in.PriceMinor != nil || in.FeesMinor != nil || in.ConcessionsMinor != nil || in.FaceValueMinor != nil) && c.Currency == nil {
 		return nil, nil, nil, &ValidationError{Message: "currency is required when an amount is given"}
 	}
 	if in.TicketsCount != nil && *in.TicketsCount < 1 {

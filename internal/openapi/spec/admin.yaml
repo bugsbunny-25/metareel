@@ -1983,6 +1983,54 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /api/v1/admin/venues/{id}/merge:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 }, description: The duplicate, deleted by the merge }
+    post:
+      operationId: mergeVenue
+      tags: [Tracking]
+      summary: Merge a duplicate cinema into the one kept
+      description: >
+        Admin only (it rewrites other users' watches). In one transaction: the
+        duplicate's watches, screens, former names and outside ids
+        (venue_refs; one the kept venue already has of that kind is dropped)
+        move to `into`, venues marked as replaced by it point at `into`, its
+        name becomes a former name of `into` (closing on its closed_on), it
+        fills `into`'s empty fields, and it is deleted. Watches keep the name
+        and city they were logged with. Returns the kept venue as
+        GET /venues/{id} does, plus `merged` counts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [into]
+              properties:
+                into: { type: integer, format: int64, description: The cinema to keep }
+      responses:
+        "200":
+          description: The kept cinema
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  venue: { type: object }
+                  screens: { type: array, items: { type: object } }
+                  aliases: { type: array, items: { type: object } }
+                  refs: { type: array, items: { type: object } }
+                  watch_count: { type: integer }
+                  merged:
+                    type: object
+                    properties:
+                      watches: { type: integer }
+                      screens: { type: integer }
+                      aliases: { type: integer }
+                      refs: { type: integer }
+                      filled: { type: boolean }
+        "400": { description: "into missing, or the same cinema" }
+        "404": { description: Either cinema doesn't exist }
   /api/v1/admin/venues/{id}/aliases:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }

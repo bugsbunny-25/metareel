@@ -614,6 +614,7 @@ WHERE (q.w1 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v
   AND (CAST(?5 AS TEXT) = '' OR v.country = ?5)
   AND (CAST(?6 AS INTEGER) = 1 OR v.status <> 'closed')
 ORDER BY CASE WHEN q.w1 <> '' AND v.name LIKE q.w1 || '%' THEN 0 ELSE 1 END,
+         CASE WHEN v.status = 'open' THEN 0 ELSE 1 END,
          v.name COLLATE NOCASE, v.id
 LIMIT ?8 OFFSET ?7
 `
@@ -653,7 +654,8 @@ type ListVenuesRow struct {
 
 // ListVenues searches the shared venue list: each word of the query (up to
 // four) must appear in the name, chain, city or address, so "pvr mumbai"
-// finds a PVR in Mumbai. Names starting with the first word come first.
+// finds a PVR in Mumbai. Names starting with the first word come first,
+// then open cinemas before closed ones.
 func (q *Queries) ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListVenuesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listVenues,
 		arg.W1,
@@ -807,8 +809,10 @@ UPDATE watch_entries SET
     screen_dim_unit = ?34,
     screen_width_m = ?35,
     screen_height_m = ?36,
+    subscription_id = ?37,
+    face_value_minor = ?38,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = ?37 AND user_id = ?38
+WHERE id = ?39 AND user_id = ?40
 `
 
 type SetWatchEntryContextParams struct {
@@ -848,6 +852,8 @@ type SetWatchEntryContextParams struct {
 	ScreenDimUnit          sql.NullString  `json:"screen_dim_unit"`
 	ScreenWidthM           sql.NullFloat64 `json:"screen_width_m"`
 	ScreenHeightM          sql.NullFloat64 `json:"screen_height_m"`
+	SubscriptionID         sql.NullInt64   `json:"subscription_id"`
+	FaceValueMinor         sql.NullInt64   `json:"face_value_minor"`
 	ID                     int64           `json:"id"`
 	UserID                 int64           `json:"user_id"`
 }
@@ -892,6 +898,8 @@ func (q *Queries) SetWatchEntryContext(ctx context.Context, arg SetWatchEntryCon
 		arg.ScreenDimUnit,
 		arg.ScreenWidthM,
 		arg.ScreenHeightM,
+		arg.SubscriptionID,
+		arg.FaceValueMinor,
 		arg.ID,
 		arg.UserID,
 	)

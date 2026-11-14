@@ -66,7 +66,7 @@
       zone: browserZone(), origVenueId: null, precision: 'minute', minute: zonedInput(new Date(), browserZone()), day: localDay(), month: localDay().slice(0, 7), year: new Date().getFullYear(),
       rating: null, liked: false, notes: '', tagText: '',
       place: '', venue: null, screenId: null, seat: '', screening: '', eventName: '', withQA: false, formats: [],
-      currency: '', tickets: '', price: '', fees: '', snacks: '', booking: '',
+      currency: '', tickets: '', price: '', fees: '', snacks: '', booking: '', subId: null, faceValue: '', subTouched: false,
       provider: '', providerId: null, providerOriginal: '', monetization: 'flatrate', device: '', media: '', disc: '', label: '', edition: '', channel: '',
       dimension: '', resolution: '', hdr: '', audioFormat: '', frameRate: '', audioLang: '', subLang: '',
       aspect: '', aspectVariable: false, screenAspect: '', screenW: '', screenH: '', dimUnit: prefs.values.screen_unit ?? 'm',
@@ -92,6 +92,7 @@
       label: (w.formats ?? []).find((ff) => ff.category === 'label')?.slug ?? '',
       currency: cur, tickets: w.tickets_count ?? '', price: fromMinor(w.price_minor, cur), fees: fromMinor(w.fees_minor, cur),
       snacks: fromMinor(w.concessions_minor, cur), booking: w.booking_source ?? '',
+      subId: w.subscription_id ?? null, faceValue: fromMinor(w.face_value_minor, cur), subTouched: true,
       monetization: w.monetization ?? 'flatrate', device: w.device ?? '', media: w.media ?? '', edition: w.edition ?? '',
       dimension: w.dimension ?? '', resolution: w.resolution ?? '', hdr: w.hdr ?? '', audioFormat: w.audio_format ?? '',
       frameRate: w.frame_rate ?? '', audioLang: w.audio_language ?? '', subLang: w.subtitle_language ?? '',
@@ -173,6 +174,24 @@
     if (!Number.isFinite(n) || n <= 0) throw new Error(`${name} must be a positive number.`)
     return n
   }
+  // Your cinema subscriptions. A new log at a cinema of the plan's chain starts covered by it.
+  let subs = $state([])
+  $effect(() => { if (target) api.subscriptions().then((r) => (subs = r.subscriptions ?? [])).catch(() => (subs = [])) })
+  const today = localDay()
+  const subChoices = $derived(subs.filter((s) => !s.ended_on || s.ended_on >= (f.day || today) || s.id === f.subId))
+  const chainOf = (v) => `${v?.chain ?? ''} ${v?.name ?? ''}`.toLowerCase()
+  $effect(() => {
+    if (f.place !== 'theater' || f.subTouched || !f.venue) return
+    const hit = subChoices.filter((s) => s.chain && chainOf(f.venue).includes(s.chain.toLowerCase()))
+    f.subId = hit.length === 1 ? hit[0].id : null
+    if (hit.length === 1) usePlanCurrency(hit[0])
+  })
+  // A covered ticket is valued in the plan's currency, so switch to it while no amount is typed.
+  function usePlanCurrency(plan) {
+    if (plan && !f.price && !f.fees && !f.snacks && !f.faceValue) f.currency = plan.currency
+  }
+  const subPlan = $derived(subs.find((s) => s.id === f.subId) ?? null)
+
   const minor = (v, name) => {
     const m = toMinor(v, f.currency)
     if (m === undefined) throw new Error(`${name} must be an amount like 12.50.`)
@@ -211,6 +230,7 @@
         venue_id: f.venue?.id ?? null, screen_id: f.venue ? f.screenId : null, seat: text(f.seat),
         screening_type: f.screening || null, event_name: f.screening ? text(f.eventName) : null, with_qa: f.withQA,
         formats: f.formats, booking_source: text(f.booking), tickets_count: num(f.tickets, 'Tickets'),
+        subscription_id: f.subId ?? null,
       })
     }
     if (p === 'streaming') {
@@ -233,6 +253,7 @@
         price_minor: minor(f.price, p === 'theater' ? 'Tickets cost' : 'Price'),
         fees_minor: p === 'theater' ? minor(f.fees, 'Fees') : null,
         concessions_minor: p === 'theater' ? minor(f.snacks, 'Snacks') : null,
+        face_value_minor: p === 'theater' && f.subId ? minor(f.faceValue, 'Face value') : null,
       }
       Object.assign(out, amounts)
       if (Object.values(amounts).some((v) => v != null)) {
@@ -407,9 +428,21 @@
               <legend>{f.place === 'theater' ? 'Tickets' : f.monetization === 'rent' ? 'Rental' : 'Purchase'}</legend>
               <div class="row money-row" class:three={f.place === 'theater'}>
                 {#if f.place === 'theater'}<label>Tickets<input type="number" min="1" bind:value={f.tickets} placeholder="1" /></label>{/if}
-                <label>{f.place === 'theater' ? 'Tickets cost' : 'Price'}<input inputmode="decimal" bind:value={f.price} placeholder="0.00" /></label>
+                <label>{f.place === 'theater' ? (f.subId ? 'Paid on top' : 'Tickets cost') : 'Price'}<input inputmode="decimal" bind:value={f.price} placeholder="0.00" /></label>
                 <label>Currency<input bind:value={f.currency} maxlength="3" class="cc" aria-describedby="cur-hint" /></label>
               </div>
+              {#if f.place === 'theater' && subChoices.length}
+                <div class="row two">
+                  <label>Covered by
+                    <select value={f.subId ?? ''} onchange={(e) => { f.subId = e.currentTarget.value ? Number(e.currentTarget.value) : null; f.subTouched = true; usePlanCurrency(subs.find((x) => x.id === f.subId)) }}>
+                      <option value="">Not covered: I paid</option>
+                      {#each subChoices as s (s.id)}<option value={s.id}>{s.plan}{s.ended_on && s.ended_on < today ? ' (ended)' : ''}</option>{/each}
+                    </select>
+                  </label>
+                  {#if f.subId}<label>Ticket’s face value<input inputmode="decimal" bind:value={f.faceValue} placeholder="usual price" aria-describedby="face-hint" /></label>{/if}
+                </div>
+                {#if f.subId}<p class="hint" id="face-hint">What the ticket would have cost without {subPlan?.plan ?? 'the plan'}. Left blank, your usual ticket price at {subPlan?.chain || 'cinemas'} is used. “Paid on top” is any upcharge or fee you still paid.</p>{/if}
+              {/if}
               {#if f.place === 'theater'}
                 <div class="row two">
                   <label>Booking fees<input inputmode="decimal" bind:value={f.fees} placeholder="0.00" /></label>

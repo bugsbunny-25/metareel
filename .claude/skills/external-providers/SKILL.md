@@ -71,6 +71,13 @@ it, and again after — several fields and enums below were only discoverable th
 - Time zones come from coordinates via `tzf` (embedded boundaries); no network.
 - Data is ODbL: credit "© OpenStreetMap contributors" where it is shown.
 
+## Wikidata action API (`client/wikidata_api.go`, historic cinemas)
+
+- For "every X in a country", SPARQL times out (60 s) on the US and India even with a forced join order, and a timed-out query gets you throttled (502s). Use the action API instead: `list=search` with `haswbstatement:` filters (`|` means OR, a bare property means "has it") returns IDs in ~0.2 s, 500 a page, but stops at offset 10,000, so read `srsort=create_timestamp_asc` then `_desc` to reach up to 20,000; then `wbgetentities` 50 IDs at a time with `props=labels|claims`.
+- Send `maxlag=5`; a `maxlag` error or 429/5xx means wait and retry.
+- Dates come as `+1909-11-08T00:00:00Z` with a precision (11 day, 10 month, 9 year); a year-precision date has `-00-00`. Never store a day you weren't given.
+- Closed cinemas: P5817 state of use Q104664889 (permanently closed) or Q56556915 (demolished), or P576. ~13,000 in the US and ~2,800 in GB (mostly from Cinema Treasures, P4129), 3 in India.
+
 ## How mapping works (`titles.enrich`: `title_enrich.go` + `title_matcher.go`)
 
 Scrapes only record titles (`match_status = pending`) and queue `titles.enrich` for them.

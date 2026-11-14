@@ -548,9 +548,47 @@ is deleted: a cinema gone from OSM is counted (`gone`) and kept, since watches
 may point at it. Each country is written in one transaction; a failing
 country is reported and the others still run.
 
+Historic cinemas follow, per country (`venue_import_historic.go`, skipped
+with a warning if Wikidata fails): Wikidata's closed cinemas
+(`client/wikidata_api.go`), found with the action API's search
+(`haswbstatement:P31=Q41253 haswbstatement:P17=<country>` plus state of use
+permanently closed or demolished, or a dissolved date; read oldest-first and
+newest-first because search stops at 10,000) and fetched with
+`wbgetentities`, 50 at a time. SPARQL was tried first and times out on a
+country this size. Each needs a name and coordinates; it gets the address
+(P6375), the nearest town, the zone, `opened_on`/`closed_on` when the date is
+to the day (P1619 or P571; P3999 or P576), and year- or month-precision dates
+and "demolished" in the note. It matches a venue holding its Wikidata ID, or
+one of the same name nearby without one; a match OSM shows open only gains
+the opening date and address, so a rebuilt or reopened cinema is never
+closed. Unmatched ones are created `closed`.
+
 Venue search (`ListVenues`) matches up to four words, each anywhere in the
 name, chain, city or address, and ranks names starting with the first word
-first.
+first, then open cinemas before closed ones. The user app's picker includes
+closed cinemas.
+
+Merging (`POST /admin/venues/{id}/merge`, `repository/venue_merge_repo.go`)
+folds a duplicate into the cinema kept in one transaction: watches, screens
+and former names move, the duplicate's name becomes a former name (to its
+closed_on), its refs move unless the kept venue has one of that source,
+`replaced_by_venue_id` pointers move, empty fields are filled from it, and it
+is deleted. Watches keep their `venue_name_at_watch`.
+
+## Cinema subscriptions (`service/tracking_subscriptions.go`)
+
+`cinema_subscriptions` (migration 35) holds a user's plans: name, chain,
+price per `month` or `year` in minor units with a currency, `started_on`
+(first billing day) and `ended_on`. A watch has `subscription_id` (only the
+user's own plan; checked on write) and `face_value_minor`, what the ticket
+would have cost; `price_minor` stays what was paid (an upcharge).
+`GET /me/subscriptions/savings` works it out on read: bills are the start
+day and each month or year after it (clamped to month ends) up to today or
+the end; covered watches in the plan's currency are valued at their face
+value or the median single ticket paid at the plan's chain (venue chain or
+name containing it), else at any cinema, in that currency; savings = value -
+bills - extras paid on covered watches. The what-if sums the last 12 months
+of paid tickets at each well-known plan's chain. No currency conversion.
 
 ## Credits and people (`service/credits.go`)
 

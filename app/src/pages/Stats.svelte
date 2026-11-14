@@ -6,6 +6,7 @@
   import Icon from '../components/Icon.svelte'
   import Columns from '../components/Columns.svelte'
   import BarList from '../components/BarList.svelte'
+  import SubscriptionSavings from '../components/SubscriptionSavings.svelte'
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
   import { route, setQuery } from '../lib/router.svelte.js'
@@ -227,6 +228,8 @@
           </section>
         {/if}
       </div>
+
+      <SubscriptionSavings />
 
       {#if people.length}
         <section class="panel pad">

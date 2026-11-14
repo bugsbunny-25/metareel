@@ -2,12 +2,12 @@ package service
 
 import (
 	"context"
-	"sync"
 	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bugsbunny-25/metareel/internal/client"

@@ -73,6 +73,18 @@ export const api = {
   hiddenGems: (country, params, signal) => request('GET', `/discover/${country}/hidden-gems${qs(params)}`, { signal }),
   elsewhere: (country, params, signal) => request('GET', `/discover/${country}/elsewhere${qs(params)}`, { signal }),
   rotation: (country, params, signal) => request('GET', `/discover/${country}/rotation${qs(params)}`, { signal }),
+  // What a service added (per day, live from JustWatch; at most 31 days) and has announced.
+  newOnService: (country, service, params, signal) => request('GET', `/titles/new/${country}/${service}${qs(params)}`, { signal }),
+  upcomingOnService: (country, service, params, signal) => request('GET', `/titles/upcoming/${country}/${service}${qs(params)}`, { signal }),
+  // Episodes airing (from/to, at most 62 days) of shows streamable in the country.
+  calendar: (country, params, signal) => request('GET', `/calendar/${country}${qs(params)}`, { signal }),
+  // Titles ranked by Top 10 points: period day|week|month, country / provider omitted = all.
+  leaderboard: (params, signal) => request('GET', `/leaderboards${qs(params)}`, { signal }),
+  // Netflix's own weekly Top 10 (global or a country; week = any date in it) and all-time lists.
+  netflixWeek: (country, week, signal) => request('GET', `/netflix/top10${country ? `/${country}` : ''}${qs({ week })}`, { signal }),
+  netflixMostPopular: (signal) => request('GET', '/netflix/most-popular', { signal }),
+  // Chart analytics: genres, decay, release-lag, origins (country, provider, from, to).
+  analytics: (name, params, signal) => request('GET', `/analytics/${name}${qs(params)}`, { signal }),
 
   // Search: charted titles only (with last_charted), all of TMDB (needs a TMDB key), and ID lookup.
   searchCharted: (q, kind, signal) => request('GET', `/search${qs({ q, kind, limit: 8 })}`, { signal }),
@@ -119,9 +131,18 @@ export const api = {
   deleteWatch: (id) => request('DELETE', `/me/watches/${id}`),
   tags: (signal) => request('GET', '/me/tags', { signal }),
 
+  // Cinema subscriptions (AMC Stubs A-List, ODEON Limitless, ...): yours and well-known plans,
+  // and whether each paid off (covered tickets' face value against what the plan cost).
+  subscriptions: (signal) => request('GET', '/me/subscriptions', { signal }),
+  createSubscription: (body) => request('POST', '/me/subscriptions', { body }),
+  updateSubscription: (id, body) => request('PUT', `/me/subscriptions/${id}`, { body }),
+  deleteSubscription: (id) => request('DELETE', `/me/subscriptions/${id}`),
+  subscriptionSavings: (signal) => request('GET', '/me/subscriptions/savings', { signal }),
+
   // Where and how a watch happened: premium formats, cinemas and their screens, streaming services.
   formats: (signal) => request('GET', '/me/formats', { signal }),
-  venues: (q, country, signal) => request('GET', `/me/venues${qs({ q, country, limit: 12 })}`, { signal }),
+  // Closed cinemas too (they rank after open ones), so an old watch can be logged where it happened.
+  venues: (q, country, signal) => request('GET', `/me/venues${qs({ q, country, include_closed: 'true', limit: 12 })}`, { signal }),
   venue: (id, signal) => request('GET', `/me/venues/${id}`, { signal }),
   createVenue: (body) => request('POST', '/me/venues', { body }),
   createScreen: (venueId, body) => request('POST', `/me/venues/${venueId}/screens`, { body }),

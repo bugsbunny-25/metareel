@@ -207,6 +207,9 @@ type WatchContext struct {
 	Currency         *string `json:"currency,omitempty"`
 	TicketsCount     *int64  `json:"tickets_count,omitempty"`
 	BookingSource    *string `json:"booking_source,omitempty"`
+	// A cinema subscription that covered the ticket, and what it would have cost.
+	SubscriptionID *int64 `json:"subscription_id,omitempty"`
+	FaceValueMinor *int64 `json:"face_value_minor,omitempty"`
 
 	ProviderID   *int64  `json:"provider_id,omitempty"`
 	ProviderName *string `json:"provider_name,omitempty"`
@@ -262,6 +265,7 @@ func setContext(ctx context.Context, q *sqlc.Queries, userID, entryID int64, c *
 		ScreenWidth:            floatPtrNull(c.ScreenWidth), ScreenHeight: floatPtrNull(c.ScreenHeight),
 		ScreenDimUnit: toNullString(c.ScreenDimUnit),
 		ScreenWidthM:  floatPtrNull(c.ScreenWidthM), ScreenHeightM: floatPtrNull(c.ScreenHeightM),
+		SubscriptionID: toNullInt64(c.SubscriptionID), FaceValueMinor: toNullInt64(c.FaceValueMinor),
 	}); err != nil {
 		return fmt.Errorf("set context of watch %d: %w", entryID, err)
 	}
@@ -291,6 +295,7 @@ func contextFrom(row sqlc.WatchEntry) WatchContext {
 		PriceMinor: nullInt64Ptr(row.PriceMinor), FeesMinor: nullInt64Ptr(row.FeesMinor),
 		ConcessionsMinor: nullInt64Ptr(row.ConcessionsMinor), Currency: nullStringPtr(row.Currency),
 		TicketsCount: nullInt64Ptr(row.TicketsCount), BookingSource: nullStringPtr(row.BookingSource),
+		SubscriptionID: nullInt64Ptr(row.SubscriptionID), FaceValueMinor: nullInt64Ptr(row.FaceValueMinor),
 		ProviderID: nullInt64Ptr(row.ProviderID), ProviderName: nullStringPtr(row.ProviderName),
 		Monetization: nullStringPtr(row.Monetization), Media: nullStringPtr(row.Media),
 		Edition: nullStringPtr(row.Edition), Device: nullStringPtr(row.Device),

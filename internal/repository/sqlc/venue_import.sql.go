@@ -40,8 +40,10 @@ UPDATE venues SET
     longitude = COALESCE(longitude, ?6),
     timezone  = COALESCE(timezone, ?7),
     opened_on = COALESCE(opened_on, ?8),
+    closed_on = CASE WHEN status = 'closed' THEN COALESCE(closed_on, ?9) ELSE closed_on END,
+    note      = COALESCE(note, ?10),
     updated_at = CURRENT_TIMESTAMP
-WHERE id = ?9
+WHERE id = ?11
   AND ((chain IS NULL AND ?1 IS NOT NULL)
     OR (address IS NULL AND ?2 IS NOT NULL)
     OR (city IS NULL AND ?3 IS NOT NULL)
@@ -49,7 +51,9 @@ WHERE id = ?9
     OR (latitude IS NULL AND ?5 IS NOT NULL)
     OR (longitude IS NULL AND ?6 IS NOT NULL)
     OR (timezone IS NULL AND ?7 IS NOT NULL)
-    OR (opened_on IS NULL AND ?8 IS NOT NULL))
+    OR (opened_on IS NULL AND ?8 IS NOT NULL)
+    OR (status = 'closed' AND closed_on IS NULL AND ?9 IS NOT NULL)
+    OR (note IS NULL AND ?10 IS NOT NULL))
 `
 
 type FillVenueBlanksParams struct {
@@ -61,6 +65,8 @@ type FillVenueBlanksParams struct {
 	Longitude sql.NullFloat64 `json:"longitude"`
 	Timezone  sql.NullString  `json:"timezone"`
 	OpenedOn  sql.NullString  `json:"opened_on"`
+	ClosedOn  sql.NullString  `json:"closed_on"`
+	Note      sql.NullString  `json:"note"`
 	ID        int64           `json:"id"`
 }
 
@@ -74,6 +80,8 @@ func (q *Queries) FillVenueBlanks(ctx context.Context, arg FillVenueBlanksParams
 		arg.Longitude,
 		arg.Timezone,
 		arg.OpenedOn,
+		arg.ClosedOn,
+		arg.Note,
 		arg.ID,
 	)
 	if err != nil {
@@ -84,7 +92,7 @@ func (q *Queries) FillVenueBlanks(ctx context.Context, arg FillVenueBlanksParams
 
 const listVenuesForImport = `-- name: ListVenuesForImport :many
 
-SELECT v.id, v.name, v.city, v.latitude, v.longitude,
+SELECT v.id, v.name, v.city, v.latitude, v.longitude, v.status,
        CAST(COALESCE((SELECT r.ref FROM venue_refs r WHERE r.venue_id = v.id AND r.source = 'osm_id'), '') AS TEXT) AS osm_ref,
        CAST(COALESCE((SELECT r.ref FROM venue_refs r WHERE r.venue_id = v.id AND r.source = 'wikidata_id'), '') AS TEXT) AS wikidata_ref
 FROM venues v
@@ -98,6 +106,7 @@ type ListVenuesForImportRow struct {
 	City        sql.NullString  `json:"city"`
 	Latitude    sql.NullFloat64 `json:"latitude"`
 	Longitude   sql.NullFloat64 `json:"longitude"`
+	Status      string          `json:"status"`
 	OsmRef      string          `json:"osm_ref"`
 	WikidataRef string          `json:"wikidata_ref"`
 }
@@ -120,6 +129,7 @@ func (q *Queries) ListVenuesForImport(ctx context.Context, country sql.NullStrin
 			&i.City,
 			&i.Latitude,
 			&i.Longitude,
+			&i.Status,
 			&i.OsmRef,
 			&i.WikidataRef,
 		); err != nil {

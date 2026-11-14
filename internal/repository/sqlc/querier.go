@@ -57,6 +57,7 @@ type Querier interface {
 	CountVenueWatches(ctx context.Context, venueID sql.NullInt64) (int64, error)
 	CountWebhookDeliveriesByStatus(ctx context.Context) ([]CountWebhookDeliveriesByStatusRow, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
+	CreateCinemaSubscription(ctx context.Context, arg CreateCinemaSubscriptionParams) (int64, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskRunLog(ctx context.Context, arg CreateTaskRunLogParams) error
@@ -70,6 +71,7 @@ type Querier interface {
 	CreateWebhook(ctx context.Context, arg CreateWebhookParams) (Webhook, error)
 	DeleteAPIKey(ctx context.Context, id int64) (int64, error)
 	DeleteChartRankings(ctx context.Context, arg DeleteChartRankingsParams) error
+	DeleteCinemaSubscription(ctx context.Context, arg DeleteCinemaSubscriptionParams) (int64, error)
 	// DeleteEmptyUserTitle removes a state row that holds nothing worth keeping
 	// (no status, no rating, not a favourite, no watches), so clearing a
 	// watchlist entry does not leave a dangling row behind.
@@ -108,6 +110,7 @@ type Querier interface {
 	DeleteUserTitle(ctx context.Context, arg DeleteUserTitleParams) (int64, error)
 	DeleteVenue(ctx context.Context, id int64) (int64, error)
 	DeleteVenueAlias(ctx context.Context, arg DeleteVenueAliasParams) (int64, error)
+	DeleteVenueRef(ctx context.Context, arg DeleteVenueRefParams) error
 	DeleteVenueScreen(ctx context.Context, arg DeleteVenueScreenParams) (int64, error)
 	DeleteWatchEntry(ctx context.Context, arg DeleteWatchEntryParams) (int64, error)
 	DeleteWatchFormatLogo(ctx context.Context, formatID int64) error
@@ -132,6 +135,7 @@ type Querier interface {
 	// Source netflix ranks below every other source, which all replace it.
 	FillTmdbNetflixIDsFromNetflix(ctx context.Context) (int64, error)
 	FillVenueBlanks(ctx context.Context, arg FillVenueBlanksParams) (int64, error)
+	FillVenueBlanksFrom(ctx context.Context, arg FillVenueBlanksFromParams) (int64, error)
 	// Matched FlixPatrol titles with this exact name (case-insensitive) that
 	// charted in the same Netflix list (category movies | tv_shows), to match
 	// Netflix titles without another lookup. t.kind (the TMDB namespace) can
@@ -150,6 +154,7 @@ type Querier interface {
 	GetActiveSession(ctx context.Context, arg GetActiveSessionParams) (GetActiveSessionRow, error)
 	// Operations: settings lookups, chart freshness.
 	GetAppSetting(ctx context.Context, key string) (string, error)
+	GetCinemaSubscription(ctx context.Context, arg GetCinemaSubscriptionParams) (CinemaSubscription, error)
 	// File imports: Netflix official Top 10 and IMDb ratings.
 	GetDataImport(ctx context.Context, source string) (DataImport, error)
 	GetIMDbRating(ctx context.Context, imdbID string) (ImdbRating, error)
@@ -231,6 +236,8 @@ type Querier interface {
 	// 'YYYY-MM-DD HH:MM:SS' UTC, then row id), oldest first: keyset paging, so
 	// many charts sharing one changed_at are read page by page.
 	ListChartsChangedAfter(ctx context.Context, arg ListChartsChangedAfterParams) ([]ListChartsChangedAfterRow, error)
+	// Cinema subscriptions of a user and the watches they covered.
+	ListCinemaSubscriptions(ctx context.Context, userID int64) ([]CinemaSubscription, error)
 	// Netflix titles mapped only by a Wikidata label match (source
 	// wikidata_netflix) to a TMDB title whose Netflix ID (not one copied from a
 	// Netflix title) differs from the title's own: the label matched another
@@ -513,7 +520,8 @@ type Querier interface {
 	ListVenueScreens(ctx context.Context, venueID int64) ([]VenueScreen, error)
 	// ListVenues searches the shared venue list: each word of the query (up to
 	// four) must appear in the name, chain, city or address, so "pvr mumbai"
-	// finds a PVR in Mumbai. Names starting with the first word come first.
+	// finds a PVR in Mumbai. Names starting with the first word come first,
+	// then open cinemas before closed ones.
 	ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListVenuesRow, error)
 	// Cinema import (venues.import): every venue of a country with the refs
 	// the import matches on, and a fill-in update that never overwrites a value
@@ -543,6 +551,11 @@ type Querier interface {
 	MarkWebhookDelivered(ctx context.Context, arg MarkWebhookDeliveredParams) error
 	MaxChartChangedAt(ctx context.Context) (MaxChartChangedAtRow, error)
 	MaxOfferEventID(ctx context.Context) (int64, error)
+	MoveVenueAliases(ctx context.Context, arg MoveVenueAliasesParams) (int64, error)
+	MoveVenueScreens(ctx context.Context, arg MoveVenueScreensParams) (int64, error)
+	// Merging one cinema into another (the console's "Merge into..."): every row
+	// that points at the merged venue moves to the one kept.
+	MoveVenueWatches(ctx context.Context, arg MoveVenueWatchesParams) (int64, error)
 	NextWatchlistPosition(ctx context.Context, userID int64) (int64, error)
 	// People left without any credit (their titles' credits were replaced or
 	// the titles deleted).
@@ -578,6 +591,7 @@ type Querier interface {
 	// moves a watch, then SyncRewatchFlags. ended_at is UTC text in
 	// "YYYY-MM-DD HH:MM:SS", so text order is time order.
 	RenumberWatches(ctx context.Context, arg RenumberWatchesParams) error
+	RepointVenueReplacedBy(ctx context.Context, arg RepointVenueReplacedByParams) (int64, error)
 	RequeueNetflixTitleMatch(ctx context.Context, arg RequeueNetflixTitleMatchParams) error
 	// Due for matching now; clear also forgets the attempts and matched name.
 	RequeueTitleMatch(ctx context.Context, arg RequeueTitleMatchParams) error
@@ -668,6 +682,10 @@ type Querier interface {
 	// metadata the genre, decade and country breakdowns are built from in Go
 	// (genres and origin countries are JSON arrays on tmdb_titles).
 	StatsWatchedTitles(ctx context.Context, arg StatsWatchedTitlesParams) ([]StatsWatchedTitlesRow, error)
+	// SubscriptionCinemaWatches lists a user's cinema watches with what they
+	// cost, for the savings analysis: covered ones and paid ones (paid tickets
+	// price the covered ones that have no face value, and feed the what-if).
+	SubscriptionCinemaWatches(ctx context.Context, userID int64) ([]SubscriptionCinemaWatchesRow, error)
 	// SyncRewatchFlags sets is_rewatch from watch_number for one title's watches.
 	SyncRewatchFlags(ctx context.Context, arg SyncRewatchFlagsParams) error
 	TitleMappingStats(ctx context.Context) (TitleMappingStatsRow, error)
@@ -678,6 +696,7 @@ type Querier interface {
 	// UpNext is the next aired, unwatched episode of each show the user is part
 	// way through, most recently aired first. Specials are left out.
 	UpNext(ctx context.Context, arg UpNextParams) ([]UpNextRow, error)
+	UpdateCinemaSubscription(ctx context.Context, arg UpdateCinemaSubscriptionParams) (int64, error)
 	UpdateNetflixSeasonMapping(ctx context.Context, arg UpdateNetflixSeasonMappingParams) error
 	UpdateRankingSeason(ctx context.Context, arg UpdateRankingSeasonParams) error
 	UpdateTaskSchedule(ctx context.Context, arg UpdateTaskScheduleParams) (TaskSchedule, error)

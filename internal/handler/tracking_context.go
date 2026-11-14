@@ -83,6 +83,22 @@ func (h *Handler) DeleteVenue(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// MergeVenue: POST /api/v1/admin/venues/{id}/merge {"into": 12}
+func (h *Handler) MergeVenue(c *echo.Context) error {
+	id, err := parseID(c.Param("id"), "venue id")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	var in struct {
+		Into int64 `json:"into"`
+	}
+	if err := c.Bind(&in); err != nil {
+		return badRequest(c, errors.New("invalid JSON body"))
+	}
+	out, err := h.Tracking.MergeVenues(c.Request().Context(), id, in.Into)
+	return h.writeTracking(c, http.StatusOK, out, err)
+}
+
 type venueAliasRequest struct {
 	Name     string  `json:"name"`
 	FromDate *string `json:"from_date"`

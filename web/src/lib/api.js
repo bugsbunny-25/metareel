@@ -138,6 +138,8 @@ export const getVenue = (id) => req(`/venues/${id}`)
 export const createVenue = (body) => req('/venues', { method: 'POST', body })
 export const updateVenue = (id, body) => req(`/venues/${id}`, { method: 'PUT', body })
 export const deleteVenue = (id) => req(`/venues/${id}`, { method: 'DELETE' })
+// Folds venue id into `into` (watches, screens, former names, outside ids move; id is deleted).
+export const mergeVenue = (id, into) => req(`/venues/${id}/merge`, { method: 'POST', body: { into } })
 export const addVenueAlias = (id, body) => req(`/venues/${id}/aliases`, { method: 'POST', body })
 export const deleteVenueAlias = (id, aliasId) => req(`/venues/${id}/aliases/${aliasId}`, { method: 'DELETE' })
 export const createScreen = (id, body) => req(`/venues/${id}/screens`, { method: 'POST', body })

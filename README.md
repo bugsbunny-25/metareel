@@ -246,6 +246,7 @@ make reports-open
 | GET    | `/api/v1/admin/mapping-events?subject=flixpatrol:12\|netflix:34&tmdb=movie:550&limit=` | History of mapping changes, newest first: action, TMDB title before / after, source and who made it (job, `mapping.sync`, `admin`) |
 | PATCH  | `/api/v1/admin/netflix/seasons/:id`         | Set a Netflix season title's season number by hand (`{"season_number": 2}`) or hand it back (`{"auto": true}`) |
 | GET/POST/PATCH | `/api/v1/admin/watch-formats[/:id]`  | The premium-format taxonomy (console: Premium formats): cinema axes (`brand`, `projection`, `sound`, `motion`, `dimension`) plus home media (`disc`: DVD, Blu-ray, 4K UHD Blu-ray; `label`: Criterion, Arrow…). A format is retired with `active: false`, never deleted. `logo_display` is `original` or `mono` (clients draw a dark logo white). Logos to collect: [docs/format-logos.md](docs/format-logos.md) |
+| POST   | `/api/v1/admin/venues/:id/merge`            | Merge a duplicate cinema into another (`{"into": id}`): watches, screens, former names and outside ids move, its name becomes a former name, it is deleted |
 | GET/POST/PUT/DELETE | `/api/v1/admin/venues[/:id[/screens[/:screen_id]\|/aliases[/:alias_id]]]` | Cinemas for the console's Cinemas page: search, add, correct, close (status `closed`), delete one nobody watched at; screens and former names. The same handlers as `/api/v1/me/venues` |
 | PUT/DELETE | `/api/v1/admin/watch-formats/:id/logo`   | Upload a format's logo (raw image body: PNG, JPEG, WebP or GIF ≤ 4096 px a side, or an SVG of drawing elements only; ≤ 512 KB; type taken from the bytes) or remove it |
 | GET/POST/PATCH/DELETE | `/api/v1/admin/webhooks[/:id[/test\|/rotate-secret\|/deliveries]]`, `/api/v1/admin/webhook-deliveries/:id[/retry]` | Outbound webhooks (see [Webhooks](#webhooks)) |
@@ -276,6 +277,9 @@ make reports-open
 | POST/DELETE | `/api/v1/me/venues/:id/aliases[/:alias_id]` | Record or remove a name a cinema used to have |
 | POST   | `/api/v1/me/venues/:id/screens`             | Add an auditorium (size, seats, aspect ratio) |
 | PUT/DELETE | `/api/v1/me/venues/:id/screens/:screen_id` | Edit or remove an auditorium |
+| GET/POST | `/api/v1/me/subscriptions`                | Your cinema subscriptions (plan, chain, price per month or year, start and end) and well-known plans; add one |
+| PUT/DELETE | `/api/v1/me/subscriptions/:id`          | Replace (e.g. end) or delete a plan; deleting keeps its watches, uncovered |
+| GET    | `/api/v1/me/subscriptions/savings`          | Per plan: bills paid against covered tickets' face value (or your usual ticket price), extras, savings, break-even, month by month; and what a plan would have to cost at chains you paid at |
 | GET    | `/api/v1/me/stats/summary`                  | Totals, where you watched, formats, spend (`from`, `to`) |
 | GET    | `/api/v1/me/stats/calendar`                 | Day-by-day heatmap and streaks |
 | GET    | `/api/v1/me/stats/year`                     | Year in review (`year`, default this year) |
@@ -306,7 +310,7 @@ on demand from Data health or `POST /api/v1/admin/jobs/:type/run`.
 | `netflix.titles.match` | 09:00 | Works through the backlog of unmatched Netflix titles (retrying after 1, 3, 7, then every 30 days; `manual` titles are never touched), looks up Netflix IDs of up to 200 more titles (fixing earlier name matches), then remaps seasons. Also queued by "Match again" in the admin UI. |
 | `imdb.ratings.import` | 06:00 | IMDb's daily ratings dataset for the IMDb IDs metareel knows (also kept as history: a row whenever a title's rating or votes changed). |
 | `tmdb.credits.refresh` | 05:30 | TMDB cast (top 25) and key crew of the titles metareel knows: never-fetched titles first, each again after 60 days, at most 1,000 a run (one request per title). Feeds `/titles/tmdb/:kind/:id/credits` (which asks TMDB live for titles it hasn't stored), `/people/:id` and `/analytics/people`. |
-| `venues.import` | — (by hand) | Every cinema OpenStreetMap has in `VENUES_IMPORT_COUNTRIES` (default US, GB, IN; or `{"countries": ["IN"]}`), via the Overpass API, as venues to pick when logging a watch: name, chain (`brand`), address, coordinates, time zone from the coordinates, and the city (or the nearest city or town node within 20 km). Matches venues entered before by OSM ID, Wikidata ID or the same name nearby; re-runs only fill empty fields and never delete. Also on the console's Cinemas page. Data © OpenStreetMap contributors (ODbL). |
+| `venues.import` | — (by hand) | Every cinema OpenStreetMap has in `VENUES_IMPORT_COUNTRIES` (default US, GB, IN; or `{"countries": ["IN"]}`), via the Overpass API, as venues to pick when logging a watch: name, chain (`brand`), address, coordinates, time zone from the coordinates, and the city (or the nearest city or town node within 20 km). Then the country's closed and demolished cinemas from Wikidata (largely Cinema Treasures; ~13,000 in the US, ~2,800 in GB), imported closed with their dates. Matches venues entered before by OSM ID, Wikidata ID or the same name nearby; re-runs only fill empty fields and never delete. Also on the console's Cinemas page. Data © OpenStreetMap contributors (ODbL). |
 | `tmdb.episodes.refresh` | 05:00 | TMDB episodes (air dates, names, finales) of the TV shows metareel knows: seasons from the last three years, undated ones and the latest, one request per show (20 seasons each). Airing shows daily, returning shows weekly, ended shows monthly; at most 1,500 shows a run. Feeds `/calendar/:country` and `/analytics/release-patterns`. |
 | `wikipedia.pageviews.import` | 10:00 | Daily English Wikipedia user pageviews of every title with an article (the metadata job finds it on Wikidata), since the last stored day (90 days for a new title), for `/history`. Paced for Wikimedia's 200 requests/minute limit (about 15 minutes for 2,500 titles). |
 | `netflix.engagement.import` | 07:00 | Netflix's "What We Watched" reports (hours viewed, views, runtime and the premiere date of originals for every title watched 50k+ hours in six months) from the list in `app_settings` `netflix.engagement.urls` (seeded with H2 2025 and H1 2026; skipped when unchanged). Run it with `{"url": "https://…xlsx"}` to add a new report. Rows are linked to Netflix Top 10 titles by name and shown in `/titles/tmdb/:kind/:id/netflix` (`engagement`); their premiere dates mark Netflix originals for the chart `origin` and `/analytics/origins`. |
@@ -804,16 +808,23 @@ anything) and people (`/me/people/search`, opening their person page); a pasted 
 Watchlist toggles and "Log a watch" write through `/api/v1/me`. The log
 dialog takes the time to the minute, day, month or year; a rating, tags and
 notes; and where you watched, which opens that place's fields: a cinema
-(searched in `/me/venues` or added there), its screen, seat, screening type,
+(searched in `/me/venues`, closed and demolished ones included after open
+ones, or added there), its screen, seat, screening type,
 premium formats (`/me/formats`, with their logos) and tickets with fees and snacks in one
-currency; a streaming service and plan, with a price for rentals and
+currency, or "covered by" one of your cinema subscriptions (picked for you at
+the plan's chain) with the ticket's face value; a streaming service and plan, with a price for rentals and
 purchases; a physical-media watch's disc (4K UHD Blu-ray, Blu-ray or DVD, with
 their logos; or VHS, a file or a film print), its label (Criterion, Arrow Video,
 Kino Lorber… with logos) and edition; a TV channel. Picture and sound
 (3D, resolution, HDR, audio, languages, aspect ratios, screen size) are
 optional and folded away. A watch at a cinema is entered and filed in the
 cinema's time zone. Discover (`#/discover`, for the top bar's country) has
-three tabs: hidden gems (the best 200 from `/discover/:country/hidden-gems`,
+eight tabs: new & upcoming on the top bar's service (`/titles/new` and
+`/titles/upcoming`, by day), the episode calendar (`/calendar/:country`,
+your shows marked), leaderboards (`/leaderboards` for the service, the
+country or the world), the Netflix Top 10 (global and country weeks with
+views, and the all-time most popular), trends (`/analytics/genres`,
+`decay`, `release-lag`, `origins`), hidden gems (the best 200 from `/discover/:country/hidden-gems`,
 filtered in the browser by kind, IMDb rating and service, hiding what you've
 seen, with per-service and genre tallies), popular elsewhere (where each
 title charts abroad and any rent or buy offers here) and which services to
@@ -825,8 +836,13 @@ Settings (`#/settings`, from the account menu) holds the
 account (sign out), preferences saved to the account (default charts for a new
 device, currency, screen unit, when a show counts as not watched in a while),
 the theme for this device (dark, light or match the system), a password
-change, and every signed-in session with sign out per device or everywhere
-else.
+change, every signed-in session with sign out per device or everywhere
+else, and your cinema subscriptions (`/me/subscriptions`: AMC Stubs A-List,
+Regal Unlimited, ODEON Limitless… with price per month or year, chain and
+dates). Stats weighs each plan's covered tickets at face value against what it
+cost, month by month with the break-even, and says what a plan would have had
+to cost to pay off at the chains you buy tickets from
+(`/me/subscriptions/savings`).
 
 ```bash
 make dev-ui      # admin console at http://localhost:5173/admin/

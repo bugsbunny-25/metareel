@@ -177,6 +177,28 @@ func (s *TrackingService) DeleteVenue(ctx context.Context, id int64) error {
 	return nil
 }
 
+// MergeVenues folds a duplicate cinema into the one kept: its watches,
+// screens, former names and outside IDs move, its name becomes a former name,
+// it fills the kept cinema's empty fields, and it is deleted. Admin only.
+func (s *TrackingService) MergeVenues(ctx context.Context, from, into int64) (map[string]any, error) {
+	if into <= 0 {
+		return nil, &ValidationError{Message: "into must be the id of the cinema to keep"}
+	}
+	if from == into {
+		return nil, &ValidationError{Message: "a cinema can't be merged into itself"}
+	}
+	res, err := s.write.MergeVenues(ctx, from, into)
+	if err != nil {
+		return nil, err
+	}
+	out, err := s.GetVenue(ctx, into)
+	if err != nil {
+		return nil, err
+	}
+	out["merged"] = res
+	return out, nil
+}
+
 // AddVenueAlias records a name a cinema used to have.
 func (s *TrackingService) AddVenueAlias(ctx context.Context, venueID int64, name string, from, to *string) (repository.VenueAlias, error) {
 	if _, err := s.write.Venue(ctx, venueID); err != nil {

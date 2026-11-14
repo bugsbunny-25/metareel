@@ -10,6 +10,7 @@
   import { toast } from '../lib/toast.svelte.js'
   import { fromUTC, sinceDay } from '../lib/dates.js'
   import { currencyFor } from '../lib/money.js'
+  import CinemaPlans from '../components/CinemaPlans.svelte'
 
   let { onconfirm } = $props()
 
@@ -206,6 +207,8 @@
       </form>
     {/if}
   </section>
+
+  <CinemaPlans {onconfirm} />
 
   <section class="panel pad" aria-labelledby="s-look">
     <div class="sh"><h2 id="s-look">Appearance</h2><span class="hint">This device only</span></div>

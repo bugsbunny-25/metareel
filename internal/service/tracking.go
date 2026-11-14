@@ -295,6 +295,9 @@ func (s *TrackingService) LogWatch(ctx context.Context, userID int64, in WatchIn
 	if err != nil {
 		return repository.WatchEntry{}, false, err
 	}
+	if err := s.checkSubscription(ctx, userID, watchContext); err != nil {
+		return repository.WatchEntry{}, false, err
+	}
 	// A watch at a cinema takes that cinema's time zone unless the client
 	// sends one, which is what makes the local day right when you are away.
 	if in.TZ == nil && venueTZ != nil {
@@ -340,6 +343,9 @@ func (s *TrackingService) UpdateWatch(ctx context.Context, userID, id int64, in 
 	}
 	watchContext, formatIDs, venueTZ, err := s.resolveContext(ctx, in.WatchContextInput, in.Formats)
 	if err != nil {
+		return repository.WatchEntry{}, err
+	}
+	if err := s.checkSubscription(ctx, userID, watchContext); err != nil {
 		return repository.WatchEntry{}, err
 	}
 	if in.TZ == nil && venueTZ != nil {

@@ -113,7 +113,7 @@ func Build(log *slog.Logger, cfg *config.Config, db *sql.DB, deps Deps) *Bootstr
 		Handle(tasks.TypeTMDBCredits, taskhandlers.CreditsJob(service.NewCreditsRefresher(log, tmdbClient, repository.NewCreditsRepository(db)))).
 		Handle(tasks.TypeMappingRefresh, taskhandlers.MappingRefreshJob(mapping)).
 		Handle(tasks.TypeVenuesImport, taskhandlers.VenuesImportJob(service.NewVenueImporter(log, client.NewOverpass(cfg.Imports.OverpassURL),
-			repository.NewTrackingRepository(db), timezoneFinder(log), cfg.Imports.VenueCountries))).
+			repository.NewTrackingRepository(db), timezoneFinder(log), cfg.Imports.VenueCountries).WithHistoric(client.NewWikidataAPI(cfg.HTTP.Timeout)))).
 		Handle(tasks.TypeMaintenance, taskhandlers.MaintenanceJob(maintenance))
 	if deps.Ratings != nil {
 		jobs.Handle(tasks.TypeRatingsPrewarm, taskhandlers.RatingsPrewarmJob(deps.Ratings, flixRepo))

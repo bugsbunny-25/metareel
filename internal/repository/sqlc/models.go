@@ -40,6 +40,21 @@ type ChartSnapshot struct {
 	ChangedAt         time.Time     `json:"changed_at"`
 }
 
+type CinemaSubscription struct {
+	ID         int64          `json:"id"`
+	UserID     int64          `json:"user_id"`
+	Plan       string         `json:"plan"`
+	Chain      sql.NullString `json:"chain"`
+	PriceMinor int64          `json:"price_minor"`
+	Currency   string         `json:"currency"`
+	Period     string         `json:"period"`
+	StartedOn  string         `json:"started_on"`
+	EndedOn    sql.NullString `json:"ended_on"`
+	Note       sql.NullString `json:"note"`
+	CreatedAt  string         `json:"created_at"`
+	UpdatedAt  string         `json:"updated_at"`
+}
+
 type DataImport struct {
 	Source       string         `json:"source"`
 	Etag         sql.NullString `json:"etag"`
@@ -637,6 +652,8 @@ type WatchEntry struct {
 	ScreenDimUnit          sql.NullString  `json:"screen_dim_unit"`
 	ScreenWidthM           sql.NullFloat64 `json:"screen_width_m"`
 	ScreenHeightM          sql.NullFloat64 `json:"screen_height_m"`
+	SubscriptionID         sql.NullInt64   `json:"subscription_id"`
+	FaceValueMinor         sql.NullInt64   `json:"face_value_minor"`
 }
 
 type WatchEntryFormat struct {

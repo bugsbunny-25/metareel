@@ -61,6 +61,7 @@ type VenueImporter struct {
 	countries []string
 	gap       time.Duration
 	busyWait  time.Duration
+	historic  historicSource // closed cinemas (Wikidata); nil = none
 }
 
 func NewVenueImporter(log *slog.Logger, src cinemaSource, store venueImportStore, tz TimezoneFinder, countries []string) *VenueImporter {
@@ -72,16 +73,17 @@ func NewVenueImporter(log *slog.Logger, src cinemaSource, store venueImportStore
 
 // VenueImportCountry is one country's outcome.
 type VenueImportCountry struct {
-	Country    string `json:"country"`
-	Fetched    int    `json:"fetched"`    // cinemas OSM returned
-	Skipped    int    `json:"skipped"`    // unnamed or private
-	Duplicates int    `json:"duplicates"` // mapped twice in OSM, merged
-	Created    int    `json:"created"`
-	Linked     int    `json:"linked"`    // existing venues matched by Wikidata ID or name, now carrying the OSM ref
-	Filled     int    `json:"filled"`    // existing venues that gained an empty field
-	Known      int    `json:"known"`     // imported before and still in OSM
-	Gone       int    `json:"gone"`      // imported before, no longer in OSM (kept)
-	Error      string `json:"error,omitempty"`
+	Country    string               `json:"country"`
+	Fetched    int                  `json:"fetched"`    // cinemas OSM returned
+	Skipped    int                  `json:"skipped"`    // unnamed or private
+	Duplicates int                  `json:"duplicates"` // mapped twice in OSM, merged
+	Created    int                  `json:"created"`
+	Linked     int                  `json:"linked"` // existing venues matched by Wikidata ID or name, now carrying the OSM ref
+	Filled     int                  `json:"filled"` // existing venues that gained an empty field
+	Known      int                  `json:"known"`  // imported before and still in OSM
+	Gone       int                  `json:"gone"`   // imported before, no longer in OSM (kept)
+	Historic   *VenueImportHistoric `json:"historic,omitempty"`
+	Error      string               `json:"error,omitempty"`
 }
 
 type VenueImportReport struct {
@@ -136,7 +138,7 @@ func (s *VenueImporter) importCountry(ctx context.Context, cc string, runLog fun
 	}
 	out.Fetched = len(places)
 	var towns *townIndex
-	if missingCity(places) {
+	if missingCity(places) || s.historic != nil {
 		if s.gap > 0 && sleepCtx(ctx, s.gap) != nil {
 			return out, ctx.Err()
 		}
@@ -161,6 +163,18 @@ func (s *VenueImporter) importCountry(ctx context.Context, cc string, runLog fun
 		cc, out.Fetched, out.Created, out.Linked, out.Known, out.Filled, out.Skipped, out.Duplicates, out.Gone))
 	if res.RefsSkipped > 0 {
 		runLog("warn", fmt.Sprintf("%s: %d OSM or Wikidata IDs already belong to another venue and were not moved", cc, res.RefsSkipped))
+	}
+	if s.historic != nil {
+		// Historic cinemas are extra: a failure leaves the current ones imported.
+		if h, err := s.importHistoric(ctx, cc, towns, runLog); err != nil {
+			if ctx.Err() != nil {
+				return out, ctx.Err()
+			}
+			runLog("warn", fmt.Sprintf("%s: historic cinemas didn't import: %v", cc, err))
+			out.Historic = &VenueImportHistoric{Error: err.Error()}
+		} else {
+			out.Historic = h
+		}
 	}
 	return out, nil
 }
@@ -282,7 +296,12 @@ type townIndex struct {
 type town struct {
 	lat, lon float64
 	name     string
+	city     bool // place=city
 }
+
+// venueCityKm: a city this close wins over a nearer town (a cinema in Boston
+// is nearer Brookline's town marker than Boston's city one).
+const venueCityKm = 10
 
 func townCell(lat, lon float64) [2]int {
 	return [2]int{int(math.Floor(lat * 2)), int(math.Floor(lon * 2))}
@@ -299,23 +318,32 @@ func newTownIndex(places []client.OSMPlace) *townIndex {
 			continue
 		}
 		c := townCell(p.Lat, p.Lon)
-		ix.cells[c] = append(ix.cells[c], town{p.Lat, p.Lon, clip(name, 200)})
+		ix.cells[c] = append(ix.cells[c], town{p.Lat, p.Lon, clip(name, 200), p.Tags["place"] == "city"})
 	}
 	return ix
 }
 
-// nearest returns the closest town within venueTownKm, or nil.
+// nearest returns the closest city within venueCityKm, else the closest
+// city or town within venueTownKm, or nil.
 func (ix *townIndex) nearest(lat, lon float64) *string {
 	c := townCell(lat, lon)
+	city, cityM := "", float64(venueCityKm*1000)
 	best, bestM := "", float64(venueTownKm*1000)
 	for dy := -1; dy <= 1; dy++ {
 		for dx := -1; dx <= 1; dx++ {
 			for _, t := range ix.cells[[2]int{c[0] + dy, c[1] + dx}] {
-				if d := haversineM(lat, lon, t.lat, t.lon); d <= bestM {
+				d := haversineM(lat, lon, t.lat, t.lon)
+				if t.city && d <= cityM {
+					city, cityM = t.name, d
+				}
+				if d <= bestM {
 					best, bestM = t.name, d
 				}
 			}
 		}
+	}
+	if city != "" {
+		return &city
 	}
 	if best == "" {
 		return nil

@@ -93,6 +93,8 @@ UPDATE watch_entries SET
     screen_dim_unit = sqlc.narg(screen_dim_unit),
     screen_width_m = sqlc.narg(screen_width_m),
     screen_height_m = sqlc.narg(screen_height_m),
+    subscription_id = sqlc.narg(subscription_id),
+    face_value_minor = sqlc.narg(face_value_minor),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id);
 
@@ -131,7 +133,8 @@ FROM venues WHERE id = sqlc.arg(id);
 
 -- ListVenues searches the shared venue list: each word of the query (up to
 -- four) must appear in the name, chain, city or address, so "pvr mumbai"
--- finds a PVR in Mumbai. Names starting with the first word come first.
+-- finds a PVR in Mumbai. Names starting with the first word come first,
+-- then open cinemas before closed ones.
 -- name: ListVenues :many
 SELECT v.id, v.name, v.chain, v.address, v.city, v.region, v.country, v.latitude, v.longitude,
        v.timezone, v.opened_on, v.closed_on, v.status, v.replaced_by_venue_id, v.note,
@@ -147,6 +150,7 @@ WHERE (q.w1 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v
   AND (CAST(sqlc.arg(country) AS TEXT) = '' OR v.country = sqlc.arg(country))
   AND (CAST(sqlc.arg(include_closed) AS INTEGER) = 1 OR v.status <> 'closed')
 ORDER BY CASE WHEN q.w1 <> '' AND v.name LIKE q.w1 || '%' THEN 0 ELSE 1 END,
+         CASE WHEN v.status = 'open' THEN 0 ELSE 1 END,
          v.name COLLATE NOCASE, v.id
 LIMIT sqlc.arg(limit) OFFSET sqlc.arg(offset);
 

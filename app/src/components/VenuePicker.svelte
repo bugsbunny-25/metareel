@@ -53,7 +53,7 @@
   })
 
   function choose(v) {
-    venue = { id: v.id, name: v.name, city: v.city ?? null, timezone: v.timezone ?? null }
+    venue = { id: v.id, name: v.name, chain: v.chain ?? null, city: v.city ?? null, timezone: v.timezone ?? null }
     screenId = null
     q = ''
     adding = false
@@ -151,7 +151,7 @@
         {/each}
       {:else}
         {#each results as v (v.id)}
-          <li><button type="button" onclick={() => choose(v)}><b>{v.name}</b><span class="hint">{place(v)}{v.status !== 'open' ? ` · ${v.status}` : ''}</span></button></li>
+          <li><button type="button" onclick={() => choose(v)}><b>{v.name}</b><span class="hint">{place(v)}{v.status === 'closed' ? ` · closed${v.closed_on ? ` ${v.closed_on.slice(0, 4)}` : ''}` : v.status !== 'open' ? ` · ${v.status}` : ''}</span></button></li>
         {/each}
         {#if !searching}
           <li><button type="button" class="add" onclick={startAdding}>Add “{q.trim()}” as a new cinema</button></li>

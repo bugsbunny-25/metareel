@@ -287,7 +287,7 @@ func (q *Queries) GetUserTitle(ctx context.Context, arg GetUserTitleParams) (Get
 }
 
 const getWatchEntry = `-- name: GetWatchEntry :one
-SELECT id, user_id, client_key, subject_kind, tmdb_kind, tmdb_id, season_number, episode_number, tmdb_episode_id, ended_at, started_at, runtime_minutes_used, runtime_source, tz, utc_offset_minutes, watched_on, time_precision, rating, liked, is_rewatch, watch_number, notes, venue_kind, source, created_at, updated_at, venue_id, screen_id, venue_name_at_watch, venue_city_at_watch, seat, screening_type, event_name, with_qa, price_minor, fees_minor, concessions_minor, currency, tickets_count, booking_source, provider_id, provider_name, monetization, media, edition, device, dimension, resolution, hdr, audio_format, frame_rate, audio_language, subtitle_language, content_aspect_ratio_text, content_aspect_ratio, content_aspect_variable, screen_aspect_ratio, screen_width, screen_height, screen_dim_unit, screen_width_m, screen_height_m FROM watch_entries
+SELECT id, user_id, client_key, subject_kind, tmdb_kind, tmdb_id, season_number, episode_number, tmdb_episode_id, ended_at, started_at, runtime_minutes_used, runtime_source, tz, utc_offset_minutes, watched_on, time_precision, rating, liked, is_rewatch, watch_number, notes, venue_kind, source, created_at, updated_at, venue_id, screen_id, venue_name_at_watch, venue_city_at_watch, seat, screening_type, event_name, with_qa, price_minor, fees_minor, concessions_minor, currency, tickets_count, booking_source, provider_id, provider_name, monetization, media, edition, device, dimension, resolution, hdr, audio_format, frame_rate, audio_language, subtitle_language, content_aspect_ratio_text, content_aspect_ratio, content_aspect_variable, screen_aspect_ratio, screen_width, screen_height, screen_dim_unit, screen_width_m, screen_height_m, subscription_id, face_value_minor FROM watch_entries
 WHERE id = ?1 AND user_id = ?2
 `
 
@@ -362,12 +362,14 @@ func (q *Queries) GetWatchEntry(ctx context.Context, arg GetWatchEntryParams) (W
 		&i.ScreenDimUnit,
 		&i.ScreenWidthM,
 		&i.ScreenHeightM,
+		&i.SubscriptionID,
+		&i.FaceValueMinor,
 	)
 	return i, err
 }
 
 const getWatchEntryByClientKey = `-- name: GetWatchEntryByClientKey :one
-SELECT id, user_id, client_key, subject_kind, tmdb_kind, tmdb_id, season_number, episode_number, tmdb_episode_id, ended_at, started_at, runtime_minutes_used, runtime_source, tz, utc_offset_minutes, watched_on, time_precision, rating, liked, is_rewatch, watch_number, notes, venue_kind, source, created_at, updated_at, venue_id, screen_id, venue_name_at_watch, venue_city_at_watch, seat, screening_type, event_name, with_qa, price_minor, fees_minor, concessions_minor, currency, tickets_count, booking_source, provider_id, provider_name, monetization, media, edition, device, dimension, resolution, hdr, audio_format, frame_rate, audio_language, subtitle_language, content_aspect_ratio_text, content_aspect_ratio, content_aspect_variable, screen_aspect_ratio, screen_width, screen_height, screen_dim_unit, screen_width_m, screen_height_m FROM watch_entries
+SELECT id, user_id, client_key, subject_kind, tmdb_kind, tmdb_id, season_number, episode_number, tmdb_episode_id, ended_at, started_at, runtime_minutes_used, runtime_source, tz, utc_offset_minutes, watched_on, time_precision, rating, liked, is_rewatch, watch_number, notes, venue_kind, source, created_at, updated_at, venue_id, screen_id, venue_name_at_watch, venue_city_at_watch, seat, screening_type, event_name, with_qa, price_minor, fees_minor, concessions_minor, currency, tickets_count, booking_source, provider_id, provider_name, monetization, media, edition, device, dimension, resolution, hdr, audio_format, frame_rate, audio_language, subtitle_language, content_aspect_ratio_text, content_aspect_ratio, content_aspect_variable, screen_aspect_ratio, screen_width, screen_height, screen_dim_unit, screen_width_m, screen_height_m, subscription_id, face_value_minor FROM watch_entries
 WHERE user_id = ?1 AND client_key = ?2
 `
 
@@ -442,6 +444,8 @@ func (q *Queries) GetWatchEntryByClientKey(ctx context.Context, arg GetWatchEntr
 		&i.ScreenDimUnit,
 		&i.ScreenWidthM,
 		&i.ScreenHeightM,
+		&i.SubscriptionID,
+		&i.FaceValueMinor,
 	)
 	return i, err
 }

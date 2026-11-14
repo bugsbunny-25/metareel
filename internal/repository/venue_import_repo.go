@@ -15,6 +15,7 @@ type ImportVenueRow struct {
 	City        *string
 	Latitude    *float64
 	Longitude   *float64
+	Status      string
 	OSMRef      string // venue_refs osm_id, "" if none
 	WikidataRef string
 }
@@ -28,7 +29,7 @@ func (r *TrackingRepository) VenuesForImport(ctx context.Context, country string
 	out := make([]ImportVenueRow, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, ImportVenueRow{ID: row.ID, Name: row.Name, City: nullStringPtr(row.City),
-			Latitude: nullFloatPtr(row.Latitude), Longitude: nullFloatPtr(row.Longitude), OSMRef: row.OsmRef, WikidataRef: row.WikidataRef})
+			Latitude: nullFloatPtr(row.Latitude), Longitude: nullFloatPtr(row.Longitude), Status: row.Status, OSMRef: row.OsmRef, WikidataRef: row.WikidataRef})
 	}
 	return out, nil
 }
@@ -81,11 +82,15 @@ func (r *TrackingRepository) ApplyVenueImport(ctx context.Context, creates []Ven
 	}
 	for _, c := range creates {
 		v := c.Venue
+		if v.Status == "" {
+			v.Status = "open"
+		}
 		id, err := q.CreateVenue(ctx, sqlc.CreateVenueParams{
 			Name: v.Name, Chain: toNullString(v.Chain), Address: toNullString(v.Address),
 			City: toNullString(v.City), Region: toNullString(v.Region), Country: toNullString(v.Country),
 			Latitude: floatPtrNull(v.Latitude), Longitude: floatPtrNull(v.Longitude),
-			Timezone: toNullString(v.Timezone), OpenedOn: toNullString(v.OpenedOn), Status: "open",
+			Timezone: toNullString(v.Timezone), OpenedOn: toNullString(v.OpenedOn), ClosedOn: toNullString(v.ClosedOn),
+			Status: v.Status, Note: toNullString(v.Note),
 		})
 		if err != nil {
 			return res, fmt.Errorf("create venue %q: %w", v.Name, err)
@@ -99,7 +104,8 @@ func (r *TrackingRepository) ApplyVenueImport(ctx context.Context, creates []Ven
 		v := f.Venue
 		n, err := q.FillVenueBlanks(ctx, sqlc.FillVenueBlanksParams{ID: f.ID,
 			Chain: toNullString(v.Chain), Address: toNullString(v.Address), City: toNullString(v.City), Region: toNullString(v.Region),
-			Latitude: floatPtrNull(v.Latitude), Longitude: floatPtrNull(v.Longitude), Timezone: toNullString(v.Timezone), OpenedOn: toNullString(v.OpenedOn)})
+			Latitude: floatPtrNull(v.Latitude), Longitude: floatPtrNull(v.Longitude), Timezone: toNullString(v.Timezone), OpenedOn: toNullString(v.OpenedOn),
+			ClosedOn: toNullString(v.ClosedOn), Note: toNullString(v.Note)})
 		if err != nil {
 			return res, fmt.Errorf("fill venue %d: %w", f.ID, err)
 		}
