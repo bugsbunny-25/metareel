@@ -1693,6 +1693,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/glance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The widget summary
+         * @description A small summary for home-screen widgets and background refresh: the next episode of up to 3 shows in progress (as /me/up-next), the next episode airing in the coming 60 days (as /me/upcoming), the active cinema plan with the most covered watches and its current month, and the last diary entry. Each part is null (up_next empty) when there is nothing to show.
+         */
+        get: operations["getGlance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/devices": {
         parameters: {
             query?: never;
@@ -7637,6 +7657,62 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["TrackingUnauthorized"];
             403: components["responses"]["TrackingCrossSite"];
+        };
+    };
+    getGlance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        generated_at?: string;
+                        up_next?: components["schemas"]["UpNextEpisode"][];
+                        next_airing?: components["schemas"]["UpcomingEpisode"] | null;
+                        subscription?: {
+                            id?: number;
+                            plan?: string;
+                            chain?: string;
+                            currency?: string;
+                            period?: string;
+                            /** @description YYYY-MM */
+                            month?: string;
+                            watches_this_month?: number;
+                            /** @description Covered watches a period needs to pay off */
+                            break_even_watches?: number;
+                            /** @description Over the plan's whole life; negative = it cost more */
+                            saved_minor?: number;
+                            /** @description Covered watches over the plan's life */
+                            watches?: number;
+                        } | null;
+                        last_watch?: {
+                            id?: number;
+                            /** @enum {string} */
+                            tmdb_kind?: "movie" | "tv";
+                            tmdb_id?: string;
+                            title?: string;
+                            poster_path?: string;
+                            season_number?: number;
+                            episode_number?: number;
+                            /** Format: date */
+                            watched_on?: string;
+                            ended_at?: string;
+                            rating?: number;
+                        } | null;
+                    };
+                };
+            };
+            401: components["responses"]["TrackingUnauthorized"];
         };
     };
     listDevices: {

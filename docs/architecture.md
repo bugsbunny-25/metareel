@@ -977,6 +977,14 @@ fresh, else fetches `TitleDetails` and caches it in `tracked_titles`. A TMDB
 stored; a TMDB outage falls back to the cached snapshot, and with no
 `TMDB_API_KEY` tracking keeps working with empty metadata instead of failing.
 
+### Glance (`service/tracking_glance.go`)
+
+`GET /me/glance` is the mobile widgets' one call: `UpNext` (3 shows),
+the first of `UpcomingEpisodes` in the next 60 days, the active cinema plan
+with the most covered watches (its `planSavings`, current month) and the
+newest diary entry. No new queries; the app stores the response for its
+widgets and refreshes it after a sync and from the background task.
+
 ### Time
 
 Clients send UTC instants and the server stores UTC text in

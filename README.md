@@ -265,6 +265,7 @@ make reports-open
 | POST   | `/api/v1/me/password`                       | Change your password (`current_password`, `new_password`); ends your other sessions |
 | DELETE | `/api/v1/me/sessions[/:id]`                 | Sign one of your other sessions out, or (no id) every session but this one |
 | GET/PUT | `/api/v1/me/preferences`                   | Preferences that follow you: default `country` + `provider`, `currency`, `screen_unit` (m/ft), `stale_days` for `/me/shows`, `services` you pay for (TMDB provider IDs), `notify_watchlist_arrivals`; PUT replaces them |
+| GET    | `/api/v1/me/glance`                         | Widget summary: next episodes of up to 3 shows in progress, the next one airing, the cinema plan's month, the last watch |
 | GET/PUT | `/api/v1/me/devices`                       | Phones registered for push notifications (mobile app); PUT registers this device's Expo push token for this session |
 | DELETE | `/api/v1/me/devices/:id`                    | Unregister one of your devices |
 | GET    | `/api/v1/me/shows`                          | Every show you track, sorted into stages (`watching`, `stalled` after `stale_days` (30) without a watch, `not_started`, `on_hold`, `dropped`, `caught_up`) with progress, the next episode and the next air date |

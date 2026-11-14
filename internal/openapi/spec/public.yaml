@@ -2918,6 +2918,64 @@ paths:
         "401": { $ref: "#/components/responses/TrackingUnauthorized" }
         "403": { $ref: "#/components/responses/TrackingCrossSite" }
 
+  /api/v1/me/glance:
+    get:
+      operationId: getGlance
+      tags: [Tracking]
+      summary: The widget summary
+      description: >
+        A small summary for home-screen widgets and background refresh: the
+        next episode of up to 3 shows in progress (as /me/up-next), the next
+        episode airing in the coming 60 days (as /me/upcoming), the active
+        cinema plan with the most covered watches and its current month, and
+        the last diary entry. Each part is null (up_next empty) when there is
+        nothing to show.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  up_next: { type: array, items: { $ref: "#/components/schemas/UpNextEpisode" } }
+                  next_airing:
+                    nullable: true
+                    allOf: [{ $ref: "#/components/schemas/UpcomingEpisode" }]
+                  subscription:
+                    type: object
+                    nullable: true
+                    properties:
+                      id: { type: integer }
+                      plan: { type: string }
+                      chain: { type: string }
+                      currency: { type: string }
+                      period: { type: string }
+                      month: { type: string, description: YYYY-MM }
+                      watches_this_month: { type: integer }
+                      break_even_watches: { type: integer, description: Covered watches a period needs to pay off }
+                      saved_minor: { type: integer, description: Over the plan's whole life; negative = it cost more }
+                      watches: { type: integer, description: Covered watches over the plan's life }
+                  last_watch:
+                    type: object
+                    nullable: true
+                    properties:
+                      id: { type: integer }
+                      tmdb_kind: { type: string, enum: [movie, tv] }
+                      tmdb_id: { type: string }
+                      title: { type: string }
+                      poster_path: { type: string }
+                      season_number: { type: integer }
+                      episode_number: { type: integer }
+                      watched_on: { type: string, format: date }
+                      ended_at: { type: string }
+                      rating: { type: integer }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
   /api/v1/me/devices:
     get:
       operationId: listDevices

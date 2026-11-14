@@ -119,6 +119,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	me.POST("/shows/:id/watched", h.MarkEpisodes)
 	me.DELETE("/shows/:id/watched", h.UnmarkEpisodes)
 	me.GET("/up-next", h.UpNext)
+	me.GET("/glance", h.Glance)
 	me.GET("/stats/summary", h.GetStatsSummary)
 	me.GET("/stats/calendar", h.GetStatsCalendar)
 	me.GET("/stats/year", h.GetStatsYear)

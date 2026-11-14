@@ -354,3 +354,11 @@ func optionalInt64Ptr(v, name string) (*int64, error) {
 	}
 	return &n, nil
 }
+
+// Glance: GET /api/v1/me/glance
+// The mobile app's widget summary: up next, next airing, the cinema plan's
+// month and the last watch.
+func (h *Handler) Glance(c *echo.Context) error {
+	out, err := h.Tracking.Glance(c.Request().Context(), userID(c))
+	return h.writeTracking(c, http.StatusOK, out, err)
+}
