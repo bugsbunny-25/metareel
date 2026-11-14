@@ -533,9 +533,15 @@ name has no Latin letters), `brand` as chain, `addr:*`, the element's
 coordinates, the IANA zone at them (`tzf`, embedded boundaries, no network)
 and `start_date` / `opening_date` when it is a full date. Unnamed and
 `access=private|no` elements are skipped; one cinema mapped as a node and its
-building (same name within 150 m) is imported once. A cinema without
-`addr:city` takes the nearest `place=city|town` node within 20 km (a second
-query, only when needed).
+building (same name within 150 m) is imported once. The address is
+`addr:full`, else the house number with `addr:street` (or `addr:place`, for
+addresses without a street). A cinema with no address of its own (often a
+point inside a mall or building) borrows one: a query, only when needed,
+returns addressed features within 75 m of such cinemas and the addressed
+ways and relations they sit inside (`is_in`); the nearest point within 75 m
+wins, else the nearest area within 300 m, and its city and state come along
+when the cinema has none. A cinema without `addr:city` takes the nearest
+`place=city|town` node within 20 km (another query, only when needed).
 
 Matching, in order: `venue_refs` `osm_id` (`node/123`); the `wikidata` tag
 against a venue's `wikidata_id` (ignored when several cinemas carry the same

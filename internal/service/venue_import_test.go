@@ -13,15 +13,22 @@ import (
 )
 
 type fakeOSM struct {
-	places map[string][]client.OSMPlace
-	towns  map[string][]client.OSMPlace
-	busy   int // answer ErrOverpassBusy this many times first
-	fail   map[string]bool
-	calls  int
+	places    map[string][]client.OSMPlace
+	towns     map[string][]client.OSMPlace
+	addrs     map[string][]client.OSMPlace
+	addrCalls int
+	busy      int // answer ErrOverpassBusy this many times first
+	fail      map[string]bool
+	calls     int
 }
 
 func (f *fakeOSM) Towns(_ context.Context, cc string) ([]client.OSMPlace, error) {
 	return f.towns[cc], nil
+}
+
+func (f *fakeOSM) Addresses(_ context.Context, cc string) ([]client.OSMPlace, error) {
+	f.addrCalls++
+	return f.addrs[cc], nil
 }
 
 func (f *fakeOSM) Cinemas(_ context.Context, cc string) ([]client.OSMPlace, error) {
@@ -93,6 +100,13 @@ func TestVenueImport(t *testing.T) {
 	}, towns: map[string][]client.OSMPlace{
 		"GB": {osm("node", 100, 51.5072, -0.1276, "name", "London", "place", "city"), osm("node", 101, 53.8008, -1.5491, "name", "Leeds", "place", "city")},
 		"IN": {osm("node", 102, 19.0760, 72.8777, "name", "मुंबई", "name:en", "Mumbai", "place", "city")},
+	}, addrs: map[string][]client.OSMPlace{
+		// The building BFI Southbank's way sits in (its centre 120 m off), and
+		// a house 2 km away that no cinema is near.
+		"GB": {
+			{Type: "way", ID: 200, Lat: 51.5070, Lon: -0.1170, Tags: map[string]string{"building": "yes", "addr:street": "Belvedere Road", "addr:city": "London"}},
+			{Type: "node", ID: 201, Lat: 51.52, Lon: -0.14, Tags: map[string]string{"addr:housenumber": "1", "addr:street": "Elsewhere Street"}},
+		},
 	}}
 	imp := NewVenueImporter(slog.New(slog.NewTextHandler(io.Discard, nil)), src, repo, fakeTZ{}, []string{"GB", "IN"})
 	imp.gap, imp.busyWait = 0, 0
@@ -126,9 +140,13 @@ func TestVenueImport(t *testing.T) {
 	if len(refs) != 1 || refs[0] != (repository.VenueRef{Source: "osm_id", Ref: "node/1"}) {
 		t.Fatalf("refs = %+v", refs)
 	}
-	// No addr:city in OSM: the nearest town.
-	if v, _ := repo.Venue(ctx, bfi); v.Name != "BFI Southbank (NFT)" || v.Latitude == nil || v.City == nil || *v.City != "London" {
+	// No address in OSM: the building it's in gives one (and its city).
+	if v, _ := repo.Venue(ctx, bfi); v.Name != "BFI Southbank (NFT)" || v.Latitude == nil || v.City == nil || *v.City != "London" || v.Address == nil || *v.Address != "Belvedere Road" {
 		t.Fatalf("bfi = %+v", v)
+	}
+	// Asked once per country with an address-less cinema (GB; the IN one has none either).
+	if src.addrCalls != 2 || gb.Borrowed != 1 {
+		t.Fatalf("address lookups = %d, borrowed %d", src.addrCalls, gb.Borrowed)
 	}
 	for _, id := range []int64{odeonA, odeonB} {
 		if refs, _ := repo.VenueRefs(ctx, id); len(refs) != 0 {
@@ -244,6 +262,28 @@ func TestVenueFromOSM(t *testing.T) {
 	}
 	if wikidataTag(map[string]string{"wikidata": "Q12"}) != "Q12" || wikidataTag(map[string]string{"wikidata": "Q0"}) != "" {
 		t.Fatal("wikidata tag")
+	}
+	// Addresses: house number with street, or with addr:place (no street).
+	if a := osmAddress(map[string]string{"addr:housenumber": "12", "addr:place": "Hollow Farm"}); a == nil || *a != "12 Hollow Farm" {
+		t.Fatalf("addr:place address = %v", a)
+	}
+	if osmAddress(map[string]string{"addr:housenumber": "12"}) != nil {
+		t.Fatal("a house number alone is no address")
+	}
+	// Borrowing: a point within 75 m wins; else an area (a mall) within 300 m.
+	addrs := newAddressIndex([]client.OSMPlace{
+		{Type: "way", ID: 1, Lat: 40.7505, Lon: -73.9934, Tags: map[string]string{"addr:housenumber": "4", "addr:street": "Penn Plaza", "addr:city": "New York", "addr:state": "NY"}},
+		{Type: "node", ID: 2, Lat: 40.75005, Lon: -73.99505, Tags: map[string]string{"addr:housenumber": "401", "addr:street": "7th Avenue"}},
+		{Type: "node", ID: 3, Lat: 40.7600, Lon: -73.9800, Tags: map[string]string{"building": "yes"}},
+	})
+	if a := addrs.nearest(40.7500, -73.9950); a == nil || a.address != "401 7th Avenue" {
+		t.Fatalf("nearest point = %+v", a)
+	}
+	if a := addrs.nearest(40.7490, -73.9920); a == nil || a.address != "4 Penn Plaza" || *a.city != "New York" || *a.region != "NY" {
+		t.Fatalf("enclosing area = %+v", a)
+	}
+	if a := addrs.nearest(40.7700, -73.9700); a != nil {
+		t.Fatalf("1 km away = %+v", a)
 	}
 	ix := newTownIndex([]client.OSMPlace{osm("node", 1, 19.0760, 72.8777, "name", "Mumbai"), osm("node", 2, 19.2183, 72.9781, "name", "Thane")})
 	if got := ix.nearest(19.0, 72.83); got == nil || *got != "Mumbai" {

@@ -86,12 +86,29 @@ func (c *Overpass) Towns(ctx context.Context, country string) ([]OSMPlace, error
 	return c.query(ctx, country, `node["place"~"^(city|town)$"]`)
 }
 
+// Addresses returns what can give an address to the country's cinemas that
+// have none of their own (no addr:street, addr:place or addr:full): addressed
+// features within 75 m of one, and the addressed buildings, malls and other
+// areas a cinema node sits inside. The importer picks the nearest per cinema.
+func (c *Overpass) Addresses(ctx context.Context, country string) ([]OSMPlace, error) {
+	return c.run(ctx, country, `nwr["amenity"="cinema"][!"addr:street"][!"addr:place"][!"addr:full"](area.c)->.x;`+
+		`.x is_in->.in;`+
+		`(nwr(around.x:75)["addr:housenumber"]; way(pivot.in)["addr:housenumber"]; relation(pivot.in)["addr:housenumber"];`+
+		`nwr(around.x:75)["addr:full"]; way(pivot.in)["addr:full"]; relation(pivot.in)["addr:full"];);`)
+}
+
 func (c *Overpass) query(ctx context.Context, country, selector string) ([]OSMPlace, error) {
+	return c.run(ctx, country, selector+"(area.c);")
+}
+
+// run sends statements that read the country's area as .c, and outputs the
+// last result set with centres and tags.
+func (c *Overpass) run(ctx context.Context, country, statements string) ([]OSMPlace, error) {
 	if !countryCode.MatchString(country) {
 		return nil, fmt.Errorf("invalid country code %q", country)
 	}
-	q := fmt.Sprintf(`[out:json][timeout:%d];area["ISO3166-1"="%s"][admin_level=2]->.c;%s(area.c);out center tags;`,
-		overpassQueryTimeout, country, selector)
+	q := fmt.Sprintf(`[out:json][timeout:%d];area["ISO3166-1"="%s"][admin_level=2]->.c;%sout center tags;`,
+		overpassQueryTimeout, country, statements)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, strings.NewReader(url.Values{"data": {q}}.Encode()))
 	if err != nil {
 		return nil, err
