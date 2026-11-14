@@ -1,4 +1,4 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useDetailScroll } from '@/layout/root-header';
 import { useMutation } from '@tanstack/react-query';
 
 import { useState } from 'react';
@@ -9,20 +9,24 @@ import { api } from '@/auth/session';
 import { Button } from '@/components/Button';
 import { Chip } from '@/components/Chip';
 import { Icon } from '@/components/Icon';
-import { Poster } from '@/components/Poster';
 import { Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
-import { useShow } from '@/data/queries';
+import { useMyTitle, usePreferences, useShow, useTitleOverview } from '@/data/queries';
 import { markEpisode, openLog, setWatchlist } from '@/lib/actions';
-import { episodeCode } from '@/lib/format';
+import { episodeCode, year } from '@/lib/format';
 import { useOutbox } from '@/offline';
 import { queryClient } from '@/query/client';
 import { useTheme } from '@/theme';
 
-/** A show: progress, season tabs and episodes to tick. */
+import { About, Charting, Hero, Scores, WhereToWatch } from './title-parts';
+
+/**
+ * A show: the same hero, scores, where to watch, charts and facts as a
+ * film's page, plus your progress, season tabs and episodes to tick.
+ */
 export function ShowView({ id, embedded }: { id: string; embedded?: boolean }) {
   const { colors, radius, gutter } = useTheme();
-  const insets = useSafeAreaInsets();
+  const detail = useDetailScroll(embedded);
   const show = useShow(id);
   const queued = useOutbox().filter((i) => i.kind === 'episodes' && i.meta?.show === id && i.status === 'pending');
   const seasons = (show.data?.seasons ?? []).filter((s) => (s.season_number ?? 0) > 0 || (show.data?.seasons ?? []).length === 1);
@@ -31,6 +35,24 @@ export function ShowView({ id, embedded }: { id: string; embedded?: boolean }) {
   const season = seasons.find((s) => s.season_number === current);
   const title = show.data?.title?.title ?? '';
   const today = new Date().toISOString().slice(0, 10);
+  const prefs = usePreferences();
+  const country = prefs.data?.country;
+  const overview = useTitleOverview('tv', id, country);
+  const mine = useMyTitle('tv', id);
+  const m = overview.data?.metadata;
+  const poster = m?.poster_path ?? show.data?.title?.poster_path;
+  const first = year(m?.release_date ?? show.data?.title?.release_date);
+  const years = first ? (m?.status === 'Ended' || m?.status === 'Canceled' ? `${first}–${year(m.last_air_date) || ''}` : `${first}–`) : '';
+  const heroMeta = [
+    years,
+    m?.number_of_seasons ? `${m.number_of_seasons} ${m.number_of_seasons === 1 ? 'season' : 'seasons'}` : '',
+    m?.networks?.[0] ?? '',
+    (m?.genres ?? []).slice(0, 2).join(', '),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  // The first aired episode not seen yet, for "Log S01 E02".
+  const next = seasons.flatMap((s) => s.episodes ?? []).find((e) => (e.season_number ?? 0) > 0 && !(e.watch_count ?? 0) && !!e.air_date && e.air_date <= today);
 
   const unmark = useMutation({
     mutationFn: async (e: { season: number; episode: number }) =>
@@ -47,32 +69,42 @@ export function ShowView({ id, embedded }: { id: string; embedded?: boolean }) {
     queued.some((q) => q.meta?.season === s && (q.meta?.episode === e || (q.meta?.scope === 'up_to' && Number(q.meta?.episode) >= e)));
 
   return (
-    <ScrollView style={{ backgroundColor: colors.bgCanvas }} contentContainerStyle={{ padding: gutter.compact, paddingTop: embedded ? insets.top + 12 : gutter.compact, gap: 16, paddingBottom: 40 }}>
+    <ScrollView
+      style={{ backgroundColor: colors.bgCanvas }}
+      contentInsetAdjustmentBehavior={detail.contentInsetAdjustmentBehavior}
+      contentContainerStyle={{ padding: gutter.compact, paddingTop: detail.paddingTop ?? gutter.compact, gap: 16, paddingBottom: 40 }}
+    >
       {show.isPending ? <ActivityIndicator color={colors.textMuted} /> : null}
       {show.data ? (
         <>
-          <View style={[styles.hero, { backgroundColor: colors.bgSurface, borderRadius: radius.hero }]}>
-            <Poster path={show.data.title?.poster_path} title={title} width={96} />
-            <View style={{ flex: 1, gap: 6 }}>
-              <Text variant="title" accessibilityRole="header">
-                {title}
-              </Text>
-              <Text variant="muted" num>
-                {show.data.progress?.watched_episodes ?? 0} of {show.data.progress?.aired_episodes ?? 0} aired episodes
-              </Text>
-              <Progress percent={show.data.progress?.percent ?? 0} />
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+          <Hero poster={poster} title={title} tint={mine.data?.title?.poster_color} meta={heroMeta}>
+            <Text variant="muted" num>
+              {show.data.progress?.watched_episodes ?? 0} of {show.data.progress?.aired_episodes ?? 0} aired episodes
+            </Text>
+            <Progress percent={show.data.progress?.percent ?? 0} />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+              {next ? (
                 <Button
-                  kind="quiet"
-                  title={show.data.state?.status === 'watchlist' ? 'On watchlist' : 'Watchlist'}
-                  onPress={() => setWatchlist({ kind: 'tv', id, title }, show.data?.state?.status !== 'watchlist')}
+                  title={`Log ${episodeCode(next.season_number, next.episode_number)}`}
+                  onPress={() => openLog({ kind: 'tv', id, title, poster, season: next.season_number, episode: next.episode_number })}
                 />
-              </View>
+              ) : null}
+              <Button
+                kind="quiet"
+                title={show.data.state?.status === 'watchlist' ? 'On watchlist' : 'Watchlist'}
+                onPress={() => setWatchlist({ kind: 'tv', id, title }, show.data?.state?.status !== 'watchlist')}
+              />
             </View>
-          </View>
+          </Hero>
+          <Scores overview={overview.data} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             {seasons.map((s) => (
-              <Chip key={s.season_number} label={`Season ${s.season_number}`} selected={s.season_number === current} onPress={() => setPicked(s.season_number!)} />
+              <Chip
+                key={s.season_number}
+                label={`Season ${s.season_number}`}
+                selected={s.season_number === current}
+                onPress={() => setPicked(s.season_number!)}
+              />
             ))}
           </ScrollView>
           {season ? (
@@ -85,7 +117,9 @@ export function ShowView({ id, embedded }: { id: string; embedded?: boolean }) {
                   <View key={e.episode_number} style={styles.episode}>
                     <Pressable
                       style={{ flex: 1, gap: 2 }}
-                      onPress={() => aired && openLog({ kind: 'tv', id, title, poster: show.data?.title?.poster_path, season: e.season_number, episode: e.episode_number })}
+                      onPress={() =>
+                        aired && openLog({ kind: 'tv', id, title, poster: show.data?.title?.poster_path, season: e.season_number, episode: e.episode_number })
+                      }
                       onLongPress={() =>
                         Alert.alert(`Mark up to ${episodeCode(e.season_number, e.episode_number)}?`, 'Every aired episode before it is marked watched too.', [
                           { text: 'Cancel', style: 'cancel' },
@@ -125,6 +159,9 @@ export function ShowView({ id, embedded }: { id: string; embedded?: boolean }) {
               })}
             </Panel>
           ) : null}
+          <WhereToWatch overview={overview.data} country={country} />
+          <Charting overview={overview.data} />
+          <About metadata={overview.data?.metadata} kind="tv" />
         </>
       ) : null}
     </ScrollView>
@@ -145,7 +182,6 @@ function Progress({ percent }: { percent: number }) {
 }
 
 const styles = StyleSheet.create({
-  hero: { flexDirection: 'row', gap: 16, padding: 16, alignItems: 'center' },
   episode: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
   tick: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   bar: { height: 6, borderRadius: 3, overflow: 'hidden' },

@@ -12,7 +12,8 @@ import { ListDetail, useTwoPane } from '@/layout/ListDetail';
 import { dayHeading, episodeCode, starText } from '@/lib/format';
 import { useOutbox } from '@/offline';
 import { WatchView } from '@/screens/WatchView';
-import { RootTitle, useRootScroll } from '@/layout/root-header';
+import { searchAction } from '@/layout/CollectionScreen';
+import { RootActions, RootTitle, useRootScroll } from '@/layout/root-header';
 import { useTheme } from '@/theme';
 
 type Entry = components['schemas']['WatchEntry'];
@@ -41,15 +42,27 @@ export default function Diary() {
     <SectionList
       style={{ backgroundColor: colors.bgCanvas }}
       contentInsetAdjustmentBehavior={scroll.contentInsetAdjustmentBehavior}
-      contentContainerStyle={{ paddingTop: scroll.paddingTop, paddingHorizontal: gutter.compact, paddingRight: gutter.compact + scroll.insetRight, paddingBottom: 32, width: '100%', maxWidth: 760, alignSelf: 'center' }}
+      contentContainerStyle={{
+        paddingTop: scroll.paddingTop,
+        paddingHorizontal: gutter.compact,
+        paddingBottom: 32,
+        width: '100%',
+        maxWidth: 760,
+        alignSelf: 'center',
+      }}
       sections={sections}
       keyExtractor={(w) => String(w.id)}
       stickySectionHeadersEnabled={false}
-      refreshControl={<RefreshControl refreshing={diary.isRefetching && !diary.isFetchingNextPage} onRefresh={() => void diary.refetch()} tintColor={colors.textMuted} />}
+      refreshControl={
+        <RefreshControl refreshing={diary.isRefetching && !diary.isFetchingNextPage} onRefresh={() => void diary.refetch()} tintColor={colors.textMuted} />
+      }
       onEndReached={() => diary.hasNextPage && !diary.isFetchingNextPage && void diary.fetchNextPage()}
       ListHeaderComponent={
         <View style={{ gap: 12, marginBottom: 8 }}>
-          <RootTitle>Diary</RootTitle>
+          <View style={styles.head}>
+            <RootTitle>Diary</RootTitle>
+            <RootActions actions={[searchAction]} />
+          </View>
           <OutboxBanner kinds={['watch']} />
           {pending.map((p) => (
             <TitleRow key={`p${p.id}`} poster={p.meta?.poster as string} title={p.label} subtitle="Waiting to sync" />
@@ -67,7 +80,11 @@ export default function Diary() {
           title={w.title ?? ''}
           subtitle={
             <Text variant="muted" numberOfLines={1}>
-              {[w.subject_kind === 'episode' ? episodeCode(w.season_number, w.episode_number) : null, w.venue_name_at_watch ?? w.provider_name, w.is_rewatch ? 'rewatch' : null]
+              {[
+                w.subject_kind === 'episode' ? episodeCode(w.season_number, w.episode_number) : null,
+                w.venue_name_at_watch ?? w.provider_name,
+                w.is_rewatch ? 'rewatch' : null,
+              ]
                 .filter(Boolean)
                 .join(' · ')}
               {w.rating ? <Text variant="muted" style={{ color: colors.accentYours }}>{`  ${starText(w.rating)}`}</Text> : null}
@@ -98,4 +115,4 @@ export default function Diary() {
   );
 }
 
-const styles = StyleSheet.create({ day: { marginTop: 14, marginBottom: 4 } });
+const styles = StyleSheet.create({ day: { marginTop: 14, marginBottom: 4 }, head: { flexDirection: 'row', alignItems: 'center', gap: 12 } });

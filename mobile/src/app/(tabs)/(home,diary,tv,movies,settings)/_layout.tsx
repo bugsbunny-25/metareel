@@ -10,18 +10,20 @@ import { useTheme } from '@/theme';
 export const unstable_settings = {
   anchor: 'index',
   diary: { anchor: 'diary' },
-  'up-next': { anchor: 'up-next' },
-  watchlist: { anchor: 'watchlist' },
+  tv: { anchor: 'tv' },
+  movies: { anchor: 'movies' },
   settings: { anchor: 'settings' },
 };
 
 const ROOT_TITLES: Record<string, string> = {
   index: 'Tonight',
   diary: 'Diary',
-  'up-next': 'Up next',
-  watchlist: 'Watchlist',
+  tv: 'TV',
+  movies: 'Movies',
   settings: 'Settings',
 };
+
+const PINNED = new Set(['tv', 'movies']);
 
 export default function TabStack() {
   const { colors } = useTheme();
@@ -32,6 +34,21 @@ export default function TabStack() {
         const root = ROOT_TITLES[route.name];
         // On iOS a root's title and actions live in the system bar with a
         // large title (see layout/root-header); Android roots draw their own.
+        // TV and Movies pin a To watch / Upcoming switch under a standard
+        // (opaque) bar, so their lists start below it.
+        if (root && nativeRootHeader && PINNED.has(route.name)) {
+          return {
+            headerShown: true,
+            title: root,
+            headerLargeTitle: false,
+            headerTransparent: false,
+            headerShadowVisible: false,
+            headerStyle: { backgroundColor: colors.bgCanvas },
+            headerTintColor: colors.textPrimary,
+            headerTitleStyle: { fontFamily: 'SourceSerif4_700Bold', color: colors.textPrimary },
+            contentStyle: { backgroundColor: colors.bgCanvas },
+          };
+        }
         if (root && nativeRootHeader) {
           return {
             headerShown: true,

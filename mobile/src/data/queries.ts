@@ -42,7 +42,7 @@ export function useTitleOverview(kind: Kind, id: string, country?: string) {
     queryFn: async ({ signal }) =>
       unwrap(
         await api.GET('/api/v1/titles/tmdb/{kind}/{id}', {
-          params: { path: { kind, id }, query: { country, include: 'metadata,ratings,availability,current' } },
+          params: { path: { kind, id }, query: { country, include: 'metadata,stats,ratings,availability,current' } },
           signal,
         }),
       ),
@@ -54,16 +54,14 @@ export function useMyTitle(kind: Kind, id: string, enabled = true) {
   return useQuery({
     queryKey: ['my-title', kind, id],
     enabled: enabled && !!id,
-    queryFn: async ({ signal }) =>
-      unwrap(await api.GET('/api/v1/me/titles/{kind}/{id}', { params: { path: { kind, id } }, signal })),
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/titles/{kind}/{id}', { params: { path: { kind, id } }, signal })),
   });
 }
 
 export function useWatchlist() {
   return useQuery({
     queryKey: ['watchlist'],
-    queryFn: async ({ signal }) =>
-      unwrap(await api.GET('/api/v1/me/watchlist', { params: { query: { limit: 200, sort: 'position_asc' } }, signal })),
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/watchlist', { params: { query: { limit: 200, sort: 'position_asc' } }, signal })),
   });
 }
 
@@ -72,8 +70,7 @@ export function useDiary(limit = 40) {
   return useInfiniteQuery({
     queryKey: ['diary', limit],
     initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam, signal }) =>
-      unwrap(await api.GET('/api/v1/me/watches', { params: { query: { limit, cursor: pageParam } }, signal })),
+    queryFn: async ({ pageParam, signal }) => unwrap(await api.GET('/api/v1/me/watches', { params: { query: { limit, cursor: pageParam } }, signal })),
     getNextPageParam: (last) => last.next_cursor || undefined,
   });
 }
@@ -124,13 +121,17 @@ export function useFormats() {
   });
 }
 
-/** Today's Top 10 movies for a country and service. */
-export function useTop10(country: string, provider: string) {
+/** Today's Top 10 movies or shows for a country and service. */
+export function useTop10(country: string, provider: string, category: 'movies' | 'tv-shows' = 'movies') {
   return useQuery({
-    queryKey: ['top10', 'movies', country, provider],
+    queryKey: ['top10', category, country, provider],
     enabled: !!country && !!provider,
     queryFn: async ({ signal }) =>
-      unwrap(await api.GET('/api/v1/top10/movies/{country}/{provider}', { params: { path: { country, provider } }, signal })),
+      unwrap(
+        category === 'movies'
+          ? await api.GET('/api/v1/top10/movies/{country}/{provider}', { params: { path: { country, provider } }, signal })
+          : await api.GET('/api/v1/top10/tv-shows/{country}/{provider}', { params: { path: { country, provider } }, signal }),
+      ),
   });
 }
 
@@ -159,4 +160,12 @@ export function interleaveKinds<T extends { tmdb_kind?: string }>(items: T[]): T
     if (shows[i]) out.push(shows[i]);
   }
   return out;
+}
+
+/** Episodes of your shows still to air, soonest first. */
+export function useUpcoming(days = 180) {
+  return useQuery({
+    queryKey: ['upcoming', days],
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/upcoming', { params: { query: { days } }, signal })),
+  });
 }

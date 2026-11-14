@@ -5,6 +5,7 @@ import { isBookSplit, useFold } from 'fold-info';
 
 import { useTheme } from '@/theme';
 
+import { useSideInsets } from './root-header';
 import { useWindowClass } from './window-class';
 
 /**
@@ -19,32 +20,26 @@ export function ListDetail({ list, detail, placeholder }: { list: ReactNode; det
   const { width } = useWindowDimensions();
   const { colors } = useTheme();
   const fold = useFold();
+  // iOS: clear of iPhone Duo's control strip (and a landscape cutout) on
+  // both panes, not only the list.
+  const side = useSideInsets();
   // Where this layout starts in the window (after the navigation rail): the
   // fold's position is in window coordinates.
   const ref = useRef<ComponentRef<typeof View>>(null);
   const [originX, setOriginX] = useState(0);
   // On a book-style foldable the split sits on the hinge: the list on one
   // panel, the detail on the other, nothing under the fold.
-  const onHinge = wc !== 'compact' && isBookSplit(fold) && fold.left - originX > 240;
+  const onHinge = wc !== 'compact' && isBookSplit(fold) && fold.left - originX - (side.paddingLeft ?? 0) > 240;
   const listWidth = onHinge
-    ? fold.left - originX
+    ? fold.left - originX - (side.paddingLeft ?? 0)
     : wc === 'expanded'
       ? Math.min(420, Math.round(width * 0.4))
       : Math.max(300, Math.round(width * 0.45));
   return (
-    <View
-      ref={ref}
-      style={styles.row}
-      onLayout={() => ref.current?.measureInWindow((x: number) => setOriginX(Math.round(x)))}
-    >
+    <View ref={ref} style={[styles.row, side]} onLayout={() => ref.current?.measureInWindow((x: number) => setOriginX(Math.round(x)))}>
       <View style={wc === 'compact' ? styles.full : { width: listWidth }}>{list}</View>
       {wc === 'compact' ? null : (
-        <View
-          style={[
-            styles.detail,
-            onHinge ? { marginLeft: fold.width, borderLeftWidth: 0 } : { borderLeftColor: colors.borderSubtle },
-          ]}
-        >
+        <View style={[styles.detail, onHinge ? { marginLeft: fold.width, borderLeftWidth: 0 } : { borderLeftColor: colors.borderSubtle }]}>
           {detail ?? placeholder}
         </View>
       )}

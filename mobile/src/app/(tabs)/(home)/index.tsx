@@ -29,6 +29,7 @@ export default function Tonight() {
   const prefs = usePreferences();
   const { country, provider } = useScope({ country: prefs.data?.country, provider: prefs.data?.provider });
   const top10 = useTop10(country, provider);
+  const top10tv = useTop10(country, provider, 'tv-shows');
   const yours = useLibrary().data;
   const [picking, setPicking] = useState(false);
   const queue = useShowQueue();
@@ -40,7 +41,7 @@ export default function Tonight() {
     <Screen
       title="Tonight"
       refreshing={queue.isRefetching}
-      onRefresh={() => void Promise.all([queue.refetch(), top10.refetch(), diary.refetch()])}
+      onRefresh={() => void Promise.all([queue.refetch(), top10.refetch(), top10tv.refetch(), diary.refetch()])}
       actions={[{ label: 'Search', sf: 'magnifyingglass', icon: 'search', onPress: () => router.push('/search') }]}
     >
       <ConnectionNote />
@@ -92,20 +93,12 @@ export default function Tonight() {
           </View>
         </Pressable>
         {picking ? <ScopePicker country={country} provider={provider} /> : null}
-        {top10.isPending ? (
-          <ActivityIndicator color={colors.textMuted} />
-        ) : top10.data?.items?.length ? (
-          <FlatList
-            horizontal
-            data={top10.data.items}
-            keyExtractor={(i) => `${i.rank}-${i.slug}`}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 4, paddingTop: 6, paddingBottom: 12 }}
-            renderItem={({ item }) => <ChartTile item={item} state={item.tmdb_id ? yours?.get(`${tmdbKind(item.kind)}:${item.tmdb_id}`) : undefined} />}
-          />
-        ) : (
-          <Text variant="muted">No chart for this service today.</Text>
-        )}
+        <ChartRail query={top10} yours={yours} empty="No film chart for this service today." />
+      </View>
+
+      <View style={{ gap: 8 }}>
+        <Text variant="heading">Top 10 shows</Text>
+        <ChartRail query={top10tv} yours={yours} empty="No show chart for this service today." />
       </View>
 
       {recent.length ? (
@@ -129,6 +122,24 @@ export default function Tonight() {
         </Panel>
       ) : null}
     </Screen>
+  );
+}
+
+/** One Top 10 as a horizontal rail of numbered posters. */
+function ChartRail({ query, yours, empty }: { query: ReturnType<typeof useTop10>; yours?: Map<string, LibraryState>; empty: string }) {
+  const { colors } = useTheme();
+  if (query.isPending) return <ActivityIndicator color={colors.textMuted} />;
+  const items = query.data?.items ?? [];
+  if (!items.length) return <Text variant="muted">{empty}</Text>;
+  return (
+    <FlatList
+      horizontal
+      data={items}
+      keyExtractor={(i) => `${i.rank}-${i.slug}`}
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ gap: 4, paddingTop: 6, paddingBottom: 12 }}
+      renderItem={({ item }) => <ChartTile item={item} state={item.tmdb_id ? yours?.get(`${tmdbKind(item.kind)}:${item.tmdb_id}`) : undefined} />}
+    />
   );
 }
 
@@ -247,4 +258,3 @@ function NowShowingCard() {
     </Panel>
   );
 }
-

@@ -17,17 +17,17 @@ export default function TabsLayout() {
         <NativeTabs.Trigger.Label>Tonight</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'moon', selected: 'moon.fill' }} />
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="(tv)">
+        <NativeTabs.Trigger.Label>TV</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'tv', selected: 'tv.fill' }} />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="(movies)">
+        <NativeTabs.Trigger.Label>Movies</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'film', selected: 'film.fill' }} />
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="(diary)">
         <NativeTabs.Trigger.Label>Diary</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'book.closed', selected: 'book.closed.fill' }} />
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="(up-next)">
-        <NativeTabs.Trigger.Label>Up next</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: 'play.circle', selected: 'play.circle.fill' }} />
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="(watchlist)">
-        <NativeTabs.Trigger.Label>Watchlist</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: 'bookmark', selected: 'bookmark.fill' }} />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="(settings)">
         <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>

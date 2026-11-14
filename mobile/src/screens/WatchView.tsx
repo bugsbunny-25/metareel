@@ -1,4 +1,4 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useDetailScroll } from '@/layout/root-header';
 import { useMutation } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
@@ -18,7 +18,7 @@ import { useTheme } from '@/theme';
 /** One watch from the diary: what, when, where; edit or delete it. */
 export function WatchView({ id, embedded }: { id: string; embedded?: boolean }) {
   const { colors, gutter } = useTheme();
-  const insets = useSafeAreaInsets();
+  const detail = useDetailScroll(embedded);
   const w = useWatch(Number(id));
   // One watch carries no title or poster (the diary list joins them in).
   const t = useMyTitle(w.data?.tmdb_kind ?? 'movie', w.data?.tmdb_id ?? '', !!w.data);
@@ -35,9 +35,18 @@ export function WatchView({ id, embedded }: { id: string; embedded?: boolean }) 
   const place = e
     ? [e.venue_name_at_watch, e.venue_city_at_watch].filter(Boolean).join(', ') || e.provider_name || (e.venue_kind === 'physical' ? 'At home, on disc' : '')
     : '';
-  const money = e?.price_minor != null ? formatMoney(e.price_minor, e.currency) : e?.face_value_minor != null ? `${formatMoney(e.face_value_minor, e.currency)} face value` : '';
+  const money =
+    e?.price_minor != null
+      ? formatMoney(e.price_minor, e.currency)
+      : e?.face_value_minor != null
+        ? `${formatMoney(e.face_value_minor, e.currency)} face value`
+        : '';
   return (
-    <ScrollView style={{ backgroundColor: colors.bgCanvas }} contentContainerStyle={{ padding: gutter.compact, paddingTop: embedded ? insets.top + 12 : gutter.compact, gap: 16 }}>
+    <ScrollView
+      style={{ backgroundColor: colors.bgCanvas }}
+      contentInsetAdjustmentBehavior={detail.contentInsetAdjustmentBehavior}
+      contentContainerStyle={{ padding: gutter.compact, paddingTop: detail.paddingTop ?? gutter.compact, gap: 16 }}
+    >
       {!e ? (
         <ActivityIndicator color={colors.textMuted} />
       ) : (
@@ -49,7 +58,13 @@ export function WatchView({ id, embedded }: { id: string; embedded?: boolean }) 
             onPress={() => openTitle({ kind: e.tmdb_kind ?? 'movie', id: e.tmdb_id ?? '' })}
           />
           <Panel>
-            <Line label="Watched" value={new Date(e.ended_at ?? '').toLocaleString(undefined, e.time_precision === 'day' ? { dateStyle: 'medium' } : { dateStyle: 'medium', timeStyle: 'short' })} />
+            <Line
+              label="Watched"
+              value={new Date(e.ended_at ?? '').toLocaleString(
+                undefined,
+                e.time_precision === 'day' ? { dateStyle: 'medium' } : { dateStyle: 'medium', timeStyle: 'short' },
+              )}
+            />
             {e.rating ? <Line label="Rating" value={starText(e.rating)} accent /> : null}
             {e.liked ? <Line label="Liked" value="♥" accent /> : null}
             {e.is_rewatch ? <Line label="Rewatch" value={`#${e.watch_number}`} /> : null}
@@ -59,7 +74,11 @@ export function WatchView({ id, embedded }: { id: string; embedded?: boolean }) 
             {e.notes ? <Text style={{ marginTop: 6 }}>{e.notes}</Text> : null}
           </Panel>
           <View style={styles.buttons}>
-            <Button title="Edit" kind="quiet" onPress={() => router.push({ pathname: '/log', params: { kind: e.tmdb_kind ?? 'movie', id: e.tmdb_id ?? '', watchId: String(e.id) } })} />
+            <Button
+              title="Edit"
+              kind="quiet"
+              onPress={() => router.push({ pathname: '/log', params: { kind: e.tmdb_kind ?? 'movie', id: e.tmdb_id ?? '', watchId: String(e.id) } })}
+            />
             <Button
               title="Delete"
               kind="quiet"

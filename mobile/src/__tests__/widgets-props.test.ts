@@ -20,7 +20,7 @@ describe('upNextProps', () => {
   });
 
   it('is empty without shows', () => {
-    expect(upNextProps({ up_next: [], next_airing: null })).toMatchObject({ state: 'empty', items: [], url: 'metareel:///up-next' });
+    expect(upNextProps({ up_next: [], next_airing: null })).toMatchObject({ state: 'empty', items: [], url: 'metareel:///tv' });
   });
 });
 

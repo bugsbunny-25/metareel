@@ -28,7 +28,12 @@ export type Glance = paths['/api/v1/me/glance']['get']['responses'][200]['conten
 
 export const SIGNED_OUT_UP_NEXT: UpNextProps = { state: 'signedOut', items: [], airing: '', url: 'metareel:///' };
 export const SIGNED_OUT_BREAK_EVEN: BreakEvenProps = {
-  state: 'signedOut', plan: '', progressLabel: '', progress: 0, balance: '', url: 'metareel:///',
+  state: 'signedOut',
+  plan: '',
+  progressLabel: '',
+  progress: 0,
+  balance: '',
+  url: 'metareel:///',
 };
 
 const code = (s?: number, e?: number) => `S${s ?? 0}E${e ?? 0}`;
@@ -59,7 +64,7 @@ export function upNextProps(g: Glance): UpNextProps {
     state: items.length || airing ? 'ok' : 'empty',
     items,
     airing,
-    url: first ? `metareel:///show/${first}` : 'metareel:///up-next',
+    url: first ? `metareel:///show/${first}` : 'metareel:///tv',
   };
 }
 

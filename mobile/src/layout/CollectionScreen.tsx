@@ -1,0 +1,227 @@
+import { router } from 'expo-router';
+import { type ReactNode, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { Icon } from '@/components/Icon';
+import { Placeholder } from '@/components/Placeholder';
+import { Text } from '@/components/Text';
+import type { Group } from '@/data/collections';
+import { useTheme } from '@/theme';
+
+import { ListDetail } from './ListDetail';
+import { nativeRootHeader, type RootAction, RootActions, RootTitle } from './root-header';
+
+export const searchAction: RootAction = { label: 'Search', sf: 'magnifyingglass', icon: 'search', onPress: () => router.push('/search') };
+
+type Segment<S extends string> = { key: S; label: string };
+
+/**
+ * The TV and Movies tabs: a To watch / Upcoming switch pinned under the
+ * title, a list or poster-grid view of grouped items, collapsible groups, and on wide windows the picked item beside the
+ * list. The switch and the actions stay put while the list scrolls, so the
+ * view can be changed from anywhere in it.
+ */
+export function CollectionScreen<T, S extends string>({
+  title,
+  view,
+  onView,
+  segments,
+  segment,
+  onSegment,
+  groups,
+  itemKey,
+  renderRow,
+  renderTile,
+  summary,
+  loading,
+  error,
+  empty,
+  refreshing,
+  onRefresh,
+  banner,
+  detail,
+  placeholder,
+}: {
+  title: string;
+  view: 'list' | 'grid';
+  onView: (v: 'list' | 'grid') => void;
+  segments: Segment<S>[];
+  segment: S;
+  onSegment: (s: S) => void;
+  groups: Group<T>[];
+  itemKey: (t: T) => string;
+  renderRow: (t: T) => ReactNode;
+  renderTile: (t: T, width: number) => ReactNode;
+  summary?: string | null;
+  loading?: boolean;
+  error?: boolean;
+  empty: string;
+  refreshing?: boolean;
+  onRefresh?: () => void;
+  banner?: ReactNode;
+  detail: ReactNode | null;
+  placeholder: string;
+}) {
+  const { colors, gutter } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [width, setWidth] = useState(0);
+  // Groups that start collapsed ("Haven't watched in a while") until opened.
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  const isCollapsed = (g: Group<T>) => toggled[g.key] ?? !!g.collapsed;
+
+  const pad = gutter.compact;
+  const gap = 12;
+  const inner = Math.max(0, width - pad * 2);
+  const cols = Math.max(3, Math.min(8, Math.floor((inner + gap) / (104 + gap))));
+  const tileWidth = Math.floor((inner - gap * (cols - 1)) / cols);
+
+  type Row = { key: string; items: T[] };
+  const sections = useMemo(
+    () =>
+      groups.map((g) => {
+        const shown = isCollapsed(g) ? [] : g.data;
+        const rows: Row[] =
+          view === 'grid'
+            ? chunk(shown, cols).map((items) => ({ key: items.map(itemKey).join('|'), items }))
+            : shown.map((t) => ({ key: itemKey(t), items: [t] }));
+        return { key: g.key, title: g.title, count: g.data.length, collapsible: !!g.collapsed, data: rows };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groups, view, cols, toggled],
+  );
+
+  const actions: RootAction[] = [
+    view === 'grid'
+      ? { label: 'List', sf: 'list.bullet', icon: 'list', onPress: () => onView('list') }
+      : { label: 'Grid', sf: 'square.grid.2x2', icon: 'grid', onPress: () => onView('grid') },
+    searchAction,
+  ];
+
+  const list = (
+    <View style={{ flex: 1, backgroundColor: colors.bgCanvas }} onLayout={(e) => setWidth(Math.round(e.nativeEvent.layout.width))}>
+      <View
+        style={{
+          paddingTop: nativeRootHeader ? 4 : insets.top + 12,
+          paddingHorizontal: pad,
+          paddingRight: pad + (nativeRootHeader ? 0 : insets.right),
+          gap: 10,
+        }}
+      >
+        {nativeRootHeader ? (
+          <RootActions actions={actions} />
+        ) : (
+          <View style={styles.titleRow}>
+            <RootTitle>{title}</RootTitle>
+            <RootActions actions={actions} />
+          </View>
+        )}
+        <Segmented segments={segments} value={segment} onChange={onSegment} />
+      </View>
+      <SectionList
+        style={{ flex: 1 }}
+        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : undefined}
+        contentContainerStyle={{ paddingHorizontal: pad, paddingRight: pad + (nativeRootHeader ? 0 : insets.right), paddingTop: 8, paddingBottom: 32 }}
+        sections={sections}
+        keyExtractor={(r) => r.key}
+        stickySectionHeadersEnabled={false}
+        refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.textMuted} /> : undefined}
+        ListHeaderComponent={
+          <View style={{ gap: 10 }}>
+            {banner}
+            {summary ? (
+              <Text variant="muted" num>
+                {summary}
+              </Text>
+            ) : null}
+          </View>
+        }
+        renderSectionHeader={({ section }) => (
+          <Pressable
+            disabled={!section.collapsible}
+            onPress={() => setToggled((t) => ({ ...t, [section.key]: !(t[section.key] ?? true) }))}
+            accessibilityRole={section.collapsible ? 'button' : 'header'}
+            accessibilityState={section.collapsible ? { expanded: !!section.data.length } : undefined}
+            style={styles.sectionHead}
+          >
+            <View style={[styles.sectionPill, { backgroundColor: colors.bgElevated }]}>
+              <Text variant="caption" style={styles.sectionText}>
+                {section.title}
+              </Text>
+              {section.collapsible ? (
+                <>
+                  <Text variant="caption" num>
+                    {section.count}
+                  </Text>
+                  <Icon name={section.data.length ? 'chevron-down' : 'chevron'} size={14} color={colors.textMuted} />
+                </>
+              ) : null}
+            </View>
+          </Pressable>
+        )}
+        renderItem={({ item: row }) =>
+          view === 'grid' ? (
+            <View style={[styles.gridRow, { gap }]}>
+              {row.items.map((t) => (
+                <View key={itemKey(t)}>{renderTile(t, tileWidth)}</View>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.listRow}>{renderRow(row.items[0])}</View>
+          )
+        }
+        ListEmptyComponent={
+          loading ? (
+            <ActivityIndicator color={colors.textMuted} style={{ marginTop: 24 }} />
+          ) : (
+            <Text variant="muted" style={{ marginTop: 16 }}>
+              {error ? "Couldn't load this. Pull to try again." : empty}
+            </Text>
+          )
+        }
+      />
+    </View>
+  );
+  return <ListDetail list={list} detail={detail} placeholder={<Placeholder text={placeholder} />} />;
+}
+
+function Segmented<S extends string>({ segments, value, onChange }: { segments: Segment<S>[]; value: S; onChange: (s: S) => void }) {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.segments, { borderBottomColor: colors.borderSubtle }]} accessibilityRole="tablist">
+      {segments.map((s) => {
+        const on = s.key === value;
+        return (
+          <Pressable
+            key={s.key}
+            onPress={() => onChange(s.key)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+            style={[styles.segment, { borderBottomColor: on ? colors.textPrimary : 'transparent' }]}
+          >
+            <Text variant="label" style={{ color: on ? colors.textPrimary : colors.textMuted, fontSize: 15, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+              {s.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function chunk<T>(items: T[], n: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += n) out.push(items.slice(i, i + n));
+  return out;
+}
+
+const styles = StyleSheet.create({
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  segments: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
+  segment: { flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: 2, marginBottom: -StyleSheet.hairlineWidth },
+  sectionHead: { alignItems: 'center', marginTop: 18, marginBottom: 10 },
+  sectionPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16 },
+  sectionText: { textTransform: 'uppercase', letterSpacing: 0.6, fontSize: 12.5 },
+  gridRow: { flexDirection: 'row', marginBottom: 18 },
+  listRow: { marginBottom: 12, width: '100%', maxWidth: 760, alignSelf: 'center' },
+});

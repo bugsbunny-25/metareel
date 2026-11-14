@@ -27,6 +27,18 @@ export function useRootScroll(): { contentInsetAdjustmentBehavior?: 'automatic';
 }
 
 /**
+ * Scroll props for a detail shown beside a list (two panes). On iOS the
+ * system insets it below the tab root's bar, which can be the see-through
+ * large-title bar it would otherwise sit under (iPhone Duo open, iPad);
+ * Android has no bar above it, so it clears the status bar itself.
+ */
+export function useDetailScroll(embedded?: boolean): { contentInsetAdjustmentBehavior?: 'automatic'; paddingTop?: number } {
+  const insets = useSafeAreaInsets();
+  if (!embedded) return {};
+  return nativeRootHeader ? { contentInsetAdjustmentBehavior: 'automatic', paddingTop: 12 } : { paddingTop: insets.top + 12 };
+}
+
+/**
  * Side padding for pushed screens on iOS. On iPhone Duo's outer display (and
  * its inner display in landscape) the status bar, Back button and tab bar sit
  * in a strip on one side; the window's safe area covers it, so content inset
