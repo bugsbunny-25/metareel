@@ -120,3 +120,28 @@ export function hoursText(minutes: number): string {
   const m = minutes % 60;
   return h ? `${h}h${m ? ` ${String(m).padStart(2, '0')}m` : ''}` : `${m}m`;
 }
+
+type Watch = components['schemas']['WatchEntry'];
+
+/** The latest watch of each title, newest first, up to n (a rewatch doesn't repeat a poster). */
+export function recentDistinct(watches: Watch[], n: number): Watch[] {
+  const seen = new Set<string>();
+  const out: Watch[] = [];
+  for (const w of watches) {
+    const key = `${w.tmdb_kind}:${w.tmdb_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(w);
+    if (out.length === n) break;
+  }
+  return out;
+}
+
+/** Diary watches (newest first) under month headings. */
+export function diaryMonths(watches: Watch[]): Group<Watch>[] {
+  return bucket(
+    watches.filter((w) => w.watched_on),
+    (w) => w.watched_on!,
+    monthGroup,
+  );
+}

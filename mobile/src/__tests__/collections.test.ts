@@ -1,4 +1,16 @@
-import { countdownText, daysUntil, dayGroup, episodeBadge, hoursText, moviesSplit, nextPerShow, tvToWatch, tvUpcoming } from '@/data/collections';
+import {
+  countdownText,
+  daysUntil,
+  dayGroup,
+  diaryMonths,
+  episodeBadge,
+  hoursText,
+  moviesSplit,
+  nextPerShow,
+  recentDistinct,
+  tvToWatch,
+  tvUpcoming,
+} from '@/data/collections';
 
 const today = '2026-11-14'; // a Saturday
 
@@ -91,4 +103,19 @@ test('episodeBadge and hoursText', () => {
   expect(hoursText(125)).toBe('2h 05m');
   expect(hoursText(45)).toBe('45m');
   expect(hoursText(120)).toBe('2h');
+});
+
+test('recentDistinct and diaryMonths', () => {
+  const ws = [
+    { id: 1, tmdb_kind: 'movie' as const, tmdb_id: 'a', watched_on: '2026-11-05' },
+    { id: 2, tmdb_kind: 'movie' as const, tmdb_id: 'a', watched_on: '2026-10-25' },
+    { id: 3, tmdb_kind: 'movie' as const, tmdb_id: 'b', watched_on: '2026-10-23' },
+    { id: 4, tmdb_kind: 'movie' as const, tmdb_id: 'c', watched_on: '2026-09-27' },
+  ];
+  expect(recentDistinct(ws, 2).map((w) => w.id)).toEqual([1, 3]);
+  expect(diaryMonths(ws).map((g) => [g.key, g.data.length])).toEqual([
+    ['2026-11', 1],
+    ['2026-10', 2],
+    ['2026-09', 1],
+  ]);
 });
