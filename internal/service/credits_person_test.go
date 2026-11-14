@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,8 +17,30 @@ import (
 type fakePeople struct {
 	enabled bool
 	people  map[int]*client.TMDBPersonDetails
+	credits map[string]*client.TMDBCredits
 	fail    bool
 	calls   atomic.Int32
+}
+
+func (f *fakePeople) SearchPeople(_ context.Context, q string) ([]client.TMDBPersonResult, error) {
+	if f.fail {
+		return nil, errors.New("tmdb search person status 503")
+	}
+	var out []client.TMDBPersonResult
+	for id, p := range f.people {
+		if strings.Contains(strings.ToLower(p.Name), strings.ToLower(q)) {
+			out = append(out, client.TMDBPersonResult{ID: id, Name: p.Name, KnownFor: p.KnownFor, KnownTitles: []string{}})
+		}
+	}
+	return out, nil
+}
+
+func (f *fakePeople) Credits(_ context.Context, kind, id string) (*client.TMDBCredits, error) {
+	f.calls.Add(1)
+	if f.fail {
+		return nil, errors.New("tmdb credits status 503")
+	}
+	return f.credits[kind+":"+id], nil
 }
 
 func (f *fakePeople) Enabled() bool { return f.enabled }
@@ -141,16 +164,98 @@ func TestPersonWithTMDB(t *testing.T) {
 	}
 }
 
-func TestPersonCacheBounded(t *testing.T) {
-	svc := NewCreditsService(nil, nil).WithTMDB(&fakePeople{})
+func TestSearchPeople(t *testing.T) {
+	src := &fakePeople{enabled: true, people: map[int]*client.TMDBPersonDetails{1: {Name: "Ana Real", KnownFor: "Acting"}, 2: {Name: "Ben"}}}
+	svc := NewCreditsService(nil, nil).WithTMDB(src)
+	ctx := context.Background()
+	got, err := svc.SearchPeople(ctx, "  ana ", 0)
+	if err != nil || len(got) != 1 || got[0].PersonID != 1 || *got[0].KnownFor != "Acting" || got[0].ProfilePath != nil {
+		t.Fatalf("search = %+v, %v", got, err)
+	}
+	var verr *ValidationError
+	if _, err := svc.SearchPeople(ctx, "a", 0); !errors.As(err, &verr) {
+		t.Fatalf("one letter: %v", err)
+	}
+	src.fail = true
+	if _, err := svc.SearchPeople(ctx, "ana", 0); !errors.Is(err, ErrPersonUnavailable) {
+		t.Fatalf("tmdb down: %v", err)
+	}
+	if _, err := NewCreditsService(nil, nil).SearchPeople(ctx, "ana", 0); !errors.Is(err, ErrPersonUnavailable) {
+		t.Fatalf("no tmdb: %v", err)
+	}
+}
+
+func TestTMDBCacheBounded(t *testing.T) {
+	c := newTMDBCache[int64, *client.TMDBPersonDetails](personCacheMax)
 	now := time.Now()
 	for i := range personCacheMax + 5 {
-		svc.remember(int64(i), nil, now.Add(time.Duration(i)*time.Second))
+		c.put(int64(i), nil, true, now.Add(time.Duration(i)*time.Second))
 	}
-	if len(svc.people) != personCacheMax {
-		t.Fatalf("cache size = %d", len(svc.people))
+	if c.len() != personCacheMax {
+		t.Fatalf("cache size = %d", c.len())
 	}
-	if _, ok := svc.people[0]; ok {
+	if _, _, ok := c.get(0, now.Add(time.Minute)); ok {
 		t.Fatal("oldest entry kept")
+	}
+	if _, miss, ok := c.get(personCacheMax+4, now.Add(personCacheMax*time.Second)); !ok || !miss {
+		t.Fatal("newest miss not cached")
+	}
+	if _, _, ok := c.get(personCacheMax+4, now.Add(personCacheMax*time.Second+personMissTTL+time.Minute)); ok {
+		t.Fatal("miss kept past its TTL")
+	}
+}
+
+func TestTitleCreditsLive(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	meta := repository.NewMetadataRepository(db)
+	if err := meta.SaveDetails(ctx, &client.TMDBFullDetails{Kind: "movie", ID: "1", Title: "Catalogued"}, false); err != nil {
+		t.Fatal(err)
+	}
+	src := &fakePeople{enabled: true, credits: map[string]*client.TMDBCredits{
+		"movie:1": {Cast: []client.TMDBCredit{{PersonID: 10, Name: "Ana", Character: "Lead", Department: "Acting"}}},
+		"tv:7": {Cast: []client.TMDBCredit{{PersonID: 11, Name: "Ben", Character: "Host", Order: 1, Episodes: 12}, {PersonID: 12, Name: "Cy", Order: 0}},
+			Crew: []client.TMDBCredit{{PersonID: 20, Name: "Dee", Job: "Creator", Department: "Writing"}, {PersonID: 21, Name: "Gaffer", Job: "Gaffer"}}},
+	}}
+	repo := repository.NewCreditsRepository(db)
+	svc := NewCreditsService(repo, meta).WithTMDB(src)
+
+	// Catalogued, credits job not run yet: live, with the stored title.
+	c, err := svc.TitleCredits(ctx, TmdbRef{Kind: "movie", ID: "1"})
+	if err != nil || c.Source != "tmdb" || *c.Title != "Catalogued" || len(c.Cast) != 1 || c.Cast[0].Name != "Ana" {
+		t.Fatalf("catalogued = %+v, %v", c, err)
+	}
+	// Unknown to metareel: live, billing order, kept jobs only.
+	c, err = svc.TitleCredits(ctx, TmdbRef{Kind: "tv", ID: "7"})
+	if err != nil || c.Source != "tmdb" || c.Title != nil || len(c.Cast) != 2 || c.Cast[0].Name != "Cy" || *c.Cast[1].Episodes != 12 ||
+		len(c.Crew) != 1 || c.Crew[0].Job != "Creator" {
+		t.Fatalf("unknown title = %+v, %v", c, err)
+	}
+	calls := src.calls.Load()
+	if _, err := svc.TitleCredits(ctx, TmdbRef{Kind: "tv", ID: "7"}); err != nil || src.calls.Load() != calls {
+		t.Fatalf("not cached: %d calls", src.calls.Load()-calls)
+	}
+	// Unknown everywhere.
+	if _, err := svc.TitleCredits(ctx, TmdbRef{Kind: "movie", ID: "404"}); !errors.Is(err, ErrTitleNotFound) {
+		t.Fatalf("unknown: %v", err)
+	}
+	// TMDB failing: a catalogued title answers with nothing; an unknown one is a 502.
+	src.fail = true
+	if err := meta.SaveDetails(ctx, &client.TMDBFullDetails{Kind: "movie", ID: "2", Title: "Other"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := svc.TitleCredits(ctx, TmdbRef{Kind: "movie", ID: "2"}); err != nil || c.Source != "none" || len(c.Cast) != 0 {
+		t.Fatalf("catalogued while down = %+v, %v", c, err)
+	}
+	if _, err := svc.TitleCredits(ctx, TmdbRef{Kind: "movie", ID: "3"}); !errors.Is(err, ErrCreditsUnavailable) {
+		t.Fatalf("unknown while down: %v", err)
+	}
+	// Without TMDB the old behaviour holds.
+	plain := NewCreditsService(repo, meta)
+	if c, err := plain.TitleCredits(ctx, TmdbRef{Kind: "movie", ID: "1"}); err != nil || c.Source != "none" {
+		t.Fatalf("no tmdb = %+v, %v", c, err)
+	}
+	if _, err := plain.TitleCredits(ctx, TmdbRef{Kind: "tv", ID: "7"}); !errors.Is(err, ErrTitleNotFound) {
+		t.Fatalf("no tmdb, unknown: %v", err)
 	}
 }

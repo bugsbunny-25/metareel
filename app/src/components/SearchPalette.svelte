@@ -1,7 +1,7 @@
-<!-- Search (⌘K / Ctrl K, or "/"). Two result lists, kept apart because they answer different
+<!-- Search (⌘K / Ctrl K, or "/"). Result lists kept apart because they answer different
      questions: "In the charts" (/api/v1/search: titles metareel has chart data for, with when
-     they last charted) and "All of TMDB" (/me/titles/search: anything, for logging an obscure
-     film). A pasted IMDb ID or an IMDb, TMDB or Netflix link resolves directly. Empty, it shows
+     they last charted), "All of TMDB" (/me/titles/search: anything, for logging an obscure
+     film) and People (/me/people/search: actors and crew, opening their person page). A pasted IMDb ID or an IMDb, TMDB or Netflix link resolves directly. Empty, it shows
      titles recently touched in your library.
      Keys: ↑↓ move, Tab next list, ↵ open, ⌘/Ctrl ↵ log a watch, ⇧↵ watchlist, Esc close. -->
 <script>
@@ -22,6 +22,7 @@
   let active = $state(0)
   let charted = $state({ status: 'idle', items: [], error: '' })
   let tmdb = $state({ status: 'idle', items: [], error: '' })
+  let people = $state({ status: 'idle', items: [], error: '' })
   let byId = $state({ status: 'idle', items: [], error: '', via: '' })
 
   const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
@@ -59,6 +60,7 @@
     if (!open || text.length < 2) {
       charted = { status: 'idle', items: [], error: '' }
       tmdb = { status: 'idle', items: [], error: '' }
+      people = { status: 'idle', items: [], error: '' }
       byId = { status: 'idle', items: [], error: '', via: '' }
       return
     }
@@ -73,6 +75,7 @@
     if (id) {
       charted = { status: 'idle', items: [], error: '' }
       tmdb = { status: 'idle', items: [], error: '' }
+      people = { status: 'idle', items: [], error: '' }
       byId = { status: 'loading', items: [], error: '', via: id.via }
       try {
         const refs = id.direct ? [id.direct] : ((await api.lookup(id.params, signal)).items ?? []).map((x) => ({ kind: x.kind, id: x.tmdb_id }))
@@ -97,6 +100,20 @@
         sub: [x.matched && x.matched !== x.title ? `Also known as ${x.matched}` : '', x.last_charted ? `Last charted ${dayLabel(x.last_charted)}` : '', x.sources?.includes('netflix') ? 'Netflix Top 10' : ''].filter(Boolean).join(' · '),
       })) } })
       .catch((err) => { if (err.name !== 'AbortError') charted = { status: 'error', items: [], error: err.message } })
+    // People only when not narrowed to films or shows.
+    if (k) people = { status: 'idle', items: [], error: '' }
+    else {
+      people = { ...people, status: 'loading', error: '' }
+      api.searchPeople(text, signal)
+        .then((r) => { people = { status: 'ok', error: '', items: (r.results ?? []).map((x) => ({
+          person: true, kind: 'person', id: String(x.person_id), title: x.name, poster: x.profile_path || null,
+          sub: [x.known_for, x.known_titles?.join(', ')].filter(Boolean).join(' · '),
+        })) } })
+        .catch((err) => {
+          if (err.name === 'AbortError') return
+          people = { status: 'error', items: [], error: err instanceof ApiError && err.status === 502 ? 'People search isn’t available on this server right now.' : err.message }
+        })
+    }
     api.searchTMDB(text, k || undefined, signal)
       .then((r) => { tmdb = { status: 'ok', error: '', items: (r.results ?? []).map((x) => ({
         kind: x.tmdb_kind, id: x.tmdb_id, title: x.title, year: x.year || year(x.release_date), poster: x.poster_path || null,
@@ -120,6 +137,7 @@
     return [
       { key: 'charted', label: 'In the charts', state: charted },
       { key: 'tmdb', label: 'All of TMDB', state: { ...tmdb, items: tmdb.items.filter((x) => !seen.has(key(x))) } },
+      ...(people.status === 'idle' ? [] : [{ key: 'people', label: 'People', state: people }]),
     ]
   })
   const flat = $derived(lanes.flatMap((l) => l.state.items.map((it) => ({ ...it, lane: l.key }))))
@@ -130,13 +148,15 @@
   function close() { open = false }
   function go(it) {
     close()
-    navigate(`/title/${it.kind}/${it.id}`)
+    navigate(it.person ? `/person/${it.id}` : `/title/${it.kind}/${it.id}`)
   }
   function log(it) {
+    if (it.person) return
     close()
     onlog({ kind: it.kind, id: it.id, name: it.title, poster: it.poster })
   }
   async function watchlist(it) {
+    if (it.person) return
     try {
       const on = await library.toggleWatchlist(it.kind, it.id)
       toast(on ? `Added ${it.title} to your watchlist.` : `Removed ${it.title} from your watchlist.`)
@@ -167,6 +187,7 @@
   }
 
   const mark = (it) => {
+    if (it.person) return ''
     const s = library.get(it.kind, it.id)
     return s?.status === 'watchlist' ? 'watchlist' : s?.watch_count > 0 ? 'watched' : ''
   }
@@ -187,8 +208,8 @@
           aria-controls="search-results"
           aria-autocomplete="list"
           aria-activedescendant={flat[active] ? `sr-${active}` : undefined}
-          aria-label="Search titles"
-          placeholder="Search titles, or paste an IMDb, TMDB or Netflix link"
+          aria-label="Search titles and people"
+          placeholder="Search titles and people, or paste an IMDb, TMDB or Netflix link"
           autocomplete="off"
           spellcheck="false"
         />
@@ -218,16 +239,24 @@
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <li id="sr-{idx}" role="option" aria-selected={idx === active} class:active={idx === active}
                     onmouseenter={() => (active = idx)} onclick={() => go(it)}>
-                    <Poster path={it.poster} seed={it.id} title={it.title ?? ''} width={34} radius={4} size="w92" />
-                    <span class="text">
-                      <span class="name">{it.title}{#if it.year}{' '}<span class="yr num">{it.year}</span>{/if}</span>
-                      <span class="sub">{it.kind === 'tv' ? 'Series' : 'Film'}{#if it.sub}{' · '}{it.sub}{/if}</span>
-                    </span>
+                    {#if it.person}
+                      {#if it.poster}<img class="face" src="https://image.tmdb.org/t/p/w92{it.poster}" alt="" loading="lazy" />{:else}<span class="face ph" aria-hidden="true">{it.title.split(/\s+/).slice(0, 2).map((w) => w[0]).join('')}</span>{/if}
+                      <span class="text">
+                        <span class="name">{it.title}</span>
+                        <span class="sub">{it.sub || 'Person'}</span>
+                      </span>
+                    {:else}
+                      <Poster path={it.poster} seed={it.id} title={it.title ?? ''} width={34} radius={4} size="w92" />
+                      <span class="text">
+                        <span class="name">{it.title}{#if it.year}{' '}<span class="yr num">{it.year}</span>{/if}</span>
+                        <span class="sub">{it.kind === 'tv' ? 'Series' : 'Film'}{#if it.sub}{' · '}{it.sub}{/if}</span>
+                      </span>
+                    {/if}
                     {#if m}<span class="mine" title={m === 'watchlist' ? 'On your watchlist' : 'Watched'}><Icon name={m === 'watchlist' ? 'bookmark-fill' : 'check'} size={13} /></span>{/if}
-                    <span class="acts">
+                    {#if !it.person}<span class="acts">
                       <button type="button" tabindex="-1" aria-label="Log a watch of {it.title}" title="Log a watch ({MOD} ↵)" onclick={(e) => { e.stopPropagation(); log(it) }}><Icon name="plus" size={14} /></button>
                       <button type="button" tabindex="-1" aria-label="{m === 'watchlist' ? 'Remove' : 'Add'} {it.title} {m === 'watchlist' ? 'from' : 'to'} watchlist" title="Watchlist (⇧ ↵)" onclick={(e) => { e.stopPropagation(); watchlist(it) }}><Icon name={m === 'watchlist' ? 'bookmark-fill' : 'bookmark'} size={14} /></button>
-                    </span>
+                    </span>{/if}
                   </li>
                 {/each}
               </ul>
@@ -235,7 +264,7 @@
           </section>
         {/each}
         {#if !lanes.length}
-          <p class="msg pad">Type a title. Charted titles come first, then everything else on TMDB.</p>
+          <p class="msg pad">Type a title or a name. Charted titles come first, then everything else on TMDB, then people.</p>
         {/if}
       </div>
 
@@ -272,6 +301,8 @@
   .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 16px/1.25 var(--font-display); }
   .yr { color: var(--text-muted); font: 400 14px/1 var(--font-sans); }
   .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 12.5px; }
+  .face { flex: none; width: 34px; height: 34px; border-radius: 50%; object-fit: cover; object-position: top; background: var(--bg-elevated); }
+  .face.ph { display: grid; place-items: center; color: var(--text-muted); font: 700 13px/1 var(--font-display); }
   .mine { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-yours); color: var(--bg-canvas); flex: none; }
   .acts { display: flex; gap: 4px; opacity: 0; }
   li.active .acts { opacity: 1; }

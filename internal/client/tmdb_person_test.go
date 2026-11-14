@@ -14,6 +14,13 @@ import (
 func TestTMDBPerson(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/3/search/person":
+			if r.URL.Query().Get("query") != "tom hanks" || r.URL.Query().Get("include_adult") != "false" {
+				t.Errorf("search query = %v", r.URL.Query())
+			}
+			fmt.Fprint(w, `{"results": [{"id": 31, "name": "Tom Hanks", "profile_path": "/t.jpg", "known_for_department": "Acting", "popularity": 50,
+			  "known_for": [{"title": "Forrest Gump"}, {"name": "Band of Brothers"}, {"title": "Big"}, {"title": "Cast Away"}]},
+			  {"id": 0, "name": "bad"}, {"id": 5, "name": "  "}]}`)
 		case "/3/person/31":
 			if r.URL.Query().Get("append_to_response") != "combined_credits,external_ids" {
 				t.Errorf("append = %q", r.URL.Query().Get("append_to_response"))
@@ -55,6 +62,10 @@ func TestTMDBPerson(t *testing.T) {
 	}
 	if got, err := c.Person(ctx, 404); got != nil || err != nil {
 		t.Fatalf("unknown = %+v, %v", got, err)
+	}
+	hits, err := c.SearchPeople(ctx, "tom hanks")
+	if err != nil || len(hits) != 1 || hits[0].Name != "Tom Hanks" || hits[0].KnownFor != "Acting" || len(hits[0].KnownTitles) != 3 || hits[0].KnownTitles[1] != "Band of Brothers" {
+		t.Fatalf("search = %+v, %v", hits, err)
 	}
 	if got, err := NewTMDB(resty.New(), "").Person(ctx, 31); got != nil || err != nil {
 		t.Fatalf("no key = %+v, %v", got, err)

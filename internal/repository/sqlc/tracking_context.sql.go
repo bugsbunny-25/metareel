@@ -604,19 +604,25 @@ SELECT v.id, v.name, v.chain, v.address, v.city, v.region, v.country, v.latitude
        v.timezone, v.opened_on, v.closed_on, v.status, v.replaced_by_venue_id, v.note,
        v.created_by, v.created_at, v.updated_at,
        CAST((SELECT COUNT(*) FROM venue_screens s WHERE s.venue_id = v.id) AS INTEGER) AS screen_count
-FROM venues v
-WHERE (CAST(?1 AS TEXT) = ''
-       OR v.name LIKE '%' || CAST(?1 AS TEXT) || '%'
-       OR COALESCE(v.chain, '') LIKE '%' || CAST(?1 AS TEXT) || '%'
-       OR COALESCE(v.city, '') LIKE '%' || CAST(?1 AS TEXT) || '%')
-  AND (CAST(?2 AS TEXT) = '' OR v.country = ?2)
-  AND (CAST(?3 AS INTEGER) = 1 OR v.status <> 'closed')
-ORDER BY v.name COLLATE NOCASE
-LIMIT ?5 OFFSET ?4
+FROM venues v,
+     (SELECT CAST(?1 AS TEXT) AS w1, CAST(?2 AS TEXT) AS w2,
+             CAST(?3 AS TEXT) AS w3, CAST(?4 AS TEXT) AS w4) q
+WHERE (q.w1 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w1 || '%')
+  AND (q.w2 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w2 || '%')
+  AND (q.w3 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w3 || '%')
+  AND (q.w4 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w4 || '%')
+  AND (CAST(?5 AS TEXT) = '' OR v.country = ?5)
+  AND (CAST(?6 AS INTEGER) = 1 OR v.status <> 'closed')
+ORDER BY CASE WHEN q.w1 <> '' AND v.name LIKE q.w1 || '%' THEN 0 ELSE 1 END,
+         v.name COLLATE NOCASE, v.id
+LIMIT ?8 OFFSET ?7
 `
 
 type ListVenuesParams struct {
-	Query         string `json:"query"`
+	W1            string `json:"w1"`
+	W2            string `json:"w2"`
+	W3            string `json:"w3"`
+	W4            string `json:"w4"`
 	Country       string `json:"country"`
 	IncludeClosed int64  `json:"include_closed"`
 	Offset        int64  `json:"offset"`
@@ -645,10 +651,15 @@ type ListVenuesRow struct {
 	ScreenCount       int64           `json:"screen_count"`
 }
 
-// ListVenues searches the shared venue list by name, chain or city.
+// ListVenues searches the shared venue list: each word of the query (up to
+// four) must appear in the name, chain, city or address, so "pvr mumbai"
+// finds a PVR in Mumbai. Names starting with the first word come first.
 func (q *Queries) ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListVenuesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listVenues,
-		arg.Query,
+		arg.W1,
+		arg.W2,
+		arg.W3,
+		arg.W4,
 		arg.Country,
 		arg.IncludeClosed,
 		arg.Offset,

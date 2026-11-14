@@ -45,7 +45,8 @@
       charted ? api.timeline(k, tid, country, signal).catch((e) => ({ failed: e.message })) : null,
       charted ? api.history(k, tid, signal).catch((e) => ({ failed: e.message })) : null,
       ov ? api.availabilityHistory(k, tid, signal).catch(() => null) : null,
-      ov ? api.credits(k, tid, signal).catch(() => null) : null,
+      // Stored for catalogued titles; fetched live from TMDB for the rest.
+      api.credits(k, tid, signal).catch(() => null),
     ])
     return { ov: ov ?? {}, catalogued: !!ov, mine, charted, timeline, history, offerHistory, credits }
   }
@@ -75,7 +76,7 @@
   const lastRemoved = $derived((d?.offerHistory?.events ?? []).filter((e) => e.country === scope.country && e.event === 'removed' && e.monetization === 'flatrate').at(-1) ?? null)
   const nfViews = $derived(d?.ov.netflix?.total_views || 0)
 
-  // Cast & crew (stored for catalogued titles once the credits job has run). Crew are grouped
+  // Cast & crew (stored once the credits job has run, else live from TMDB). Crew are grouped
   // into the lines a credits block reads as.
   const cast = $derived(d?.credits?.cast ?? [])
   const CREW = { Director: 'Directed by', Creator: 'Created by', Screenplay: 'Written by', Writer: 'Written by', Teleplay: 'Written by', Story: 'Story by',

@@ -250,6 +250,7 @@ make reports-open
 | PUT/DELETE | `/api/v1/admin/watch-formats/:id/logo`   | Upload a format's logo (raw image body: PNG, JPEG, WebP or GIF ≤ 4096 px a side, or an SVG of drawing elements only; ≤ 512 KB; type taken from the bytes) or remove it |
 | GET/POST/PATCH/DELETE | `/api/v1/admin/webhooks[/:id[/test\|/rotate-secret\|/deliveries]]`, `/api/v1/admin/webhook-deliveries/:id[/retry]` | Outbound webhooks (see [Webhooks](#webhooks)) |
 | GET    | `/api/v1/me/titles/search?q=&kind=`         | Search TMDB for anything to track (not only titles metareel has charted); needs a signed-in user |
+| GET    | `/api/v1/me/people/search?q=`               | Search TMDB for actors and crew by name (opens `/people/:id`); needs a signed-in user |
 | GET    | `/api/v1/me/titles`                         | The user's tracked titles (`status`, `kind`, `favorite`, `sort`, `limit`, `offset`) |
 | GET/PUT/DELETE | `/api/v1/me/titles/{movie\|tv}/:id`  | One title: its TMDB metadata plus the user's status, favourite flag, watchlist note and watch roll-up |
 | GET    | `/api/v1/me/watchlist`                      | The watchlist, in list order |
@@ -270,7 +271,7 @@ make reports-open
 | GET    | `/api/v1/me/up-next`                        | The next episode to watch of each show in progress |
 | GET    | `/api/v1/me/formats`                        | The premium formats a watch can carry (IMAX, Dolby Cinema, 4DX, 70mm, Atmos…), each with a versioned `logo_url` once it has a logo |
 | GET    | `/api/v1/formats/:slug/logo`                | A format's logo image (use the format's `logo_url`; cached for a year at its current `?v=`, served with a sandboxing CSP) |
-| GET/POST | `/api/v1/me/venues`                       | Search cinemas (`q`, `country`, `include_closed`); add one |
+| GET/POST | `/api/v1/me/venues`                       | Search cinemas (`q`: every word in the name, chain, city or address, e.g. `pvr mumbai`; `country`, `include_closed`); add one |
 | GET/PUT/DELETE | `/api/v1/me/venues/:id`             | One cinema with its screens, former names and outside ids; delete is refused while watches point at it |
 | POST/DELETE | `/api/v1/me/venues/:id/aliases[/:alias_id]` | Record or remove a name a cinema used to have |
 | POST   | `/api/v1/me/venues/:id/screens`             | Add an auditorium (size, seats, aspect ratio) |
@@ -304,7 +305,8 @@ on demand from Data health or `POST /api/v1/admin/jobs/:type/run`.
 | `netflix.top10.import` | 21:00 | Netflix's official weekly Top 10 (global, per country, most popular); skipped when unchanged. Matches up to 400 new titles (see [TMDB mapping](#tmdb-mapping)) and maps season titles to season numbers. |
 | `netflix.titles.match` | 09:00 | Works through the backlog of unmatched Netflix titles (retrying after 1, 3, 7, then every 30 days; `manual` titles are never touched), looks up Netflix IDs of up to 200 more titles (fixing earlier name matches), then remaps seasons. Also queued by "Match again" in the admin UI. |
 | `imdb.ratings.import` | 06:00 | IMDb's daily ratings dataset for the IMDb IDs metareel knows (also kept as history: a row whenever a title's rating or votes changed). |
-| `tmdb.credits.refresh` | 05:30 | TMDB cast (top 25) and key crew of the titles metareel knows: never-fetched titles first, each again after 60 days, at most 1,000 a run (one request per title). Feeds `/titles/tmdb/:kind/:id/credits`, `/people/:id` and `/analytics/people`. |
+| `tmdb.credits.refresh` | 05:30 | TMDB cast (top 25) and key crew of the titles metareel knows: never-fetched titles first, each again after 60 days, at most 1,000 a run (one request per title). Feeds `/titles/tmdb/:kind/:id/credits` (which asks TMDB live for titles it hasn't stored), `/people/:id` and `/analytics/people`. |
+| `venues.import` | — (by hand) | Every cinema OpenStreetMap has in `VENUES_IMPORT_COUNTRIES` (default US, GB, IN; or `{"countries": ["IN"]}`), via the Overpass API, as venues to pick when logging a watch: name, chain (`brand`), address, coordinates, time zone from the coordinates, and the city (or the nearest city or town node within 20 km). Matches venues entered before by OSM ID, Wikidata ID or the same name nearby; re-runs only fill empty fields and never delete. Also on the console's Cinemas page. Data © OpenStreetMap contributors (ODbL). |
 | `tmdb.episodes.refresh` | 05:00 | TMDB episodes (air dates, names, finales) of the TV shows metareel knows: seasons from the last three years, undated ones and the latest, one request per show (20 seasons each). Airing shows daily, returning shows weekly, ended shows monthly; at most 1,500 shows a run. Feeds `/calendar/:country` and `/analytics/release-patterns`. |
 | `wikipedia.pageviews.import` | 10:00 | Daily English Wikipedia user pageviews of every title with an article (the metadata job finds it on Wikidata), since the last stored day (90 days for a new title), for `/history`. Paced for Wikimedia's 200 requests/minute limit (about 15 minutes for 2,500 titles). |
 | `netflix.engagement.import` | 07:00 | Netflix's "What We Watched" reports (hours viewed, views, runtime and the premiere date of originals for every title watched 50k+ hours in six months) from the list in `app_settings` `netflix.engagement.urls` (seeded with H2 2025 and H1 2026; skipped when unchanged). Run it with `{"url": "https://…xlsx"}` to add a new report. Rows are linked to Netflix Top 10 titles by name and shown in `/titles/tmdb/:kind/:id/netflix` (`engagement`); their premiere dates mark Netflix originals for the chart `origin` and `/analytics/origins`. |
@@ -795,9 +797,9 @@ streaks; watches per month, weekday and hour; your rating spread and how far
 you sit from TMDB, IMDb and RT, overall and per title; genres, decades,
 countries and languages; most watched; where you watched; and people and spend
 once there is data for them). Search (⌘K / Ctrl K
-or `/`) keeps two result lists apart: titles with chart data (`/api/v1/search`,
-with when they last charted) and all of TMDB (`/me/titles/search`, for logging
-anything); a pasted IMDb ID or an IMDb, TMDB or Netflix link resolves through
+or `/`) keeps three result lists apart: titles with chart data (`/api/v1/search`,
+with when they last charted), all of TMDB (`/me/titles/search`, for logging
+anything) and people (`/me/people/search`, opening their person page); a pasted IMDb ID or an IMDb, TMDB or Netflix link resolves through
 `/titles/lookup`. ↵ opens, ⌘/Ctrl ↵ logs a watch, ⇧ ↵ toggles the watchlist.
 Watchlist toggles and "Log a watch" write through `/api/v1/me`. The log
 dialog takes the time to the minute, day, month or year; a rating, tags and

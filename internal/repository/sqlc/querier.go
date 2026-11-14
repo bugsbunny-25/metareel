@@ -11,6 +11,7 @@ import (
 
 type Querier interface {
 	AddVenueAlias(ctx context.Context, arg AddVenueAliasParams) (VenueAlias, error)
+	AddVenueRefIfFree(ctx context.Context, arg AddVenueRefIfFreeParams) (int64, error)
 	AddWatchEntryFormat(ctx context.Context, arg AddWatchEntryFormatParams) error
 	AddWatchEntryTag(ctx context.Context, arg AddWatchEntryTagParams) error
 	// Stores a Netflix title's computed mapping (see ApplyTitleMapping); title_id
@@ -130,6 +131,7 @@ type Querier interface {
 	// first, then one fixed by hand, then one in the list of its TMDB kind.
 	// Source netflix ranks below every other source, which all replace it.
 	FillTmdbNetflixIDsFromNetflix(ctx context.Context) (int64, error)
+	FillVenueBlanks(ctx context.Context, arg FillVenueBlanksParams) (int64, error)
 	// Matched FlixPatrol titles with this exact name (case-insensitive) that
 	// charted in the same Netflix list (category movies | tv_shows), to match
 	// Netflix titles without another lookup. t.kind (the TMDB namespace) can
@@ -509,8 +511,14 @@ type Querier interface {
 	ListVenueAliases(ctx context.Context, venueID int64) ([]VenueAlias, error)
 	ListVenueRefs(ctx context.Context, venueID int64) ([]VenueRef, error)
 	ListVenueScreens(ctx context.Context, venueID int64) ([]VenueScreen, error)
-	// ListVenues searches the shared venue list by name, chain or city.
+	// ListVenues searches the shared venue list: each word of the query (up to
+	// four) must appear in the name, chain, city or address, so "pvr mumbai"
+	// finds a PVR in Mumbai. Names starting with the first word come first.
 	ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListVenuesRow, error)
+	// Cinema import (venues.import): every venue of a country with the refs
+	// the import matches on, and a fill-in update that never overwrites a value
+	// someone already set.
+	ListVenuesForImport(ctx context.Context, country sql.NullString) ([]ListVenuesForImportRow, error)
 	// ListWatchEntries is the diary, newest local day first. Paging is by the
 	// (watched_on, id) cursor; an empty cursor_on starts at the newest entry.
 	ListWatchEntries(ctx context.Context, arg ListWatchEntriesParams) ([]ListWatchEntriesRow, error)

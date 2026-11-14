@@ -89,6 +89,7 @@ export const api = {
 
   // People: profile and filmography from TMDB, plus the chart record of their titles.
   person: (id, signal) => request('GET', `/people/${id}`, { signal }),
+  searchPeople: (q, signal) => request('GET', `/me/people/search${qs({ q, limit: 5 })}`, { signal }),
 
   // Your account: who you are, where you're signed in, your password and preferences.
   account: (signal) => request('GET', '/me/account', { signal }),

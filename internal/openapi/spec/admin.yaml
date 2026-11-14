@@ -422,7 +422,9 @@ paths:
         or netflix.titles.match (Netflix title IDs) to those titles and
         ignores their retry backoff; force re-imports unchanged files.
         mapping.refresh is queued automatically after mapping changes; run by
-        hand it first recomputes every linked title's mapping.
+        hand it first recomputes every linked title's mapping. countries limits
+        venues.import (cinemas from OpenStreetMap) to those countries instead of
+        VENUES_IMPORT_COUNTRIES.
       parameters:
         - name: type
           in: path
@@ -438,6 +440,7 @@ paths:
                 title_ids: { type: array, items: { type: integer, format: int64 }, maxItems: 500 }
                 force: { type: boolean }
                 url: { type: string, description: "netflix.engagement.import only: an https report (.xlsx) to add to the list" }
+                countries: { type: array, items: { type: string, example: IN }, maxItems: 30, description: "venues.import only: ISO 3166-1 alpha-2 codes" }
       responses:
         "202":
           description: Enqueued

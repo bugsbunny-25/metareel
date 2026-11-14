@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/sync/singleflight"
@@ -208,11 +207,11 @@ type CreditsService struct {
 	metadata *repository.MetadataRepository
 
 	// TMDB profiles and filmographies (WithTMDB), cached by person ID.
-	tmdb    personSource
-	mu      sync.Mutex
-	people  map[int64]personCacheEntry
-	fetches singleflight.Group
-	now     func() time.Time
+	tmdb        tmdbSource
+	people      *tmdbCache[int64, *client.TMDBPersonDetails]
+	liveCredits *tmdbCache[string, *client.TMDBCredits]
+	fetches     singleflight.Group
+	now         func() time.Time
 }
 
 func NewCreditsService(repo *repository.CreditsRepository, metadata *repository.MetadataRepository) *CreditsService {
@@ -238,6 +237,10 @@ type CrewCredit struct {
 }
 
 type TitleCreditsResponse struct {
+	// Source: stored (the credits job's copy), tmdb (fetched live because
+	// none is stored yet; cached 12 hours) or none (nothing stored and TMDB
+	// had nothing or failed).
+	Source string       `json:"source"`
 	Kind   string       `json:"kind"`
 	TmdbID string       `json:"tmdb_id"`
 	Title  *string      `json:"title"`
@@ -245,21 +248,47 @@ type TitleCreditsResponse struct {
 	Crew   []CrewCredit `json:"crew"`
 }
 
-// TitleCredits returns a title's stored cast and key crew (empty until the
-// credits job has fetched them).
+// TitleCredits returns a title's stored cast and key crew. A title with none
+// stored yet (the credits job hasn't reached it, or metareel doesn't know
+// the title) gets the same selection live from TMDB.
 func (s *CreditsService) TitleCredits(ctx context.Context, ref TmdbRef) (*TitleCreditsResponse, error) {
 	meta, err := s.metadata.Get(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
-	if meta == nil {
-		return nil, ErrTitleNotFound
+	var credits []repository.Credit
+	if meta != nil {
+		if credits, err = s.repo.TitleCredits(ctx, ref); err != nil {
+			return nil, err
+		}
 	}
-	credits, err := s.repo.TitleCredits(ctx, ref)
-	if err != nil {
-		return nil, err
+	out := &TitleCreditsResponse{Source: "stored", Kind: ref.Kind, TmdbID: ref.ID, Cast: []CastCredit{}, Crew: []CrewCredit{}}
+	if meta != nil {
+		out.Title = meta.Title
 	}
-	out := &TitleCreditsResponse{Kind: ref.Kind, TmdbID: ref.ID, Title: meta.Title, Cast: []CastCredit{}, Crew: []CrewCredit{}}
+	if len(credits) == 0 {
+		live, err := s.tmdbCredits(ctx, ref)
+		switch {
+		case live != nil:
+			out.Source = "tmdb"
+			cast, crew := keepCredits(live)
+			for _, c := range cast {
+				out.Cast = append(out.Cast, CastCredit{PersonID: int64(c.PersonID), Name: c.Name, ProfilePath: strPtrOrNil(c.ProfilePath),
+					Character: c.Character, Order: int64(c.Order), Episodes: episodesPtr(c.Episodes)})
+			}
+			for _, c := range crew {
+				out.Crew = append(out.Crew, CrewCredit{PersonID: int64(c.PersonID), Name: c.Name, ProfilePath: strPtrOrNil(c.ProfilePath),
+					Job: c.Job, Department: c.Department, Episodes: episodesPtr(c.Episodes)})
+			}
+			return out, nil
+		case meta == nil && err != nil:
+			return nil, fmt.Errorf("%w: %w", ErrCreditsUnavailable, err)
+		case meta == nil:
+			return nil, ErrTitleNotFound
+		}
+		out.Source = "none"
+		return out, nil
+	}
 	for _, c := range credits {
 		if c.Type == repository.CreditCast {
 			out.Cast = append(out.Cast, CastCredit{PersonID: c.PersonID, Name: c.Name, ProfilePath: strPtrOrNil(c.ProfilePath),
@@ -270,6 +299,14 @@ func (s *CreditsService) TitleCredits(ctx context.Context, ref TmdbRef) (*TitleC
 		}
 	}
 	return out, nil
+}
+
+func episodesPtr(n int) *int64 {
+	if n <= 0 {
+		return nil
+	}
+	v := int64(n)
+	return &v
 }
 
 // PersonTitle is one of a person's titles with their roles and its chart

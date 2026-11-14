@@ -1515,8 +1515,12 @@ paths:
         (screenplay, writer, story, novel, teleplay, characters), creators, music
         composers and cinematographers, from TMDB (movie credits; for TV the
         aggregate credits of every season, with `episodes`, and the show's
-        creators). Stored by the tmdb.credits.refresh job; empty until it has
-        fetched the title.
+        creators). Stored by the tmdb.credits.refresh job; a title without
+        stored credits (not reached by the job yet, or not one metareel knows)
+        gets the same selection live from TMDB, cached for 12 hours. `source`
+        says which: stored, tmdb or none (nothing stored and TMDB had nothing or
+        failed). 404 when neither metareel nor TMDB knows the title; 502 when
+        TMDB fails for a title metareel doesn't know.
       parameters:
         - $ref: "#/components/parameters/TmdbKindParam"
         - $ref: "#/components/parameters/TmdbIDParam"
@@ -1528,6 +1532,11 @@ paths:
               schema: { $ref: "#/components/schemas/TitleCreditsResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: TMDB failed for a title metareel doesn't know
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/people/{id}:
     get:
@@ -2180,6 +2189,45 @@ paths:
                 $ref: "#/components/schemas/AnalyticsResult"
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /api/v1/me/people/search:
+    get:
+      operationId: searchPeople
+      tags: [Tracking]
+      summary: Search TMDB for a person
+      description: >
+        Actors and crew by name, most popular first, to open their page
+        (/people/{id}). Needs a signed-in user and a TMDB key on the server.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 100 }, description: A name }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 8, maximum: 20 } }
+      responses:
+        "200":
+          description: People
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        person_id: { type: integer }
+                        name: { type: string }
+                        profile_path: { type: string, nullable: true }
+                        known_for: { type: string, nullable: true, description: "TMDB department, e.g. Acting" }
+                        known_titles: { type: array, items: { type: string }, description: Up to three titles TMDB shows them for }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "502":
+          description: TMDB is unavailable or no TMDB key is configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /api/v1/me/titles/search:
     get:
       operationId: searchTrackedTitles
@@ -2906,7 +2954,7 @@ paths:
         - BearerSession: []
         - SessionCookie: []
       parameters:
-        - { name: q, in: query, required: false, schema: { type: string }, description: Matches name, chain or city }
+        - { name: q, in: query, required: false, schema: { type: string }, description: "Words (up to four, e.g. pvr mumbai) each matched in the name, chain, city or address; names starting with the first word come first" }
         - { name: country, in: query, required: false, schema: { type: string }, description: ISO 3166-1 alpha-2 }
         - { name: include_closed, in: query, required: false, schema: { type: boolean, default: false } }
         - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 200 } }
@@ -4856,6 +4904,7 @@ components:
     TitleCreditsResponse:
       type: object
       properties:
+        source: { type: string, enum: [stored, tmdb, none], description: Stored by the credits job, fetched live from TMDB, or nothing }
         kind: { type: string, enum: [movie, tv] }
         tmdb_id: { type: string }
         title: { type: string, nullable: true }

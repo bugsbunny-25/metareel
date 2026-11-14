@@ -137,3 +137,63 @@ func (c *TMDBClient) Person(ctx context.Context, id int) (*TMDBPersonDetails, er
 	}
 	return out, nil
 }
+
+// TMDBPersonResult is one person search hit.
+type TMDBPersonResult struct {
+	ID          int
+	Name        string
+	ProfilePath string
+	KnownFor    string   // known_for_department
+	KnownTitles []string // titles TMDB shows them for, most known first
+	Popularity  float64
+}
+
+type tmdbPersonSearchResp struct {
+	Results []struct {
+		ID          int     `json:"id"`
+		Name        string  `json:"name"`
+		ProfilePath string  `json:"profile_path"`
+		KnownFor    string  `json:"known_for_department"`
+		Popularity  float64 `json:"popularity"`
+		Titles      []struct {
+			Title string `json:"title"`
+			Name  string `json:"name"`
+		} `json:"known_for"`
+	} `json:"results"`
+}
+
+// SearchPeople searches TMDB's people by name (first page, ~20 hits). It
+// returns nil, nil when no API key is configured.
+func (c *TMDBClient) SearchPeople(ctx context.Context, query string) ([]TMDBPersonResult, error) {
+	if !c.Enabled() {
+		return nil, nil
+	}
+	var out tmdbPersonSearchResp
+	resp, err := c.http.R().SetContext(ctx).
+		SetQueryParams(map[string]string{"api_key": c.apiKey, "query": query, "include_adult": "false"}).
+		Get("https://api.themoviedb.org/3/search/person")
+	if err != nil {
+		return nil, fmt.Errorf("tmdb search person: %w", redactErr(err))
+	}
+	if resp.IsError() {
+		return nil, fmt.Errorf("tmdb search person status %d", resp.StatusCode())
+	}
+	if err := json.Unmarshal(resp.Body(), &out); err != nil {
+		return nil, fmt.Errorf("tmdb search person: decode: %w", err)
+	}
+	res := make([]TMDBPersonResult, 0, len(out.Results))
+	for _, r := range out.Results {
+		name := strings.TrimSpace(r.Name)
+		if r.ID <= 0 || name == "" {
+			continue
+		}
+		p := TMDBPersonResult{ID: r.ID, Name: name, ProfilePath: r.ProfilePath, KnownFor: r.KnownFor, Popularity: r.Popularity, KnownTitles: []string{}}
+		for _, t := range r.Titles {
+			if s := strings.TrimSpace(t.Title + t.Name); s != "" && len(p.KnownTitles) < 3 {
+				p.KnownTitles = append(p.KnownTitles, s)
+			}
+		}
+		res = append(res, p)
+	}
+	return res, nil
+}

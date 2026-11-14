@@ -63,6 +63,14 @@ it, and again after — several fields and enums below were only discoverable th
 
 - `https://datasets.imdbws.com/title.ratings.tsv.gz` (~9 MB, daily, ETag). Personal / non-commercial use only. Imported for known IMDb IDs (`IMDB_DATASET_SCOPE`); `imdb_dataset` is the first-choice IMDb rating in ratings responses.
 
+## OpenStreetMap / Overpass (`client/overpass.go`, `venues.import`, no key)
+
+- One query per country: `area["ISO3166-1"="IN"][admin_level=2]` then `nwr["amenity"="cinema"]`, `out center tags` (ways and relations come with a centre). US ~5.5k cinemas (~1 min), IN ~2.2k, GB ~830.
+- Usage policy: identify with a User-Agent, one query at a time, well under 10k a day. A busy instance answers 429/504, or 200 with a `remark` containing "runtime error" and partial data: treat both as busy (`ErrOverpassBusy`) and retry later, never store a partial result.
+- Tag quality: `addr:city` is missing for ~1/3 of US and ~4/5 of Indian cinemas (filled from the nearest `place=city|town` node); `wikidata` on branches is often the chain's ID (same as `brand:wikidata`, or repeated across branches) so it is ignored then; Indian multiplexes are often just "PVR Cinemas" or "INOX", so the city is what tells them apart.
+- Time zones come from coordinates via `tzf` (embedded boundaries); no network.
+- Data is ODbL: credit "© OpenStreetMap contributors" where it is shown.
+
 ## How mapping works (`titles.enrich`: `title_enrich.go` + `title_matcher.go`)
 
 Scrapes only record titles (`match_status = pending`) and queue `titles.enrich` for them.

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"errors"
 	"fmt"
 	"sort"
@@ -18,6 +19,10 @@ import (
 
 // ErrPersonUnavailable: TMDB failed for a person metareel has no record of.
 var ErrPersonUnavailable = errors.New("tmdb person request failed")
+
+// ErrCreditsUnavailable: TMDB failed for credits of a title metareel has no
+// record of.
+var ErrCreditsUnavailable = errors.New("tmdb credits request failed")
 
 const (
 	personCacheTTL     = 12 * time.Hour
@@ -68,15 +73,111 @@ type FilmographyTitle struct {
 	VoteCount   int      `json:"vote_count"`
 }
 
-type personCacheEntry struct {
-	at time.Time
-	p  *client.TMDBPersonDetails // nil: TMDB has no such person
+// tmdbCache keeps TMDB lookups in memory: a hit for personCacheTTL, a miss
+// (TMDB has no such thing) for personMissTTL, at most max entries.
+type tmdbCache[K comparable, V any] struct {
+	mu  sync.Mutex
+	m   map[K]tmdbCacheEntry[V]
+	max int
 }
 
-// WithTMDB adds TMDB profiles and filmographies to Person.
-func (s *CreditsService) WithTMDB(src personSource) *CreditsService {
+type tmdbCacheEntry[V any] struct {
+	at   time.Time
+	v    V
+	miss bool
+}
+
+func newTMDBCache[K comparable, V any](max int) *tmdbCache[K, V] {
+	return &tmdbCache[K, V]{m: map[K]tmdbCacheEntry[V]{}, max: max}
+}
+
+// get returns a fresh entry: its value, whether it is a miss, and ok.
+func (c *tmdbCache[K, V]) get(k K, now time.Time) (V, bool, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.m[k]
+	if !ok || (!e.miss && now.Sub(e.at) >= personCacheTTL) || (e.miss && now.Sub(e.at) >= personMissTTL) {
+		var zero V
+		return zero, false, false
+	}
+	return e.v, e.miss, true
+}
+
+// put caches a lookup; when full it drops expired entries, then the oldest.
+func (c *tmdbCache[K, V]) put(k K, v V, miss bool, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.m) >= c.max {
+		var oldest K
+		var oldestAt time.Time
+		for key, e := range c.m {
+			if now.Sub(e.at) >= personCacheTTL {
+				delete(c.m, key)
+				continue
+			}
+			if oldestAt.IsZero() || e.at.Before(oldestAt) {
+				oldest, oldestAt = key, e.at
+			}
+		}
+		if len(c.m) >= c.max {
+			delete(c.m, oldest)
+		}
+	}
+	c.m[k] = tmdbCacheEntry[V]{at: now, v: v, miss: miss}
+}
+
+func (c *tmdbCache[K, V]) len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.m)
+}
+
+// tmdbSource is the TMDB client: people and title credits.
+type tmdbSource interface {
+	personSource
+	Credits(ctx context.Context, kind, tmdbID string) (*client.TMDBCredits, error)
+	SearchPeople(ctx context.Context, query string) ([]client.TMDBPersonResult, error)
+}
+
+// PersonSearchResult is one person found by name on TMDB.
+type PersonSearchResult struct {
+	PersonID    int64    `json:"person_id"`
+	Name        string   `json:"name"`
+	ProfilePath *string  `json:"profile_path"`
+	KnownFor    *string  `json:"known_for"`    // department
+	KnownTitles []string `json:"known_titles"` // up to 3
+}
+
+// SearchPeople finds people on TMDB by name, most popular first.
+func (s *CreditsService) SearchPeople(ctx context.Context, query string, limit int) ([]PersonSearchResult, error) {
+	query = strings.TrimSpace(query)
+	if n := len([]rune(query)); n < 2 || n > 100 {
+		return nil, &ValidationError{Message: "q must be 2-100 characters"}
+	}
+	if limit <= 0 || limit > 20 {
+		limit = 8
+	}
+	if s.tmdb == nil || !s.tmdb.Enabled() {
+		return nil, fmt.Errorf("%w: TMDB_API_KEY is not set", ErrPersonUnavailable)
+	}
+	hits, err := s.tmdb.SearchPeople(ctx, query)
+	if err != nil {
+		return nil, personUnavailable(err)
+	}
+	out := make([]PersonSearchResult, 0, min(limit, len(hits)))
+	for _, h := range hits[:min(limit, len(hits))] {
+		out = append(out, PersonSearchResult{PersonID: int64(h.ID), Name: h.Name, ProfilePath: strPtrOrNil(h.ProfilePath),
+			KnownFor: strPtrOrNil(h.KnownFor), KnownTitles: h.KnownTitles})
+	}
+	return out, nil
+}
+
+// WithTMDB adds TMDB profiles and filmographies to Person, and live credits
+// to TitleCredits for titles without stored ones.
+func (s *CreditsService) WithTMDB(src tmdbSource) *CreditsService {
 	s.tmdb = src
-	s.people = map[int64]personCacheEntry{}
+	s.people = newTMDBCache[int64, *client.TMDBPersonDetails](personCacheMax)
+	s.liveCredits = newTMDBCache[string, *client.TMDBCredits](personCacheMax)
 	return s
 }
 
@@ -85,14 +186,10 @@ func (s *CreditsService) tmdbPerson(ctx context.Context, id int64) (*client.TMDB
 	if s.tmdb == nil || !s.tmdb.Enabled() {
 		return nil, PersonDetailsNotConfigured, nil
 	}
-	now := s.clock()
-	s.mu.Lock()
-	e, ok := s.people[id]
-	s.mu.Unlock()
-	if ok && (e.p != nil && now.Sub(e.at) < personCacheTTL || e.p == nil && now.Sub(e.at) < personMissTTL) {
-		return e.p, detailsStatus(e.p), nil
+	if p, _, ok := s.people.get(id, s.clock()); ok {
+		return p, detailsStatus(p), nil
 	}
-	v, err, _ := s.fetches.Do(strconv.FormatInt(id, 10), func() (any, error) {
+	v, err, _ := s.fetches.Do("person:"+strconv.FormatInt(id, 10), func() (any, error) {
 		// Detached from the caller so one cancelled request doesn't fail the others waiting on it.
 		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), personFetchTimeout)
 		defer cancel()
@@ -100,7 +197,7 @@ func (s *CreditsService) tmdbPerson(ctx context.Context, id int64) (*client.TMDB
 		if err != nil {
 			return nil, err
 		}
-		s.remember(id, p, s.clock())
+		s.people.put(id, p, p == nil, s.clock())
 		return p, nil
 	})
 	if err != nil {
@@ -108,6 +205,33 @@ func (s *CreditsService) tmdbPerson(ctx context.Context, id int64) (*client.TMDB
 	}
 	p, _ := v.(*client.TMDBPersonDetails)
 	return p, detailsStatus(p), nil
+}
+
+// tmdbCredits returns a title's credits from the cache or TMDB; nil, nil
+// when TMDB is not configured or has no such title.
+func (s *CreditsService) tmdbCredits(ctx context.Context, ref TmdbRef) (*client.TMDBCredits, error) {
+	if s.tmdb == nil || !s.tmdb.Enabled() {
+		return nil, nil
+	}
+	key := ref.Kind + ":" + ref.ID
+	if c, _, ok := s.liveCredits.get(key, s.clock()); ok {
+		return c, nil
+	}
+	v, err, _ := s.fetches.Do("credits:"+key, func() (any, error) {
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), personFetchTimeout)
+		defer cancel()
+		c, err := s.tmdb.Credits(fctx, ref.Kind, ref.ID)
+		if err != nil {
+			return nil, err
+		}
+		s.liveCredits.put(key, c, c == nil, s.clock())
+		return c, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	c, _ := v.(*client.TMDBCredits)
+	return c, nil
 }
 
 func detailsStatus(p *client.TMDBPersonDetails) string {
@@ -122,29 +246,6 @@ func (s *CreditsService) clock() time.Time {
 		return s.now()
 	}
 	return time.Now()
-}
-
-// remember caches a lookup; when full it drops expired entries, then the oldest.
-func (s *CreditsService) remember(id int64, p *client.TMDBPersonDetails, now time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.people) >= personCacheMax {
-		var oldest int64
-		var oldestAt time.Time
-		for k, e := range s.people {
-			if now.Sub(e.at) >= personCacheTTL {
-				delete(s.people, k)
-				continue
-			}
-			if oldestAt.IsZero() || e.at.Before(oldestAt) {
-				oldest, oldestAt = k, e.at
-			}
-		}
-		if len(s.people) >= personCacheMax {
-			delete(s.people, oldest)
-		}
-	}
-	s.people[id] = personCacheEntry{at: now, p: p}
 }
 
 // addTMDB fills a person's profile and filmography from TMDB.

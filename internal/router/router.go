@@ -68,6 +68,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	me.PUT("/preferences", h.SetPreferences)
 	me.GET("/titles", h.ListTrackedTitles)
 	me.GET("/titles/search", h.SearchTrackedTitles)
+	me.GET("/people/search", h.SearchPeople)
 	me.GET("/titles/:kind/:id", h.GetTrackedTitle)
 	me.PUT("/titles/:kind/:id", h.SetTrackedTitle)
 	me.DELETE("/titles/:kind/:id", h.DeleteTrackedTitle)

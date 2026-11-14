@@ -4,9 +4,9 @@
   import Icon from '../components/Icon.svelte'
   import {
     listVenues, getVenue, createVenue, updateVenue, deleteVenue,
-    addVenueAlias, deleteVenueAlias, createScreen, updateScreen, deleteScreen,
+    addVenueAlias, deleteVenueAlias, createScreen, updateScreen, deleteScreen, runJob,
   } from '../lib/api.js'
-  import { route, setQuery } from '../lib/router.svelte.js'
+  import { route, setQuery, href } from '../lib/router.svelte.js'
   import { toast } from '../lib/toast.svelte.js'
   import { confirm } from '../lib/confirm.svelte.js'
 
@@ -191,6 +191,27 @@
     }
   }
 
+  // Bulk import from OpenStreetMap (venues.import): the country filtered on, or the configured ones.
+  let importing = $state(false)
+  async function importOSM() {
+    const where = country ? `in ${country}` : 'in the configured countries (VENUES_IMPORT_COUNTRIES)'
+    const ok = await confirm({
+      title: 'Import cinemas from OpenStreetMap?',
+      message: `Adds every cinema OpenStreetMap has ${where}. Cinemas already here are matched by name and location and only get details they're missing; nothing is overwritten or deleted. It runs in the background and can take a few minutes.`,
+      confirmLabel: 'Import',
+    })
+    if (!ok) return
+    importing = true
+    try {
+      await runJob('venues.import', country ? { countries: [country] } : {})
+      toast.success('Cinema import queued. Follow it under Runs.')
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      importing = false
+    }
+  }
+
   const size = (s) => (s.width && s.height ? `${s.width} × ${s.height} ${s.dim_unit ?? ''}` : '')
   const zones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
 </script>
@@ -201,6 +222,8 @@
   info="Shared by everyone. Each watch keeps the name and city it was logged with, so renaming a cinema never rewrites a diary. A cinema with watches can't be deleted: set its status to closed instead."
 >
   {#snippet actions()}
+    <a class="btn" href={href('/runs', { type: 'venues.import' })}><Icon name="list" /> Import runs</a>
+    <button class="btn" onclick={importOSM} disabled={importing} title="Every cinema OpenStreetMap has in {country || 'the configured countries'}">Import from OpenStreetMap{country ? ` (${country})` : ''}</button>
     <button class="btn btn-primary" onclick={() => setQuery({ open: 'new' })}><Icon name="plus" /> Add cinema</button>
   {/snippet}
 </PageHeader>
@@ -239,6 +262,7 @@
       </tbody>
     </table>
     {#if venues.length === 200}<p class="muted">Showing the first 200; search to narrow it down.</p>{/if}
+    <p class="muted small attribution">Imported cinema data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>.</p>
   {/if}
 </div>
 

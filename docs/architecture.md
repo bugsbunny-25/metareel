@@ -157,6 +157,7 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
 | `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz`; known IDs also go to `imdb_rating_history` when changed |
+| `venues.import` | `VenueImporter` | Cinemas from OpenStreetMap (see [Cinema import](#cinema-import-servicevenue_importgo)); run by hand, no schedule |
 | `tmdb.credits.refresh` | `CreditsRefresher` | `tmdb_people` + `tmdb_credits` of every TMDB title: `/movie/{id}/credits`, or `/tv/{id}?append_to_response=aggregate_credits` (with `created_by` as Creator); keeps the top 25 cast and the jobs in `creditJobs` (TV: 10 per job by episodes); never-fetched first, again after 60 days (`tmdb_titles.credits_fetched_at`), 1,000 a run, 250 ms apart; each title replaced in one transaction |
 | `tmdb.episodes.refresh` | `EpisodesRefresher` | `tmdb_episodes` of TV shows with a stored TMDB season list: seasons aired in the last 3 years, undated and the latest (`append_to_response=season/N`, 20 per request, 250 ms apart); due daily when an episode airs within -14..+60 days or a season starts within 30 days, weekly for returning statuses, else monthly (`tmdb_titles.episodes_fetched_at`); each fetched season replaced in one transaction |
 | `wikipedia.pageviews.import` | `PageviewsImporter` | English Wikipedia daily user views (Wikimedia REST, `client.Wikimedia`) of titles with `tmdb_titles.enwiki_title`, since the last stored day (90 days first); 350 ms apart (200 requests/minute limit), `Retry-After` honoured on 429 |
@@ -522,9 +523,43 @@ usually the original network or service release, not per country.
   premiere from `rankings` (tagged with the season, or untagged), counting a
   chart only when `chart_snapshots` cover the whole window.
 
+## Cinema import (`service/venue_import.go`)
+
+`venues.import` reads every `amenity=cinema` node, way and relation of a
+country from an Overpass API instance (`client/overpass.go`, one query per
+country, `out center tags`, 5 s apart; a 429/504 or a timed-out query is
+retried twice, 30 s apart). Each becomes a venue: `name` (`name:en` when the
+name has no Latin letters), `brand` as chain, `addr:*`, the element's
+coordinates, the IANA zone at them (`tzf`, embedded boundaries, no network)
+and `start_date` / `opening_date` when it is a full date. Unnamed and
+`access=private|no` elements are skipped; one cinema mapped as a node and its
+building (same name within 150 m) is imported once. A cinema without
+`addr:city` takes the nearest `place=city|town` node within 20 km (a second
+query, only when needed).
+
+Matching, in order: `venue_refs` `osm_id` (`node/123`); the `wikidata` tag
+against a venue's `wikidata_id` (ignored when several cinemas carry the same
+ID, or it equals `brand:wikidata`: that is the chain's); the same normalised
+name within 300 m, or in the same city for a venue without coordinates, when
+exactly one venue qualifies. Matches only fill empty fields
+(`FillVenueBlanks`) and gain the refs they lack (`AddVenueRefIfFree`, which
+never moves a ref held by another venue); everything else is created. Nothing
+is deleted: a cinema gone from OSM is counted (`gone`) and kept, since watches
+may point at it. Each country is written in one transaction; a failing
+country is reported and the others still run.
+
+Venue search (`ListVenues`) matches up to four words, each anywhere in the
+name, chain, city or address, and ranks names starting with the first word
+first.
+
 ## Credits and people (`service/credits.go`)
 
-`GET /api/v1/titles/tmdb/{kind}/{id}/credits` reads the stored credits.
+`GET /api/v1/titles/tmdb/{kind}/{id}/credits` reads the stored credits; a
+title with none stored (or one metareel doesn't know) gets the same
+selection (`keepCredits`) live from TMDB, cached in memory with the people
+(`tmdbCache`: 12 hours, misses an hour, 1,000 entries each), `source: tmdb`.
+`GET /api/v1/me/people/search` is TMDB's person search, for the user app's
+search palette.
 `GET /api/v1/people/{id}` lists a person's credited titles with each title's
 FlixPatrol record (`ListPersonChartStats`, all stored charts), and adds their
 TMDB profile and filmography (`service/credits_person.go`): one
@@ -1310,6 +1345,8 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `MDBLIST_API_KEY` | _(empty)_ | Enables MDBList as a ratings provider |
 | `SCRAPER_MIN_INTERVAL` | `2s` | Minimum gap between FlixPatrol page fetches across all jobs |
 | `NETFLIX_TOP10_COUNTRIES` | _(empty)_ | Netflix per-country Top 10 to keep: ISO codes, empty = the FlixPatrol schedules' countries, `all` = every country |
+| `VENUES_IMPORT_COUNTRIES` | `US,GB,IN` | Countries `venues.import` brings cinemas in for when a run names none (ISO codes, comma separated) |
+| `VENUES_OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass API instance `venues.import` reads OpenStreetMap from |
 | `IMDB_DATASET_SCOPE` | `known` | `known` = only IMDb IDs metareel has, `all` = the whole dataset (~1.6M rows) |
 | `DOWNLOAD_TIMEOUT` | `10m` | One Netflix / IMDb file download |
 | `NETFLIX_TOP10_SEARCH` | `true` | Look Netflix titles' Netflix IDs up on Tudum's Top 10 search (an undocumented persisted GraphQL query, sent anonymously) |

@@ -129,20 +129,25 @@ SELECT id, name, chain, address, city, region, country, latitude, longitude, tim
        opened_on, closed_on, status, replaced_by_venue_id, note, created_by, created_at, updated_at
 FROM venues WHERE id = sqlc.arg(id);
 
--- ListVenues searches the shared venue list by name, chain or city.
+-- ListVenues searches the shared venue list: each word of the query (up to
+-- four) must appear in the name, chain, city or address, so "pvr mumbai"
+-- finds a PVR in Mumbai. Names starting with the first word come first.
 -- name: ListVenues :many
 SELECT v.id, v.name, v.chain, v.address, v.city, v.region, v.country, v.latitude, v.longitude,
        v.timezone, v.opened_on, v.closed_on, v.status, v.replaced_by_venue_id, v.note,
        v.created_by, v.created_at, v.updated_at,
        CAST((SELECT COUNT(*) FROM venue_screens s WHERE s.venue_id = v.id) AS INTEGER) AS screen_count
-FROM venues v
-WHERE (CAST(sqlc.arg(query) AS TEXT) = ''
-       OR v.name LIKE '%' || CAST(sqlc.arg(query) AS TEXT) || '%'
-       OR COALESCE(v.chain, '') LIKE '%' || CAST(sqlc.arg(query) AS TEXT) || '%'
-       OR COALESCE(v.city, '') LIKE '%' || CAST(sqlc.arg(query) AS TEXT) || '%')
+FROM venues v,
+     (SELECT CAST(sqlc.arg(w1) AS TEXT) AS w1, CAST(sqlc.arg(w2) AS TEXT) AS w2,
+             CAST(sqlc.arg(w3) AS TEXT) AS w3, CAST(sqlc.arg(w4) AS TEXT) AS w4) q
+WHERE (q.w1 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w1 || '%')
+  AND (q.w2 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w2 || '%')
+  AND (q.w3 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w3 || '%')
+  AND (q.w4 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w4 || '%')
   AND (CAST(sqlc.arg(country) AS TEXT) = '' OR v.country = sqlc.arg(country))
   AND (CAST(sqlc.arg(include_closed) AS INTEGER) = 1 OR v.status <> 'closed')
-ORDER BY v.name COLLATE NOCASE
+ORDER BY CASE WHEN q.w1 <> '' AND v.name LIKE q.w1 || '%' THEN 0 ELSE 1 END,
+         v.name COLLATE NOCASE, v.id
 LIMIT sqlc.arg(limit) OFFSET sqlc.arg(offset);
 
 -- CountVenueWatches reports how many watches point at a venue, so one that

@@ -34,7 +34,7 @@
   }
   $effect(() => { load() })
 
-  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'netflix.titles.match', 'imdb.ratings.import', 'tmdb.popularity.import', 'wikipedia.pageviews.import', 'netflix.engagement.import', 'tmdb.episodes.refresh', 'tmdb.credits.refresh', 'ratings.prewarm', 'maintenance']
+  const JOBS = ['titles.enrich', 'titles.metadata', 'netflix.top10.import', 'netflix.titles.match', 'imdb.ratings.import', 'tmdb.popularity.import', 'wikipedia.pageviews.import', 'netflix.engagement.import', 'tmdb.episodes.refresh', 'tmdb.credits.refresh', 'venues.import', 'ratings.prewarm', 'maintenance']
   const label = (t) => taskTypes.find((x) => x.type === t)?.label ?? t
   const forceTitle = (t) =>
     t === 'tmdb.episodes.refresh' ? 'Refetch every show, not only those due'

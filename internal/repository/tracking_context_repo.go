@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
+	"unicode"
 
 	"github.com/bugsbunny-25/metareel/internal/repository/sqlc"
 )
@@ -388,10 +390,13 @@ type VenueFilter struct {
 	Offset        int64
 }
 
-// ListVenues searches cinemas by name, chain or city.
+// ListVenues searches cinemas: every word (up to four) in the name, chain, city or address.
 func (r *TrackingRepository) ListVenues(ctx context.Context, f VenueFilter) ([]Venue, error) {
+	var w [4]string
+	words := strings.FieldsFunc(f.Query, func(r rune) bool { return unicode.IsSpace(r) || r == ',' })
+	copy(w[:], words)
 	rows, err := r.q.ListVenues(ctx, sqlc.ListVenuesParams{
-		Query: f.Query, Country: f.Country, IncludeClosed: boolInt(f.IncludeClosed),
+		W1: w[0], W2: w[1], W3: w[2], W4: w[3], Country: f.Country, IncludeClosed: boolInt(f.IncludeClosed),
 		Limit: f.Limit, Offset: f.Offset,
 	})
 	if err != nil {
