@@ -24,7 +24,16 @@ import { About, Charting, Hero, Scores, WhereToWatch } from './title-parts';
  * A show: the same hero, scores, where to watch, charts and facts as a
  * film's page, plus your progress, season tabs and episodes to tick.
  */
-export function ShowView({ id, embedded }: { id: string; embedded?: boolean }) {
+export function ShowView({
+  id,
+  embedded,
+  onOpenEpisode,
+}: {
+  id: string;
+  embedded?: boolean;
+  /** Beside a list: show an episode in the same pane instead of pushing it. */
+  onOpenEpisode?: (season: number, episode: number) => void;
+}) {
   const { colors, radius, gutter } = useTheme();
   const detail = useDetailScroll(embedded);
   const show = useShow(id);
@@ -117,7 +126,9 @@ export function ShowView({ id, embedded }: { id: string; embedded?: boolean }) {
                   <View key={e.episode_number} style={styles.episode}>
                     <Pressable
                       style={{ flex: 1, gap: 2 }}
-                      onPress={() => openEpisode(id, e.season_number!, e.episode_number!)}
+                      onPress={() =>
+                        onOpenEpisode ? onOpenEpisode(e.season_number!, e.episode_number!) : openEpisode(id, e.season_number!, e.episode_number!)
+                      }
                       onLongPress={() =>
                         Alert.alert(`Mark up to ${episodeCode(e.season_number, e.episode_number)}?`, 'Every aired episode before it is marked watched too.', [
                           { text: 'Cancel', style: 'cancel' },

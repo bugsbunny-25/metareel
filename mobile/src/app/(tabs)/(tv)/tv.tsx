@@ -35,7 +35,8 @@ export default function TV() {
   const queue = useShowQueue();
   const upcoming = useUpcoming();
   const twoPane = useTwoPane();
-  // The show (To watch) or the episode (Upcoming) shown beside the list.
+  // What's shown beside the list: an episode (picked from either list), or
+  // its whole show after "View whole series".
   const [selected, setSelected] = useState<string | null>(null);
   const [episodeSel, setEpisodeSel] = useState<{ show: string; season: number; episode: number } | null>(null);
   const [view, setView] = usePersisted<'list' | 'grid'>('tabs.tv.view', 'list', ['list', 'grid']);
@@ -46,14 +47,18 @@ export default function TV() {
     if (twoPane) setSelected(id);
     else openTitle({ kind: 'tv', id, title });
   };
-  const openEp = (ep: Episode) => {
-    const sel = { show: ep.tmdb_id ?? '', season: ep.season_number ?? 0, episode: ep.episode_number ?? 1 };
+  const openEpisodeOf = (show: string, season: number, episode: number) => {
     setSelected(null);
-    if (twoPane) setEpisodeSel(sel);
-    else openEpisode(sel.show, sel.season, sel.episode);
+    if (twoPane) setEpisodeSel({ show, season, episode });
+    else openEpisode(show, season, episode);
   };
+  const openEp = (ep: Episode) => openEpisodeOf(ep.tmdb_id ?? '', ep.season_number ?? 0, ep.episode_number ?? 1);
+  // A show in To watch opens its next episode.
+  const openNext = (s: Show) =>
+    s.next_episode ? openEpisodeOf(s.tmdb_id ?? '', s.next_episode.season_number ?? 0, s.next_episode.episode_number ?? 1) : open(s.tmdb_id ?? '', s.title);
   const isSel = (ep: Episode) =>
     twoPane && episodeSel?.show === ep.tmdb_id && episodeSel?.season === ep.season_number && episodeSel?.episode === ep.episode_number;
+  const isShowSel = (id?: string) => twoPane && !!id && (selected === id || episodeSel?.show === id);
 
   const shows = queue.data?.shows ?? [];
   const eps = upcoming.data?.episodes ?? [];
@@ -94,7 +99,7 @@ export default function TV() {
       itemKey={(i) => (i.type === 'show' ? `s${i.show.tmdb_id}` : `e${i.ep.tmdb_id}-${i.ep.season_number}-${i.ep.episode_number}`)}
       renderRow={(i) =>
         i.type === 'show' ? (
-          <ShowCard show={i.show} selected={twoPane && selected === i.show.tmdb_id} onOpen={open} />
+          <ShowCard show={i.show} selected={isShowSel(i.show.tmdb_id)} onOpen={() => openNext(i.show)} />
         ) : (
           <EpisodeCard ep={i.ep} today={today} selected={isSel(i.ep)} onOpen={() => openEp(i.ep)} />
         )
@@ -107,8 +112,8 @@ export default function TV() {
             title={i.show.title ?? ''}
             badge={episodeCode(i.show.next_episode?.season_number, i.show.next_episode?.episode_number)}
             percent={i.show.percent ?? 0}
-            selected={twoPane && selected === i.show.tmdb_id}
-            onPress={() => open(i.show.tmdb_id ?? '', i.show.title)}
+            selected={isShowSel(i.show.tmdb_id)}
+            onPress={() => openNext(i.show)}
           />
         ) : (
           <PosterTile
@@ -136,19 +141,27 @@ export default function TV() {
       banner={<OutboxBanner kinds={['episodes']} />}
       detail={
         episodeSel ? (
-          <EpisodeView key={`${episodeSel.show}-${episodeSel.season}-${episodeSel.episode}`} {...episodeSel} embedded />
+          <EpisodeView
+            key={`${episodeSel.show}-${episodeSel.season}-${episodeSel.episode}`}
+            {...episodeSel}
+            embedded
+            onOpenShow={() => {
+              setSelected(episodeSel.show);
+              setEpisodeSel(null);
+            }}
+          />
         ) : selected ? (
-          <ShowView key={selected} id={selected} embedded />
+          <ShowView key={selected} id={selected} embedded onOpenEpisode={(season, episode) => openEpisodeOf(selected, season, episode)} />
         ) : null
       }
-      placeholder={segment === 'upcoming' ? 'Pick an episode to see it here.' : 'Pick a show to see it here.'}
+      placeholder="Pick an episode to see it here."
     />
   );
 }
 
 const countdownBadge = (days: number) => (days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : `${days} days`);
 
-function ShowCard({ show: s, selected, onOpen }: { show: Show; selected: boolean; onOpen: (id: string, title?: string) => void }) {
+function ShowCard({ show: s, selected, onOpen }: { show: Show; selected: boolean; onOpen: () => void }) {
   const { colors } = useTheme();
   const ep = s.next_episode!;
   const pending = useOutbox().some(
@@ -166,7 +179,7 @@ function ShowCard({ show: s, selected, onOpen }: { show: Show; selected: boolean
       poster={s.poster_path}
       title={s.title ?? ''}
       selected={selected}
-      onPress={() => onOpen(s.tmdb_id ?? '', s.title)}
+      onPress={onOpen}
       accessibilityLabel={`${s.title}, next ${episodeCode(ep.season_number, ep.episode_number)}`}
       right={
         <TickButton

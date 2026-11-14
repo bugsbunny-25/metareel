@@ -22,7 +22,20 @@ import { watchedText } from './WatchView';
  * the synopsis, who directed and wrote it, its guest cast, and your watches
  * of it, with Log and Mark watched.
  */
-export function EpisodeView({ show, season, episode, embedded }: { show: string; season: number; episode: number; embedded?: boolean }) {
+export function EpisodeView({
+  show,
+  season,
+  episode,
+  embedded,
+  onOpenShow,
+}: {
+  show: string;
+  season: number;
+  episode: number;
+  embedded?: boolean;
+  /** Beside a list: show the whole series in the same pane instead of pushing it. */
+  onOpenShow?: () => void;
+}) {
   const { colors, gutter, radius } = useTheme();
   const detail = useDetailScroll(embedded);
   const wide = useWindowClass() !== 'compact';
@@ -31,6 +44,7 @@ export function EpisodeView({ show, season, episode, embedded }: { show: string;
     (i) => i.kind === 'episodes' && i.status === 'pending' && i.meta?.show === show && i.meta?.season === season && i.meta?.episode === episode,
   );
   const d = q.data;
+  const viewShow = () => (onOpenShow ? onOpenShow() : openTitle({ kind: 'tv', id: show, title: d?.show?.title }));
   const e = d?.episode;
   const title = d?.show?.title ?? '';
   const today = new Date().toISOString().slice(0, 10);
@@ -70,7 +84,7 @@ export function EpisodeView({ show, season, episode, embedded }: { show: string;
             {still ? <Image source={{ uri: still }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} accessible={false} /> : null}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(11,11,12,0.35)' }]} />
             <View style={styles.stillText}>
-              <Pressable onPress={() => openTitle({ kind: 'tv', id: show, title })} accessibilityRole="link" hitSlop={6}>
+              <Pressable onPress={viewShow} accessibilityRole="link" hitSlop={6}>
                 <Text variant="caption" style={{ color: colors.accentYours, textTransform: 'uppercase', letterSpacing: 0.6 }}>
                   {title} ›
                 </Text>
@@ -92,17 +106,19 @@ export function EpisodeView({ show, season, episode, embedded }: { show: string;
               </Text>
             </View>
             {!d.live ? <Text variant="caption">Showing what&apos;s saved; TMDB couldn&apos;t be reached for the rest.</Text> : null}
-            {aired ? (
-              <View style={styles.actions}>
-                <Button title="Log" onPress={() => openLog({ kind: 'tv', id: show, title, poster: d.show?.poster_path, season, episode })} />
-                <Button
-                  kind="quiet"
-                  title={pending ? 'Marked' : watched ? `Watched ${d.watches!.length}×` : 'Mark watched'}
-                  busy={false}
-                  onPress={() => (pending || watched ? undefined : markEpisode(show, title, season, episode))}
-                />
-              </View>
-            ) : null}
+            <View style={styles.actions}>
+              {aired ? (
+                <>
+                  <Button title="Log" onPress={() => openLog({ kind: 'tv', id: show, title, poster: d.show?.poster_path, season, episode })} />
+                  <Button
+                    kind="quiet"
+                    title={pending ? 'Marked' : watched ? `Watched ${d.watches!.length}×` : 'Mark watched'}
+                    onPress={() => (pending || watched ? undefined : markEpisode(show, title, season, episode))}
+                  />
+                </>
+              ) : null}
+              <Button kind="quiet" title="View whole series" onPress={viewShow} />
+            </View>
           </View>
 
           {e.overview ? (
