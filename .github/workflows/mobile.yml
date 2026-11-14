@@ -1,0 +1,76 @@
+name: mobile
+
+# Checks for the React Native app in mobile/ (docs/mobile-app-plan.md):
+# typecheck, lint, unit tests, and that the generated API types and theme
+# tokens match their sources. On main, publishes the JS to the EAS Update
+# "preview" channel when EXPO_TOKEN is set. No builds here: release builds
+# run on EAS (see mobile-release.yml), so signing keys never reach GitHub.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - "internal/openapi/spec/public.yaml"
+      - "app/src/tokens.css"
+      - ".github/workflows/mobile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - "internal/openapi/spec/public.yaml"
+      - "app/src/tokens.css"
+      - ".github/workflows/mobile.yml"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: mobile
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test -- --ci
+      - name: Generated files are up to date
+        run: npm run check:generated
+
+  update:
+    # Only on main, never for pull requests (forks get no secrets anyway).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: mobile
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+        if: env.EXPO_TOKEN != ''
+      - uses: actions/setup-node@v7
+        if: env.EXPO_TOKEN != ''
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: expo/expo-github-action@9.0.2
+        if: env.EXPO_TOKEN != ''
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - if: env.EXPO_TOKEN != ''
+        run: npm ci
+      - name: Publish to the preview channel
+        if: env.EXPO_TOKEN != ''
+        run: eas update --channel preview --environment preview --message "${{ github.sha }}" --non-interactive

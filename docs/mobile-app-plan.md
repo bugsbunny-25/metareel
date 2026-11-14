@@ -102,6 +102,14 @@ Rules that make fold/unfold and resizing seamless:
   `resizeableActivity` defaults to true, so multi-window and freeform work.
 - The in-progress log sheet's draft lives in a store persisted to SQLite, so
   even an activity recreation or process death does not lose a half-filled log.
+- Found in phase 2: a screen-density change (the user changing Display size,
+  or `adb shell wm density`) is not in the activity's `configChanges`, so
+  Android recreates the activity and the app restarts on its first tab (dev
+  builds also log "multiple navigation containers"). Folding, unfolding and
+  window resizing don't change density and keep state (checked on the
+  resizable emulator at 412, 673, 841 and 1280 dp). Phase 4: decide whether to
+  add `density` to `configChanges` with a config plugin, after checking React
+  Native picks up the new scale without a restart.
 
 ### Hinge and posture
 
@@ -160,7 +168,7 @@ No physical devices, so everything is verified on:
 | Images | `expo-image` (disk cache, placeholder, transitions) | |
 | Poster tint | **new**: server returns each title's average poster colour (`poster_color`) | The web samples a canvas; native has no cheap equivalent, and widgets need it too. |
 | Styling | `StyleSheet` + `useTheme()` / `useWindowClass()`; tokens generated from `app/src/tokens.css` | No styling framework; web and phone never drift. |
-| Fonts | Source Serif 4 + Source Sans 3 (OFL) embedded with the `expo-font` config plugin | `fontVariant: ['tabular-nums', 'lining-nums']`, matching `.num`. |
+| Fonts | Source Serif 4 + Source Sans 3 (OFL) from `@expo-google-fonts`, loaded with `useFonts` behind the splash screen | Same family names on both platforms (embedding via the config plugin uses PostScript names on iOS and file names on Android). `fontVariant: ['tabular-nums', 'lining-nums']`, matching `.num`. |
 | Charts | Hand-drawn `react-native-svg` sparklines (Top 10 trend, break-even bar), ports of `Spark.svelte` | No chart library in v1. |
 | Forms | Controlled components + a small draft store (Zustand, persisted) for the log sheet | |
 | Dates | `Intl` + the server's rules (send UTC + IANA `tz`; the client sends the **end** time) | Port `app/src/lib/dates.js`. |
@@ -295,7 +303,7 @@ routes with `RequireUser` + `NoStore` and never `ETag`.
 | B2 | **Device label on sessions**: optional `device_name` in the login body ("iPhone Duo"), stored on `sessions`, shown in Settings → Sessions on web and phone. **Done in phase 1** (API; the web Settings page doesn't show it yet). | 1 | XS |
 | B3 | **Remember this device**: `remember_device: true` at login → session with a 180-day absolute life (`AUTH_DEVICE_SESSION_TTL`, default `4320h`) that ends after 90 days unused (`AUTH_DEVICE_SESSION_IDLE_TIMEOUT`, default `2160h`), revocable like any session. Web logins unchanged. **Done in phase 1.** | 1 | S |
 | B4 | **Local-URL verification**: login returns `session_id` and `probe_key` (= HMAC-SHA256(stored token digest, "metareel/probe/v1"), recomputed, never stored). `POST /api/v1/auth/probe {session_id, nonce}` (unauthenticated, rate-limited) answers `HMAC-SHA256(probe_key, nonce)`; the app keeps `probe_key` next to its token and only sends the token over the home HTTP URL once the proof matches (§7). Unknown or ended sessions get a non-matching proof, not an error. **Done in phase 1.** | 1 | S |
-| B5 | **Poster colour**: average colour of the poster (small TMDB image, decoded in Go) computed when a title's display snapshot is cached; `poster_color` on title payloads. | 2 | S |
+| B5 | **Poster colour**: average colour of the poster (small TMDB image, decoded in Go) computed when a title's display snapshot is cached; `poster_color` on title payloads. Moved to phase 3, where the first artwork-led screens (Title) arrive. | 3 | S |
 | B6 | **Glance**: `GET /api/v1/me/glance`: top Up next items, next airing episode, current subscription period break-even, last watch. For widgets and background refresh. | 7 | S |
 | B7 | **Devices**: migration `user_devices` (`id`, `user_id`, `session_id` → `sessions` ON DELETE CASCADE, `platform`, `push_provider` expo, `token` UNIQUE, `app_version`, `created_at`, `last_seen_at`, `disabled_at`). `PUT /me/devices` (upsert by token), `DELETE /me/devices/{id}`, `GET /me/devices`. Tokens kept out of logs. | 6b | S |
 | B8 | **Notification preferences** in `user_preferences`: `notify_watchlist_arrivals`; reuse the existing `services` preference + country to filter. | 6b | XS |

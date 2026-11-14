@@ -786,6 +786,7 @@ Two Svelte 5 + Vite single-page apps ship with the server:
 |---|---|---|---|
 | Admin console | `web/` → `web/dist` (`UI_STATIC_DIR`) | `/admin` (Vite `base: '/admin/'`) | `/api/v1/admin` |
 | User app | `app/` → `app/dist` (`APP_STATIC_DIR`) | `/` | the public API and `/api/v1/me`, with the session cookie |
+| Mobile app | `mobile/` (Expo, React Native) → EAS builds: APK on GitHub Releases (`mobile-v*` tags), iOS via TestFlight | native | the public API and `/api/v1/me`, with a Bearer session token ([mobile/README.md](mobile/README.md)) |
 
 The user app needs a signed-in user (accounts are created in the admin console)
 and never sends an API key. Its design system is **Screening Room**: dark first

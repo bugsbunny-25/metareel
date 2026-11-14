@@ -1551,6 +1551,10 @@ metareel/
 │   └── queries/                  # sqlc input files (one per domain)
 ├── web/
 │   └── dist/                     # Built SPA assets (not committed; mount or copy in)
+├── mobile/                       # Expo / React Native app (own package.json; see mobile/README.md)
+│   ├── src/api/schema.ts         # Generated from internal/openapi/spec/public.yaml
+│   ├── src/theme/tokens.ts       # Generated from app/src/tokens.css
+│   └── plugins/with-home-http.js # HTTP only to the home-network host
 ├── tools/
 │   ├── go.mod                    # Isolated dev tool deps (air, asynqmon, miniredis)
 │   └── cmd/devredis/main.go      # In-process miniredis server for local dev

@@ -1,0 +1,79 @@
+name: mobile-release
+
+# Pushing a mobile-v* tag (e.g. mobile-v0.1.0) builds the app on EAS:
+#   - Android: a signed release APK with the EAS-managed keystore, attached
+#     to the GitHub Release for that tag (the sideload channel). The keystore
+#     never reaches GitHub; the APK is downloaded from EAS and uploaded as a
+#     release asset, never as a workflow artifact.
+#   - iOS: a production build submitted to TestFlight.
+# Needs the EXPO_TOKEN secret and the EAS_PROJECT_ID variable in the
+# "mobile" environment. The APK and the JS bundle are public: they contain
+# no server URL and no secrets.
+
+on:
+  push:
+    tags:
+      - "mobile-v*"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: mobile
+
+jobs:
+  android-apk:
+    runs-on: ubuntu-latest
+    environment: mobile
+    permissions:
+      contents: write # create the release and upload the APK
+    env:
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: expo/expo-github-action@9.0.2
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: npm ci
+      - name: Build the APK on EAS
+        run: eas build --platform android --profile release-apk --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+      - name: Attach it to the GitHub Release
+        run: |
+          url="$(jq -r '.[0].artifacts.buildUrl' "$RUNNER_TEMP/build.json")"
+          apk="$RUNNER_TEMP/metareel-${TAG#mobile-}.apk"
+          curl -fsSL -o "$apk" "$url"
+          sum="$(sha256sum "$apk" | cut -d' ' -f1)"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --prerelease --title "metareel mobile ${TAG#mobile-}" \
+              --notes "Android APK for sideloading. SHA-256: \`$sum\`"
+          fi
+          gh release upload "$TAG" "$apk" --clobber
+
+  ios-testflight:
+    runs-on: ubuntu-latest
+    environment: mobile
+    env:
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: expo/expo-github-action@9.0.2
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: npm ci
+      - name: Build on EAS and submit to TestFlight
+        run: eas build --platform ios --profile production --auto-submit --non-interactive --no-wait
