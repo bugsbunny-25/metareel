@@ -1,10 +1,10 @@
-<!-- A ratings source's logo in place of its name, from the artwork in src/assets/ratings (PNGs at
-     2x the sizes used, TMDB as SVG): IMDb's wordmark in gold on dark and black on light; the
+<!-- A ratings source's logo in place of its name, from the artwork in src/assets/ratings (IMDb and
+     TMDB as SVG, Rotten Tomatoes as PNGs at 2x the sizes used): IMDb's wordmark in gold on dark and black on light; the
      Tomatometer's fresh tomato, rotten splat or Certified Fresh badge; the audience score's full or
      tipped popcorn; TMDB's stacked wordmark. The name is the accessible label and tooltip. -->
 <script>
-  import imdbGold from '../assets/ratings/imdb-gold.png'
-  import imdbBlack from '../assets/ratings/imdb-black.png'
+  import imdbGold from '../assets/ratings/imdb-gold.svg'
+  import imdbBlack from '../assets/ratings/imdb-black.svg'
   import rtFresh from '../assets/ratings/rt-fresh.png'
   import rtRotten from '../assets/ratings/rt-rotten.png'
   import rtCertified from '../assets/ratings/rt-certified-fresh.png'
@@ -31,8 +31,8 @@
 
 {#if source === 'imdb'}
   <span class="rating-logo imdb" class:dark role="img" aria-label={label} title={label} style:height="{height}px">
-    <img class="on-dark" src={imdbGold} alt="" height={height} width={Math.round(height * 1.8)} />
-    <img class="on-light" src={imdbBlack} alt="" height={height} width={Math.round(height * 1.8)} />
+    <img class="on-dark" src={imdbGold} alt="" height={height} width={Math.round(height * 2.41)} />
+    <img class="on-light" src={imdbBlack} alt="" height={height} width={Math.round(height * 2.41)} />
   </span>
 {:else if source === 'rt' || source === 'rt-audience'}
   <img class="rating-logo" src={rtSrc} alt={label} title={label} height={height} width={height} />
