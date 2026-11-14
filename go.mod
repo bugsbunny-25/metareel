@@ -4,22 +4,22 @@ go 1.26.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.13.0
-	github.com/caarlos0/env/v11 v11.4.1
+	github.com/caarlos0/env/v11 v11.4.2
 	github.com/go-resty/resty/v2 v2.17.2
 	github.com/gocolly/colly/v2 v2.3.0
 	github.com/hasura/go-graphql-client v0.16.0
 	github.com/hibiken/asynq v0.26.0
 	github.com/joho/godotenv v1.5.1
-	github.com/labstack/echo/v5 v5.4.1
-	github.com/pressly/goose/v3 v3.28.0
-	github.com/ringsaturn/tzf/v2 v2.1.4
-	golang.org/x/crypto v0.58.0
-	golang.org/x/sync v0.24.0
-	golang.org/x/term v0.47.0
-	golang.org/x/text v0.43.0
+	github.com/labstack/echo/v5 v5.4.5
+	github.com/pressly/goose/v3 v3.30.1
+	github.com/ringsaturn/tzf/v2 v2.3.0
+	golang.org/x/crypto v0.59.0
+	golang.org/x/sync v0.25.0
+	golang.org/x/term v0.48.0
+	golang.org/x/text v0.44.0
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.60.1
+	modernc.org/sqlite v1.62.0
 )
 
 require (
@@ -27,7 +27,7 @@ require (
 	github.com/antchfx/htmlquery v1.3.7 // indirect
 	github.com/antchfx/xmlquery v1.5.2 // indirect
 	github.com/antchfx/xpath v1.3.9 // indirect
-	github.com/bits-and-blooms/bitset v1.26.0 // indirect
+	github.com/bits-and-blooms/bitset v1.29.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
@@ -37,7 +37,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/kennygrant/sanitize v1.2.4 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
-	github.com/mfridman/interpolate v0.0.2 // indirect
+	github.com/mfridman/interpolate v0.2.0 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/nlnwa/whatwg-url v0.6.2 // indirect
 	github.com/redis/go-redis/v9 v9.23.0 // indirect
@@ -51,10 +51,10 @@ require (
 	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	modernc.org/libc v1.77.1 // indirect
+	modernc.org/libc v1.81.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )

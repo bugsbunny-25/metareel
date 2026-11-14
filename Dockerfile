@@ -4,7 +4,7 @@
 # Stage 0: frontends
 # -----------------------------------------------------------------------------
 # The admin console (web/, served at /admin) and the user app (app/, served at /).
-FROM node:24-alpine AS frontend
+FROM node:26-alpine AS frontend
 
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
@@ -12,7 +12,7 @@ RUN npm ci --prefer-offline
 COPY web/ ./
 RUN npm run build
 
-FROM node:24-alpine AS appfrontend
+FROM node:26-alpine AS appfrontend
 
 WORKDIR /userapp
 COPY app/package.json app/package-lock.json ./
@@ -26,7 +26,7 @@ RUN npm run build
 # Alpine-based Go image keeps the builder small. modernc/sqlite is pure Go so
 # we do NOT need cgo; this lets us emit a fully-static binary that runs on
 # `scratch`.
-FROM golang:1.27.3-alpine AS builder
+FROM golang:1.27.4-alpine AS builder
 
 WORKDIR /src
 
