@@ -687,7 +687,7 @@ working. The console's Cinemas page edits venues through admin copies of the
 `/me/venues` routes; the same rules apply (watches snapshot the name and
 city; a venue with watches is closed, not deleted). Admins can upload format
 logos in bulk: the console matches each file to a format by its name
-(`<slug>.<ext>`); the logo checklist is `docs/format-logos.md`.
+(`<slug>.<ext>`). Logo files are not kept in the repo (they are trademarks); they live only in the database once uploaded.
 
 Premium-format logos are uploaded in the console (Premium formats) as the
 raw image to `PUT /admin/watch-formats/{id}/logo` and kept in SQLite
