@@ -255,11 +255,13 @@ func (h *Handler) DeleteWatchTag(c *echo.Context) error {
 }
 
 // optionalInt reads an optional non-negative integer query param.
+// optionalInt parses a small non-negative query value (a limit, offset or
+// day count). It is parsed as 32-bit, so converting it to int is always safe.
 func optionalInt(v, name string) (int64, error) {
 	if strings.TrimSpace(v) == "" {
 		return 0, nil
 	}
-	n, err := strconv.ParseInt(v, 10, 64)
+	n, err := strconv.ParseInt(v, 10, 32)
 	if err != nil || n < 0 {
 		return 0, errors.New(name + " must be a non-negative integer")
 	}

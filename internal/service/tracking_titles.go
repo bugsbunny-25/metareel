@@ -85,7 +85,7 @@ func (s *TrackedTitleService) Search(ctx context.Context, query, kind string, li
 		return nil, fmt.Errorf("%w: TMDB_API_KEY is not set", ErrUpstream)
 	}
 
-	out := make([]TitleSearchResult, 0, limit)
+	out := []TitleSearchResult{}
 	for _, k := range []string{"movie", "tv"} {
 		if kind != "" && kind != k {
 			continue

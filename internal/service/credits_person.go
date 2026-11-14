@@ -164,8 +164,12 @@ func (s *CreditsService) SearchPeople(ctx context.Context, query string, limit i
 	if err != nil {
 		return nil, personUnavailable(err)
 	}
-	out := make([]PersonSearchResult, 0, min(limit, len(hits)))
-	for _, h := range hits[:min(limit, len(hits))] {
+	if len(hits) > limit {
+		hits = hits[:limit]
+	}
+	// Sized by TMDB's page (at most 20), never by the caller's limit.
+	out := make([]PersonSearchResult, 0, len(hits))
+	for _, h := range hits {
 		out = append(out, PersonSearchResult{PersonID: int64(h.ID), Name: h.Name, ProfilePath: strPtrOrNil(h.ProfilePath),
 			KnownFor: strPtrOrNil(h.KnownFor), KnownTitles: h.KnownTitles})
 	}
