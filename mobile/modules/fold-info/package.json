@@ -1,0 +1,7 @@
+{
+  "name": "fold-info",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Where a foldable's fold is (bounds, orientation, separating, half open), from Jetpack WindowManager",
+  "main": "src/index.ts"
+}

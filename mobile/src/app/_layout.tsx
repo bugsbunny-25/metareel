@@ -12,6 +12,7 @@ import { endpoint, SessionProvider, useSession } from '@/auth/session';
 import { useEndpointRefresh } from '@/net/use-endpoint-refresh';
 import { useOutboxSync } from '@/offline/use-sync';
 import { persister, persistMaxAge, queryClient } from '@/query/client';
+import { useWindowClass } from '@/layout/window-class';
 import { useTheme } from '@/theme';
 
 void SplashScreen.preventAutoHideAsync();
@@ -40,6 +41,9 @@ function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
   const session = useSession();
   const { scheme, colors } = useTheme();
   const ready = fontsLoaded && session.status !== 'loading';
+  // The log sheet: a bottom sheet on phones, a side panel beside the content
+  // on unfolded foldables and tablets (drawn by the log screen itself).
+  const sidePanel = useWindowClass() !== 'compact';
   useEndpointRefresh(endpoint);
   useOutboxSync(session.status === 'signedIn');
 
@@ -77,13 +81,17 @@ function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
           ))}
           <Stack.Screen
             name="log"
-            options={{
-              presentation: 'formSheet',
-              sheetAllowedDetents: [0.75, 1],
-              sheetGrabberVisible: true,
-              sheetCornerRadius: 20,
-              contentStyle: { backgroundColor: colors.bgSurface },
-            }}
+            options={
+              sidePanel
+                ? { presentation: 'transparentModal', animation: 'fade', contentStyle: { backgroundColor: 'transparent' } }
+                : {
+                    presentation: 'formSheet',
+                    sheetAllowedDetents: [0.75, 1],
+                    sheetGrabberVisible: true,
+                    sheetCornerRadius: 20,
+                    contentStyle: { backgroundColor: colors.bgSurface },
+                  }
+            }
           />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>

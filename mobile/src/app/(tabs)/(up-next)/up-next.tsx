@@ -1,15 +1,19 @@
+import { useState } from 'react';
 import { ActivityIndicator, Pressable, SectionList, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { components } from '@/api/schema';
 import { Icon } from '@/components/Icon';
 import { OutboxBanner } from '@/components/OutboxBanner';
+import { Placeholder } from '@/components/Placeholder';
 import { Text } from '@/components/Text';
 import { TitleRow } from '@/components/TitleRow';
 import { useShowQueue } from '@/data/queries';
+import { ListDetail, useTwoPane } from '@/layout/ListDetail';
 import { markEpisode, openTitle } from '@/lib/actions';
 import { episodeCode } from '@/lib/format';
 import { useOutbox } from '@/offline';
+import { ShowView } from '@/screens/ShowView';
 import { useTheme } from '@/theme';
 
 type Item = components['schemas']['ShowQueueItem'];
@@ -31,8 +35,10 @@ export default function UpNext() {
     title: s.title,
     data: (queue.data?.shows ?? []).filter((x) => x.stage === s.stage && x.next_episode),
   })).filter((s) => s.data.length);
+  const twoPane = useTwoPane();
+  const [selected, setSelected] = useState<string | null>(null);
 
-  return (
+  const list = (
     <SectionList
       style={{ backgroundColor: colors.bgCanvas }}
       contentContainerStyle={{ paddingTop: insets.top + 12, paddingHorizontal: gutter.compact, paddingBottom: 32, width: '100%', maxWidth: 760, alignSelf: 'center' }}
@@ -70,7 +76,8 @@ export default function UpNext() {
                 {x.remaining_episodes ? ` · ${x.remaining_episodes} left` : ''}
               </Text>
             }
-            onPress={() => openTitle({ kind: 'tv', id: x.tmdb_id ?? '' })}
+            selected={twoPane && selected === x.tmdb_id}
+            onPress={() => (twoPane ? setSelected(x.tmdb_id ?? null) : openTitle({ kind: 'tv', id: x.tmdb_id ?? '' }))}
             right={
               <Pressable
                 disabled={pending}
@@ -93,6 +100,13 @@ export default function UpNext() {
           <Text variant="muted">No shows in progress. Open a show and tick an episode to start.</Text>
         )
       }
+    />
+  );
+  return (
+    <ListDetail
+      list={list}
+      detail={selected ? <ShowView key={selected} id={selected} embedded /> : null}
+      placeholder={<Placeholder text="Pick a show to see its episodes here." />}
     />
   );
 }

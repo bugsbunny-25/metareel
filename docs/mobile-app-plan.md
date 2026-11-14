@@ -107,9 +107,11 @@ Rules that make fold/unfold and resizing seamless:
   Android recreates the activity and the app restarts on its first tab (dev
   builds also log "multiple navigation containers"). Folding, unfolding and
   window resizing don't change density and keep state (checked on the
-  resizable emulator at 412, 673, 841 and 1280 dp). Phase 4: decide whether to
-  add `density` to `configChanges` with a config plugin, after checking React
-  Native picks up the new scale without a restart.
+  resizable emulator at 412, 673, 841 and 1280 dp). Phase 4 tried adding
+  `density` to `configChanges`: the app then stays put, but React Native keeps
+  text measured at the old scale (labels cut off, headings clipped) until
+  things re-render. A restart on a rare settings change is the lesser evil, so
+  density is left to Android's default (recreate).
 
 ### Hinge and posture
 
@@ -441,6 +443,18 @@ check), and a background task that flushes the outbox. Not done: Maestro
 flows (the CLI isn't installed; the offline check was run by hand), the
 side-panel log sheet on wide windows (phase 4), and logos for IMDb / RT /
 TMDB scores (the web app is getting them; reuse when they land).
+
+**Phase 4 status (2026-11-14):** Diary, Up next and Watchlist are
+list–detail on medium and expanded windows (the detail views are shared with
+the full screens); the log sheet is a side panel beside the dimmed content on
+wide windows and a bottom sheet on phones; `modules/fold-info` (Android, ~90
+lines of Kotlin) reports the fold's bounds and posture, used to put the
+list–detail split on the hinge of a half-open book foldable (offset by the
+rail) and to give the log sheet a tabletop layout (title and artwork above the
+fold, form below). Checked on the Pixel 9 Pro Fold emulator: unfolded, half
+open at 90°, tabletop in landscape. iOS: the iPhone Duo's fold position isn't
+exposed (only `expo-hinge`'s status/angle), so the iOS split is the
+size-class one. Density changes still recreate the activity (see section 2).
 
 v1 worth using day to day = phases 1–4, about **5–7 weeks of focused days**.
 Phases 5–7 are independent and can be reordered.

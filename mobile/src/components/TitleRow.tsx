@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { useTheme } from '@/theme';
+
 import { Poster } from './Poster';
 import { Text } from './Text';
 
@@ -12,6 +14,7 @@ export function TitleRow({
   right,
   onPress,
   accent,
+  selected,
 }: {
   poster?: string | null;
   title: string;
@@ -19,13 +22,17 @@ export function TitleRow({
   right?: ReactNode;
   onPress?: () => void;
   accent?: string;
+  /** The row shown in the detail pane beside the list. */
+  selected?: boolean;
 }) {
+  const { colors } = useTheme();
   return (
     <Pressable
       onPress={onPress}
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : undefined}
-      style={({ pressed }) => [styles.row, { opacity: pressed ? 0.75 : 1 }]}
+      accessibilityState={selected ? { selected: true } : undefined}
+      style={({ pressed }) => [styles.row, selected && { backgroundColor: colors.bgElevated, marginHorizontal: -8, paddingHorizontal: 8, borderRadius: 12 }, { opacity: pressed ? 0.75 : 1 }]}
     >
       <Poster path={poster} title={title} width={44} />
       <View style={styles.text}>

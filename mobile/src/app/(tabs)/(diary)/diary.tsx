@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,9 +7,12 @@ import type { components } from '@/api/schema';
 import { OutboxBanner } from '@/components/OutboxBanner';
 import { Text } from '@/components/Text';
 import { TitleRow } from '@/components/TitleRow';
+import { Placeholder } from '@/components/Placeholder';
 import { useDiary } from '@/data/queries';
+import { ListDetail, useTwoPane } from '@/layout/ListDetail';
 import { dayHeading, episodeCode, starText } from '@/lib/format';
 import { useOutbox } from '@/offline';
+import { WatchView } from '@/screens/WatchView';
 import { useTheme } from '@/theme';
 
 type Entry = components['schemas']['WatchEntry'];
@@ -20,6 +23,8 @@ export default function Diary() {
   const insets = useSafeAreaInsets();
   const diary = useDiary();
   const pending = useOutbox().filter((i) => i.kind === 'watch' && i.status === 'pending');
+  const twoPane = useTwoPane();
+  const [selected, setSelected] = useState<number | null>(null);
 
   const sections = useMemo(() => {
     const byDay = new Map<string, Entry[]>();
@@ -32,7 +37,7 @@ export default function Diary() {
     return [...byDay.entries()].map(([day, data]) => ({ title: dayHeading(day), data }));
   }, [diary.data]);
 
-  return (
+  const list = (
     <SectionList
       style={{ backgroundColor: colors.bgCanvas }}
       contentContainerStyle={{ paddingTop: insets.top + 12, paddingHorizontal: gutter.compact, paddingBottom: 32, width: '100%', maxWidth: 760, alignSelf: 'center' }}
@@ -69,7 +74,8 @@ export default function Diary() {
               {w.rating ? <Text variant="muted" style={{ color: colors.accentYours }}>{`  ${starText(w.rating)}`}</Text> : null}
             </Text>
           }
-          onPress={() => router.push({ pathname: '/watch/[id]', params: { id: String(w.id) } })}
+          selected={twoPane && selected === w.id}
+          onPress={() => (twoPane ? setSelected(w.id!) : router.push({ pathname: '/watch/[id]', params: { id: String(w.id) } }))}
         />
       )}
       ListEmptyComponent={
@@ -82,6 +88,13 @@ export default function Diary() {
         )
       }
       ListFooterComponent={diary.isFetchingNextPage ? <ActivityIndicator color={colors.textMuted} /> : undefined}
+    />
+  );
+  return (
+    <ListDetail
+      list={list}
+      detail={selected ? <WatchView key={selected} id={String(selected)} embedded /> : null}
+      placeholder={<Placeholder text="Pick a watch to see it here." />}
     />
   );
 }

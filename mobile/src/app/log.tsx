@@ -4,7 +4,7 @@ import * as Haptics from 'expo-haptics';
 import Storage from 'expo-sqlite/kv-store';
 import { router, useLocalSearchParams } from 'expo-router';
 import { type ReactNode, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { unwrap } from '@/api/client';
@@ -17,7 +17,9 @@ import { Poster } from '@/components/Poster';
 import { Stars } from '@/components/Stars';
 import { Text } from '@/components/Text';
 import { findNearby, type NearbyResult, type NearbyVenue } from '@/data/nearby';
-import { useFormats, usePreferences, useSubscriptions, useWatch } from '@/data/queries';
+import { useFormats, useMyTitle, usePreferences, useSubscriptions, useWatch } from '@/data/queries';
+import { useWindowClass } from '@/layout/window-class';
+import { isTabletop, useFold } from 'fold-info';
 import { currencyFor, deviceTimeZone, endedAt, episodeCode, toMinor, type When } from '@/lib/format';
 import { enqueue } from '@/offline';
 import { queryClient } from '@/query/client';
@@ -293,6 +295,8 @@ function EditWatch({ watchId }: { watchId: number }) {
 }
 
 function EditForm({ entry: e }: { entry: components['schemas']['WatchEntry'] }) {
+  // One watch carries no title or poster; the title's own record has them.
+  const t = useMyTitle(e.tmdb_kind ?? 'movie', e.tmdb_id ?? '');
   const [rating, setRating] = useState<number | null>(e.rating ?? null);
   const [liked, setLiked] = useState(!!e.liked);
   const [notes, setNotes] = useState(e.notes ?? '');
@@ -319,9 +323,9 @@ function EditForm({ entry: e }: { entry: components['schemas']['WatchEntry'] }) 
 
   return (
     <Sheet
-      title={e.title ?? ''}
+      title={e.title ?? t.data?.title?.title ?? ''}
       subtitle={e.subject_kind === 'episode' ? episodeCode(e.season_number, e.episode_number) : undefined}
-      poster={e.poster_path}
+      poster={e.poster_path ?? t.data?.title?.poster_path}
       action={<SheetAction title="Save" busy={busy} onPress={save} />}
       error={error}
     >
@@ -420,9 +424,38 @@ function loadDraft(key: string): Draft | null {
 function Sheet({ title, subtitle, poster, action, error, children }: {
   title: string; subtitle?: string; poster?: string | null; action: ReactNode; error?: string | null; children: ReactNode;
 }) {
-  const { colors, gutter } = useTheme();
+  const { colors, gutter, radius } = useTheme();
   const insets = useSafeAreaInsets();
-  return (
+  const { width } = useWindowDimensions();
+  const sidePanel = useWindowClass() !== 'compact';
+  const fold = useFold();
+  if (isTabletop(fold)) {
+    // Tabletop (a half-open foldable on a table): the title and artwork stand
+    // up on the top half, the form lies flat below the fold.
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bgSurface }}>
+        <View style={[styles.tableTop, { height: fold.top, paddingTop: insets.top + 8, paddingHorizontal: gutter.compact }]}>
+          <Poster path={poster} title={title} width={Math.max(60, Math.min(140, Math.round((fold.top - insets.top - 24) / 1.5)))} />
+          <View style={{ flex: 1, gap: 8 }}>
+            <Text variant="display" numberOfLines={3}>{title}</Text>
+            {subtitle ? <Text variant="muted" num>{subtitle}</Text> : null}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {action}
+              <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Close" style={[styles.close, { backgroundColor: colors.bgElevated }]}>
+                <Text variant="label">✕</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+        <View style={{ height: fold.height }} />
+        {error ? <Text style={{ color: colors.deltaDown, paddingHorizontal: gutter.compact }}>{error}</Text> : null}
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: gutter.compact, gap: 18, paddingBottom: insets.bottom + 24 }}>
+          {children}
+        </ScrollView>
+      </View>
+    );
+  }
+  const sheet = (
     <View style={{ flex: 1, backgroundColor: colors.bgSurface }}>
       <View style={[styles.head, { paddingHorizontal: gutter.compact }]}>
         <Poster path={poster} title={title} width={44} />
@@ -443,6 +476,28 @@ function Sheet({ title, subtitle, poster, action, error, children }: {
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: gutter.compact, gap: 18, paddingBottom: insets.bottom + 24 }}>
         {children}
       </ScrollView>
+    </View>
+  );
+  if (!sidePanel) return sheet;
+  // Wide windows: the form slides in beside the content, which stays visible
+  // (dimmed) behind it; tapping outside closes it.
+  return (
+    <View style={styles.overlay}>
+      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]} onPress={() => router.back()} accessibilityLabel="Close" />
+      <View
+        style={[
+          styles.panel,
+          {
+            width: Math.min(480, Math.round(width * 0.5)),
+            paddingTop: insets.top,
+            borderTopLeftRadius: radius.hero,
+            borderBottomLeftRadius: radius.hero,
+            backgroundColor: colors.bgSurface,
+          },
+        ]}
+      >
+        {sheet}
+      </View>
     </View>
   );
 }
@@ -494,6 +549,9 @@ function LikeToggle({ liked, onChange }: { liked: boolean; onChange: (v: boolean
 
 const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 20, paddingBottom: 8 },
+  overlay: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end' },
+  tableTop: { flexDirection: 'row', alignItems: 'flex-end', gap: 16, paddingBottom: 12 },
+  panel: { height: '100%', overflow: 'hidden' },
   close: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   action: { height: 40, minWidth: 72, paddingHorizontal: 18, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

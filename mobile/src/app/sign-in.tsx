@@ -1,3 +1,4 @@
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,15 +10,26 @@ import { Field } from '@/components/Field';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme';
 
+type Prefill = { server?: string; username?: string; password?: string };
+
 export default function SignIn() {
+  // Development builds only: metareel://sign-in?server=&username=&password=
+  // prefills the form, so simulators can be signed in from a test script
+  // (no typing a password through UI automation). Ignored in release builds.
+  const dev = useLocalSearchParams<Prefill>();
+  const prefill: Prefill = __DEV__ ? { server: dev.server, username: dev.username, password: dev.password } : {};
+  return <SignInForm key={__DEV__ ? `${dev.server}|${dev.username}|${dev.password}` : 'form'} prefill={prefill} />;
+}
+
+function SignInForm({ prefill }: { prefill: Prefill }) {
   const { colors, gutter } = useTheme();
   const insets = useSafeAreaInsets();
   const session = useSession();
-  const [server, setServer] = useState('');
+  const [server, setServer] = useState(prefill.server ?? '');
   const [home, setHome] = useState('');
   const [showHome, setShowHome] = useState(false);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState(prefill.username ?? '');
+  const [password, setPassword] = useState(prefill.password ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
