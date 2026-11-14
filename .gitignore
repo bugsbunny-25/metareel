@@ -18,7 +18,8 @@ vendor/
 *.db-wal
 /data/
 
-# Editor / OS
+# Editor / OS / local tooling
+.mcp.json
 .DS_Store
 .idea/
 .vscode/
