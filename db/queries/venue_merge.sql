@@ -22,6 +22,7 @@ DELETE FROM venue_refs WHERE venue_id = sqlc.arg(venue_id) AND source = sqlc.arg
 UPDATE venues SET
     chain = COALESCE(chain, (SELECT s.chain FROM venues s WHERE s.id = sqlc.arg(from_id))),
     address = COALESCE(address, (SELECT s.address FROM venues s WHERE s.id = sqlc.arg(from_id))),
+    postcode = COALESCE(postcode, (SELECT s.postcode FROM venues s WHERE s.id = sqlc.arg(from_id))),
     city = COALESCE(city, (SELECT s.city FROM venues s WHERE s.id = sqlc.arg(from_id))),
     region = COALESCE(region, (SELECT s.region FROM venues s WHERE s.id = sqlc.arg(from_id))),
     country = COALESCE(country, (SELECT s.country FROM venues s WHERE s.id = sqlc.arg(from_id))),

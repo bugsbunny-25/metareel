@@ -82,11 +82,11 @@ func (q *Queries) CountVenueWatches(ctx context.Context, venueID sql.NullInt64) 
 
 const createVenue = `-- name: CreateVenue :one
 INSERT INTO venues (name, chain, address, city, region, country, latitude, longitude,
-                    timezone, opened_on, closed_on, status, note, created_by)
+                    timezone, opened_on, closed_on, status, note, created_by, postcode)
 VALUES (?1, ?2, ?3, ?4, ?5,
         ?6, ?7, ?8, ?9,
         ?10, ?11, ?12, ?13,
-        ?14)
+        ?14, ?15)
 RETURNING id
 `
 
@@ -105,6 +105,7 @@ type CreateVenueParams struct {
 	Status    string          `json:"status"`
 	Note      sql.NullString  `json:"note"`
 	CreatedBy sql.NullInt64   `json:"created_by"`
+	Postcode  sql.NullString  `json:"postcode"`
 }
 
 func (q *Queries) CreateVenue(ctx context.Context, arg CreateVenueParams) (int64, error) {
@@ -123,6 +124,7 @@ func (q *Queries) CreateVenue(ctx context.Context, arg CreateVenueParams) (int64
 		arg.Status,
 		arg.Note,
 		arg.CreatedBy,
+		arg.Postcode,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -292,7 +294,7 @@ func (q *Queries) FindVenueByRef(ctx context.Context, arg FindVenueByRefParams) 
 
 const getVenue = `-- name: GetVenue :one
 SELECT id, name, chain, address, city, region, country, latitude, longitude, timezone,
-       opened_on, closed_on, status, replaced_by_venue_id, note, created_by, created_at, updated_at
+       opened_on, closed_on, status, replaced_by_venue_id, note, created_by, created_at, updated_at, postcode
 FROM venues WHERE id = ?1
 `
 
@@ -318,6 +320,7 @@ func (q *Queries) GetVenue(ctx context.Context, id int64) (Venue, error) {
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Postcode,
 	)
 	return i, err
 }
@@ -602,15 +605,15 @@ func (q *Queries) ListVenueScreens(ctx context.Context, venueID int64) ([]VenueS
 const listVenues = `-- name: ListVenues :many
 SELECT v.id, v.name, v.chain, v.address, v.city, v.region, v.country, v.latitude, v.longitude,
        v.timezone, v.opened_on, v.closed_on, v.status, v.replaced_by_venue_id, v.note,
-       v.created_by, v.created_at, v.updated_at,
+       v.created_by, v.created_at, v.updated_at, v.postcode,
        CAST((SELECT COUNT(*) FROM venue_screens s WHERE s.venue_id = v.id) AS INTEGER) AS screen_count
 FROM venues v,
      (SELECT CAST(?1 AS TEXT) AS w1, CAST(?2 AS TEXT) AS w2,
              CAST(?3 AS TEXT) AS w3, CAST(?4 AS TEXT) AS w4) q
-WHERE (q.w1 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w1 || '%')
-  AND (q.w2 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w2 || '%')
-  AND (q.w3 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w3 || '%')
-  AND (q.w4 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w4 || '%')
+WHERE (q.w1 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '') || ' ' || COALESCE(v.postcode, '')) LIKE '%' || q.w1 || '%')
+  AND (q.w2 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '') || ' ' || COALESCE(v.postcode, '')) LIKE '%' || q.w2 || '%')
+  AND (q.w3 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '') || ' ' || COALESCE(v.postcode, '')) LIKE '%' || q.w3 || '%')
+  AND (q.w4 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '') || ' ' || COALESCE(v.postcode, '')) LIKE '%' || q.w4 || '%')
   AND (CAST(?5 AS TEXT) = '' OR v.country = ?5)
   AND (CAST(?6 AS INTEGER) = 1 OR v.status <> 'closed')
 ORDER BY CASE WHEN q.w1 <> '' AND v.name LIKE q.w1 || '%' THEN 0 ELSE 1 END,
@@ -649,12 +652,13 @@ type ListVenuesRow struct {
 	CreatedBy         sql.NullInt64   `json:"created_by"`
 	CreatedAt         string          `json:"created_at"`
 	UpdatedAt         string          `json:"updated_at"`
+	Postcode          sql.NullString  `json:"postcode"`
 	ScreenCount       int64           `json:"screen_count"`
 }
 
 // ListVenues searches the shared venue list: each word of the query (up to
-// four) must appear in the name, chain, city or address, so "pvr mumbai"
-// finds a PVR in Mumbai. Names starting with the first word come first,
+// four) must appear in the name, chain, city, address or postcode, so "pvr
+// mumbai" finds a PVR in Mumbai and "amc 10036" the AMC in that ZIP. Names starting with the first word come first,
 // then open cinemas before closed ones.
 func (q *Queries) ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListVenuesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listVenues,
@@ -693,6 +697,7 @@ func (q *Queries) ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListV
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Postcode,
 			&i.ScreenCount,
 		); err != nil {
 			return nil, err
@@ -932,25 +937,27 @@ UPDATE venues SET
     name = ?1,
     chain = ?2,
     address = ?3,
-    city = ?4,
-    region = ?5,
-    country = ?6,
-    latitude = ?7,
-    longitude = ?8,
-    timezone = ?9,
-    opened_on = ?10,
-    closed_on = ?11,
-    status = ?12,
-    replaced_by_venue_id = ?13,
-    note = ?14,
+    postcode = ?4,
+    city = ?5,
+    region = ?6,
+    country = ?7,
+    latitude = ?8,
+    longitude = ?9,
+    timezone = ?10,
+    opened_on = ?11,
+    closed_on = ?12,
+    status = ?13,
+    replaced_by_venue_id = ?14,
+    note = ?15,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = ?15
+WHERE id = ?16
 `
 
 type UpdateVenueParams struct {
 	Name              string          `json:"name"`
 	Chain             sql.NullString  `json:"chain"`
 	Address           sql.NullString  `json:"address"`
+	Postcode          sql.NullString  `json:"postcode"`
 	City              sql.NullString  `json:"city"`
 	Region            sql.NullString  `json:"region"`
 	Country           sql.NullString  `json:"country"`
@@ -970,6 +977,7 @@ func (q *Queries) UpdateVenue(ctx context.Context, arg UpdateVenueParams) (int64
 		arg.Name,
 		arg.Chain,
 		arg.Address,
+		arg.Postcode,
 		arg.City,
 		arg.Region,
 		arg.Country,

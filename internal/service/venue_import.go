@@ -153,6 +153,7 @@ func (s *VenueImporter) importCountry(ctx context.Context, cc string, runLog fun
 	// Cinemas mapped as a point inside a mall or building often carry no
 	// address of their own; it's on what they sit in, or next door.
 	var addrs *addressIndex
+	var nearby []client.OSMPlace
 	if missingAddress(places) {
 		if s.gap > 0 && sleepCtx(ctx, s.gap) != nil {
 			return out, ctx.Err()
@@ -163,14 +164,15 @@ func (s *VenueImporter) importCountry(ctx context.Context, cc string, runLog fun
 			}
 			runLog("warn", fmt.Sprintf("%s: nearby addresses didn't load (%v); cinemas without an address in OSM get none", cc, err))
 		} else {
-			addrs = newAddressIndex(a)
+			addrs, nearby = newAddressIndex(a), a
 		}
 	}
+	postcodes := newPostcodeIndex(places, nearby)
 	existing, err := s.store.VenuesForImport(ctx, cc)
 	if err != nil {
 		return out, err
 	}
-	creates, fills, plan := s.plan(cc, places, existing, towns, addrs)
+	creates, fills, plan := s.plan(cc, places, existing, towns, addrs, postcodes)
 	out.Borrowed = plan.borrowed
 	out.Skipped, out.Duplicates, out.Linked, out.Known, out.Gone = plan.skipped, plan.duplicates, plan.linked, plan.known, plan.gone
 	res, err := s.store.ApplyVenueImport(ctx, creates, fills)
@@ -215,7 +217,7 @@ func (s *VenueImporter) fetch(ctx context.Context, cc string, runLog func(level,
 type importPlan struct{ skipped, duplicates, linked, known, gone, borrowed int }
 
 // plan turns OSM places into creates and fills against the country's venues.
-func (s *VenueImporter) plan(cc string, places []client.OSMPlace, existing []repository.ImportVenueRow, towns *townIndex, addrs *addressIndex) ([]repository.VenueImportCreate, []repository.VenueImportFill, importPlan) {
+func (s *VenueImporter) plan(cc string, places []client.OSMPlace, existing []repository.ImportVenueRow, towns *townIndex, addrs *addressIndex, postcodes *postcodeIndex) ([]repository.VenueImportCreate, []repository.VenueImportFill, importPlan) {
 	var p importPlan
 	// A Wikidata ID on several cinemas is the chain's, not a cinema's.
 	qids := map[string]int{}
@@ -253,6 +255,9 @@ func (s *VenueImporter) plan(cc string, places []client.OSMPlace, existing []rep
 		if v.Address == nil && addrs != nil {
 			if a := addrs.nearest(pl.Lat, pl.Lon); a != nil {
 				v.Address = &a.address
+				if v.Postcode == nil {
+					v.Postcode = a.postcode
+				}
 				if v.City == nil {
 					v.City = a.city
 				}
@@ -260,6 +265,20 @@ func (s *VenueImporter) plan(cc string, places []client.OSMPlace, existing []rep
 					v.Region = a.region
 				}
 				p.borrowed++
+			}
+		}
+		// A postcode names the city and state other addresses with it use
+		// (and, for a US ZIP, the state on its own).
+		if v.Postcode != nil && (v.City == nil || v.Region == nil) {
+			city, region := postcodes.lookup(*v.Postcode)
+			if v.City == nil {
+				v.City = city
+			}
+			if v.Region == nil {
+				v.Region = region
+			}
+			if v.Region == nil {
+				v.Region = regionForPostcode(cc, *v.Postcode)
 			}
 		}
 		if v.City == nil && towns != nil {
@@ -350,10 +369,10 @@ type addressIndex struct {
 }
 
 type addrPlace struct {
-	lat, lon     float64
-	area         bool
-	address      string
-	city, region *string
+	lat, lon               float64
+	area                   bool
+	address                string
+	postcode, city, region *string
 }
 
 func newAddressIndex(places []client.OSMPlace) *addressIndex {
@@ -368,7 +387,7 @@ func newAddressIndex(places []client.OSMPlace) *addressIndex {
 			region = tagPtr(p.Tags, "addr:province")
 		}
 		c := townCell(p.Lat, p.Lon)
-		ix.cells[c] = append(ix.cells[c], addrPlace{p.Lat, p.Lon, p.Type != "node", *a, tagPtr(p.Tags, "addr:city"), region})
+		ix.cells[c] = append(ix.cells[c], addrPlace{p.Lat, p.Lon, p.Type != "node", *a, osmPostcode(p.Tags), tagPtr(p.Tags, "addr:city"), region})
 	}
 	return ix
 }
@@ -501,6 +520,7 @@ func (s *VenueImporter) venueFromOSM(cc string, pl client.OSMPlace) (repository.
 	v := repository.Venue{Name: clip(name, 200), Country: &cc, Latitude: &lat, Longitude: &lon, Status: "open"}
 	v.Chain = tagPtr(t, "brand")
 	v.Address = osmAddress(t)
+	v.Postcode = osmPostcode(t)
 	v.City = tagPtr(t, "addr:city")
 	if v.Region = tagPtr(t, "addr:state"); v.Region == nil {
 		v.Region = tagPtr(t, "addr:province")

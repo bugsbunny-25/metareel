@@ -272,7 +272,7 @@ make reports-open
 | GET    | `/api/v1/me/up-next`                        | The next episode to watch of each show in progress |
 | GET    | `/api/v1/me/formats`                        | The premium formats a watch can carry (IMAX, Dolby Cinema, 4DX, 70mm, Atmos…), each with a versioned `logo_url` once it has a logo |
 | GET    | `/api/v1/formats/:slug/logo`                | A format's logo image (use the format's `logo_url`; cached for a year at its current `?v=`, served with a sandboxing CSP) |
-| GET/POST | `/api/v1/me/venues`                       | Search cinemas (`q`: every word in the name, chain, city or address, e.g. `pvr mumbai`; `country`, `include_closed`); add one |
+| GET/POST | `/api/v1/me/venues`                       | Search cinemas (`q`: every word in the name, chain, city, address or postcode, e.g. `pvr mumbai` or `amc 10036`; `country`, `include_closed`); add one |
 | GET/PUT/DELETE | `/api/v1/me/venues/:id`             | One cinema with its screens, former names and outside ids; delete is refused while watches point at it |
 | POST/DELETE | `/api/v1/me/venues/:id/aliases[/:alias_id]` | Record or remove a name a cinema used to have |
 | POST   | `/api/v1/me/venues/:id/screens`             | Add an auditorium (size, seats, aspect ratio) |

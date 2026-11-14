@@ -92,7 +92,9 @@ func TestVenueImport(t *testing.T) {
 			osm("node", 8, 52.4797, -1.8970, "name", "Vue Birmingham", "wikidata", "Q7943543", "addr:city", "Birmingham"),
 			osm("node", 9, 53.4808, -2.2426, "name", "Vue Manchester", "wikidata", "Q7943543", "addr:city", "Manchester"),
 			osm("node", 12, 51.38, -2.36, "name", "Avenue Cinema", "addr:city", "Bath"),
-			osm("node", 11, 55.9533, -3.1883, "name", "Cameo", "wikidata", "Q5025910", "brand:wikidata", "Q5025910", "addr:city", "Edinburgh"),
+			osm("node", 11, 55.9533, -3.1883, "name", "Cameo", "wikidata", "Q5025910", "brand:wikidata", "Q5025910", "addr:city", "Edinburgh", "addr:postcode", "eh3  9bz"),
+			// No city or address, but a postcode another cinema names a city for.
+			osm("node", 13, 55.9443, -3.2040, "name", "Filmhouse", "addr:postcode", "EH3 9BZ"),
 		},
 		"IN": {
 			osm("node", 10, 19.0, 72.83, "name", "पीवीआर", "name:en", "PVR Phoenix", "brand", "PVR", "addr:state", "Maharashtra"),
@@ -118,13 +120,13 @@ func TestVenueImport(t *testing.T) {
 	}
 	gb := rep.Countries[0]
 	// Created: Odeon (ambiguous by name), Ritzy. Linked: Prince Charles (name + city), BFI (Wikidata).
-	if gb.Fetched != 11 || gb.Skipped != 2 || gb.Duplicates != 1 || gb.Created != 6 || gb.Linked != 2 || gb.Known != 0 {
+	if gb.Fetched != 12 || gb.Skipped != 2 || gb.Duplicates != 1 || gb.Created != 7 || gb.Linked != 2 || gb.Known != 0 {
 		t.Fatalf("GB = %+v", gb)
 	}
-	if in := rep.Countries[1]; in.Created != 1 || rep.Created != 7 || rep.Linked != 2 {
+	if in := rep.Countries[1]; in.Created != 1 || rep.Created != 8 || rep.Linked != 2 {
 		t.Fatalf("IN = %+v, report %+v", in, rep)
 	}
-	if len(logs) != 2 || !strings.Contains(logs[0], "GB: 11 cinemas in OpenStreetMap; 6 new, 2 matched") {
+	if len(logs) != 2 || !strings.Contains(logs[0], "GB: 12 cinemas in OpenStreetMap; 7 new, 2 matched") {
 		t.Fatalf("logs = %q", logs)
 	}
 
@@ -175,6 +177,15 @@ func TestVenueImport(t *testing.T) {
 		t.Fatalf("pvr = %+v", pv)
 	}
 
+	for _, r := range all {
+		if r.Name != "Filmhouse" && r.Name != "Cameo" {
+			continue
+		}
+		fv, _ := repo.Venue(ctx, r.ID)
+		if fv.Postcode == nil || *fv.Postcode != "EH3 9BZ" || fv.City == nil || *fv.City != "Edinburgh" {
+			t.Fatalf("%s: postcode %v, city %v", r.Name, fv.Postcode, fv.City)
+		}
+	}
 	for _, name := range []string{"Vue Birmingham", "Vue Manchester", "Cameo"} {
 		for _, r := range all {
 			if r.Name == name && r.WikidataRef != "" {
@@ -200,11 +211,16 @@ func TestVenueImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gb := rep.Countries[0]; gb.Created != 0 || gb.Linked != 0 || gb.Known != 7 || gb.Filled != 0 || gb.Gone != 1 {
+	if gb := rep.Countries[0]; gb.Created != 0 || gb.Linked != 0 || gb.Known != 8 || gb.Filled != 0 || gb.Gone != 1 {
 		t.Fatalf("re-run = %+v", gb)
 	}
 	if rv, _ := repo.Venue(ctx, ritzy.ID); *rv.Chain != "Picturehouse Cinemas" {
 		t.Fatalf("admin edit overwritten: %+v", rv)
+	}
+
+	// Search by postcode.
+	if hits, _ := repo.ListVenues(ctx, repository.VenueFilter{Query: "eh3 9bz", Country: "GB", Limit: 10}); len(hits) != 2 {
+		t.Fatalf("postcode search = %+v", hits)
 	}
 
 	// Search: every word in the name, chain, city or address; names that

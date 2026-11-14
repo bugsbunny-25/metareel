@@ -568,6 +568,7 @@ type Venue struct {
 	CreatedBy         sql.NullInt64   `json:"created_by"`
 	CreatedAt         string          `json:"created_at"`
 	UpdatedAt         string          `json:"updated_at"`
+	Postcode          sql.NullString  `json:"postcode"`
 }
 
 type VenueAlias struct {

@@ -527,8 +527,8 @@ type Querier interface {
 	ListVenueRefs(ctx context.Context, venueID int64) ([]VenueRef, error)
 	ListVenueScreens(ctx context.Context, venueID int64) ([]VenueScreen, error)
 	// ListVenues searches the shared venue list: each word of the query (up to
-	// four) must appear in the name, chain, city or address, so "pvr mumbai"
-	// finds a PVR in Mumbai. Names starting with the first word come first,
+	// four) must appear in the name, chain, city, address or postcode, so "pvr
+	// mumbai" finds a PVR in Mumbai and "amc 10036" the AMC in that ZIP. Names starting with the first word come first,
 	// then open cinemas before closed ones.
 	ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListVenuesRow, error)
 	// Cinema import (venues.import): every venue of a country with the refs

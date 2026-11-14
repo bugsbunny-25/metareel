@@ -103,7 +103,7 @@ func (r *TrackingRepository) MergeVenues(ctx context.Context, from, into int64) 
 }
 
 func venueRowChanged(a, b sqlc.Venue) bool {
-	return a.Chain != b.Chain || a.Address != b.Address || a.City != b.City || a.Region != b.Region || a.Country != b.Country ||
+	return a.Chain != b.Chain || a.Address != b.Address || a.Postcode != b.Postcode || a.City != b.City || a.Region != b.Region || a.Country != b.Country ||
 		a.Latitude != b.Latitude || a.Longitude != b.Longitude || a.Timezone != b.Timezone || a.OpenedOn != b.OpenedOn ||
 		a.ClosedOn != b.ClosedOn || a.Note != b.Note
 }

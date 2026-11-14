@@ -3097,7 +3097,7 @@ paths:
         - BearerSession: []
         - SessionCookie: []
       parameters:
-        - { name: q, in: query, required: false, schema: { type: string }, description: "Words (up to four, e.g. pvr mumbai) each matched in the name, chain, city or address; names starting with the first word come first" }
+        - { name: q, in: query, required: false, schema: { type: string }, description: "Words (up to four, e.g. pvr mumbai) each matched in the name, chain, city, address or postcode; names starting with the first word come first" }
         - { name: country, in: query, required: false, schema: { type: string }, description: ISO 3166-1 alpha-2 }
         - { name: include_closed, in: query, required: false, schema: { type: boolean, default: false } }
         - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 200 } }
@@ -3986,6 +3986,7 @@ components:
         name: { type: string }
         chain: { type: string, nullable: true }
         address: { type: string, nullable: true }
+        postcode: { type: string, nullable: true, maxLength: 20, description: "ZIP, PIN or postcode; a US ZIP fills region (the state) when none is given" }
         city: { type: string, nullable: true }
         region: { type: string, nullable: true }
         country: { type: string, nullable: true, description: ISO 3166-1 alpha-2, stored uppercase }
@@ -4008,6 +4009,7 @@ components:
         name: { type: string }
         chain: { type: string, nullable: true }
         address: { type: string, nullable: true }
+        postcode: { type: string, nullable: true, maxLength: 20, description: "ZIP, PIN or postcode; a US ZIP fills region (the state) when none is given" }
         city: { type: string, nullable: true }
         region: { type: string, nullable: true }
         country: { type: string, nullable: true, description: ISO 3166-1 alpha-2 }

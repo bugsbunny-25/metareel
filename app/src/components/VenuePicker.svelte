@@ -14,7 +14,7 @@
   let searching = $state(false)
   let error = $state('')
   let adding = $state(false)
-  let draft = $state({ name: '', city: '', country: '', timezone: '' })
+  let draft = $state({ name: '', city: '', postcode: '', country: '', timezone: '' })
   let screens = $state([])
   let addingScreen = $state(false)
   let screenName = $state('')
@@ -63,7 +63,7 @@
     screenId = null
   }
   function startAdding() {
-    draft = { name: q.trim(), city: '', country, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
+    draft = { name: q.trim(), city: '', postcode: '', country, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
     adding = true
   }
   async function create() {
@@ -72,7 +72,7 @@
     error = ''
     try {
       const r = await api.createVenue({
-        name: draft.name.trim(), city: draft.city.trim() || null,
+        name: draft.name.trim(), city: draft.city.trim() || null, postcode: draft.postcode.trim() || null,
         country: draft.country.trim().toUpperCase() || null, timezone: draft.timezone.trim() || null,
       })
       choose(r.venue)
@@ -99,7 +99,8 @@
       busy = false
     }
   }
-  const place = (v) => [v.city, v.country].filter(Boolean).join(', ')
+  // "Mumbai 400050, IN": the postcode tells two same-named cinemas apart.
+  const place = (v) => [[v.city, v.postcode].filter(Boolean).join(' '), v.country].filter(Boolean).join(', ')
 </script>
 
 <div class="vp">
@@ -133,8 +134,9 @@
       <label>Name<input bind:value={draft.name} required maxlength="120" /></label>
       <div class="two">
         <label>City<input bind:value={draft.city} maxlength="80" /></label>
-        <label>Country<input bind:value={draft.country} maxlength="2" placeholder="US" class="cc" /></label>
+        <label>Postcode<input bind:value={draft.postcode} maxlength="20" placeholder="ZIP / PIN" /></label>
       </div>
+      <label>Country<input bind:value={draft.country} maxlength="2" placeholder="US" class="cc" /></label>
       <label>Time zone<input bind:value={draft.timezone} placeholder="Europe/London" maxlength="64" /></label>
       <p class="hint">Cinemas are shared with everyone on this metareel. The time zone files a watch under the right day when you're travelling.</p>
       <div class="inline end">
@@ -143,7 +145,7 @@
       </div>
     </fieldset>
   {:else}
-    <input type="search" bind:value={q} placeholder="Search cinemas by name or city" aria-label="Cinema" autocomplete="off" />
+    <input type="search" bind:value={q} placeholder="Search cinemas by name, city or postcode" aria-label="Cinema" autocomplete="off" />
     <ul class="results" aria-live="polite">
       {#if q.trim().length < 2}
         {#each recent as v (v.id)}

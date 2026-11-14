@@ -540,8 +540,15 @@ point inside a mall or building) borrows one: a query, only when needed,
 returns addressed features within 75 m of such cinemas and the addressed
 ways and relations they sit inside (`is_in`); the nearest point within 75 m
 wins, else the nearest area within 300 m, and its city and state come along
-when the cinema has none. A cinema without `addr:city` takes the nearest
-`place=city|town` node within 20 km (another query, only when needed).
+when the cinema has none. `addr:postcode` is kept (migration 39, `venues.postcode`,
+tidied to single spaces and upper case) and borrowed with an address. A
+cinema with a postcode but no city or state takes the ones most often named
+with that postcode by the country's other cinemas and the nearby addressed
+features (none on a tie); a US ZIP also gives the state from its first three
+digits (`venue_postcode.go`; no such table for India, whose PIN prefixes
+cross state lines). Hand-entered venues get the state from a US ZIP the same
+way. A cinema still without a city takes the nearest `place=city|town` node
+within 20 km (another query, only when needed).
 
 Matching, in order: `venue_refs` `osm_id` (`node/123`); the `wikidata` tag
 against a venue's `wikidata_id` (ignored when several cinemas carry the same
@@ -570,7 +577,7 @@ the opening date and address, so a rebuilt or reopened cinema is never
 closed. Unmatched ones are created `closed`.
 
 Venue search (`ListVenues`) matches up to four words, each anywhere in the
-name, chain, city or address, and ranks names starting with the first word
+name, chain, city, address or postcode, and ranks names starting with the first word
 first, then open cinemas before closed ones. The user app's picker includes
 closed cinemas.
 

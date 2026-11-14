@@ -53,7 +53,7 @@
 
   // ── Drawer: one cinema, or a new one ──────────────────────────────
   const blankVenue = () => ({
-    name: '', chain: '', address: '', city: '', region: '', country: '', timezone: '',
+    name: '', chain: '', address: '', postcode: '', city: '', region: '', country: '', timezone: '',
     latitude: '', longitude: '', opened_on: '', closed_on: '', status: 'open', note: '',
   })
   let detail = $state(null) // { venue, screens, aliases, watch_count }
@@ -87,7 +87,7 @@
     saving = true
     try {
       const body = {
-        name: form.name.trim(), chain: text(form.chain), address: text(form.address), city: text(form.city),
+        name: form.name.trim(), chain: text(form.chain), address: text(form.address), postcode: text(form.postcode), city: text(form.city),
         region: text(form.region), country: text(form.country), timezone: text(form.timezone),
         latitude: num(form.latitude), longitude: num(form.longitude),
         opened_on: text(form.opened_on), closed_on: text(form.closed_on), status: form.status, note: text(form.note),
@@ -273,7 +273,7 @@
   <div class="filters">
     <div class="search">
       <span class="icon"><Icon name="search" /></span>
-      <input class="input" placeholder="Search by name or city" bind:value={search} aria-label="Search cinemas" />
+      <input class="input" placeholder="Search by name, city or postcode" bind:value={search} aria-label="Search cinemas" />
     </div>
     <input class="input cc" placeholder="Country" maxlength="2" value={country} aria-label="Country code"
       onchange={(e) => setQuery({ country: e.currentTarget.value.trim().toUpperCase() }, { replace: true })} />
@@ -289,12 +289,13 @@
       <p class="muted">{q || country ? 'No cinemas match.' : 'No cinemas yet. Users add them while logging, or add one here.'}</p>
     {:else}
       <table class="table">
-        <thead><tr><th>Name</th><th>City</th><th>Country</th><th>Time zone</th><th class="num">Screens</th><th>Status</th></tr></thead>
+        <thead><tr><th>Name</th><th>City</th><th>Postcode</th><th>Country</th><th>Time zone</th><th class="num">Screens</th><th>Status</th></tr></thead>
         <tbody>
           {#each venues as v (v.id)}
             <tr class="clickable" class:dim={v.status === 'closed'} onclick={() => setQuery({ open: v.id })}>
               <td><a href="#/cinemas?open={v.id}" onclick={(e) => { e.preventDefault(); setQuery({ open: v.id }) }}>{v.name}</a>{#if v.chain}<div class="muted">{v.chain}</div>{/if}</td>
-              <td>{v.city ?? '—'}</td>
+              <td>{v.city ?? '—'}{#if v.region}<span class="muted">, {v.region}</span>{/if}</td>
+              <td class="muted">{v.postcode ?? '—'}</td>
               <td>{v.country ?? '—'}</td>
               <td class="muted">{v.timezone ?? '—'}</td>
               <td class="num">{v.screen_count}</td>
@@ -323,8 +324,9 @@
             <select class="input" bind:value={form.status}>{#each STATUSES as [v, l]}<option value={v}>{l}</option>{/each}</select>
           </label>
           <label class="wide">Address<input class="input" bind:value={form.address} /></label>
+          <label>Postcode<input class="input" bind:value={form.postcode} maxlength="20" placeholder="ZIP, PIN or postcode" /></label>
           <label>City<input class="input" bind:value={form.city} /></label>
-          <label>Region<input class="input" bind:value={form.region} /></label>
+          <label>Region<input class="input" bind:value={form.region} placeholder="State or province" /></label>
           <label>Country<input class="input cc" bind:value={form.country} maxlength="2" placeholder="GB" /></label>
           <label>Time zone
             <input class="input" bind:value={form.timezone} list="tz-list" placeholder="Europe/London" />
