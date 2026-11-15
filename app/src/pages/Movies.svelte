@@ -15,6 +15,9 @@
 
   const savedSeg = remembered('tabs.movies.segment', 'towatch', ['towatch', 'upcoming'])
   const view = remembered('tabs.movies.view', 'list', ['list', 'grid'])
+  // To watch: in the order added (your watchlist order), or by release date (the film's main release).
+  const sort = remembered('tabs.movies.sort', 'added', ['added', 'latest', 'earliest'])
+  const SORTS = [['added', 'Added'], ['latest', 'Latest release'], ['earliest', 'Earliest release']]
   const seg = $derived(route.query.seg === 'towatch' || route.query.seg === 'upcoming' ? route.query.seg : savedSeg.value)
   function pickSeg(v) {
     savedSeg.value = v
@@ -25,9 +28,12 @@
   const movies = $derived.by(() => {
     const all = [...library.byKey.values()].filter((t) => t.tmdb_kind === 'movie')
     const out = (t) => !t.release_date || t.release_date <= today
+    const byAdded = (a, b) => (a.watchlist_position ?? 1e9) - (b.watchlist_position ?? 1e9) || (b.created_at ?? '').localeCompare(a.created_at ?? '')
+    // Undated films go last either way.
+    const byRelease = (dir) => (a, b) => (!a.release_date ? 1 : !b.release_date ? -1 : dir * a.release_date.localeCompare(b.release_date)) || byAdded(a, b)
     const toWatch = all
       .filter((t) => (t.status === 'watchlist' || t.status === 'watching') && !t.watch_count && out(t))
-      .sort((a, b) => (a.watchlist_position ?? 1e9) - (b.watchlist_position ?? 1e9) || (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+      .sort(sort.value === 'latest' ? byRelease(-1) : sort.value === 'earliest' ? byRelease(1) : byAdded)
     const upcoming = all
       .filter((t) => !out(t) && t.status !== 'dropped' && t.status !== 'not_interested')
       .sort((a, b) => a.release_date.localeCompare(b.release_date))
@@ -71,7 +77,16 @@
     </div>
   </header>
 
-  {#if summary}<p class="hint sum num">{summary}</p>{/if}
+  <div class="bar2">
+    {#if summary}<p class="hint sum num">{summary}</p>{/if}
+    {#if seg === 'towatch'}
+      <label class="sortby">Sort
+        <select value={sort.value} onchange={(e) => (sort.value = e.currentTarget.value)}>
+          {#each SORTS as [v, label]}<option value={v}>{label}</option>{/each}
+        </select>
+      </label>
+    {/if}
+  </div>
 
   {#if !library.loaded}
     <div class="skeleton" style="height:320px" aria-busy="true" aria-label="Loading"></div>
@@ -154,6 +169,9 @@
   .seg button { display: grid; place-items: center; width: 38px; height: 30px; border: 0; border-radius: 7px; background: none; color: var(--text-muted); cursor: pointer; }
   .seg button[aria-pressed='true'] { background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); }
   .sum { margin: 0; font-size: 14px; }
+  .bar2 { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+  .sortby { display: inline-flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 13.5px; font-weight: 600; }
+  .sortby select { height: 32px; padding: 0 10px; border: 0; border-radius: 9px; background: var(--bg-elevated); color: var(--text-primary); font: 600 13.5px/1 var(--font-sans); }
 
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 14px; }
   .ptile { display: grid; gap: 5px; align-content: start; min-width: 0; color: inherit; text-decoration: none; }

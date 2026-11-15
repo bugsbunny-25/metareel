@@ -4775,6 +4775,14 @@ components:
           maxItems: 20
           items: { type: integer }
           description: "TMDB provider IDs of the streaming services the user pays for (the rotation's subscribed)"
+        countries:
+          type: array
+          maxItems: 20
+          items: { type: string, pattern: "^[A-Za-z]{2}$" }
+          description: >-
+            ISO 3166-1 codes in the user's order (stored upper case, duplicates
+            dropped): a title page charts its Top 10 run in the first of these
+            countries it has charted in.
         notify_watchlist_arrivals:
           type: boolean
           description: >

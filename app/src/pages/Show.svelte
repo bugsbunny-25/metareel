@@ -6,6 +6,9 @@
   import Poster from '../components/Poster.svelte'
   import Icon from '../components/Icon.svelte'
   import TitleMenu from '../components/TitleMenu.svelte'
+  import Top10Badge from '../components/Top10Badge.svelte'
+  import { top10Of } from '../lib/top10now.svelte.js'
+  import { scope, providerName, countryName } from '../lib/scope.svelte.js'
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
   import { route, setQuery } from '../lib/router.svelte.js'
@@ -15,6 +18,8 @@
   import { markWatched, unmarkWatched, epCode, EPISODE_TYPE } from '../lib/shows.js'
 
   let { id, onlog, onconfirm } = $props()
+  // The title's best place in a Top 10 in your country today (said once, beside the title).
+  const top = $derived(top10Of('tv', id))
 
   const specials = $derived(route.query.specials === '1')
   let data = $state(null)
@@ -129,10 +134,11 @@
     <div class="skeleton" style="height:520px" aria-busy="true" aria-label="Loading"></div>
   {:else}
     <header class="hero">
-      <Poster path={title.poster_path} seed={id} title={title.title} kind="tv" tmdbId={id} width={150} radius={12} size="w342" />
+      <Poster path={title.poster_path} seed={id} title={title.title} width={150} radius={12} size="w342" />
       <div class="hbody">
         <p class="crumb"><a href="#/tv">TV</a> / Episodes</p>
         <h1>{title.title}</h1>
+        {#if top}<p class="top10"><Top10Badge size={22} /><b>No. {top.rank} in shows today</b><span class="hint">on {providerName(top.provider)} in {countryName(scope.country)}</span></p>{/if}
         <p class="sub">
           {#if title.release_date}{title.release_date.slice(0, 4)}{' · '}{/if}{plural(regular.length, 'season')} · {plural(regular.reduce((n, s) => n + s.total_episodes, 0), 'episode')}
           {#if lib}{' · '}<span class="pill">{statusLabel(lib)}</span>{/if}
@@ -258,6 +264,7 @@
   .crumb { margin: 0; color: var(--text-muted); font-size: 13px; }
   .crumb a { color: inherit; }
   h1 { margin: 0; font: 700 36px/1.08 var(--font-display); letter-spacing: -0.02em; }
+  .top10 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; font-size: 14.5px; }
   .sub { margin: 0; color: var(--text-muted); font-size: 14.5px; }
   .hactions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
   .numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 0; border-radius: 16px; overflow: hidden; background: var(--border-subtle); }

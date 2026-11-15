@@ -7,6 +7,7 @@
   import RatingLogo from '../components/RatingLogo.svelte'
   import ProviderLogo from '../components/ProviderLogo.svelte'
   import Top10Badge from '../components/Top10Badge.svelte'
+  import Top10Graph from '../components/Top10Graph.svelte'
   import { top10Of } from '../lib/top10now.svelte.js'
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
@@ -47,14 +48,15 @@
     ])
     if (!ov && !mine?.title) throw Object.assign(new Error('not found'), { status: 404 })
     const charted = !!ov && (mine?.title?.charted ?? (ov.stats?.appearances ?? 0) > 0)
-    const [timeline, history, offerHistory, credits] = await Promise.all([
+    const [timeline, history, offerHistory, credits, rankings] = await Promise.all([
       charted ? api.timeline(k, tid, country, signal).catch((e) => ({ failed: e.message })) : null,
       charted ? api.history(k, tid, signal).catch((e) => ({ failed: e.message })) : null,
       ov ? api.availabilityHistory(k, tid, signal).catch(() => null) : null,
       // Stored for catalogued titles; fetched live from TMDB for the rest.
       api.credits(k, tid, signal).catch(() => null),
+      charted ? api.rankings(k, tid, signal).catch(() => null) : null,
     ])
-    return { ov: ov ?? {}, catalogued: !!ov, mine, charted, timeline, history, offerHistory, credits }
+    return { ov: ov ?? {}, catalogued: !!ov, mine, charted, timeline, history, offerHistory, credits, rankings: rankings?.rankings ?? [] }
   }
 
   const m = $derived(d?.ov.metadata ?? d?.mine?.title ?? {})
@@ -126,7 +128,7 @@
 {:else}
   <article class="page" style:--tint={tint ? `rgb(${tint.join(' ')} / 0.4)` : 'transparent'}>
     <header class="head">
-      <div class="art"><Poster path={m.poster_path} seed={id} title={m.title ?? ''} {kind} tmdbId={id} width={d.charted ? 150 : 124} radius={10} /></div>
+      <div class="art"><Poster path={m.poster_path} seed={id} title={m.title ?? ''} width={d.charted ? 150 : 124} radius={10} /></div>
       <div class="copy">
         <p class="kicker">{kind === 'tv' ? 'Series' : 'Film'}{#if m.genres?.length}{' · '}{m.genres.slice(0, 2).join(', ')}{/if}</p>
         {#if top}
@@ -149,6 +151,8 @@
         </div>
       </div>
     </header>
+
+    <div class="t10"><Top10Graph rankings={d.rankings} /></div>
 
     <div class="grid">
       <div class="col">
@@ -217,7 +221,8 @@
               <dt>Ratings</dt><dd class="muted">didn’t load</dd>
             {:else}
               {#if r?.imdb?.rating != null}<dt><RatingLogo source="imdb" height={17} /></dt><dd class="num" class:stale={r.stale}>{r.imdb.rating.toFixed(1)}{#if r.imdb.votes}{' '}<span class="muted">· {compact(r.imdb.votes)} votes</span>{/if}</dd>{/if}
-              {#if r?.rotten_tomatoes?.critics_score != null}<dt><RatingLogo source="rt" rotten={r.rotten_tomatoes.critics_score < 60} certified={!!r.rotten_tomatoes.certified_fresh} height={20} title="Tomatometer{r.rotten_tomatoes.certified_fresh ? ', Certified Fresh' : ''}" /></dt><dd class="num" class:stale={r.stale}>{r.rotten_tomatoes.critics_score}%{#if r.rotten_tomatoes.audience_score != null}{' '}<span class="muted aud">· <RatingLogo source="rt-audience" rotten={r.rotten_tomatoes.audience_score < 60} height={16} title="Audience score (Popcornmeter)" /> {r.rotten_tomatoes.audience_score}%</span>{/if}</dd>{/if}
+              {#if r?.rotten_tomatoes?.critics_score != null}<dt><RatingLogo source="rt" rotten={r.rotten_tomatoes.critics_score < 60} certified={!!r.rotten_tomatoes.certified_fresh} height={20} title="Tomatometer{r.rotten_tomatoes.certified_fresh ? ', Certified Fresh' : ''}" /></dt><dd class="num" class:stale={r.stale}>{r.rotten_tomatoes.critics_score}%</dd>{/if}
+              {#if r?.rotten_tomatoes?.audience_score != null}<dt><RatingLogo source="rt-audience" rotten={r.rotten_tomatoes.audience_score < 60} height={20} title="Popcornmeter (audience score)" /></dt><dd class="num" class:stale={r.stale}>{r.rotten_tomatoes.audience_score}%</dd>{/if}
               {#if tmdbScore}<dt><RatingLogo source="tmdb" height={18} /></dt><dd class="num">{Number(tmdbScore).toFixed(1)}</dd>{/if}
               {#if r?.stale}<dt>Ratings</dt><dd class="stale">not refreshed, last known</dd>{/if}
             {/if}
@@ -289,6 +294,8 @@
   .head { display: flex; gap: 32px; align-items: flex-end; padding: 28px; border-radius: var(--radius-hero); background: linear-gradient(100deg, var(--tint) 0%, transparent 75%), var(--bg-surface); }
   .art { flex: none; box-shadow: var(--shadow-art); border-radius: 10px; }
   .copy { min-width: 0; }
+  .t10 { margin-top: 16px; }
+  .t10:empty { display: none; }
   .top10 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 8px; font-size: 15px; }
   .top10 b { font-weight: 700; }
   .top10 .muted { color: var(--text-muted); }

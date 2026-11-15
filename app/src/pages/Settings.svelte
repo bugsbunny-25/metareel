@@ -39,8 +39,18 @@
     return {
       country, provider: v.provider ?? scope.provider,
       currency: v.currency ?? '', screen_unit: v.screen_unit ?? 'm', stale_days: v.stale_days ?? 30,
+      countries: [...(v.countries ?? [])],
     }
   }
+  // Country order: a title page charts its Top 10 run in the first of these it charted in.
+  const countryLabel = (cc) => reference.countries.find((c) => c.code === cc)?.name ?? cc
+  const moveCountry = (i, by) => {
+    const list = [...draft.countries]
+    const [c] = list.splice(i, 1)
+    list.splice(i + by, 0, c)
+    draft.countries = list
+  }
+  const addCountry = (cc) => { if (cc && !draft.countries.includes(cc) && draft.countries.length < 20) draft.countries = [...draft.countries, cc] }
   const providersFor = (cc) => reference.providers.filter((p) => p.countries.includes(cc))
   const dirty = $derived(!!draft && JSON.stringify(draft) !== JSON.stringify(fromPrefs(prefs.values)))
   $effect(() => {
@@ -62,7 +72,7 @@
       const v = await savePrefs({
         ...prefs.values, // keeps what this form doesn't edit (the services you pay for)
         country: draft.country, provider: draft.provider, currency: cur || null,
-        screen_unit: draft.screen_unit, stale_days: days,
+        screen_unit: draft.screen_unit, stale_days: days, countries: draft.countries,
       })
       draft = fromPrefs(v)
       // Saving the default also switches this device to it.
@@ -171,6 +181,27 @@
             </label>
             <label><span class="sr">Service</span>
               <select bind:value={draft.provider}>{#each providersFor(draft.country) as p (p.slug)}<option value={p.slug}>{providerName(p.slug)}</option>{/each}</select>
+            </label>
+          </div>
+        </div>
+        <div class="row">
+          <div class="lab"><b>Country order</b><span class="hint">A title page shows its Top 10 run in the first of these countries it charted in. Empty uses the chart country you’re browsing.</span></div>
+          <div class="ctl">
+            <ol class="corder">
+              {#each draft.countries as cc, i (cc)}
+                <li>
+                  <span class="num pos">{i + 1}</span><span class="cname">{countryLabel(cc)}</span>
+                  <button type="button" class="mini" aria-label="Move {countryLabel(cc)} up" disabled={i === 0} onclick={() => moveCountry(i, -1)}>↑</button>
+                  <button type="button" class="mini" aria-label="Move {countryLabel(cc)} down" disabled={i === draft.countries.length - 1} onclick={() => moveCountry(i, 1)}>↓</button>
+                  <button type="button" class="mini" aria-label="Remove {countryLabel(cc)}" onclick={() => (draft.countries = draft.countries.filter((x) => x !== cc))}>×</button>
+                </li>
+              {/each}
+            </ol>
+            <label><span class="sr">Add a country</span>
+              <select value="" onchange={(e) => { addCountry(e.currentTarget.value); e.currentTarget.value = '' }}>
+                <option value="">Add a country…</option>
+                {#each reference.countries.filter((c) => !draft.countries.includes(c.code)) as c (c.code)}<option value={c.code}>{c.name}</option>{/each}
+              </select>
             </label>
           </div>
         </div>
@@ -326,4 +357,11 @@
     .acts { grid-column: 1 / -1; justify-content: flex-start; }
     .ctl.two { grid-template-columns: 1fr; }
   }
+  .corder { display: grid; gap: 4px; margin: 0 0 8px; padding: 0; list-style: none; }
+  .corder li { display: grid; grid-template-columns: 22px 1fr auto auto auto; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; border-radius: 10px; background: var(--bg-elevated); }
+  .corder .pos { color: var(--accent-yours); font-weight: 700; }
+  .corder .cname { font-weight: 600; }
+  .mini { width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--text-primary); font: 700 15px/1 var(--font-sans); cursor: pointer; }
+  .mini:hover:not(:disabled) { background: var(--bg-surface); }
+  .mini:disabled { opacity: 0.3; cursor: default; }
 </style>

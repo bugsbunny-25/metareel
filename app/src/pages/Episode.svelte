@@ -80,7 +80,7 @@
   {:else if e}
     <!-- Without a still (often the case before an episode airs) the header is compact, with the show's poster. -->
     <header class="hero" class:bare={!still} style:background-image={still ? `url(${still})` : undefined}>
-      {#if still}<div class="scrim"></div>{:else}<a href="#/show/{show}" tabindex="-1" aria-hidden="true"><Poster path={data.show?.poster_path ?? null} seed={show} {title} kind="tv" tmdbId={show} width={96} radius={8} size="w185" /></a>{/if}
+      {#if still}<div class="scrim"></div>{:else}<a href="#/show/{show}" tabindex="-1" aria-hidden="true"><Poster path={data.show?.poster_path ?? null} seed={show} {title} width={96} radius={8} size="w185" /></a>{/if}
       <div class="htext">
         <a class="show" href="#/show/{show}">{title} ›</a>
         <p class="code num">{epCode(season, episode)}</p>
