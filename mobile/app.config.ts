@@ -44,6 +44,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     buildNumber: String(build),
     supportsTablet: true,
     icon: './assets/expo.icon',
+    // Only standard HTTPS (exempt), so App Store Connect doesn't ask about
+    // export compliance for every TestFlight build.
+    infoPlist: { ITSAppUsesNonExemptEncryption: false },
   },
   android: {
     package: 'io.github.bugsbunny25.metareel',
