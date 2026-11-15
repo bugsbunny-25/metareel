@@ -86,8 +86,9 @@ function NavItem({
       // TabTrigger's default style first, so the item layout wins.
       style={[typeof style === 'function' ? undefined : style, rail ? styles.railItem : styles.barItem]}
     >
-      <View style={[styles.pill, isFocused && { backgroundColor: colors.bgElevated }]}>
-        <Icon name={icon} size={22} color={color} />
+      {/* Material 3's active indicator: a full-radius pill, 64x32 in a bar, 56x32 in a rail. */}
+      <View style={[styles.pill, rail ? styles.pillRail : styles.pillBar, isFocused && { backgroundColor: colors.bgElevated }]}>
+        <Icon name={icon} size={24} color={color} />
       </View>
       <Text variant="caption" style={{ color, fontSize: 12 }} numberOfLines={1}>
         {label}
@@ -105,8 +106,8 @@ function RailSearch() {
       accessibilityLabel="Search"
       style={({ pressed }) => [styles.railItem, styles.railSearch, { opacity: pressed ? 0.7 : 1 }]}
     >
-      <View style={[styles.pill, { backgroundColor: colors.bgElevated }]}>
-        <Icon name="search" size={22} color={colors.textPrimary} />
+      <View style={[styles.pill, styles.pillRail, { backgroundColor: colors.bgElevated }]}>
+        <Icon name="search" size={24} color={colors.textPrimary} />
       </View>
       <Text variant="caption" style={{ color: colors.textMuted, fontSize: 12 }} numberOfLines={1}>
         Search
@@ -120,8 +121,10 @@ const styles = StyleSheet.create({
   bar: { paddingTop: 6 },
   barDir: { flexDirection: 'row', alignItems: 'stretch', justifyContent: 'space-around' },
   railDir: { flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start' },
-  barItem: { flex: 1, flexDirection: 'column', alignItems: 'center', gap: 2, minHeight: 52, paddingHorizontal: 0 },
+  barItem: { flex: 1, flexDirection: 'column', alignItems: 'center', gap: 4, minHeight: 56, paddingHorizontal: 0 },
   rail: { width: 88, alignItems: 'center', gap: 12 },
   railItem: { flexDirection: 'column', alignItems: 'center', gap: 4, minHeight: 56, width: 80, paddingHorizontal: 0 },
-  pill: { width: 56, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  pill: { height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  pillBar: { width: 64 },
+  pillRail: { width: 56 },
 });
