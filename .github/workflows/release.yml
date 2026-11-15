@@ -35,8 +35,12 @@ on:
     tags:
       - "v*"
 
+# pull-requests: read is for the called workflows' changes jobs: they are
+# skipped in a release, but GitHub checks every job's permissions when the run
+# starts, and a called job asking for more than its caller grants stops it.
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: release-${{ inputs.version || github.ref_name }}
@@ -121,6 +125,7 @@ jobs:
       contents: read
       packages: write
       security-events: write
+      pull-requests: read
     with:
       ref: ${{ needs.prepare.outputs.sha }}
       version: ${{ needs.prepare.outputs.version }}
