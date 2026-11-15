@@ -1,25 +1,31 @@
 name: release
 
-# Creates a GitHub release (pre-releases included) after CI and the container
-# image for that exact commit succeed. Two ways in:
+# Releases everything under one version: the tag vX.Y.Z (no suffixes) is the
+# server's version (/api/v1/version), the image tag,
+# the mobile app's version and the GitHub release. For that exact commit it
+# runs Go CI and the mobile checks, builds the image (server and both web UIs),
+# then the mobile apps on EAS (iOS to TestFlight, the Android APK attached to
+# the release), and creates the release last. Two ways in:
+# First set the version on main: `make version V=0.4.0`, commit, push. Then:
 #   - Actions → release → Run workflow: creates the tag and the release.
 #   - Pushing a v* tag (or creating a release in the UI, which pushes the tag):
 #     builds the image and creates the release if it doesn't exist yet.
 # Tags created here use GITHUB_TOKEN, which never triggers other workflows, so
 # CI and the image build are called directly instead of relying on tag events.
+# Path filters don't apply here: a release always runs every check.
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Tag to release, e.g. v0.2.0 or v0.2.0-alpha"
+        description: "Tag to release, e.g. v0.5.0 (the commit must carry 0.5.0: make version V=0.5.0)"
         required: true
         type: string
       prerelease:
-        description: "Mark as a pre-release (a version with a -suffix always is one)"
+        description: "Mark the GitHub release as a pre-release"
         required: false
         type: boolean
-        default: true
+        default: false
       ref:
         description: "Branch or commit to release"
         required: false
@@ -50,6 +56,11 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
       - name: Resolve version and commit
         id: resolve
         shell: bash
@@ -57,10 +68,10 @@ jobs:
           VERSION: ${{ inputs.version || github.ref_name }}
           PRERELEASE_INPUT: ${{ inputs.prerelease }}
         run: |
-          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::'${VERSION}' is not a version tag like v1.2.3 or v1.2.3-alpha"
-            exit 1
-          fi
+          # The tag must be in the version scheme (mobile/version.ts) and match the
+          # version the commit carries (make version V=...), so the server, image,
+          # web UIs and apps all get the same one.
+          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON .github/scripts/version.mjs check "${VERSION}"
 
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]] \
             && git ls-remote --exit-code --tags origin "refs/tags/${VERSION}" >/dev/null; then
@@ -68,9 +79,7 @@ jobs:
             exit 1
           fi
 
-          if [[ "${VERSION}" == *-* ]]; then
-            PRERELEASE=true
-          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             PRERELEASE="${PRERELEASE_INPUT}"
           else
             PRERELEASE=false
@@ -97,9 +106,16 @@ jobs:
       ref: ${{ needs.prepare.outputs.sha }}
       artifacts: true
 
+  mobile-checks:
+    name: mobile-checks
+    needs: prepare
+    uses: ./.github/workflows/mobile.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
   image:
     name: image
-    needs: [prepare, ci]
+    needs: [prepare, ci, mobile-checks]
     uses: ./.github/workflows/container.yml
     permissions:
       contents: read
@@ -109,9 +125,18 @@ jobs:
       ref: ${{ needs.prepare.outputs.sha }}
       version: ${{ needs.prepare.outputs.version }}
 
+  # After everything else passed, so a failed release never reaches TestFlight.
+  mobile:
+    name: mobile
+    needs: [prepare, image]
+    uses: ./.github/workflows/mobile-release.yml
+    secrets: inherit
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
   publish:
     name: publish
-    needs: [prepare, image]
+    needs: [prepare, image, mobile]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -123,6 +148,7 @@ jobs:
       PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
       IMAGE_NAME: ${{ needs.image.outputs.image_name }}
       IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
+      APK_URL: ${{ needs.mobile.outputs.apk_url }}
     steps:
       - name: Download SBOM
         uses: actions/download-artifact@v8
@@ -134,15 +160,24 @@ jobs:
         run: |
           SBOM="metareel-${VERSION}.sbom.cdx.json"
           mv sbom.cdx.json "${SBOM}"
+          assets=("${SBOM}")
+          notes="Container image: \`${IMAGE_NAME}:${VERSION}\` (\`${IMAGE_DIGEST}\`)"
+          if [[ -n "${APK_URL}" ]]; then
+            APK="metareel-${VERSION}.apk"
+            curl -fsSL -o "${APK}" "${APK_URL}"
+            assets+=("${APK}")
+            notes+=$'\n\n'"Android APK for sideloading: \`${APK}\`, SHA-256 \`$(sha256sum "${APK}" | cut -d' ' -f1)\`. iOS: the same version on TestFlight."
+          else
+            notes+=$'\n\n'"No mobile builds in this release (EXPO_TOKEN not set)."
+          fi
           if gh release view "${VERSION}" >/dev/null 2>&1; then
-            echo "Release ${VERSION} already exists; attaching the SBOM only."
-            gh release upload "${VERSION}" "${SBOM}" --clobber \
-              || echo "::warning::Could not attach the SBOM to the existing release ${VERSION}"
+            echo "Release ${VERSION} already exists; attaching the assets only."
+            gh release upload "${VERSION}" "${assets[@]}" --clobber \
+              || echo "::warning::Could not attach the assets to the existing release ${VERSION}"
             exit 0
           fi
-          args=(--target "${SHA}" --title "${VERSION}" --generate-notes
-            --notes "Container image: \`${IMAGE_NAME}:${VERSION}\` (\`${IMAGE_DIGEST}\`)")
+          args=(--target "${SHA}" --title "${VERSION}" --generate-notes --notes "${notes}")
           if [[ "${PRERELEASE}" == "true" ]]; then
             args+=(--prerelease)
           fi
-          gh release create "${VERSION}" "${SBOM}" "${args[@]}"
+          gh release create "${VERSION}" "${assets[@]}" "${args[@]}"

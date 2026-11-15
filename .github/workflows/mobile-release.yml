@@ -1,19 +1,32 @@
 name: mobile-release
 
-# Pushing a mobile-v* tag (e.g. mobile-v0.1.0) builds the app on EAS:
-#   - Android: a signed release APK with the EAS-managed keystore, attached
-#     to the GitHub Release for that tag (the sideload channel). The keystore
-#     never reaches GitHub; the APK is downloaded from EAS and uploaded as a
-#     release asset, never as a workflow artifact.
-#   - iOS: a production build submitted to TestFlight.
-# Needs the EXPO_TOKEN secret and the EAS_PROJECT_ID variable in the
-# "mobile" environment. The APK and the JS bundle are public: they contain
-# no server URL and no secrets.
+# Builds the mobile app on EAS for a release; called by release.yml for the
+# release's commit (tag vX.Y.Z). The app has the
+# same version as the server and the image: release.yml checked that the
+# commit's package.json carries it, app.config.ts reads it from there, and
+# the iOS build number and Android versionCode are computed from it
+# (mobile/version.ts), so every later release is higher in both stores.
+#   - iOS: a production build, submitted to TestFlight (not awaited).
+#   - Android: a signed release APK with the EAS-managed keystore; its
+#     download URL is returned so release.yml attaches the APK to the GitHub
+#     Release. The keystore never reaches GitHub, and the APK is never a
+#     workflow artifact.
+# Needs the EXPO_TOKEN secret and the EAS_PROJECT_ID variable in the "mobile"
+# environment; without EXPO_TOKEN the job is skipped and the release has no
+# mobile builds. The APK and the JS bundle are public: they contain no server
+# URL and no secrets.
 
 on:
-  push:
-    tags:
-      - "mobile-v*"
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit to build"
+        required: true
+        type: string
+    outputs:
+      apk_url:
+        description: "Download URL of the Android APK on EAS (empty when skipped)"
+        value: ${{ jobs.build.outputs.apk_url }}
 
 permissions:
   contents: read
@@ -23,57 +36,33 @@ defaults:
     working-directory: mobile
 
 jobs:
-  android-apk:
+  build:
     runs-on: ubuntu-latest
     environment: mobile
-    permissions:
-      contents: write # create the release and upload the APK
+    outputs:
+      apk_url: ${{ steps.android.outputs.apk_url }}
     env:
-      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
-      GH_TOKEN: ${{ github.token }}
-      TAG: ${{ github.ref_name }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: mobile/package-lock.json
-      - uses: expo/expo-github-action@9.0.2
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-      - run: npm ci
-      - name: Build the APK on EAS
-        run: eas build --platform android --profile release-apk --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
-      - name: Attach it to the GitHub Release
-        run: |
-          url="$(jq -r '.[0].artifacts.buildUrl' "$RUNNER_TEMP/build.json")"
-          apk="$RUNNER_TEMP/metareel-${TAG#mobile-}.apk"
-          curl -fsSL -o "$apk" "$url"
-          sum="$(sha256sum "$apk" | cut -d' ' -f1)"
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --prerelease --title "metareel mobile ${TAG#mobile-}" \
-              --notes "Android APK for sideloading. SHA-256: \`$sum\`"
-          fi
-          gh release upload "$TAG" "$apk" --clobber
-
-  ios-testflight:
-    runs-on: ubuntu-latest
-    environment: mobile
-    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
     steps:
+      - name: EXPO_TOKEN is not set
+        if: env.EXPO_TOKEN == ''
+        working-directory: .
+        run: echo "::warning::EXPO_TOKEN is not set; the release ships without mobile builds."
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+        if: env.EXPO_TOKEN != ''
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: mobile/package-lock.json
-      - uses: expo/expo-github-action@9.0.2
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/setup-mobile
+        if: env.EXPO_TOKEN != ''
         with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-      - run: npm ci
-      - name: Build on EAS and submit to TestFlight
+          expo-token: ${{ secrets.EXPO_TOKEN }}
+      - name: iOS build on EAS, submitted to TestFlight
+        if: env.EXPO_TOKEN != ''
         run: eas build --platform ios --profile production --auto-submit --non-interactive --no-wait
+      - name: Android APK build on EAS
+        id: android
+        if: env.EXPO_TOKEN != ''
+        run: |
+          eas build --platform android --profile release-apk --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+          echo "apk_url=$(jq -r '.[0].artifacts.buildUrl' "$RUNNER_TEMP/build.json")" >> "$GITHUB_OUTPUT"

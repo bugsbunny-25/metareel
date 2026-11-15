@@ -1,26 +1,30 @@
 name: mobile
 
 # Checks for the React Native app in mobile/ (docs/mobile-app-plan.md):
-# typecheck, lint, unit tests, and that the generated API types and theme
-# tokens match their sources. On main, publishes the JS to the EAS Update
-# "preview" channel when EXPO_TOKEN is set. No builds here: release builds
-# run on EAS (see mobile-release.yml), so signing keys never reach GitHub.
+# typecheck, lint, unit tests, and that the generated API types, theme tokens
+# and license list match their sources. On main, publishes the JS to the EAS
+# Update "preview" channel when EXPO_TOKEN is set. Release builds run on EAS
+# through release.yml (mobile-release.yml), so signing keys never reach GitHub.
 
 on:
   pull_request:
     branches: [main]
-    paths:
+    paths: &mobile-paths
       - "mobile/**"
       - "internal/openapi/spec/public.yaml"
       - "app/src/tokens.css"
+      - ".github/actions/setup-mobile/**"
       - ".github/workflows/mobile.yml"
   push:
     branches: [main]
-    paths:
-      - "mobile/**"
-      - "internal/openapi/spec/public.yaml"
-      - "app/src/tokens.css"
-      - ".github/workflows/mobile.yml"
+    paths: *mobile-paths
+  # release.yml runs the checks on the commit it releases.
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit to check"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -34,12 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: mobile/package-lock.json
-      - run: npm ci
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/setup-mobile
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test -- --ci
@@ -47,7 +48,7 @@ jobs:
         run: npm run check:generated
 
   update:
-    # Only on main, never for pull requests (forks get no secrets anyway).
+    # Only on main, never for pull requests or releases (forks get no secrets anyway).
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: checks
     runs-on: ubuntu-latest
@@ -56,21 +57,16 @@ jobs:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
     steps:
+      - name: EXPO_TOKEN is not set
+        if: env.EXPO_TOKEN == ''
+        working-directory: .
+        run: echo "::notice::EXPO_TOKEN is not set; skipping the EAS Update publish."
       - uses: actions/checkout@v7
         if: env.EXPO_TOKEN != ''
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/setup-mobile
         if: env.EXPO_TOKEN != ''
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: mobile/package-lock.json
-      - uses: expo/expo-github-action@9.0.2
-        if: env.EXPO_TOKEN != ''
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-      - if: env.EXPO_TOKEN != ''
-        run: npm ci
+          expo-token: ${{ secrets.EXPO_TOKEN }}
       - name: Publish to the preview channel
         if: env.EXPO_TOKEN != ''
         run: eas update --channel preview --environment preview --message "${{ github.sha }}" --non-interactive

@@ -1,0 +1,26 @@
+name: setup-mobile
+description: >-
+  Node (with the npm cache), EAS CLI when an Expo token is given, and the
+  mobile app's dependencies (npm ci in mobile/). Shared by the mobile jobs so
+  each sets up the same way. Expects the repo to be checked out.
+inputs:
+  expo-token:
+    description: EXPO_TOKEN; when empty, EAS CLI is not installed
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: mobile/package-lock.json
+    - if: inputs.expo-token != ''
+      uses: expo/expo-github-action@9.0.2
+      with:
+        eas-version: latest
+        token: ${{ inputs.expo-token }}
+    - shell: bash
+      working-directory: mobile
+      run: npm ci

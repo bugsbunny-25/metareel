@@ -1,10 +1,24 @@
 name: ci
 
+# Go only: the server, its tests and govulncheck. Runs when Go code, the
+# schema/queries or the build tooling change (the UIs are built by
+# container.yml, the mobile app by mobile.yml).
 on:
   pull_request:
     branches: [main]
+    paths: &go-paths
+      - "cmd/**"
+      - "internal/**"
+      - "db/**"
+      - "tools/**"
+      - "go.mod"
+      - "go.sum"
+      - "sqlc.yaml"
+      - "Makefile"
+      - ".github/workflows/ci.yml"
   push:
     branches: [main]
+    paths: *go-paths
   # Release tags run CI through release.yml.
   workflow_call:
     inputs:

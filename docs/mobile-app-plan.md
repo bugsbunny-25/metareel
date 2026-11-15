@@ -383,12 +383,14 @@ EAS free tier: 15 Android + 15 iOS cloud builds a month, which is plenty;
 
 ### Android: APK on GitHub Releases
 
-- Tag `mobile-v1.2.0` → workflow `mobile-release.yml` runs
+- Release `v1.2.0` (`release.yml`, the same version as the server; review
+  changes 2026-11-15) → `mobile-release.yml` runs
   `eas build -p android --profile release-apk --non-interactive --wait` (the
-  build runs on EAS, so the **keystore never touches GitHub**), downloads the
-  finished APK from EAS and attaches it with `gh release upload` to the
-  `mobile-v1.2.0` release, with its SHA-256 in the notes. Only `EXPO_TOKEN` is
-  needed as a GitHub secret.
+  build runs on EAS, so the **keystore never touches GitHub**); the release's
+  publish job downloads the finished APK from EAS and attaches it to the
+  `v1.2.0` release, with its SHA-256 in the notes. Only `EXPO_TOKEN` is
+  needed as a GitHub secret. Build numbers come from the version
+  (`mobile/version.ts`, root README "Versions").
 - Release assets are the intended public channel; `actions/upload-artifact`
   is still never used for signed builds.
 - **The APK is public**, so it must contain no secrets: no server URL, no
@@ -396,7 +398,7 @@ EAS free tier: 15 Android + 15 iOS cloud builds a month, which is plenty;
   its Firebase API key is not a secret by design, but restrict it in Google
   Cloud to the package name and the signing certificate's SHA-1.
 - **Updating:** JS changes arrive through EAS Update. For a new native build,
-  the app checks the latest `mobile-v*` release via the GitHub API on launch
+  the app checks the latest `v*` release with an APK via the GitHub API on launch
   (at most daily) and shows "Update available" in Settings with a link to the
   APK. Sideloading needs "Install unknown apps" allowed once for the browser.
 - Back up the EAS-managed Android keystore to your password manager: losing it
@@ -415,7 +417,7 @@ for `eas submit`. External testers would need beta review; not planned.
 | Android keystore, iOS certificates/profiles | EAS-managed credentials (+ your own Android keystore backup) |
 | App Store Connect API key | EAS secret |
 | `google-services.json` | EAS file secret (phase 6b) |
-| `EXPO_TOKEN` | GitHub secret, used only on `push` to `main` and on `mobile-v*` tags, never on `pull_request` |
+| `EXPO_TOKEN` | GitHub secret, used only on `push` to `main` and in `release.yml`, never on `pull_request` |
 
 ---
 

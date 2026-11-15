@@ -1,4 +1,3 @@
-import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
@@ -14,7 +13,7 @@ import { DetailScreen, Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { tmdbLogo } from '@/components/tmdb-logo';
 import { useAccount, usePreferences, useServerVersion } from '@/data/queries';
-import { useAppUpdate } from '@/data/app-update';
+import { appVersion, useAppUpdate } from '@/data/app-update';
 import { type ArrivalsResult, setWatchlistArrivals } from '@/notifications/push';
 import { setEpisodeReminders, useEpisodeReminders, useReminderStatus } from '@/notifications/reminders';
 import { useOutbox } from '@/offline';
@@ -103,7 +102,7 @@ export default function Settings() {
       </Panel>
 
       <Panel title="About">
-        <Row label="App version" value={`${Constants.expoConfig?.version ?? '?'}${Platform.OS === 'android' ? ' (APK)' : ''}`} />
+        <Row label="App version" value={`${appVersion()}${Platform.OS === 'android' ? ' (APK)' : ''}`} />
         <Row
           label="Server version"
           value={

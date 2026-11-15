@@ -1,10 +1,26 @@
 name: container
 
+# The image holds the server and both web UIs (the Dockerfile's frontend
+# stages run their npm ci and build), so this is also the UIs' build check.
+# Runs when anything that goes into the image changes.
 on:
   pull_request:
     branches: [main]
+    paths: &image-paths
+      - "cmd/**"
+      - "internal/**"
+      - "db/**"
+      - "go.mod"
+      - "go.sum"
+      - "web/**"
+      - "app/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/container.yml"
+      - ".github/scripts/cleanup-main-images.sh"
   push:
     branches: [main]
+    paths: *image-paths
   # Release images are built through release.yml.
   workflow_call:
     inputs:
@@ -13,7 +29,7 @@ on:
         required: true
         type: string
       version:
-        description: "Release tag to publish the image as (e.g. v0.2.0-alpha)"
+        description: "Release tag to publish the image as (e.g. v0.5.0)"
         required: true
         type: string
     outputs:

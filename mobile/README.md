@@ -91,9 +91,12 @@ One-time setup, from `mobile/`:
 
 Then:
 
-- `git tag mobile-v0.1.0 && git push origin mobile-v0.1.0` builds a signed
-  APK on EAS and attaches it to that GitHub Release, and builds iOS for
-  TestFlight (`.github/workflows/mobile-release.yml`).
+- Every release (`release.yml`, tag `vX.Y.Z`) builds a signed APK on EAS and
+  attaches it to the GitHub Release, and builds iOS for TestFlight
+  (`.github/workflows/mobile-release.yml`). The app has the release's version:
+  set it first with `make version V=X.Y.Z` (root README, "Versions"); the
+  build numbers are computed from it (`version.ts`), so `eas.json` uses
+  `appVersionSource: local`.
 - Merges to `main` publish the JS to the EAS Update `preview` channel.
 - `eas build --local` builds on this Mac with the same profiles when the
   monthly EAS quota runs out.

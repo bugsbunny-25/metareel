@@ -1,5 +1,8 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
+import pkg from './package.json';
+import { versionCode } from './version.ts';
+
 // The repo and every build are public: nothing secret and no server URL goes
 // in here. The server is entered at sign-in. EAS_PROJECT_ID comes from
 // `eas init` (see README); without it, OTA updates are simply off.
@@ -11,6 +14,12 @@ const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
 // Hosts the app may reach over plain HTTP on the home network (comma
 // separated, e.g. "homelab.local,192.168.1.20"). Build-time only; everything
 // else must be HTTPS. See plugins/with-home-http.js.
+// One version for everything (version.ts): package.json carries it, set by
+// `make version V=…` before a release, and the build numbers (iOS buildNumber,
+// Android versionCode) come from it, so every later version is higher
+// (eas.json reads them from here: appVersionSource local).
+const version = pkg.version;
+const build = versionCode(version);
 const homeHttpHosts = (process.env.HOME_HTTP_HOSTS ?? '')
   .split(',')
   .map((h: string) => h.trim())
@@ -20,7 +29,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'metareel',
   slug: 'metareel',
-  version: '0.1.0',
+  version,
   scheme: 'metareel',
   platforms: ['ios', 'android'],
   orientation: 'default',
@@ -29,11 +38,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   backgroundColor: '#0b0b0c',
   ios: {
     bundleIdentifier: 'io.github.bugsbunny25.metareel',
+    buildNumber: String(build),
     supportsTablet: true,
     icon: './assets/expo.icon',
   },
   android: {
     package: 'io.github.bugsbunny25.metareel',
+    versionCode: build,
     adaptiveIcon: {
       backgroundColor: '#0b0b0c',
       foregroundImage: './assets/images/android-icon-foreground.png',

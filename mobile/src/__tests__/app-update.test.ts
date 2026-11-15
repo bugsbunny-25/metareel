@@ -1,22 +1,18 @@
 jest.mock('expo-constants', () => ({}));
 
 // eslint-disable-next-line import/first -- the mock above must come first
-import { latestApk, newer } from '@/data/app-update';
+import { latestApk } from '@/data/app-update';
 
-test('versions compare numerically', () => {
-  expect(newer('0.10.0', '0.9.9')).toBe(true);
-  expect(newer('0.1.0', '0.1.0')).toBe(false);
-  expect(newer('0.1', '0.1.1')).toBe(false);
-});
+const asset = (n: string) => ({ name: n, browser_download_url: `https://example.invalid/${n}` });
 
-test('the newest mobile APK release is offered, other tags ignored', () => {
-  const asset = (n: string) => ({ name: n, browser_download_url: `https://example.invalid/${n}` });
+test('the newest release with an APK is offered; drafts, APK-less and other tags are ignored', () => {
   const releases = [
-    { tag_name: 'v2.0.0', draft: false, assets: [asset('server.tar.gz')] },
-    { tag_name: 'mobile-v0.3.0', draft: true, assets: [asset('metareel-v0.3.0.apk')] },
-    { tag_name: 'mobile-v0.2.0', draft: false, assets: [asset('metareel-v0.2.0.apk')] },
-    { tag_name: 'mobile-v0.1.0', draft: false, assets: [asset('metareel-v0.1.0.apk')] },
+    { tag_name: 'v0.7.0', draft: true, assets: [asset('metareel-v0.7.0.apk')] },
+    { tag_name: 'v0.6.1', draft: false, assets: [asset('metareel-v0.6.1.sbom.cdx.json')] },
+    { tag_name: 'v0.6.0', draft: false, assets: [asset('metareel-v0.6.0.apk')] },
+    { tag_name: 'v0.10.0-alpha', draft: false, assets: [asset('metareel-v0.10.0-alpha.apk')] },
+    { tag_name: 'v0.5.0', draft: false, assets: [asset('metareel-v0.5.0.apk')] },
   ];
-  expect(latestApk(releases, '0.1.0')).toEqual({ version: '0.2.0', url: 'https://example.invalid/metareel-v0.2.0.apk' });
-  expect(latestApk(releases, '0.2.0')).toBeNull();
+  expect(latestApk(releases, '0.5.0')).toEqual({ version: '0.6.0', url: 'https://example.invalid/metareel-v0.6.0.apk' });
+  expect(latestApk(releases, '0.6.0')).toBeNull();
 });

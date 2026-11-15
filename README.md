@@ -112,26 +112,60 @@ make down
 
 ### Workflows
 
-- `ci.yml`
+Each workflow runs only when files it covers change (`paths` filters); a change to
+`docs/` or a README runs nothing. Releases run every check regardless.
+
+- `ci.yml` (Go: `cmd/`, `internal/`, `db/`, `tools/`, `go.mod`, `Makefile`, …)
   - `go-quality`: `go mod tidy` check, `make vet`, `make build`, race tests with coverage, coverage artifact
   - `integration`: Redis service container + DB env wiring + test suite
   - `govulncheck`: vulnerability scan with `govulncheck ./...`
-- `codeql.yml`
-  - CodeQL analysis for Go on PRs, `main`, and weekly schedule
-- `container.yml`
+- `codeql.yml` (Go sources)
+  - CodeQL analysis for Go on PRs and `main` (a release is a commit `main` already analysed)
+- `container.yml` (everything in the image: Go, `db/`, `web/`, `app/`, `Dockerfile`)
+  - The image's frontend stages build both web UIs, so this is also their build check
   - PR: Docker build + Trivy scan + SBOM artifact
   - `main`: Docker build + push to GHCR as `main` and `sha-<commit>` + Trivy scan + SBOM artifact,
     then `cleanup-main-images` deletes every older main image (only once the whole build passed),
     so GHCR holds a single main image. Release images are never touched.
+- `mobile.yml` (`mobile/`, the OpenAPI spec and design tokens it generates from)
+  - Typecheck, lint, Jest, generated files (API types, theme tokens, license list) up to date;
+    on `main`, publishes the JS to the EAS Update `preview` channel when `EXPO_TOKEN` is set
 - `release.yml`
-  - Creates a GitHub release, pre-releases included: runs `ci.yml`, builds and pushes the image
-    tagged with the version via `container.yml`, then creates the tag and release (generated
-    notes, image digest, SBOM attached). Nothing is tagged if CI or the image fails.
+  - Releases everything under one version (below): runs `ci.yml` and the mobile checks
+    (`mobile.yml`), builds and pushes the image via `container.yml`, builds the mobile apps on
+    EAS via `mobile-release.yml` (iOS submitted to TestFlight, the Android APK downloaded from
+    EAS), then creates the tag and release (generated notes, image digest, SBOM and APK
+    attached). Nothing is tagged or sent to TestFlight if a check or the image fails. Without
+    `EXPO_TOKEN` the release ships without mobile builds.
   - Start it from Actions → release → Run workflow (`version`, `prerelease`, `ref`), or push a
-    `v*` tag / create a release in the UI. A version with a `-suffix` (e.g. `v0.2.0-alpha`) is
-    always a pre-release.
+    `v*` tag / create a release in the UI. `prerelease` (off by default) only marks the GitHub
+    release.
+- `mobile-release.yml`
+  - Called by `release.yml` only: the EAS builds for the release's commit.
 - `staging-deploy.yml`
   - Manual (`workflow_dispatch`) deploy scaffold with smoke-test contract (`/healthz`, `/api/v1/test`)
+
+### Versions
+
+One version for the server (`GET /api/v1/version`), the image tag, the web UIs and the mobile
+apps: `X.Y.Z`, released as the tag `vX.Y.Z`. No `-alpha` or other suffixes (the
+`v0.x.0-alpha` tags before 0.5.0 were the last).
+
+1. `make version V=0.6.0` writes it into `mobile/`, `app/` and `web/` (`package.json` and the
+   lockfiles) plus `mobile/package.json`'s `versionCode`. Commit and push.
+2. Release `v0.6.0`. `release.yml` refuses a tag that doesn't match the commit's version, so the
+   source at a tag always says what it is (F-Droid builds from it).
+
+The apps' build numbers come from the version (`mobile/version.ts`):
+`versionCode = X*1,000,000 + Y*1,000 + Z` (0.5.0 is 5000). Every later version is higher, which
+both stores require: Apple only accepts an upload whose build number (`CFBundleVersion`) is
+higher than the last, and Android (the APK, F-Droid) only installs a higher `versionCode`.
+Minor and patch go up to 999. Rebuilding the same version doesn't raise the build number, so
+TestFlight refuses a second upload of it: release a new version instead.
+
+For F-Droid, the metadata can read both from the tag's source:
+`UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$` and
+`UpdateCheckData: mobile/package.json|"versionCode":\s*(\d+)|.|"version":\s*"([^"]+)"`.
 
 ### Coverage reporting
 
@@ -160,6 +194,10 @@ make reports-open
 
 ### Required branch protection checks (recommended)
 
+A workflow skipped by its `paths` filter reports nothing, so a check required by a branch
+protection rule stays pending on PRs that don't touch its files and blocks the merge. Require
+only checks that always apply, or add the same `paths` to the rule (rulesets can).
+
 - `go-quality`
 - `integration`
 - `govulncheck`
@@ -173,7 +211,9 @@ make reports-open
   tagged with their version (`v*`) and kept. Cleanup uses the workflow's `GITHUB_TOKEN`, so the
   package's *Manage Actions access* must give this repository the Admin role.
 - Tags and releases created by `release.yml` don't trigger other workflows (a `GITHUB_TOKEN`
-  limit), which is why it calls `ci.yml` and `container.yml` itself.
+  limit), which is why it calls `ci.yml`, `mobile.yml`, `container.yml` and
+  `mobile-release.yml` itself.
+- The mobile jobs share `.github/actions/setup-mobile` (Node, EAS CLI, `npm ci`).
 - Trivy fails the workflow on `HIGH`/`CRITICAL` vulnerabilities.
 
 ## Endpoints
@@ -800,7 +840,7 @@ Two Svelte 5 + Vite single-page apps ship with the server:
 |---|---|---|---|
 | Admin console | `web/` → `web/dist` (`UI_STATIC_DIR`) | `/admin` (Vite `base: '/admin/'`) | `/api/v1/admin` |
 | User app | `app/` → `app/dist` (`APP_STATIC_DIR`) | `/` | the public API and `/api/v1/me`, with the session cookie |
-| Mobile app | `mobile/` (Expo, React Native) → EAS builds: APK on GitHub Releases (`mobile-v*` tags), iOS via TestFlight | native | the public API and `/api/v1/me`, with a Bearer session token ([mobile/README.md](mobile/README.md)) |
+| Mobile app | `mobile/` (Expo, React Native) → EAS builds with every release (`v*` tags): APK on the GitHub Release, iOS via TestFlight | native | the public API and `/api/v1/me`, with a Bearer session token ([mobile/README.md](mobile/README.md)) |
 
 The user app needs a signed-in user (accounts are created in the admin console)
 and never sends an API key. Its design system is **Screening Room**: dark first

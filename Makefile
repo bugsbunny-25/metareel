@@ -52,6 +52,11 @@ tidy: ## go mod tidy
 run: dev-prepare ## Run the API locally (reads .env if present)
 	$(GO) run ./cmd/server
 
+.PHONY: version
+version: ## Set the release version in every package: make version V=0.5.0 (then commit and release v0.5.0)
+	@test -n "$(V)" || (echo "usage: make version V=0.5.0" && exit 1)
+	node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON .github/scripts/version.mjs set $(V)
+
 .PHONY: build
 build: ## Build local binary
 	mkdir -p $(BIN_DIR)
