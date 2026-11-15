@@ -13,6 +13,7 @@ export const unstable_settings = {
   tv: { anchor: 'tv' },
   movies: { anchor: 'movies' },
   you: { anchor: 'you' },
+  search: { anchor: 'find' },
 };
 
 const ROOT_TITLES: Record<string, string> = {
@@ -21,6 +22,7 @@ const ROOT_TITLES: Record<string, string> = {
   tv: 'TV',
   movies: 'Movies',
   you: 'You',
+  find: 'Search',
 };
 
 const PINNED = new Set(['tv', 'movies']);

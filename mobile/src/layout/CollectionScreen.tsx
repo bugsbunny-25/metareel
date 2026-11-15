@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { type ReactNode, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,9 +9,9 @@ import type { Group } from '@/data/collections';
 import { useTheme } from '@/theme';
 
 import { ListDetail } from './ListDetail';
-import { nativeRootHeader, type RootAction, RootActions, RootTitle } from './root-header';
+import { nativeRootHeader, type RootAction, RootActions, RootTitle, searchAction } from './root-header';
 
-export const searchAction: RootAction = { label: 'Search', sf: 'magnifyingglass', icon: 'search', onPress: () => router.push('/search') };
+export { searchAction };
 
 type Segment<S extends string> = { key: S; label: string };
 

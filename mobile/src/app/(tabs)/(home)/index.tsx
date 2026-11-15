@@ -18,6 +18,7 @@ import { useWindowClass } from '@/layout/window-class';
 import Svg, { Text as SvgText } from 'react-native-svg';
 import { markEpisode, openEpisode, openLog, openTitle } from '@/lib/actions';
 import { episodeCode, starText, tmdbKind } from '@/lib/format';
+import { searchAction } from '@/layout/root-header';
 import { useTheme } from '@/theme';
 import { nowShowingProps, stopNowShowing, useNowShowing } from '@/nowshowing';
 
@@ -42,7 +43,7 @@ export default function Tonight() {
       title="Tonight"
       refreshing={queue.isRefetching}
       onRefresh={() => void Promise.all([queue.refetch(), top10.refetch(), top10tv.refetch(), diary.refetch()])}
-      actions={[{ label: 'Search', sf: 'magnifyingglass', icon: 'search', onPress: () => router.push('/search') }]}
+      actions={[searchAction]}
     >
       <ConnectionNote />
       <NowShowingCard />

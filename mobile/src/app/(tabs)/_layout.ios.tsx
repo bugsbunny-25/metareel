@@ -6,7 +6,8 @@ import { useTheme } from '@/theme';
  * iOS uses the system tab bar (UITabBarController), so it is placed the way
  * the platform expects: at the bottom on iPhone, as a sidebar or top bar on
  * iPad, and in the vertical control strip beside the content on iPhone
- * Duo's outer display and on its inner display in landscape. Android keeps
+ * Duo's outer display and on its inner display in landscape. Search is the
+ * system search tab, so it goes wherever the tabs go. Android keeps
  * the custom bar / rail in _layout.tsx.
  */
 export default function TabsLayout() {
@@ -32,6 +33,12 @@ export default function TabsLayout() {
       <NativeTabs.Trigger name="(you)">
         <NativeTabs.Trigger.Label>You</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'person.crop.circle', selected: 'person.crop.circle.fill' }} />
+      </NativeTabs.Trigger>
+      {/* The system search tab: set apart at the end of the bar on iPhone, and
+          with the other tabs in the iPhone Duo's control strip and iPad's sidebar.
+          Picking it opens its search field. */}
+      <NativeTabs.Trigger name="(search)" role="search">
+        <NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );

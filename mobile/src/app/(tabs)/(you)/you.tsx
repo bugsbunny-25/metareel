@@ -8,7 +8,7 @@ import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { recentDistinct } from '@/data/collections';
 import { useAccount, useDetailedStats, useRecentWatches, useSavings, useShowQueue } from '@/data/queries';
-import { searchAction } from '@/layout/CollectionScreen';
+import { searchAction } from '@/layout/root-header';
 import { openTitle } from '@/lib/actions';
 import { formatMoney } from '@/lib/format';
 import { BarList, Card, SectionHead, shortDuration, StatTile } from '@/screens/stats-parts';

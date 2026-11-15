@@ -456,7 +456,7 @@ TMDB scores (the web app is getting them; reuse when they land).
 **Movies**, each with To watch / Upcoming (list cards or a poster grid):
 TV is the show queue by stage plus `/me/upcoming` by day; Movies is the
 watchlist split by release date. Tonight has a Top 10 shows rail under the
-films (same country/service). Search is in every tab's header. The show page
+films (same country/service). Search is in every tab's header on Android; on iOS it is the system search tab, set apart at the end of the tab bar on iPhone and with the other tabs in the iPhone Duo's control strip and iPad's sidebar (toolbar buttons there would stack in the strip beside the tabs). The show page
 has the film page's hero, scores, where to watch, charts and facts. The log
 sheet edits every field (exact time in the watch's zone, cinema details,
 plan, money, disc type, label, picture and sound), with format and disc

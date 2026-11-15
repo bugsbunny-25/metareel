@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -62,7 +62,14 @@ export function RootTitle({ children }: { children: string }) {
 
 type SFSymbol = NonNullable<ComponentProps<typeof Stack.Toolbar.Button>['icon']>;
 
-export type RootAction = { label: string; sf: SFSymbol; icon: IconName; onPress: () => void };
+export type RootAction = { label: string; sf: SFSymbol; icon: IconName; onPress: () => void; search?: boolean };
+
+/**
+ * Search, beside every tab's title on Android. iOS leaves it out: its search
+ * is the system search tab, which sits with the other tabs (and so in the
+ * iPhone Duo's control strip, where toolbar buttons stack up beside them).
+ */
+export const searchAction: RootAction = { label: 'Search', sf: 'magnifyingglass', icon: 'search', onPress: () => router.push('/search'), search: true };
 
 /**
  * A tab root's actions: toolbar buttons (symbol plus title, as the HIG asks)
@@ -70,6 +77,7 @@ export type RootAction = { label: string; sf: SFSymbol; icon: IconName; onPress:
  */
 export function RootActions({ actions }: { actions: RootAction[] }) {
   const { colors } = useTheme();
+  if (nativeRootHeader) actions = actions.filter((a) => !a.search);
   if (!actions.length) return null;
   if (nativeRootHeader) {
     return (
