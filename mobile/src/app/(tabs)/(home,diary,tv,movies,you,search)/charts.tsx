@@ -158,7 +158,7 @@ function ChartRow({ entry: e }: { entry: Entry }) {
       </Text>
       {/* Right-aligned so the posters line up; the poster sits over the numeral's edge. */}
       <View style={styles.pair}>
-        <Numeral value={e.rank} size={76} strokeWidth={1.5} overlap={5} />
+        <Numeral value={e.rank} size={64} strokeWidth={1.5} overlap={5} />
         <Poster path={e.poster_path} title={e.name} width={44} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
@@ -177,7 +177,8 @@ const styles = StyleSheet.create({
   scope: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', minHeight: 36 },
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   step: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
-  change: { width: 36, fontSize: 13 },
-  pair: { width: 96, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  change: { width: 30, marginRight: 4, fontSize: 13 },
+  // As wide as 10 and its poster (64pt numerals): a single digit leaves the least gap.
+  pair: { width: 88, marginRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
 });
