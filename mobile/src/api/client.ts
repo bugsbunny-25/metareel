@@ -41,7 +41,10 @@ export function makeApiFetch(deps: ApiDeps) {
     const headers = new Headers(input.headers);
     const token = deps.token();
     if (token) headers.set('Authorization', `Bearer ${token}`);
-    const body = input.method === 'GET' || input.method === 'HEAD' ? undefined : await input.text();
+    // JSON goes as text; a picture (an image/* upload) as its bytes, which
+    // reading it as text would corrupt.
+    const binary = (headers.get('Content-Type') ?? '').startsWith('image/');
+    const body = input.method === 'GET' || input.method === 'HEAD' ? undefined : binary ? await input.arrayBuffer() : await input.text();
     const send = (b: string) => doFetch(b + path, { method: input.method, headers, body, credentials: 'omit' });
 
     let res: Response;
@@ -73,6 +76,11 @@ export function apiRequest(method: string, path: string, body?: unknown): Reques
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+}
+
+/** A request built for apiFetch whose body is a picture's bytes (a disc photo). */
+export function apiImageRequest(path: string, bytes: ArrayBuffer, contentType: string): Request {
+  return new Request(PLACEHOLDER + path, { method: 'POST', headers: { 'Content-Type': contentType }, body: bytes });
 }
 
 /** Unwraps an openapi-fetch result: the data, or an ApiError with the server's message. */

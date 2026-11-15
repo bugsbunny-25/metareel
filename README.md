@@ -38,6 +38,14 @@ app, an admin console, iOS and Android apps, and an API.
   decades, how your ratings compare with the critics', and what you spent.
 - Cinema subscriptions (AMC A-List, ODEON Limitless…): whether each plan paid
   for itself this month.
+- Imports from TV Time and Suite: titles are matched to TMDB, you review the
+  matches, and anything you have already logged is skipped. An import can be
+  undone.
+- A collection of the discs you own (DVD, Blu-ray, 4K UHD, Steelbooks, box
+  sets): scan the barcode to look the release up, link it to its films, keep
+  photos of the front, back and slipcover, every disc's picture and sound and
+  special features, and what you paid where. The phone app shows it as a
+  shelf of spines.
 
 **Discover**
 - New and upcoming releases per service, an episode calendar, leaderboards,

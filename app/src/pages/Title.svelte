@@ -10,6 +10,7 @@
   import Top10Graph from '../components/Top10Graph.svelte'
   import { top10Of } from '../lib/top10now.svelte.js'
   import { api } from '../lib/api.js'
+  import { caseOf, isBoxSet, label } from '../lib/discs.js'
   import { library } from '../lib/library.svelte.js'
   import { scope, countryName, providerName } from '../lib/scope.svelte.js'
   import { prefs } from '../lib/prefs.svelte.js'
@@ -21,6 +22,14 @@
   let { kind, id, onlog } = $props()
   // Netflix-style: the best place this title holds in a Top 10 in your country today.
   const top = $derived(top10Of(kind, id))
+
+  // Your copies holding this title (a box set's parts included), for "On your shelf".
+  let shelf = $state([])
+  $effect(() => {
+    const ctl = new AbortController()
+    api.discs({ tmdb_kind: kind, tmdb_id: id }, ctl.signal).then((r) => (shelf = r.items)).catch(() => (shelf = []))
+    return () => ctl.abort()
+  })
 
   let loading = $state(true)
   let error = $state('')
@@ -152,6 +161,9 @@
             <Icon name={state?.status === 'watchlist' ? 'bookmark-fill' : 'bookmark'} size={16} />{state?.status === 'watchlist' ? 'On your Watchlist' : 'Add to Watchlist'}
           </button>
           {#if kind === 'tv'}<a class="btn-secondary" href="#/show/{id}"><Icon name="list" size={16} />Episodes</a>{/if}
+          {#each shelf as c (c.id)}
+            <a class="yours shelf" href="#/collection/{c.id}" title="On your shelf"><span class="fmt" style:background={caseOf(c.release.media_format).band} style:color={caseOf(c.release.media_format).text}>{label('format', c.release.media_format)}</span>{c.release.edition || (isBoxSet(c.release) ? c.release.title : 'On your shelf')}</a>
+          {/each}
           {#if state?.watch_count > 0}
             <span class="yours"><Icon name="check" size={15} />Watched {state.watch_count > 1 ? `${state.watch_count} times` : ''}{#if state.rating}{' · '}<span class="stars" aria-label="rated {state.rating / 2} of 5">{stars(state.rating)}</span>{/if}</span>
           {/if}
@@ -321,6 +333,9 @@
   .overview { margin: 10px 0 0; max-width: 62ch; font: 400 17px/25px var(--font-display); }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 18px; }
   .yours { display: inline-flex; align-items: center; gap: 7px; color: var(--text-muted); }
+  .shelf { text-decoration: none; font-size: 14px; }
+  .shelf:hover { color: var(--text-primary); }
+  .fmt { padding: 3px 6px; border-radius: 4px; font: 800 10.5px/1 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; box-shadow: inset 0 0 0 1px var(--poster-hairline); }
   .stars { color: var(--accent-yours); letter-spacing: 0.04em; }
 
   .grid { display: grid; grid-template-columns: 1.45fr 1fr; gap: 16px; margin-top: 16px; }

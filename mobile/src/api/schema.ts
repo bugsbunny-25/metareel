@@ -1653,6 +1653,164 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your imports
+         * @description The user's 50 most recent imports from TV Time and Suite, newest first.
+         */
+        get: operations["listImports"];
+        put?: never;
+        /**
+         * Upload an export to import
+         * @description The body is the export zip as downloaded: TV Time's GDPR data export (CSV files) or a Suite export (manifest.json plus NDJSON). Which one it is is worked out from the files inside. The upload is parsed and staged at once (at most 64 MB); its titles are then matched to TMDB in the background (status "matching", then "ready"). Poll GET /api/v1/me/imports/{id}, review the items, then commit.
+         */
+        post: operations["uploadImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/imports/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** One import and its progress */
+        get: operations["getImport"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove an import from the list
+         * @description Forgets the import and its review items. Watches it wrote are kept (undo it first to remove them). Refused while it is matching or importing.
+         */
+        delete: operations["deleteImport"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/imports/{id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * An import's titles, for review
+         * @description Unmatched titles first, then by name.
+         */
+        get: operations["listImportItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/imports/{id}/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Match a title by hand, or skip it
+         * @description Only while the import is "ready". tmdb_id matches the item to that TMDB title (of the item's kind); a show's episodes are matched again. skip true leaves the item out of the import; skip false puts it back.
+         */
+        put: operations["updateImportItem"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/imports/{id}/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import a reviewed import
+         * @description Writes the matched items in the background (status "importing", then "done"). Unmatched and skipped items are left out. A watch the user already has is never written twice: a first viewing is only added when the movie or episode has no watch yet (from any source), a rewatch only when no watch of it is within 36 hours. Each title's watchlist, favourite and dropped / on-hold state is carried over, but a status the user chose (dropped, on_hold, not_interested) is never overridden.
+         */
+        post: operations["commitImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/imports/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a failed import
+         * @description Picks a failed import up where it stopped (matching, writing, or back to review).
+         */
+        post: operations["retryImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/imports/{id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo an import
+         * @description Deletes every watch the import wrote, permanently, and puts each title's status, favourite and watchlist place back as they were before it. Watches logged by hand are kept.
+         */
+        post: operations["undoImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/up-next": {
         parameters: {
             query?: never;
@@ -2263,6 +2421,206 @@ export interface paths {
          * @description The join that only works because the charts and the watchlist live in one database: which of the titles you mean to watch have charted, which you can stream now, and which have come off a service. "Leaving soon" is deliberately absent: metareel records availability changes it has observed, not departures a service has scheduled, so the honest version of that question is what has already gone.
          */
         get: operations["getWatchlistInsights"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/discs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your shelf
+         * @description The user's copies of physical releases (DVD, Blu-ray, 4K UHD, box sets), each with its full release (parts, titles, discs, pictures), plus totals over the listed copies. Money is never converted between currencies.
+         */
+        get: operations["listDiscs"];
+        put?: never;
+        /**
+         * Add a copy to your shelf
+         * @description Either release_id (a release metareel knows, e.g. from a barcode lookup) or release (a new one; parts make it a box set). The copy's price, retailer, date and condition are the user's own. import_images fetches pictures the lookup offered (or TMDB posters) for the release or one of its parts; a picture that can't be fetched is skipped.
+         */
+        post: operations["addDisc"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/discs/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Look up a scanned barcode
+         * @description Finds the release with this barcode (status known), or asks UPCitemdb about the product and drafts a release from its title, with TMDB title and collection candidates (status found). Answers are cached, so a barcode is looked up once. UPCitemdb's free tier allows about 100 lookups a day (status rate_limited when spent).
+         */
+        get: operations["lookupDisc"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/discs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** One of your copies */
+        get: operations["getDisc"];
+        /** Change your copy (price, retailer, date, condition, notes) */
+        put: operations["updateDisc"];
+        post?: never;
+        /**
+         * Take a copy off your shelf
+         * @description The release stays, as reference data for the next scan of its barcode.
+         */
+        delete: operations["deleteDisc"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/disc-collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * TMDB collections for a box set
+         * @description Up to five TMDB collections matching q, each with its films oldest first.
+         */
+        get: operations["searchDiscCollections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/disc-releases/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * A release, with your copies of it
+         * @description A box set's part answers with its box set.
+         */
+        get: operations["getDiscRelease"];
+        /**
+         * Edit a release you own a copy of
+         * @description Releases are shared reference data; anyone with a copy may correct one. The whole release is replaced. Parts sent with an id are updated, parts without one are added, and stored parts not sent are deleted with their pictures. A box set's part is edited through its box set.
+         */
+        put: operations["updateDiscRelease"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/disc-releases/{id}/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The release or one of its box-set parts */
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a picture of a release
+         * @description The body is the picture (JPEG, PNG, WebP or GIF, at most 25 MB and 50 megapixels). It is turned upright from its EXIF orientation, scaled to at most 2000 px with a 480 px thumbnail, and re-encoded (JPEG, or PNG when transparent), which drops all metadata such as a photo's location.
+         */
+        post: operations["uploadDiscImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/disc-releases/{id}/images/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fetch a picture a lookup offered
+         * @description Only a picture the cached barcode lookup of this release (or its box set) returned, or a TMDB image URL, can be fetched; anything else must be uploaded. Fetches never reach local or private addresses.
+         */
+        post: operations["importDiscImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/disc-releases/{id}/images/{image_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Change a picture's kind or order */
+        put: operations["updateDiscImage"];
+        post?: never;
+        /** Remove a picture */
+        delete: operations["deleteDiscImage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/disc-images/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A disc picture
+         * @description The URLs come from DiscImage.url / thumb_url. A picture's name is its content hash, so responses are cacheable for good. Needs a signed-in user, like the rest of the shelf.
+         */
+        get: operations["getDiscImage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3141,6 +3499,88 @@ export interface components {
          * @enum {string}
          */
         TrackingStatus: "" | "watchlist" | "watching" | "completed" | "dropped" | "on_hold" | "not_interested";
+        ImportTally: {
+            total?: number;
+            /** @description Not matched yet */
+            pending?: number;
+            matched?: number;
+            unmatched?: number;
+            skipped?: number;
+            /** @description Written so far */
+            imported?: number;
+            /** @description Shows only: episode watches in the export */
+            episodes_total?: number;
+            /** @description Shows only: of those, matched to a TMDB episode */
+            episodes_mapped?: number;
+        };
+        UserImport: {
+            id?: number;
+            /** @enum {string} */
+            source?: "tvtime" | "suite";
+            file_name?: string;
+            /** @enum {string} */
+            status?: "matching" | "ready" | "importing" | "done" | "undone" | "failed";
+            /** @description Why a failed import stopped */
+            error?: string;
+            tz?: string;
+            created_at?: string;
+            updated_at?: string;
+            committed_at?: string;
+            undone_at?: string;
+            movies?: components["schemas"]["ImportTally"];
+            shows?: components["schemas"]["ImportTally"];
+            /** @description What the export held: movies, shows, episode_watches, episode_rewatches, movie_watches, ... */
+            summary?: {
+                [key: string]: unknown;
+            };
+            /** @description Once importing has started */
+            results?: {
+                watches_added?: number;
+                /** @description Watches the user already had */
+                duplicates_skipped?: number;
+                /** @description Episode watches TMDB has no episode for */
+                episodes_unmapped?: number;
+            };
+        };
+        ImportItem: {
+            id?: number;
+            /** @enum {string} */
+            kind?: "movie" | "tv";
+            /** @description The title as the export names it */
+            title?: string;
+            year?: number;
+            release_date?: string;
+            /** @enum {string} */
+            match_status?: "pending" | "matched" | "unmatched" | "skipped";
+            /**
+             * @description tmdb_id / tvdb: by the export's id; history: a movie already logged at the same instant; search: by name and year; release: by original language, release date and runtime; manual: picked
+             * @enum {string}
+             */
+            match_method?: "tmdb_id" | "tvdb" | "history" | "search" | "release" | "manual";
+            tmdb?: {
+                tmdb_kind?: string;
+                tmdb_id?: string;
+                title?: string;
+                release_date?: string;
+                poster_path?: string;
+            };
+            /** @description Possible matches for an unmatched item */
+            candidates?: components["schemas"]["TitleSearchResult"][];
+            watches?: number;
+            rewatches?: number;
+            episodes_total?: number;
+            episodes_mapped?: number;
+            watchlist?: boolean;
+            favorite?: boolean;
+            stopped?: boolean;
+            paused?: boolean;
+            /** @description What importing the title did */
+            result?: {
+                added?: number;
+                duplicates?: number;
+                unmapped?: number;
+            };
+        };
         TitleSearchResult: {
             /** @enum {string} */
             tmdb_kind?: "movie" | "tv";
@@ -4816,6 +5256,272 @@ export interface components {
             };
             /** @description Upcoming titles only, e.g. DIGITAL */
             release_type?: string;
+        };
+        /** @enum {string} */
+        DiscMediaFormat: "uhd_bluray" | "bluray" | "bluray_3d" | "dvd" | "hd_dvd" | "other";
+        /** @enum {string} */
+        DiscImageKind: "front" | "back" | "slip_front" | "slip_back" | "spine" | "disc" | "booklet" | "inside" | "other";
+        DiscAudioTrack: {
+            /** @example English */
+            language: string;
+            /** @enum {string} */
+            format: "dolby_atmos" | "dts_x" | "auro_3d" | "dolby_truehd" | "dts_hd_ma" | "dts_hd_hr" | "lpcm" | "dolby_digital_plus" | "dts" | "dolby_digital" | "aac" | "mpeg" | "other";
+            /**
+             * @description 7.1, 5.1, 2.0, mono, stereo
+             * @example 7.1
+             */
+            channels?: string;
+            /** @example Commentary with the director */
+            description?: string;
+        };
+        /** @description One disc of a release and how it was mastered. */
+        DiscSpec: {
+            /** @description 1-based, from the disc's position (ignored on input) */
+            number: number;
+            /** @enum {string} */
+            format: "uhd_bluray" | "bluray" | "bluray_3d" | "dvd" | "hd_dvd" | "cd" | "other";
+            /** @enum {string} */
+            capacity?: "" | "bd100" | "bd66" | "bd50" | "bd25" | "dvd9" | "dvd5" | "hd_dvd30" | "hd_dvd15" | "cd";
+            /** @example Special features */
+            name?: string;
+            /** @description Which of the release's titles this disc holds (0-based) */
+            title_index?: number;
+            season_number?: number;
+            /** @example 1-5 */
+            episodes?: string;
+            /** @enum {string} */
+            video_codec?: "" | "hevc" | "avc" | "vc1" | "mpeg2" | "other";
+            /** @enum {string} */
+            resolution?: "" | "2160p" | "1080p" | "1080i" | "720p" | "576p" | "576i" | "480p" | "480i";
+            hdr?: ("dolby_vision" | "hdr10" | "hdr10_plus" | "hlg")[];
+            /** @example 2.39:1 */
+            aspect_ratio?: string;
+            /** @description Switches aspect ratio (IMAX scenes) */
+            variable_aspect?: boolean;
+            /** @example A */
+            region?: string;
+            runtime_minutes?: number;
+            audio?: components["schemas"]["DiscAudioTrack"][];
+            subtitles?: string[];
+            notes?: string;
+        };
+        DiscSpecialFeature: {
+            title: string;
+            minutes?: number;
+            /** @description Disc number, 0 when unknown */
+            disc?: number;
+            notes?: string;
+        };
+        DiscTitleRef: {
+            /** @enum {string} */
+            tmdb_kind: "movie" | "tv";
+            tmdb_id: string;
+            /**
+             * Format: int64
+             * @description TV only: the season on this release; omit for the whole show
+             */
+            season_number?: number;
+        };
+        DiscTitle: components["schemas"]["DiscTitleRef"] & {
+            title: string;
+            year?: number;
+            /** @description TMDB poster path */
+            poster_path?: string;
+        };
+        DiscImage: {
+            /** Format: int64 */
+            id: number;
+            kind: components["schemas"]["DiscImageKind"];
+            /** Format: int64 */
+            position: number;
+            /** @description /api/v1/disc-images/<sha256>.jpg (at most 2000 px) */
+            url: string;
+            /** @description 480 px thumbnail */
+            thumb_url: string;
+            /** Format: int64 */
+            width: number;
+            /** Format: int64 */
+            height: number;
+            /** @enum {string} */
+            source: "upload" | "upcitemdb" | "tmdb";
+        };
+        DiscReleaseInput: {
+            /**
+             * Format: int64
+             * @description Box-set parts only: the stored part this updates
+             */
+            id?: number;
+            barcode?: string;
+            /** @description As printed on the release */
+            title: string;
+            /** @example Steelbook */
+            edition?: string;
+            media_format: components["schemas"]["DiscMediaFormat"];
+            /** @enum {string} */
+            packaging?: "" | "keepcase" | "steelbook" | "digipak" | "digibook" | "mediabook" | "box_set" | "other";
+            has_slipcover?: boolean;
+            /** @example A */
+            region?: string;
+            /** @description ISO 3166 code of the market */
+            country?: string;
+            studio?: string;
+            /** @description Boutique label as a format slug (criterion, arrow, ...) */
+            label?: string;
+            /** Format: date */
+            release_date?: string;
+            discs?: components["schemas"]["DiscSpec"][];
+            special_features?: components["schemas"]["DiscSpecialFeature"][];
+            notes?: string;
+            titles?: components["schemas"]["DiscTitleRef"][];
+            /** @description A box set's parts (each a release of its own; parts can't have parts) */
+            parts?: components["schemas"]["DiscReleaseInput"][];
+        };
+        DiscRelease: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description Set on a box set's parts
+             */
+            parent_id?: number;
+            /** @description GTIN-13 digits */
+            barcode: string | null;
+            title: string;
+            edition: string;
+            media_format: components["schemas"]["DiscMediaFormat"];
+            packaging: string;
+            has_slipcover: boolean;
+            region: string;
+            country: string | null;
+            studio: string;
+            label: string | null;
+            /** Format: date */
+            release_date: string | null;
+            discs: components["schemas"]["DiscSpec"][];
+            special_features: components["schemas"]["DiscSpecialFeature"][];
+            notes: string | null;
+            /** @enum {string} */
+            source: "manual" | "upcitemdb";
+            titles: components["schemas"]["DiscTitle"][];
+            images: components["schemas"]["DiscImage"][];
+            parts: components["schemas"]["DiscRelease"][];
+            /** @description Discs in the release and its parts */
+            disc_count: number;
+            /** @description HDR formats and immersive audio on any disc, best first */
+            highlights: ("dolby_vision" | "hdr10_plus" | "hdr10" | "hlg" | "dolby_atmos" | "dts_x" | "auro_3d")[];
+            updated_at: string;
+        };
+        DiscCopyInput: {
+            /** Format: date */
+            purchased_on?: string;
+            /**
+             * Format: int64
+             * @description What was paid, in minor units (cents)
+             */
+            price_minor?: number;
+            /** @description ISO 4217; required with a price */
+            currency?: string;
+            /** @example Best Buy */
+            retailer?: string;
+            /** @enum {string} */
+            condition?: "" | "sealed" | "new" | "used";
+            notes?: string;
+        };
+        AddDiscInput: components["schemas"]["DiscCopyInput"] & {
+            /** Format: int64 */
+            release_id?: number;
+            release?: components["schemas"]["DiscReleaseInput"];
+            import_images?: {
+                url: string;
+                kind: components["schemas"]["DiscImageKind"];
+                /**
+                 * Format: int64
+                 * @description A part of the new box set; omit for the release itself
+                 */
+                release_id?: number;
+            }[];
+        };
+        DiscCopy: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            release_id: number;
+            /** Format: date */
+            purchased_on: string | null;
+            /** Format: int64 */
+            price_minor: number | null;
+            currency: string | null;
+            retailer: string;
+            condition: string;
+            notes: string | null;
+            created_at: string;
+            updated_at: string;
+            release: components["schemas"]["DiscRelease"] | null;
+        };
+        DiscReleaseWithCopies: {
+            release: components["schemas"]["DiscRelease"];
+            /** @description Your copies (without release) */
+            copies: components["schemas"]["DiscCopy"][];
+        };
+        DiscShelfTotals: {
+            copies: number;
+            discs: number;
+            /** @description Distinct TMDB titles */
+            titles: number;
+            box_sets: number;
+            with_slipcover: number;
+            by_format: {
+                [key: string]: number;
+            };
+            /** @description Per currency, never converted */
+            spend: {
+                currency: string;
+                /** Format: int64 */
+                minor: number;
+                copies: number;
+                /** Format: int64 */
+                avg_minor: number;
+            }[];
+            retailers: {
+                retailer: string;
+                copies: number;
+            }[];
+        };
+        DiscCollection: {
+            id: number;
+            name: string;
+            poster_path?: string;
+            parts: components["schemas"]["TitleSearchResult"][];
+        };
+        DiscSuggestion: {
+            /** @description The retailer's product title */
+            product_title: string;
+            /** @description The product title without format and marketing words */
+            title: string;
+            edition: string;
+            /** @description "" when the product title does not say */
+            media_format: string;
+            packaging: string;
+            has_slipcover: boolean;
+            studio: string;
+            label: string;
+            box_set: boolean;
+            seasons: number[];
+            /** @description Retailer pictures; fetch with import_images */
+            images: string[];
+            description: string;
+            source: string;
+        };
+        DiscLookup: {
+            /** @description GTIN-13 digits */
+            barcode: string;
+            /** @enum {string} */
+            status: "known" | "found" | "not_found" | "rate_limited" | "unavailable";
+            release?: components["schemas"]["DiscRelease"];
+            owned_copy_ids: number[];
+            suggestion?: components["schemas"]["DiscSuggestion"];
+            candidates: components["schemas"]["TitleSearchResult"][];
+            collections: components["schemas"]["DiscCollection"][];
         };
     };
     responses: {
@@ -7837,6 +8543,317 @@ export interface operations {
             401: components["responses"]["TrackingUnauthorized"];
         };
     };
+    listImports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Imports with their progress */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        imports?: components["schemas"]["UserImport"][];
+                    };
+                };
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+        };
+    };
+    uploadImport: {
+        parameters: {
+            query?: {
+                /** @description IANA zone the watches happened in, e.g. America/New_York; decides each watch's local day */
+                tz?: string;
+                /** @description Shown in the list of imports */
+                file_name?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/zip": string;
+            };
+        };
+        responses: {
+            /** @description Staged; matching has started */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserImport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            403: components["responses"]["TrackingCrossSite"];
+            /** @description The upload is larger than 64 MB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description TMDB is not configured (TMDB_API_KEY), so titles cannot be matched */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The import */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserImport"];
+                };
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+            403: components["responses"]["TrackingCrossSite"];
+            404: components["responses"]["NotFound"];
+            /** @description The import is still being worked on */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listImportItems: {
+        parameters: {
+            query?: {
+                kind?: "movie" | "tv";
+                match?: "pending" | "matched" | "unmatched" | "skipped";
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ImportItem"][];
+                        total?: number;
+                        limit?: number;
+                        offset?: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateImportItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    tmdb_id?: string;
+                    skip?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The item */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportItem"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            403: components["responses"]["TrackingCrossSite"];
+            404: components["responses"]["NotFound"];
+            /** @description The import is not waiting for review */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    commitImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Importing has started */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserImport"];
+                };
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+            403: components["responses"]["TrackingCrossSite"];
+            404: components["responses"]["NotFound"];
+            /** @description The import is not waiting for review */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    retryImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resumed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserImport"];
+                };
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+            403: components["responses"]["TrackingCrossSite"];
+            404: components["responses"]["NotFound"];
+            /** @description The import has not failed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    undoImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The import, now "undone" */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserImport"] & {
+                        watches_removed?: number;
+                    };
+                };
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+            403: components["responses"]["TrackingCrossSite"];
+            404: components["responses"]["NotFound"];
+            /** @description The import is not finished */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     upNext: {
         parameters: {
             query?: {
@@ -8969,6 +9986,484 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["TrackingUnauthorized"];
+        };
+    };
+    listDiscs: {
+        parameters: {
+            query?: {
+                /** @description Only releases in this format (or holding a part in it) */
+                format?: "uhd_bluray" | "bluray" | "bluray_3d" | "dvd" | "hd_dvd" | "other";
+                /** @description Matches the printed title, edition, studio or retailer */
+                q?: string;
+                tmdb_kind?: "movie" | "tv";
+                /** @description Only releases holding this TMDB title (with tmdb_kind), box-set parts included */
+                tmdb_id?: string;
+                sort?: "added" | "title" | "purchased" | "price" | "format";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The shelf */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DiscCopy"][];
+                        totals: components["schemas"]["DiscShelfTotals"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+        };
+    };
+    addDisc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddDiscInput"];
+            };
+        };
+        responses: {
+            /** @description The new copy */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscCopy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            403: components["responses"]["TrackingCrossSite"];
+            /** @description A release with this barcode exists; add a copy of it with release_id */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    lookupDisc: {
+        parameters: {
+            query: {
+                /** @description EAN-13, UPC-A, EAN-8 or GTIN-14; spaces and dashes are ignored */
+                barcode: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What is known about the barcode */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscLookup"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+        };
+    };
+    getDisc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The copy with its release */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscCopy"];
+                };
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateDisc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscCopyInput"];
+            };
+        };
+        responses: {
+            /** @description The copy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscCopy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            403: components["responses"]["TrackingCrossSite"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteDisc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+            403: components["responses"]["TrackingCrossSite"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    searchDiscCollections: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Collections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        results: components["schemas"]["DiscCollection"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            /** @description TMDB is not configured or failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDiscRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The release */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscReleaseWithCopies"];
+                };
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateDiscRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscReleaseInput"];
+            };
+        };
+        responses: {
+            /** @description The release */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscReleaseWithCopies"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            /** @description You don't own a copy of this release (or a cross-site write) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Another release has this barcode */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    uploadDiscImage: {
+        parameters: {
+            query: {
+                kind: components["schemas"]["DiscImageKind"];
+            };
+            header?: never;
+            path: {
+                /** @description The release or one of its box-set parts */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "image/*": string;
+            };
+        };
+        responses: {
+            /** @description The stored picture */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscImage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            /** @description You don't own a copy of this release (or a cross-site write) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The picture is larger than 25 MB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    importDiscImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    url: string;
+                    kind: components["schemas"]["DiscImageKind"];
+                };
+            };
+        };
+        responses: {
+            /** @description The stored picture */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscImage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            /** @description You don't own a copy of this release (or a cross-site write) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The picture couldn't be fetched */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDiscImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    kind: components["schemas"]["DiscImageKind"];
+                    /** Format: int64 */
+                    position?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The picture */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscImage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["TrackingUnauthorized"];
+            /** @description You don't own a copy of this release (or a cross-site write) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteDiscImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+            /** @description You don't own a copy of this release (or a cross-site write) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getDiscImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The picture */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                };
+            };
+            401: components["responses"]["TrackingUnauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

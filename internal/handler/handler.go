@@ -51,6 +51,8 @@ type Handler struct {
 	Search         *service.SearchService
 	Webhooks       *service.WebhookService
 	Tracking       *service.TrackingService
+	Imports        *service.ImportService
+	Discs          *service.DiscService
 	Push           *service.PushService
 	Lists          *service.TitleListsService
 }

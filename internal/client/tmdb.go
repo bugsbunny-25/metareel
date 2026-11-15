@@ -49,25 +49,35 @@ type TMDBSearchResult struct {
 
 // SearchMovie returns TMDB movie search results for query, most relevant first.
 func (c *TMDBClient) SearchMovie(ctx context.Context, query string) ([]TMDBSearchResult, error) {
-	return c.search(ctx, "movie", query)
+	return c.search(ctx, "movie", query, 0)
+}
+
+// SearchMovieYear returns TMDB movie search results for query among movies
+// released (in any country) in year, most relevant first.
+func (c *TMDBClient) SearchMovieYear(ctx context.Context, query string, year int) ([]TMDBSearchResult, error) {
+	return c.search(ctx, "movie", query, year)
 }
 
 // SearchTV returns TMDB TV search results for query, most relevant first.
 func (c *TMDBClient) SearchTV(ctx context.Context, query string) ([]TMDBSearchResult, error) {
-	return c.search(ctx, "tv", query)
+	return c.search(ctx, "tv", query, 0)
 }
 
-func (c *TMDBClient) search(ctx context.Context, kind string, query string) ([]TMDBSearchResult, error) {
+func (c *TMDBClient) search(ctx context.Context, kind string, query string, year int) ([]TMDBSearchResult, error) {
 	if !c.Enabled() {
 		return nil, nil
+	}
+	params := map[string]string{
+		"api_key": c.apiKey,
+		"query":   query,
+	}
+	if year > 0 {
+		params["year"] = strconv.Itoa(year)
 	}
 	var out tmdbSearchResp
 	resp, err := c.http.R().
 		SetContext(ctx).
-		SetQueryParams(map[string]string{
-			"api_key": c.apiKey,
-			"query":   query,
-		}).
+		SetQueryParams(params).
 		SetResult(&out).
 		Get("https://api.themoviedb.org/3/search/" + kind)
 	if err != nil {
@@ -321,6 +331,127 @@ func (c *TMDBClient) FindByExternalID(ctx context.Context, id string) ([]TMDBFou
 }
 
 var imdbTitleRe = regexp.MustCompile(`^tt\d{5,10}$`)
+
+// DiscoverMoviesInput narrows TMDB's movie discovery.
+type DiscoverMoviesInput struct {
+	Language   string // ISO 639-1 original language, e.g. "te"
+	From, To   string // YYYY-MM-DD, any country's release date
+	RuntimeMin int    // minutes; 0 = no bound
+	RuntimeMax int
+}
+
+// DiscoverMovies lists movies in an original language released (anywhere)
+// between From and To, most popular first. It is how a title known only by a
+// translated name and a release date is found.
+func (c *TMDBClient) DiscoverMovies(ctx context.Context, in DiscoverMoviesInput) ([]TMDBSearchResult, error) {
+	if !c.Enabled() {
+		return nil, nil
+	}
+	params := map[string]string{
+		"api_key":                c.apiKey,
+		"with_original_language": in.Language,
+		"release_date.gte":       in.From,
+		"release_date.lte":       in.To,
+		"sort_by":                "popularity.desc",
+		"include_adult":          "false",
+	}
+	if in.RuntimeMin > 0 {
+		params["with_runtime.gte"] = strconv.Itoa(in.RuntimeMin)
+	}
+	if in.RuntimeMax > 0 {
+		params["with_runtime.lte"] = strconv.Itoa(in.RuntimeMax)
+	}
+	var out tmdbSearchResp
+	resp, err := c.http.R().SetContext(ctx).SetQueryParams(params).SetResult(&out).
+		Get("https://api.themoviedb.org/3/discover/movie")
+	if err != nil {
+		return nil, fmt.Errorf("tmdb discover movie: %w", redactErr(err))
+	}
+	if resp.IsError() {
+		return nil, fmt.Errorf("tmdb discover movie status %d", resp.StatusCode())
+	}
+	results := make([]TMDBSearchResult, 0, len(out.Results))
+	for _, r := range out.Results {
+		res := TMDBSearchResult{ID: r.ID, Title: r.Title, OriginalTitle: r.OriginalTitle, Year: yearFromDate(r.ReleaseDate), ReleaseDate: r.ReleaseDate, PosterPath: r.PosterPath}
+		if len(res.ReleaseDate) != 10 {
+			res.ReleaseDate = ""
+		}
+		results = append(results, res)
+	}
+	return results, nil
+}
+
+// TMDBTVDBFound is what TMDB knows by one TheTVDB ID: shows, movies, or the
+// episode it names (TheTVDB numbers shows, movies and episodes separately,
+// so the caller says which it means by looking at the right list).
+type TMDBTVDBFound struct {
+	Movies   []TMDBFound
+	TV       []TMDBFound
+	Episodes []TMDBFoundEpisode
+}
+
+// TMDBFoundEpisode is an episode found by its TheTVDB ID.
+type TMDBFoundEpisode struct {
+	ShowID        string
+	SeasonNumber  int
+	EpisodeNumber int
+}
+
+var tvdbIDRe = regexp.MustCompile(`^[0-9]{1,10}$`)
+
+// FindByTVDB returns the TMDB titles and episodes with a TheTVDB ID, via
+// /find. A non-numeric ID is rejected before any request.
+func (c *TMDBClient) FindByTVDB(ctx context.Context, tvdbID string) (TMDBTVDBFound, error) {
+	if !c.Enabled() {
+		return TMDBTVDBFound{}, nil
+	}
+	if !tvdbIDRe.MatchString(tvdbID) {
+		return TMDBTVDBFound{}, fmt.Errorf("unsupported tvdb id %q", tvdbID)
+	}
+	var out struct {
+		Movies []struct {
+			ID          int    `json:"id"`
+			Title       string `json:"title"`
+			ReleaseDate string `json:"release_date"`
+		} `json:"movie_results"`
+		TV []struct {
+			ID           int    `json:"id"`
+			Name         string `json:"name"`
+			FirstAirDate string `json:"first_air_date"`
+		} `json:"tv_results"`
+		Episodes []struct {
+			ShowID        int `json:"show_id"`
+			SeasonNumber  int `json:"season_number"`
+			EpisodeNumber int `json:"episode_number"`
+		} `json:"tv_episode_results"`
+	}
+	resp, err := c.http.R().
+		SetContext(ctx).
+		SetQueryParams(map[string]string{"api_key": c.apiKey, "external_source": "tvdb_id"}).
+		SetResult(&out).
+		Get("https://api.themoviedb.org/3/find/" + tvdbID)
+	if err != nil {
+		return TMDBTVDBFound{}, fmt.Errorf("tmdb find tvdb: %w", redactErr(err))
+	}
+	if resp.IsError() {
+		return TMDBTVDBFound{}, fmt.Errorf("tmdb find tvdb status %d", resp.StatusCode())
+	}
+	var found TMDBTVDBFound
+	for _, m := range out.Movies {
+		found.Movies = append(found.Movies, TMDBFound{Kind: "movie", ID: strconv.Itoa(m.ID), Title: m.Title, Year: yearFromDate(m.ReleaseDate)})
+	}
+	for _, t := range out.TV {
+		found.TV = append(found.TV, TMDBFound{Kind: "tv", ID: strconv.Itoa(t.ID), Title: t.Name, Year: yearFromDate(t.FirstAirDate)})
+	}
+	for _, e := range out.Episodes {
+		if e.ShowID > 0 {
+			found.Episodes = append(found.Episodes, TMDBFoundEpisode{
+				ShowID: strconv.Itoa(e.ShowID), SeasonNumber: e.SeasonNumber, EpisodeNumber: e.EpisodeNumber,
+			})
+		}
+	}
+	return found, nil
+}
 
 // TMDB watch provider IDs of Netflix (the standard plan and "Netflix basic
 // with Ads"), as in watch/providers and JustWatch package IDs.

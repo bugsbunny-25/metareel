@@ -2827,6 +2827,272 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/TrackingUnauthorized" }
 
+  /api/v1/me/imports:
+    get:
+      operationId: listImports
+      tags: [Tracking]
+      summary: Your imports
+      description: The user's 50 most recent imports from TV Time and Suite, newest first.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Imports with their progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imports: { type: array, items: { $ref: "#/components/schemas/UserImport" } }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+    post:
+      operationId: uploadImport
+      tags: [Tracking]
+      summary: Upload an export to import
+      description: >
+        The body is the export zip as downloaded: TV Time's GDPR data export
+        (CSV files) or a Suite export (manifest.json plus NDJSON). Which one it
+        is is worked out from the files inside. The upload is parsed and staged
+        at once (at most 64 MB); its titles are then matched to TMDB in the
+        background (status "matching", then "ready"). Poll GET
+        /api/v1/me/imports/{id}, review the items, then commit.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: tz, in: query, required: false, schema: { type: string }, description: "IANA zone the watches happened in, e.g. America/New_York; decides each watch's local day" }
+        - { name: file_name, in: query, required: false, schema: { type: string }, description: Shown in the list of imports }
+      requestBody:
+        required: true
+        content:
+          application/zip:
+            schema: { type: string, format: binary }
+      responses:
+        "202":
+          description: Staged; matching has started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserImport" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "413":
+          description: The upload is larger than 64 MB
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "502":
+          description: TMDB is not configured (TMDB_API_KEY), so titles cannot be matched
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/imports/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: getImport
+      tags: [Tracking]
+      summary: One import and its progress
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The import
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserImport" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteImport
+      tags: [Tracking]
+      summary: Remove an import from the list
+      description: >
+        Forgets the import and its review items. Watches it wrote are kept
+        (undo it first to remove them). Refused while it is matching or
+        importing.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The import is still being worked on
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/imports/{id}/items:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: listImportItems
+      tags: [Tracking]
+      summary: An import's titles, for review
+      description: Unmatched titles first, then by name.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [movie, tv] } }
+        - { name: match, in: query, required: false, schema: { type: string, enum: [pending, matched, unmatched, skipped] } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, required: false, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: A page of items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ImportItem" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/me/imports/{id}/items/{item_id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - { name: item_id, in: path, required: true, schema: { type: integer } }
+    put:
+      operationId: updateImportItem
+      tags: [Tracking]
+      summary: Match a title by hand, or skip it
+      description: >
+        Only while the import is "ready". tmdb_id matches the item to that
+        TMDB title (of the item's kind); a show's episodes are matched again.
+        skip true leaves the item out of the import; skip false puts it back.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tmdb_id: { type: string }
+                skip: { type: boolean }
+      responses:
+        "200":
+          description: The item
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The import is not waiting for review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/imports/{id}/commit:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: commitImport
+      tags: [Tracking]
+      summary: Import a reviewed import
+      description: >
+        Writes the matched items in the background (status "importing", then
+        "done"). Unmatched and skipped items are left out. A watch the user
+        already has is never written twice: a first viewing is only added when
+        the movie or episode has no watch yet (from any source), a rewatch only
+        when no watch of it is within 36 hours. Each title's watchlist,
+        favourite and dropped / on-hold state is carried over, but a status the
+        user chose (dropped, on_hold, not_interested) is never overridden.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "202":
+          description: Importing has started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserImport" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The import is not waiting for review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/imports/{id}/retry:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: retryImport
+      tags: [Tracking]
+      summary: Resume a failed import
+      description: Picks a failed import up where it stopped (matching, writing, or back to review).
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "202":
+          description: Resumed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserImport" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The import has not failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/imports/{id}/undo:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: undoImport
+      tags: [Tracking]
+      summary: Undo an import
+      description: >
+        Deletes every watch the import wrote, permanently, and puts each
+        title's status, favourite and watchlist place back as they were before
+        it. Watches logged by hand are kept.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The import, now "undone"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/UserImport"
+                  - type: object
+                    properties:
+                      watches_removed: { type: integer }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The import is not finished
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /api/v1/me/up-next:
     get:
       operationId: upNext
@@ -3875,6 +4141,387 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/TrackingUnauthorized" }
 
+  /api/v1/me/discs:
+    get:
+      operationId: listDiscs
+      tags: [Physical media]
+      summary: Your shelf
+      description: >
+        The user's copies of physical releases (DVD, Blu-ray, 4K UHD, box sets),
+        each with its full release (parts, titles, discs, pictures), plus totals
+        over the listed copies. Money is never converted between currencies.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: format, in: query, required: false, schema: { type: string, enum: [uhd_bluray, bluray, bluray_3d, dvd, hd_dvd, other] }, description: "Only releases in this format (or holding a part in it)" }
+        - { name: q, in: query, required: false, schema: { type: string }, description: "Matches the printed title, edition, studio or retailer" }
+        - { name: tmdb_kind, in: query, required: false, schema: { type: string, enum: [movie, tv] } }
+        - { name: tmdb_id, in: query, required: false, schema: { type: string }, description: "Only releases holding this TMDB title (with tmdb_kind), box-set parts included" }
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [added, title, purchased, price, format], default: added } }
+      responses:
+        "200":
+          description: The shelf
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, totals]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/DiscCopy" } }
+                  totals: { $ref: "#/components/schemas/DiscShelfTotals" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+    post:
+      operationId: addDisc
+      tags: [Physical media]
+      summary: Add a copy to your shelf
+      description: >
+        Either release_id (a release metareel knows, e.g. from a barcode
+        lookup) or release (a new one; parts make it a box set). The copy's
+        price, retailer, date and condition are the user's own. import_images
+        fetches pictures the lookup offered (or TMDB posters) for the release
+        or one of its parts; a picture that can't be fetched is skipped.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddDiscInput" }
+      responses:
+        "201":
+          description: The new copy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscCopy" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "409":
+          description: A release with this barcode exists; add a copy of it with release_id
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/me/discs/lookup:
+    get:
+      operationId: lookupDisc
+      tags: [Physical media]
+      summary: Look up a scanned barcode
+      description: >
+        Finds the release with this barcode (status known), or asks UPCitemdb
+        about the product and drafts a release from its title, with TMDB title
+        and collection candidates (status found). Answers are cached, so a
+        barcode is looked up once. UPCitemdb's free tier allows about 100
+        lookups a day (status rate_limited when spent).
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: barcode, in: query, required: true, schema: { type: string }, description: "EAN-13, UPC-A, EAN-8 or GTIN-14; spaces and dashes are ignored" }
+      responses:
+        "200":
+          description: What is known about the barcode
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscLookup" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+  /api/v1/me/discs/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: getDisc
+      tags: [Physical media]
+      summary: One of your copies
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The copy with its release
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscCopy" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: updateDisc
+      tags: [Physical media]
+      summary: Change your copy (price, retailer, date, condition, notes)
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DiscCopyInput" }
+      responses:
+        "200":
+          description: The copy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscCopy" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteDisc
+      tags: [Physical media]
+      summary: Take a copy off your shelf
+      description: The release stays, as reference data for the next scan of its barcode.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/me/disc-collections:
+    get:
+      operationId: searchDiscCollections
+      tags: [Physical media]
+      summary: TMDB collections for a box set
+      description: Up to five TMDB collections matching q, each with its films oldest first.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Collections
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results: { type: array, items: { $ref: "#/components/schemas/DiscCollection" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "502":
+          description: TMDB is not configured or failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/me/disc-releases/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: getDiscRelease
+      tags: [Physical media]
+      summary: A release, with your copies of it
+      description: A box set's part answers with its box set.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The release
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscReleaseWithCopies" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: updateDiscRelease
+      tags: [Physical media]
+      summary: Edit a release you own a copy of
+      description: >
+        Releases are shared reference data; anyone with a copy may correct one.
+        The whole release is replaced. Parts sent with an id are updated,
+        parts without one are added, and stored parts not sent are deleted with
+        their pictures. A box set's part is edited through its box set.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DiscReleaseInput" }
+      responses:
+        "200":
+          description: The release
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscReleaseWithCopies" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403":
+          description: You don't own a copy of this release (or a cross-site write)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Another release has this barcode
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/me/disc-releases/{id}/images:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 }, description: The release or one of its box-set parts }
+    post:
+      operationId: uploadDiscImage
+      tags: [Physical media]
+      summary: Upload a picture of a release
+      description: >
+        The body is the picture (JPEG, PNG, WebP or GIF, at most 25 MB and 50
+        megapixels). It is turned upright from its EXIF orientation, scaled to
+        at most 2000 px with a 480 px thumbnail, and re-encoded (JPEG, or PNG
+        when transparent), which drops all metadata such as a photo's location.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: kind, in: query, required: true, schema: { $ref: "#/components/schemas/DiscImageKind" } }
+      requestBody:
+        required: true
+        content:
+          image/*:
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: The stored picture
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscImage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403":
+          description: You don't own a copy of this release (or a cross-site write)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413":
+          description: The picture is larger than 25 MB
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/me/disc-releases/{id}/images/import:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: importDiscImage
+      tags: [Physical media]
+      summary: Fetch a picture a lookup offered
+      description: >
+        Only a picture the cached barcode lookup of this release (or its box
+        set) returned, or a TMDB image URL, can be fetched; anything else must
+        be uploaded. Fetches never reach local or private addresses.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, kind]
+              properties:
+                url: { type: string }
+                kind: { $ref: "#/components/schemas/DiscImageKind" }
+      responses:
+        "201":
+          description: The stored picture
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscImage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403":
+          description: You don't own a copy of this release (or a cross-site write)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: The picture couldn't be fetched
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/me/disc-releases/{id}/images/{image_id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: image_id, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      operationId: updateDiscImage
+      tags: [Physical media]
+      summary: Change a picture's kind or order
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: { $ref: "#/components/schemas/DiscImageKind" }
+                position: { type: integer, format: int64, minimum: 0 }
+      responses:
+        "200":
+          description: The picture
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscImage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403":
+          description: You don't own a copy of this release (or a cross-site write)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteDiscImage
+      tags: [Physical media]
+      summary: Remove a picture
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403":
+          description: You don't own a copy of this release (or a cross-site write)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/disc-images/{name}:
+    get:
+      operationId: getDiscImage
+      tags: [Physical media]
+      summary: A disc picture
+      description: >
+        The URLs come from DiscImage.url / thumb_url. A picture's name is its
+        content hash, so responses are cacheable for good. Needs a signed-in
+        user, like the rest of the shelf.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string, pattern: "^[0-9a-f]{64}(_thumb)?\\.(jpg|png)$" } }
+      responses:
+        "200":
+          description: The picture
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     ApiKeyHeader:
@@ -4918,6 +5565,74 @@ components:
         What a user is doing with a title. An empty string means they track
         it without a status (for example they have only watched it).
       enum: ["", watchlist, watching, completed, dropped, on_hold, not_interested]
+    ImportTally:
+      type: object
+      properties:
+        total: { type: integer }
+        pending: { type: integer, description: Not matched yet }
+        matched: { type: integer }
+        unmatched: { type: integer }
+        skipped: { type: integer }
+        imported: { type: integer, description: Written so far }
+        episodes_total: { type: integer, description: "Shows only: episode watches in the export" }
+        episodes_mapped: { type: integer, description: "Shows only: of those, matched to a TMDB episode" }
+    UserImport:
+      type: object
+      properties:
+        id: { type: integer }
+        source: { type: string, enum: [tvtime, suite] }
+        file_name: { type: string }
+        status: { type: string, enum: [matching, ready, importing, done, undone, failed] }
+        error: { type: string, description: Why a failed import stopped }
+        tz: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        committed_at: { type: string }
+        undone_at: { type: string }
+        movies: { $ref: "#/components/schemas/ImportTally" }
+        shows: { $ref: "#/components/schemas/ImportTally" }
+        summary: { type: object, additionalProperties: true, description: "What the export held: movies, shows, episode_watches, episode_rewatches, movie_watches, ..." }
+        results:
+          type: object
+          description: Once importing has started
+          properties:
+            watches_added: { type: integer }
+            duplicates_skipped: { type: integer, description: Watches the user already had }
+            episodes_unmapped: { type: integer, description: Episode watches TMDB has no episode for }
+    ImportItem:
+      type: object
+      properties:
+        id: { type: integer }
+        kind: { type: string, enum: [movie, tv] }
+        title: { type: string, description: The title as the export names it }
+        year: { type: integer }
+        release_date: { type: string }
+        match_status: { type: string, enum: [pending, matched, unmatched, skipped] }
+        match_method: { type: string, enum: [tmdb_id, tvdb, history, search, release, manual], description: "tmdb_id / tvdb: by the export's id; history: a movie already logged at the same instant; search: by name and year; release: by original language, release date and runtime; manual: picked" }
+        tmdb:
+          type: object
+          properties:
+            tmdb_kind: { type: string }
+            tmdb_id: { type: string }
+            title: { type: string }
+            release_date: { type: string }
+            poster_path: { type: string }
+        candidates: { type: array, items: { $ref: "#/components/schemas/TitleSearchResult" }, description: Possible matches for an unmatched item }
+        watches: { type: integer }
+        rewatches: { type: integer }
+        episodes_total: { type: integer }
+        episodes_mapped: { type: integer }
+        watchlist: { type: boolean }
+        favorite: { type: boolean }
+        stopped: { type: boolean }
+        paused: { type: boolean }
+        result:
+          type: object
+          description: What importing the title did
+          properties:
+            added: { type: integer }
+            duplicates: { type: integer }
+            unmapped: { type: integer }
     TitleSearchResult:
       type: object
       properties:
@@ -6965,3 +7680,240 @@ components:
           type: string
           description: Upcoming titles only, e.g. DIGITAL
       required: [date, kind, title, year, original_release_date, tmdb_id, imdb_id, justwatch_id, justwatch_url, description, runtime_minutes, genres, poster_url, imdb_rating, imdb_votes, tomatometer, certified_fresh]
+    DiscMediaFormat:
+      type: string
+      enum: [uhd_bluray, bluray, bluray_3d, dvd, hd_dvd, other]
+    DiscImageKind:
+      type: string
+      enum: [front, back, slip_front, slip_back, spine, disc, booklet, inside, other]
+    DiscAudioTrack:
+      type: object
+      required: [language, format]
+      properties:
+        language: { type: string, example: English }
+        format: { type: string, enum: [dolby_atmos, dts_x, auro_3d, dolby_truehd, dts_hd_ma, dts_hd_hr, lpcm, dolby_digital_plus, dts, dolby_digital, aac, mpeg, other] }
+        channels: { type: string, example: "7.1", description: "7.1, 5.1, 2.0, mono, stereo" }
+        description: { type: string, example: Commentary with the director }
+    DiscSpec:
+      type: object
+      description: One disc of a release and how it was mastered.
+      required: [number, format]
+      properties:
+        number: { type: integer, description: "1-based, from the disc's position (ignored on input)" }
+        format: { type: string, enum: [uhd_bluray, bluray, bluray_3d, dvd, hd_dvd, cd, other] }
+        capacity: { type: string, enum: ["", bd100, bd66, bd50, bd25, dvd9, dvd5, hd_dvd30, hd_dvd15, cd] }
+        name: { type: string, example: Special features }
+        title_index: { type: integer, description: "Which of the release's titles this disc holds (0-based)" }
+        season_number: { type: integer }
+        episodes: { type: string, example: "1-5" }
+        video_codec: { type: string, enum: ["", hevc, avc, vc1, mpeg2, other] }
+        resolution: { type: string, enum: ["", 2160p, 1080p, 1080i, 720p, 576p, 576i, 480p, 480i] }
+        hdr: { type: array, items: { type: string, enum: [dolby_vision, hdr10, hdr10_plus, hlg] } }
+        aspect_ratio: { type: string, example: "2.39:1" }
+        variable_aspect: { type: boolean, description: "Switches aspect ratio (IMAX scenes)" }
+        region: { type: string, example: A }
+        runtime_minutes: { type: integer }
+        audio: { type: array, items: { $ref: "#/components/schemas/DiscAudioTrack" } }
+        subtitles: { type: array, items: { type: string } }
+        notes: { type: string }
+    DiscSpecialFeature:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        minutes: { type: integer }
+        disc: { type: integer, description: "Disc number, 0 when unknown" }
+        notes: { type: string }
+    DiscTitleRef:
+      type: object
+      required: [tmdb_kind, tmdb_id]
+      properties:
+        tmdb_kind: { type: string, enum: [movie, tv] }
+        tmdb_id: { type: string }
+        season_number: { type: integer, format: int64, description: "TV only: the season on this release; omit for the whole show" }
+    DiscTitle:
+      allOf:
+        - $ref: "#/components/schemas/DiscTitleRef"
+        - type: object
+          required: [title]
+          properties:
+            title: { type: string }
+            year: { type: integer }
+            poster_path: { type: string, description: TMDB poster path }
+    DiscImage:
+      type: object
+      required: [id, kind, position, url, thumb_url, width, height, source]
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { $ref: "#/components/schemas/DiscImageKind" }
+        position: { type: integer, format: int64 }
+        url: { type: string, description: "/api/v1/disc-images/<sha256>.jpg (at most 2000 px)" }
+        thumb_url: { type: string, description: "480 px thumbnail" }
+        width: { type: integer, format: int64 }
+        height: { type: integer, format: int64 }
+        source: { type: string, enum: [upload, upcitemdb, tmdb] }
+    DiscReleaseInput:
+      type: object
+      required: [title, media_format]
+      properties:
+        id: { type: integer, format: int64, description: "Box-set parts only: the stored part this updates" }
+        barcode: { type: string }
+        title: { type: string, description: As printed on the release }
+        edition: { type: string, example: Steelbook }
+        media_format: { $ref: "#/components/schemas/DiscMediaFormat" }
+        packaging: { type: string, enum: ["", keepcase, steelbook, digipak, digibook, mediabook, box_set, other] }
+        has_slipcover: { type: boolean }
+        region: { type: string, example: A }
+        country: { type: string, description: ISO 3166 code of the market }
+        studio: { type: string }
+        label: { type: string, description: "Boutique label as a format slug (criterion, arrow, ...)" }
+        release_date: { type: string, format: date }
+        discs: { type: array, items: { $ref: "#/components/schemas/DiscSpec" } }
+        special_features: { type: array, items: { $ref: "#/components/schemas/DiscSpecialFeature" } }
+        notes: { type: string }
+        titles: { type: array, items: { $ref: "#/components/schemas/DiscTitleRef" } }
+        parts:
+          type: array
+          description: A box set's parts (each a release of its own; parts can't have parts)
+          items: { $ref: "#/components/schemas/DiscReleaseInput" }
+    DiscRelease:
+      type: object
+      required: [id, barcode, title, edition, media_format, packaging, has_slipcover, region, country, studio, label, release_date, discs, special_features, notes, source, titles, images, parts, disc_count, highlights, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        parent_id: { type: integer, format: int64, description: Set on a box set's parts }
+        barcode: { type: string, nullable: true, description: GTIN-13 digits }
+        title: { type: string }
+        edition: { type: string }
+        media_format: { $ref: "#/components/schemas/DiscMediaFormat" }
+        packaging: { type: string }
+        has_slipcover: { type: boolean }
+        region: { type: string }
+        country: { type: string, nullable: true }
+        studio: { type: string }
+        label: { type: string, nullable: true }
+        release_date: { type: string, format: date, nullable: true }
+        discs: { type: array, items: { $ref: "#/components/schemas/DiscSpec" } }
+        special_features: { type: array, items: { $ref: "#/components/schemas/DiscSpecialFeature" } }
+        notes: { type: string, nullable: true }
+        source: { type: string, enum: [manual, upcitemdb] }
+        titles: { type: array, items: { $ref: "#/components/schemas/DiscTitle" } }
+        images: { type: array, items: { $ref: "#/components/schemas/DiscImage" } }
+        parts: { type: array, items: { $ref: "#/components/schemas/DiscRelease" } }
+        disc_count: { type: integer, description: "Discs in the release and its parts" }
+        highlights:
+          type: array
+          description: HDR formats and immersive audio on any disc, best first
+          items: { type: string, enum: [dolby_vision, hdr10_plus, hdr10, hlg, dolby_atmos, dts_x, auro_3d] }
+        updated_at: { type: string }
+    DiscCopyInput:
+      type: object
+      properties:
+        purchased_on: { type: string, format: date }
+        price_minor: { type: integer, format: int64, description: "What was paid, in minor units (cents)" }
+        currency: { type: string, description: "ISO 4217; required with a price" }
+        retailer: { type: string, example: Best Buy }
+        condition: { type: string, enum: ["", sealed, new, used] }
+        notes: { type: string }
+    AddDiscInput:
+      allOf:
+        - $ref: "#/components/schemas/DiscCopyInput"
+        - type: object
+          properties:
+            release_id: { type: integer, format: int64 }
+            release: { $ref: "#/components/schemas/DiscReleaseInput" }
+            import_images:
+              type: array
+              items:
+                type: object
+                required: [url, kind]
+                properties:
+                  url: { type: string }
+                  kind: { $ref: "#/components/schemas/DiscImageKind" }
+                  release_id: { type: integer, format: int64, description: "A part of the new box set; omit for the release itself" }
+    DiscCopy:
+      type: object
+      required: [id, release_id, purchased_on, price_minor, currency, retailer, condition, notes, created_at, updated_at, release]
+      properties:
+        id: { type: integer, format: int64 }
+        release_id: { type: integer, format: int64 }
+        purchased_on: { type: string, format: date, nullable: true }
+        price_minor: { type: integer, format: int64, nullable: true }
+        currency: { type: string, nullable: true }
+        retailer: { type: string }
+        condition: { type: string }
+        notes: { type: string, nullable: true }
+        created_at: { type: string }
+        updated_at: { type: string }
+        release: { allOf: [{ $ref: "#/components/schemas/DiscRelease" }], nullable: true }
+    DiscReleaseWithCopies:
+      type: object
+      required: [release, copies]
+      properties:
+        release: { $ref: "#/components/schemas/DiscRelease" }
+        copies: { type: array, items: { $ref: "#/components/schemas/DiscCopy" }, description: "Your copies (without release)" }
+    DiscShelfTotals:
+      type: object
+      required: [copies, discs, titles, box_sets, with_slipcover, by_format, spend, retailers]
+      properties:
+        copies: { type: integer }
+        discs: { type: integer }
+        titles: { type: integer, description: Distinct TMDB titles }
+        box_sets: { type: integer }
+        with_slipcover: { type: integer }
+        by_format: { type: object, additionalProperties: { type: integer } }
+        spend:
+          type: array
+          description: Per currency, never converted
+          items:
+            type: object
+            required: [currency, minor, copies, avg_minor]
+            properties:
+              currency: { type: string }
+              minor: { type: integer, format: int64 }
+              copies: { type: integer }
+              avg_minor: { type: integer, format: int64 }
+        retailers:
+          type: array
+          items:
+            type: object
+            required: [retailer, copies]
+            properties:
+              retailer: { type: string }
+              copies: { type: integer }
+    DiscCollection:
+      type: object
+      required: [id, name, parts]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        poster_path: { type: string }
+        parts: { type: array, items: { $ref: "#/components/schemas/TitleSearchResult" } }
+    DiscSuggestion:
+      type: object
+      required: [product_title, title, edition, media_format, packaging, has_slipcover, studio, label, box_set, seasons, images, description, source]
+      properties:
+        product_title: { type: string, description: The retailer's product title }
+        title: { type: string, description: The product title without format and marketing words }
+        edition: { type: string }
+        media_format: { type: string, description: '"" when the product title does not say' }
+        packaging: { type: string }
+        has_slipcover: { type: boolean }
+        studio: { type: string }
+        label: { type: string }
+        box_set: { type: boolean }
+        seasons: { type: array, items: { type: integer } }
+        images: { type: array, items: { type: string }, description: "Retailer pictures; fetch with import_images" }
+        description: { type: string }
+        source: { type: string }
+    DiscLookup:
+      type: object
+      required: [barcode, status, owned_copy_ids, candidates, collections]
+      properties:
+        barcode: { type: string, description: GTIN-13 digits }
+        status: { type: string, enum: [known, found, not_found, rate_limited, unavailable] }
+        release: { $ref: "#/components/schemas/DiscRelease" }
+        owned_copy_ids: { type: array, items: { type: integer, format: int64 } }
+        suggestion: { $ref: "#/components/schemas/DiscSuggestion" }
+        candidates: { type: array, items: { $ref: "#/components/schemas/TitleSearchResult" } }
+        collections: { type: array, items: { $ref: "#/components/schemas/DiscCollection" } }

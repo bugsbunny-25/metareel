@@ -1169,10 +1169,124 @@ through the read-only pool.
   the chart domain. `watch_provider_events` records changes already observed,
   so there is no "leaving soon" to offer -- only what has gone.
 
-Not yet available: the Letterboxd / TV Time imports. Venue data is entered by
+Not yet available: the Letterboxd import. Venue data is entered by
 hand or by outside id for now; a bulk seed from Overture or Foursquare OS
 Places, and Wikidata enrichment for historic cinemas, would land on the
 existing schema without changing it.
+
+### Imports (`service/tracking_import*.go`)
+
+A user brings their history in from **TV Time** (the GDPR data export, CSV
+files) or **Suite** (its export: `manifest.json`, `movies.ndjson`,
+`shows.ndjson`) under `/api/v1/me/imports`, from the user app's Import page
+(`#/import`). The zip is the request body (the global 1 MB body limit skips
+this one route, which has its own 64 MB limit); the format is worked out from
+the files inside (`parseExport`).
+
+```mermaid
+stateDiagram-v2
+    [*] --> matching: upload (parsed and staged)
+    matching --> ready: every title matched or not
+    ready --> importing: commit
+    importing --> done
+    done --> undone: undo
+    matching --> failed
+    importing --> failed
+    failed --> matching: retry
+    failed --> importing: retry
+```
+
+- **Staging.** The upload is parsed into one `user_import_items` row per
+  title, holding what the export said about it as JSON (watches with their
+  instants, watchlist / favourite / stopped / for-later flags, TheTVDB ids).
+  Nothing reaches the diary until the user commits.
+- **Background work.** `ImportService.Run` (started by `server.Run`, stopped
+  before the database closes) works through imports in `matching` or
+  `importing`. All progress is in the rows, so a restart resumes an import;
+  committing an item writes its watches and marks it committed in one
+  transaction, so nothing is written twice.
+- **Matching** (`matchItem`, 4 at a time): a TMDB id (Suite movies) is
+  checked; a TheTVDB id (every show) goes through TMDB `/find`; a movie the
+  user already logged at exactly the same second is that movie (an app that
+  copied another app's history keeps its timestamps); otherwise a name search
+  accepts only an exact release date, the same name in the same year (one
+  year either side) or the only hit released within a week. A name in a
+  non-Latin script (TV Time writes names in the app's language) gives the
+  original language, and TMDB discover by language, release date (+/- 3 days)
+  and runtime (+/- 10 min) accepts a single film and offers the rest as
+  candidates. A show's episode watches are matched by season and episode
+  number, then by TheTVDB episode id through `/find` for numbers TMDB lacks.
+- **Review.** Unmatched items carry candidates; `PUT .../items/{id}` matches
+  one by hand or skips it.
+- **Writing** (`commitItem`): duplicates are never written. A first viewing
+  is added only when the user has no watch of that movie or episode yet, from
+  any source; a rewatch only when no watch of it is within 36 hours. Bulk
+  marks (TV Time's `is_unitary = false`, or 3+ episodes of a show stamped
+  with the same second) are stored with day precision, like a season marked
+  here. Flags become statuses (stopped -> dropped, for later with episodes
+  seen -> on_hold, followed and not started -> watchlist), favourites carry
+  over, and a status the user chose (dropped, on hold, not interested) is
+  never overridden; shows then move between watching and completed as when
+  marked by hand. Watches are tagged with `source` (tvtime / suite) and
+  `import_id`.
+- **Undo** deletes the watches with that `import_id` and puts back each
+  title's state from `prev_state`, saved when it was written.
+
+### Physical media (`service/discs*.go`)
+
+The discs users own: DVDs, Blu-rays, 4K UHDs, Steelbooks and box sets, with
+their pictures, per-disc specs and what each copy cost. Web: the user app's
+Collection tab (`#/collection`, `#/collection/:id`); mobile: You -> Collection
+(a shelf of spines) and a barcode scanner.
+
+```mermaid
+erDiagram
+    disc_releases ||--o{ disc_releases : "parts (parent_id)"
+    disc_releases ||--o{ disc_release_titles : "what is on it"
+    disc_releases ||--o{ disc_release_images : pictures
+    disc_releases ||--o{ disc_copies : "users' copies"
+    users ||--o{ disc_copies : owns
+```
+
+- **Releases are shared, copies are private.** A `disc_releases` row is an
+  edition as published (barcode, format, packaging, region, studio, label,
+  discs and special features as JSON). Like venues, it is reference data: the
+  second person to scan a barcode gets the first one's release, and anyone who
+  owns a copy may correct it (`canEdit`). A `disc_copies` row is one user's
+  copy: price in minor units with its currency, retailer, purchase date,
+  condition, notes. Deleting a copy keeps the release.
+- **Box sets.** A release can hold several TMDB titles, each disc saying which
+  one it carries (`title_index`) and, for TV, its season. When the pieces are
+  cases of their own (three Steelbooks in an outer box), each is a part
+  (`parent_id`) with its own discs, specs and pictures; parts can't nest, and a
+  copy always points at the top-level release. Totals count a part's discs and
+  titles with its box.
+- **TMDB links.** `disc_release_titles` stores `(tmdb_kind, tmdb_id,
+  season_number)`, never chart ids, and every title is resolved through
+  `TrackedTitleService` so names and posters show without a TMDB call per row.
+  `GET /me/discs?tmdb_kind=&tmdb_id=` finds the copies holding a title, box-set
+  parts included.
+- **Barcode lookup** (`discs_lookup.go`). A code is normalised to GTIN-13
+  (check digit verified). A known barcode answers with its release. Otherwise
+  UPCitemdb is asked (`client/upcitemdb.go`; free trial without
+  `UPCITEMDB_API_KEY`, about 100 lookups a day) and its answer cached in
+  `disc_barcode_lookups` (180 days found, 14 days not found; a rate limit is
+  not cached). The retailer's product title is parsed into a draft: format
+  (4K / 3D / Blu-ray / HD DVD / DVD), Steelbook, slipcover, edition, box set,
+  seasons, boutique label, and the clean title, which is searched on TMDB (TV
+  when it names seasons; for box sets also TMDB collections whose name
+  contains it). Blu-ray.com is deliberately not used: it has no API, its
+  robots.txt disallows search, and its covers are its own scans.
+- **Pictures** (`discs_images.go`). Uploads are sniffed (never trusted by
+  extension), bounded (25 MB, 50 MP), decoded one at a time, scaled to 2000 px
+  plus a 480 px thumbnail, turned upright from the JPEG's EXIF orientation and
+  re-encoded (JPEG, or PNG when transparent, e.g. disc art), which drops all
+  metadata. Files live under `MEDIA_DIR/discs/<sha[:2]>/<sha256>[_thumb].ext`,
+  named by content, so the image route serves them `private, immutable`, and a
+  file is deleted only when no picture row uses it. Importing a picture by URL
+  is limited to the release's cached lookup images and TMDB images, and the
+  fetch dials only public addresses (`publicOnlyDialer` checks the IP after
+  DNS, redirects included).
 
 ## Read API Flow
 
@@ -1319,6 +1433,8 @@ Added since the diagram below:
 | `tracked_titles` | On-demand TMDB snapshot (title, year, poster, runtime, season / episode counts) of titles a user tracks. Display only, refreshed after `trackedTitleTTL`. Deliberately NOT `tmdb_titles`: a user can track anything on TMDB, and those rows must never be picked up by the mapping, metadata, credits or ratings jobs. Reads prefer the richer `tmdb_titles` row when the title has charted |
 | `user_titles` | One user's state per title: `status` (watchlist / watching / completed / dropped / on_hold / not_interested, validated in Go), `favorite`, `watchlist_position` / `watchlist_note`, and the roll-up of their watches (`watch_count`, `first_watched_at`, `last_watched_at`, `rating` = the most recent rated watch), recomputed by `RollupUserTitle` on every write |
 | `watch_entries` | One row per watch, so a rewatch is another row with its own rating and tags (`watch_number`, `is_rewatch`). `watch_number` is the watch's place in time among the title's watches (per episode for a show), ordered by `ended_at` then `id`; every write renumbers the title in the same transaction (`rollup` → `RenumberWatches`), and migration 000030 repaired rows numbered by log order. Instants are UTC text in `CURRENT_TIMESTAMP` format; `watched_on` is the frozen local day. `UNIQUE(user_id, client_key)` makes logging idempotent. Episode watches (`subject_kind = episode`) fill the season / episode columns |
+| `user_imports`, `user_import_items`, `watch_entries.import_id` | Imports from TV Time and Suite (migration 42): the staged import (`status` matching / ready / importing / done / undone / failed, the user's `tz`, a parse summary) and one item per title (the export's data as JSON, the TMDB match and how it was made, candidates, episodes matched, the write's result and the title state it replaced). `watch_entries.import_id` marks the watches an import wrote so it can be undone |
+| `disc_releases`, `disc_release_titles`, `disc_release_images`, `disc_copies`, `disc_barcode_lookups` | Physical media (migration 43). Releases are shared reference data (one per barcode; `parent_id` makes box-set parts; discs and special features as JSON), their TMDB titles (with an optional season) and pictures (files under `MEDIA_DIR`, named by content hash); copies are per user (price in minor units + currency, retailer, purchase date, condition). Barcode service answers are cached per barcode, misses included |
 | `user_tags`, `watch_entry_tags` | A user's tags (unique per user, `NOCASE`) attached per watch, not per title |
 | `tracked_episodes`, `tracked_titles.episodes_fetched_at` | Every season's episodes of a tracked show (migration 28), fetched on demand. Separate from `tmdb_episodes`, which `tmdb.episodes.refresh` fills with recent / upcoming / latest seasons only: that is right for the calendar but cannot answer "have I seen all of season 2". Carries TMDB's episode ID, which survives renumbering |
 | `user_titles.episodes_watched` | Distinct episodes of a show seen at least once, so progress ignores rewatches; maintained by `RollupUserTitle` next to `watch_count` |
@@ -1463,6 +1579,7 @@ Implementation note: both YAML specs and Swagger UI HTML are embedded from `inte
 | `github.com/joho/godotenv` | v1.5.1 | Loads `.env` file into the process environment at startup |
 | `golang.org/x/crypto` | v0.58.0 | argon2id password hashing for user accounts |
 | `golang.org/x/term` | v0.47.0 | Password prompt without echo in `metareel user …` |
+| `golang.org/x/image` | v0.48.0 | Scaling disc pictures (Catmull-Rom) and decoding WebP uploads |
 
 ### Dev-only dependencies (`tools/go.mod`)
 
@@ -1530,6 +1647,9 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `RATINGS_TTL` | `12h` | How long stored ratings are served before a request refreshes them |
 | `RATINGS_PREFERRED_PROVIDER` | `justwatch` | `justwatch` or `mdblist`: wins when both have an IMDb / RT value |
 | `MDBLIST_API_KEY` | _(empty)_ | Enables MDBList as a ratings provider |
+| `MEDIA_DIR` | `./data/media` | Where disc pictures are stored (`discs/` below it); keep it on the same volume as the database and back both up |
+| `BARCODE_LOOKUP_ENABLED` | `true` | Look scanned disc barcodes up on UPCitemdb |
+| `UPCITEMDB_API_KEY` | _(empty)_ | UPCitemdb paid plan; without it the free trial endpoint (about 100 lookups a day) is used |
 | `SCRAPER_MIN_INTERVAL` | `2s` | Minimum gap between FlixPatrol page fetches across all jobs |
 | `NETFLIX_TOP10_COUNTRIES` | _(empty)_ | Netflix per-country Top 10 to keep: ISO codes, empty = the FlixPatrol schedules' countries, `all` = every country |
 | `VENUES_IMPORT_COUNTRIES` | `US,GB,IN` | Countries `venues.import` brings cinemas in for when a run names none (ISO codes, comma separated) |

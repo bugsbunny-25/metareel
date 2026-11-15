@@ -17,13 +17,17 @@ export class ApiError extends Error {
   }
 }
 
-async function request(method, path, { body, signal } = {}) {
+// raw sends a Blob / File as the body as it is, with Content-Type type.
+async function request(method, path, { body, raw, type, signal } = {}) {
+  const headers = { Accept: 'application/json' }
+  if (raw !== undefined) headers['Content-Type'] = type ?? 'application/octet-stream'
+  else if (body !== undefined) headers['Content-Type'] = 'application/json'
   const res = await fetch(BASE + path, {
     method,
     signal,
     credentials: 'same-origin',
-    headers: body === undefined ? { Accept: 'application/json' } : { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers,
+    body: raw !== undefined ? raw : body === undefined ? undefined : JSON.stringify(body),
   })
   if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized()
   if (!res.ok) {
@@ -176,4 +180,39 @@ export const api = {
   statsRatings: (from, to, signal) => request('GET', `/me/stats/ratings${qs({ from, to })}`, { signal }),
   // Everything about your shows (kind tv) or films (movie), all time; '' for both.
   statsDetailed: (kind, signal) => request('GET', `/me/stats/detailed${qs({ kind })}`, { signal }),
+
+  // Imports from TV Time and Suite. An upload is matched to TMDB in the background
+  // (status matching -> ready), reviewed, then written (importing -> done); undo removes it.
+  imports: (signal) => request('GET', '/me/imports', { signal }),
+  importJob: (id, signal) => request('GET', `/me/imports/${id}`, { signal }),
+  /** match: unmatched | matched | skipped | pending; kind: movie | tv */
+  importItems: (id, { kind, match, limit = 50, offset = 0 } = {}, signal) =>
+    request('GET', `/me/imports/${id}/items${qs({ kind, match, limit, offset })}`, { signal }),
+  /** body: { tmdb_id } to match by hand, or { skip: true | false } */
+  setImportItem: (id, itemId, body) => request('PUT', `/me/imports/${id}/items/${itemId}`, { body }),
+  commitImport: (id) => request('POST', `/me/imports/${id}/commit`),
+  retryImport: (id) => request('POST', `/me/imports/${id}/retry`),
+  undoImport: (id) => request('POST', `/me/imports/${id}/undo`),
+  deleteImport: (id) => request('DELETE', `/me/imports/${id}`),
+  /** The export zip goes up as the request body; tz decides the local day of each watch. */
+  uploadImport: (file, tz) => request('POST', `/me/imports${qs({ tz, file_name: file.name })}`, { raw: file, type: 'application/zip' }),
+
+  // Physical media. A copy (yours: price, retailer, date, condition) of a release (shared:
+  // format, discs and specs, special features, pictures; a box set has parts).
+  /** filters: { format, q, tmdb_kind, tmdb_id, sort } → { items, totals } */
+  discs: (filters = {}, signal) => request('GET', `/me/discs${qs(filters)}`, { signal }),
+  disc: (id, signal) => request('GET', `/me/discs/${id}`, { signal }),
+  lookupDisc: (barcode, signal) => request('GET', `/me/discs/lookup${qs({ barcode })}`, { signal }),
+  /** body: { release_id } or { release }, plus the copy's fields and import_images */
+  addDisc: (body) => request('POST', '/me/discs', { body }),
+  updateDisc: (id, body) => request('PUT', `/me/discs/${id}`, { body }),
+  deleteDisc: (id) => request('DELETE', `/me/discs/${id}`),
+  discRelease: (id, signal) => request('GET', `/me/disc-releases/${id}`, { signal }),
+  updateDiscRelease: (id, body) => request('PUT', `/me/disc-releases/${id}`, { body }),
+  /** The picture goes up as the body; releaseId may be a box set's part. */
+  uploadDiscImage: (releaseId, kind, file) => request('POST', `/me/disc-releases/${releaseId}/images${qs({ kind })}`, { raw: file, type: file.type || 'application/octet-stream' }),
+  importDiscImage: (releaseId, kind, url) => request('POST', `/me/disc-releases/${releaseId}/images/import`, { body: { kind, url } }),
+  updateDiscImage: (releaseId, imageId, body) => request('PUT', `/me/disc-releases/${releaseId}/images/${imageId}`, { body }),
+  deleteDiscImage: (releaseId, imageId) => request('DELETE', `/me/disc-releases/${releaseId}/images/${imageId}`),
+  discCollections: (q, signal) => request('GET', `/me/disc-collections${qs({ q })}`, { signal }),
 }

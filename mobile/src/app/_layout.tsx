@@ -100,6 +100,7 @@ function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
                   }
             }
           />
+          <Stack.Screen name="scan-disc" options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: colors.bgCanvas } }} />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="sign-in" />

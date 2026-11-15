@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/labstack/echo/v5"
@@ -12,10 +13,21 @@ import (
 	"github.com/bugsbunny-25/metareel/internal/config"
 	"github.com/bugsbunny-25/metareel/internal/handler"
 	"github.com/bugsbunny-25/metareel/internal/openapi"
+	"github.com/bugsbunny-25/metareel/internal/service"
 )
 
 func isAdminPath(p string) bool {
 	return p == "/api/v1/admin" || strings.HasPrefix(p, "/api/v1/admin/")
+}
+
+// discImageUploadRe is the path a disc picture is uploaded to.
+var discImageUploadRe = regexp.MustCompile(`^/api/v1/me/disc-releases/[0-9]+/images$`)
+
+// isLargeUpload is an import upload or a disc picture, which have their own
+// body limits on their routes.
+func isLargeUpload(c *echo.Context) bool {
+	r := c.Request()
+	return r.Method == http.MethodPost && (r.URL.Path == "/api/v1/me/imports" || discImageUploadRe.MatchString(r.URL.Path))
 }
 
 // Register wires all routes and middleware onto the given Echo instance.
@@ -41,7 +53,12 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 		AllowOrigins: []string{"*"},
 		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 	}))
-	e.Use(emw.BodyLimit(1 * 1024 * 1024))
+	// 1 MB for every request but an import upload (an export zip) and a
+	// disc picture (a phone photo), which get their own limits on their routes.
+	e.Use(emw.BodyLimitWithConfig(emw.BodyLimitConfig{
+		LimitBytes: 1 * 1024 * 1024,
+		Skipper:    isLargeUpload,
+	}))
 
 	registerOpenAPI(e)
 
@@ -129,6 +146,34 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	me.GET("/stats/people", h.GetStatsPeople)
 	me.GET("/stats/detailed", h.GetStatsDetailed)
 	me.GET("/watchlist/insights", h.GetWatchlistInsights)
+	// Imports from TV Time and Suite (export zips).
+	me.GET("/imports", h.ListImports)
+	me.POST("/imports", h.UploadImport, emw.BodyLimitWithConfig(emw.BodyLimitConfig{LimitBytes: service.MaxImportUploadBytes}))
+	me.GET("/imports/:id", h.GetImport)
+	me.DELETE("/imports/:id", h.DeleteImport)
+	me.GET("/imports/:id/items", h.ListImportItems)
+	me.PUT("/imports/:id/items/:item_id", h.UpdateImportItem)
+	me.POST("/imports/:id/commit", h.CommitImport)
+	me.POST("/imports/:id/retry", h.RetryImport)
+	me.POST("/imports/:id/undo", h.UndoImport)
+	// Physical media: the user's copies, the shared releases they are copies
+	// of (with box-set parts and pictures), and barcode lookups.
+	me.GET("/discs", h.ListDiscs)
+	me.GET("/discs/lookup", h.LookupDisc) // before /discs/:id
+	me.POST("/discs", h.AddDisc)
+	me.GET("/discs/:id", h.GetDisc)
+	me.PUT("/discs/:id", h.UpdateDisc)
+	me.DELETE("/discs/:id", h.DeleteDisc)
+	me.GET("/disc-collections", h.SearchDiscCollections)
+	me.GET("/disc-releases/:id", h.GetDiscRelease)
+	me.PUT("/disc-releases/:id", h.UpdateDiscRelease)
+	me.POST("/disc-releases/:id/images", h.UploadDiscImage, emw.BodyLimitWithConfig(emw.BodyLimitConfig{LimitBytes: service.MaxDiscImageBytes}))
+	me.POST("/disc-releases/:id/images/import", h.ImportDiscImage)
+	me.PUT("/disc-releases/:id/images/:image_id", h.UpdateDiscImage)
+	me.DELETE("/disc-releases/:id/images/:image_id", h.DeleteDiscImage)
+	// Disc pictures: named by content hash, so they are cached for good;
+	// outside /me, whose responses are never stored.
+	e.GET("/api/v1/disc-images/:name", h.GetDiscImage, h.Authenticate, h.RequireUser)
 
 	// Admin API and UI. The UI reads the same data through these admin
 	// copies of the public routes, so it needs no API key. With

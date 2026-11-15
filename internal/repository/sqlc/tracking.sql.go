@@ -298,7 +298,7 @@ func (q *Queries) GetUserTitle(ctx context.Context, arg GetUserTitleParams) (Get
 }
 
 const getWatchEntry = `-- name: GetWatchEntry :one
-SELECT id, user_id, client_key, subject_kind, tmdb_kind, tmdb_id, season_number, episode_number, tmdb_episode_id, ended_at, started_at, runtime_minutes_used, runtime_source, tz, utc_offset_minutes, watched_on, time_precision, rating, liked, is_rewatch, watch_number, notes, venue_kind, source, created_at, updated_at, venue_id, screen_id, venue_name_at_watch, venue_city_at_watch, seat, screening_type, event_name, with_qa, price_minor, fees_minor, concessions_minor, currency, tickets_count, booking_source, provider_id, provider_name, monetization, media, edition, device, dimension, resolution, hdr, audio_format, frame_rate, audio_language, subtitle_language, content_aspect_ratio_text, content_aspect_ratio, content_aspect_variable, screen_aspect_ratio, screen_width, screen_height, screen_dim_unit, screen_width_m, screen_height_m, subscription_id, face_value_minor FROM watch_entries
+SELECT id, user_id, client_key, subject_kind, tmdb_kind, tmdb_id, season_number, episode_number, tmdb_episode_id, ended_at, started_at, runtime_minutes_used, runtime_source, tz, utc_offset_minutes, watched_on, time_precision, rating, liked, is_rewatch, watch_number, notes, venue_kind, source, created_at, updated_at, venue_id, screen_id, venue_name_at_watch, venue_city_at_watch, seat, screening_type, event_name, with_qa, price_minor, fees_minor, concessions_minor, currency, tickets_count, booking_source, provider_id, provider_name, monetization, media, edition, device, dimension, resolution, hdr, audio_format, frame_rate, audio_language, subtitle_language, content_aspect_ratio_text, content_aspect_ratio, content_aspect_variable, screen_aspect_ratio, screen_width, screen_height, screen_dim_unit, screen_width_m, screen_height_m, subscription_id, face_value_minor, import_id FROM watch_entries
 WHERE id = ?1 AND user_id = ?2
 `
 
@@ -375,12 +375,13 @@ func (q *Queries) GetWatchEntry(ctx context.Context, arg GetWatchEntryParams) (W
 		&i.ScreenHeightM,
 		&i.SubscriptionID,
 		&i.FaceValueMinor,
+		&i.ImportID,
 	)
 	return i, err
 }
 
 const getWatchEntryByClientKey = `-- name: GetWatchEntryByClientKey :one
-SELECT id, user_id, client_key, subject_kind, tmdb_kind, tmdb_id, season_number, episode_number, tmdb_episode_id, ended_at, started_at, runtime_minutes_used, runtime_source, tz, utc_offset_minutes, watched_on, time_precision, rating, liked, is_rewatch, watch_number, notes, venue_kind, source, created_at, updated_at, venue_id, screen_id, venue_name_at_watch, venue_city_at_watch, seat, screening_type, event_name, with_qa, price_minor, fees_minor, concessions_minor, currency, tickets_count, booking_source, provider_id, provider_name, monetization, media, edition, device, dimension, resolution, hdr, audio_format, frame_rate, audio_language, subtitle_language, content_aspect_ratio_text, content_aspect_ratio, content_aspect_variable, screen_aspect_ratio, screen_width, screen_height, screen_dim_unit, screen_width_m, screen_height_m, subscription_id, face_value_minor FROM watch_entries
+SELECT id, user_id, client_key, subject_kind, tmdb_kind, tmdb_id, season_number, episode_number, tmdb_episode_id, ended_at, started_at, runtime_minutes_used, runtime_source, tz, utc_offset_minutes, watched_on, time_precision, rating, liked, is_rewatch, watch_number, notes, venue_kind, source, created_at, updated_at, venue_id, screen_id, venue_name_at_watch, venue_city_at_watch, seat, screening_type, event_name, with_qa, price_minor, fees_minor, concessions_minor, currency, tickets_count, booking_source, provider_id, provider_name, monetization, media, edition, device, dimension, resolution, hdr, audio_format, frame_rate, audio_language, subtitle_language, content_aspect_ratio_text, content_aspect_ratio, content_aspect_variable, screen_aspect_ratio, screen_width, screen_height, screen_dim_unit, screen_width_m, screen_height_m, subscription_id, face_value_minor, import_id FROM watch_entries
 WHERE user_id = ?1 AND client_key = ?2
 `
 
@@ -457,6 +458,7 @@ func (q *Queries) GetWatchEntryByClientKey(ctx context.Context, arg GetWatchEntr
 		&i.ScreenHeightM,
 		&i.SubscriptionID,
 		&i.FaceValueMinor,
+		&i.ImportID,
 	)
 	return i, err
 }
@@ -467,14 +469,14 @@ INSERT INTO watch_entries (
     season_number, episode_number, tmdb_episode_id,
     ended_at, started_at, runtime_minutes_used, runtime_source,
     tz, utc_offset_minutes, watched_on, time_precision,
-    rating, liked, is_rewatch, watch_number, notes, venue_kind, source
+    rating, liked, is_rewatch, watch_number, notes, venue_kind, source, import_id
 ) VALUES (
     ?1, ?2, ?3, ?4, ?5,
     ?6, ?7, ?8,
     ?9, ?10, ?11, ?12,
     ?13, ?14, ?15, ?16,
     ?17, ?18, ?19, ?20,
-    ?21, ?22, ?23
+    ?21, ?22, ?23, ?24
 )
 RETURNING id
 `
@@ -503,6 +505,7 @@ type InsertWatchEntryParams struct {
 	Notes              sql.NullString `json:"notes"`
 	VenueKind          sql.NullString `json:"venue_kind"`
 	Source             string         `json:"source"`
+	ImportID           sql.NullInt64  `json:"import_id"`
 }
 
 func (q *Queries) InsertWatchEntry(ctx context.Context, arg InsertWatchEntryParams) (int64, error) {
@@ -530,6 +533,7 @@ func (q *Queries) InsertWatchEntry(ctx context.Context, arg InsertWatchEntryPara
 		arg.Notes,
 		arg.VenueKind,
 		arg.Source,
+		arg.ImportID,
 	)
 	var id int64
 	err := row.Scan(&id)

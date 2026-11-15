@@ -1,4 +1,4 @@
-import { makeApiFetch } from '@/api/client';
+import { apiImageRequest, makeApiFetch } from '@/api/client';
 import { Endpoint } from '@/net/endpoint';
 
 const PUB = 'https://metareel.example.com';
@@ -68,4 +68,17 @@ test('a 401 ends the session locally', async () => {
   const apiFetch = makeApiFetch({ endpoint: ep, token: () => 't', onUnauthorized, fetch: async () => new Response('{}', { status: 401 }) });
   await apiFetch(request('/api/v1/me/up-next'));
   expect(onUnauthorized).toHaveBeenCalledTimes(1);
+});
+
+test('a picture upload goes as its bytes, not as text', async () => {
+  const ep = new Endpoint(async () => true);
+  ep.configure(PUB, null);
+  const fetch = jest.fn(async (_u: RequestInfo | URL, _i?: RequestInit) => new Response('{}'));
+  const apiFetch = makeApiFetch({ endpoint: ep, token: () => 'mrs_tok', onUnauthorized: jest.fn(), fetch });
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x80, 0xfe]);
+  await apiFetch(apiImageRequest('/api/v1/me/disc-releases/3/images?kind=front', jpeg.buffer, 'image/jpeg'));
+  const [url, init] = fetch.mock.calls[0];
+  expect(url).toBe(`${PUB}/api/v1/me/disc-releases/3/images?kind=front`);
+  expect(new Headers(init?.headers).get('Content-Type')).toBe('image/jpeg');
+  expect(Array.from(new Uint8Array(init?.body as ArrayBuffer))).toEqual(Array.from(jpeg));
 });

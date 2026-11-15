@@ -33,6 +33,8 @@ type Querier interface {
 	// Stored dates of one chart strictly between two dates (YYYY-MM-DD): tells a
 	// title that left a chart apart from a chart that was not scraped.
 	CountChartSnapshotsBetween(ctx context.Context, arg CountChartSnapshotsBetweenParams) (int64, error)
+	CountDiscImagesBySha(ctx context.Context, sha256 string) (int64, error)
+	CountDiscReleaseCopies(ctx context.Context, releaseID int64) (int64, error)
 	CountEnabledAdmins(ctx context.Context) (int64, error)
 	CountIMDbRatings(ctx context.Context) (int64, error)
 	CountNetflixEngagement(ctx context.Context) ([]CountNetflixEngagementRow, error)
@@ -49,6 +51,9 @@ type Querier interface {
 	CountTitles(ctx context.Context, arg CountTitlesParams) (int64, error)
 	CountTitlesByMatchStatus(ctx context.Context) ([]CountTitlesByMatchStatusRow, error)
 	CountTmdbTitles(ctx context.Context) (CountTmdbTitlesRow, error)
+	// CountUserImportItems is an import's progress, per kind and match status.
+	CountUserImportItems(ctx context.Context, importID int64) ([]CountUserImportItemsRow, error)
+	CountUserImportItemsFiltered(ctx context.Context, arg CountUserImportItemsFilteredParams) (int64, error)
 	CountUserTitles(ctx context.Context, arg CountUserTitlesParams) (int64, error)
 	// User accounts and their sign-in sessions.
 	CountUsers(ctx context.Context) (int64, error)
@@ -65,6 +70,9 @@ type Querier interface {
 	CreateTaskScheduleRunTime(ctx context.Context, arg CreateTaskScheduleRunTimeParams) error
 	CreateTaskScheduleTarget(ctx context.Context, arg CreateTaskScheduleTargetParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// Imports of a user's history from other trackers (TV Time, Suite): the
+	// staged import, its items (one per title) and the watches it wrote.
+	CreateUserImport(ctx context.Context, arg CreateUserImportParams) (int64, error)
 	CreateVenue(ctx context.Context, arg CreateVenueParams) (int64, error)
 	CreateVenueScreen(ctx context.Context, arg CreateVenueScreenParams) (int64, error)
 	CreateWatchFormat(ctx context.Context, arg CreateWatchFormatParams) (WatchFormat, error)
@@ -74,6 +82,10 @@ type Querier interface {
 	DeleteCinemaSubscription(ctx context.Context, arg DeleteCinemaSubscriptionParams) (int64, error)
 	DeleteCinemaSubscriptionPeriods(ctx context.Context, subscriptionID int64) error
 	DeleteCinemaSubscriptionPrices(ctx context.Context, subscriptionID int64) error
+	DeleteDiscCopy(ctx context.Context, arg DeleteDiscCopyParams) (int64, error)
+	DeleteDiscRelease(ctx context.Context, id int64) error
+	DeleteDiscReleaseImage(ctx context.Context, arg DeleteDiscReleaseImageParams) (int64, error)
+	DeleteDiscReleaseTitles(ctx context.Context, releaseID int64) error
 	// DeleteEmptyUserTitle removes a state row that holds nothing worth keeping
 	// (no status, no rating, not a favourite, no watches), so clearing a
 	// watchlist entry does not leave a dangling row behind.
@@ -82,6 +94,7 @@ type Querier interface {
 	// as for ListMarkableEpisodes.
 	DeleteEpisodeWatches(ctx context.Context, arg DeleteEpisodeWatchesParams) (int64, error)
 	DeleteExpiredSessions(ctx context.Context, arg DeleteExpiredSessionsParams) (int64, error)
+	DeleteImportedWatches(ctx context.Context, arg DeleteImportedWatchesParams) (int64, error)
 	// One kind of a title's evidence, or all of it (kind '').
 	DeleteMappingEvidence(ctx context.Context, arg DeleteMappingEvidenceParams) (int64, error)
 	// Netflix "What We Watched" engagement reports.
@@ -111,6 +124,7 @@ type Querier interface {
 	DeleteTrackedSeason(ctx context.Context, arg DeleteTrackedSeasonParams) error
 	DeleteUser(ctx context.Context, username string) (int64, error)
 	DeleteUserDevice(ctx context.Context, arg DeleteUserDeviceParams) (int64, error)
+	DeleteUserImport(ctx context.Context, arg DeleteUserImportParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, username string) (int64, error)
 	DeleteUserSessionsExcept(ctx context.Context, arg DeleteUserSessionsExceptParams) (int64, error)
 	DeleteUserTag(ctx context.Context, arg DeleteUserTagParams) (int64, error)
@@ -166,9 +180,14 @@ type Querier interface {
 	GetActiveSessionDigest(ctx context.Context, arg GetActiveSessionDigestParams) (string, error)
 	// Operations: settings lookups, chart freshness.
 	GetAppSetting(ctx context.Context, key string) (string, error)
+	GetBarcodeLookup(ctx context.Context, arg GetBarcodeLookupParams) (DiscBarcodeLookup, error)
 	GetCinemaSubscription(ctx context.Context, arg GetCinemaSubscriptionParams) (CinemaSubscription, error)
 	// File imports: Netflix official Top 10 and IMDb ratings.
 	GetDataImport(ctx context.Context, source string) (DataImport, error)
+	GetDiscCopy(ctx context.Context, arg GetDiscCopyParams) (DiscCopy, error)
+	GetDiscRelease(ctx context.Context, id int64) (DiscRelease, error)
+	GetDiscReleaseByBarcode(ctx context.Context, barcode sql.NullString) (DiscRelease, error)
+	GetDiscReleaseImage(ctx context.Context, arg GetDiscReleaseImageParams) (DiscReleaseImage, error)
 	GetIMDbRating(ctx context.Context, imdbID string) (ImdbRating, error)
 	// The most recent chart a title appeared on (matching searches that
 	// country and service first).
@@ -192,6 +211,8 @@ type Querier interface {
 	GetTrackedEpisode(ctx context.Context, arg GetTrackedEpisodeParams) (TrackedEpisode, error)
 	GetTrackedEpisodesFetchedAt(ctx context.Context, tmdbID string) (string, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
+	GetUserImport(ctx context.Context, arg GetUserImportParams) (UserImport, error)
+	GetUserImportItem(ctx context.Context, arg GetUserImportItemParams) (UserImportItem, error)
 	GetUserPreferences(ctx context.Context, userID int64) (GetUserPreferencesRow, error)
 	GetUserTitle(ctx context.Context, arg GetUserTitleParams) (GetUserTitleRow, error)
 	GetVenue(ctx context.Context, id int64) (Venue, error)
@@ -206,6 +227,12 @@ type Querier interface {
 	InsertCinemaSubscriptionPeriod(ctx context.Context, arg InsertCinemaSubscriptionPeriodParams) error
 	InsertCinemaSubscriptionPrice(ctx context.Context, arg InsertCinemaSubscriptionPriceParams) error
 	InsertCredit(ctx context.Context, arg InsertCreditParams) error
+	InsertDiscCopy(ctx context.Context, arg InsertDiscCopyParams) (int64, error)
+	// Physical media: shared disc releases (with box-set parts, titles and
+	// images), each user's copies, and the barcode lookup cache.
+	InsertDiscRelease(ctx context.Context, arg InsertDiscReleaseParams) (int64, error)
+	InsertDiscReleaseImage(ctx context.Context, arg InsertDiscReleaseImageParams) (DiscReleaseImage, error)
+	InsertDiscReleaseTitle(ctx context.Context, arg InsertDiscReleaseTitleParams) error
 	InsertEpisode(ctx context.Context, arg InsertEpisodeParams) error
 	InsertMappingEvent(ctx context.Context, arg InsertMappingEventParams) error
 	InsertNetflixEngagement(ctx context.Context, arg InsertNetflixEngagementParams) error
@@ -218,6 +245,7 @@ type Querier interface {
 	InsertTitleLink(ctx context.Context, arg InsertTitleLinkParams) error
 	InsertTitleRatingSource(ctx context.Context, arg InsertTitleRatingSourceParams) error
 	InsertTmdbWatchProvider(ctx context.Context, arg InsertTmdbWatchProviderParams) error
+	InsertUserImportItem(ctx context.Context, arg InsertUserImportItemParams) error
 	InsertWatchEntry(ctx context.Context, arg InsertWatchEntryParams) (int64, error)
 	InsertWatchProviderEvent(ctx context.Context, arg InsertWatchProviderEventParams) error
 	// A delivery recorded as it happens (test pings).
@@ -264,6 +292,7 @@ type Querier interface {
 	ListCinemaSubscriptionPrices(ctx context.Context, userID int64) ([]CinemaSubscriptionPrice, error)
 	// Cinema subscriptions of a user and the watches they covered.
 	ListCinemaSubscriptions(ctx context.Context, userID int64) ([]CinemaSubscription, error)
+	ListCommittedUserImportItems(ctx context.Context, importID int64) ([]UserImportItem, error)
 	// Netflix titles mapped only by a Wikidata label match (source
 	// wikidata_netflix) to a TMDB title whose Netflix ID (not one copied from a
 	// Netflix title) differs from the title's own: the label matched another
@@ -283,6 +312,21 @@ type Querier interface {
 	// analytics.
 	ListCreditsOfType(ctx context.Context, creditType string) ([]ListCreditsOfTypeRow, error)
 	ListDataImports(ctx context.Context) ([]DataImport, error)
+	// ListDiscCopies is a user's shelf. tmdb_kind/tmdb_id keep the copies whose
+	// release (or one of its parts) holds that title; q matches the printed
+	// title, edition, studio or retailer.
+	ListDiscCopies(ctx context.Context, arg ListDiscCopiesParams) ([]ListDiscCopiesRow, error)
+	ListDiscCopiesOfRelease(ctx context.Context, arg ListDiscCopiesOfReleaseParams) ([]DiscCopy, error)
+	// ListDiscImageShasForTree is every image file of a release and its parts,
+	// so deleting a part can remove files nothing else uses.
+	ListDiscImageShasForTree(ctx context.Context, releaseID int64) ([]string, error)
+	ListDiscReleaseImages(ctx context.Context, releaseIds []int64) ([]DiscReleaseImage, error)
+	ListDiscReleaseParts(ctx context.Context, parentID sql.NullInt64) ([]DiscRelease, error)
+	// ListDiscReleaseTitles is what is on several releases, with the display
+	// snapshot of each title (the charted row first, else the tracking cache).
+	ListDiscReleaseTitles(ctx context.Context, releaseIds []int64) ([]ListDiscReleaseTitlesRow, error)
+	// ListDiscReleasesByParents is the parts of several box sets at once.
+	ListDiscReleasesByParents(ctx context.Context, parentIds []sql.NullInt64) ([]DiscRelease, error)
 	// Tickets old enough for their receipt (a datetime modifier such as '-15 minutes').
 	ListDuePushTickets(ctx context.Context, arg ListDuePushTicketsParams) ([]ListDuePushTicketsRow, error)
 	// Pending deliveries whose next attempt is due, of enabled webhooks.
@@ -474,6 +518,9 @@ type Querier interface {
 	ListTitleRatingHistory(ctx context.Context, arg ListTitleRatingHistoryParams) ([]ListTitleRatingHistoryRow, error)
 	ListTitleRatingSources(ctx context.Context, arg ListTitleRatingSourcesParams) ([]ListTitleRatingSourcesRow, error)
 	ListTitleWatchProviderEvents(ctx context.Context, arg ListTitleWatchProviderEventsParams) ([]ListTitleWatchProviderEventsRow, error)
+	// ListTitleWatchTimes is every watch a user has of one title, for spotting
+	// duplicates before an import writes more.
+	ListTitleWatchTimes(ctx context.Context, arg ListTitleWatchTimesParams) ([]ListTitleWatchTimesRow, error)
 	// sort: name_asc | name_desc | updated_desc | updated_asc | last_ranked_desc |
 	// last_ranked_asc | rankings_desc | rankings_asc | id_asc; anything else is
 	// newest first.
@@ -540,6 +587,12 @@ type Querier interface {
 	// library, except the ones on hold, dropped or not wanted.
 	ListUpcomingEpisodes(ctx context.Context, arg ListUpcomingEpisodesParams) ([]ListUpcomingEpisodesRow, error)
 	ListUserDevices(ctx context.Context, userID int64) ([]ListUserDevicesRow, error)
+	// ListUserImportItems is the review list: an import's items with what is
+	// known about the TMDB title each was matched to.
+	ListUserImportItems(ctx context.Context, arg ListUserImportItemsParams) ([]ListUserImportItemsRow, error)
+	ListUserImportItemsToCommit(ctx context.Context, arg ListUserImportItemsToCommitParams) ([]UserImportItem, error)
+	ListUserImportItemsToMatch(ctx context.Context, arg ListUserImportItemsToMatchParams) ([]UserImportItem, error)
+	ListUserImports(ctx context.Context, userID int64) ([]UserImport, error)
 	ListUserTags(ctx context.Context, userID int64) ([]ListUserTagsRow, error)
 	// ListUserTitles lists a user's tracked titles with their display metadata.
 	// An empty status lists every tracked title. The sort key is passed through a
@@ -581,17 +634,26 @@ type Querier interface {
 	MarkTmdbOffersFetched(ctx context.Context, arg MarkTmdbOffersFetchedParams) error
 	// Records a Wikidata lookup (found or not), creating the row if needed.
 	MarkTmdbTitleWikidataFetched(ctx context.Context, arg MarkTmdbTitleWikidataFetchedParams) error
+	MarkUserImportCommitted(ctx context.Context, id int64) error
+	MarkUserImportUndone(ctx context.Context, id int64) error
 	// A failed attempt: retried after the backoff (a datetime modifier such as
 	// '+5 minutes'), or failed for good when final = 1.
 	MarkWebhookAttemptFailed(ctx context.Context, arg MarkWebhookAttemptFailedParams) error
 	MarkWebhookDelivered(ctx context.Context, arg MarkWebhookDeliveredParams) error
 	MaxChartChangedAt(ctx context.Context) (MaxChartChangedAtRow, error)
+	MaxDiscImagePosition(ctx context.Context, arg MaxDiscImagePositionParams) (int64, error)
 	MaxOfferEventID(ctx context.Context) (int64, error)
 	MoveVenueAliases(ctx context.Context, arg MoveVenueAliasesParams) (int64, error)
 	MoveVenueScreens(ctx context.Context, arg MoveVenueScreensParams) (int64, error)
 	// Merging one cinema into another (the console's "Merge into..."): every row
 	// that points at the merged venue moves to the one kept.
 	MoveVenueWatches(ctx context.Context, arg MoveVenueWatchesParams) (int64, error)
+	// MoviesWatchedAt returns the movies a user has a watch of at exactly one of
+	// these instants: an import from an app that copied another app's history
+	// carries the same timestamps, which identifies a title its name cannot.
+	MoviesWatchedAt(ctx context.Context, arg MoviesWatchedAtParams) ([]string, error)
+	// NextActiveUserImport is the oldest import with background work left.
+	NextActiveUserImport(ctx context.Context) (UserImport, error)
 	NextWatchlistPosition(ctx context.Context, userID int64) (int64, error)
 	// People left without any credit (their titles' credits were replaced or
 	// the titles deleted).
@@ -644,6 +706,7 @@ type Querier interface {
 	// a FROM-clause subquery with the row being updated.
 	RollupUserTitle(ctx context.Context, arg RollupUserTitleParams) error
 	RotateAPIKey(ctx context.Context, arg RotateAPIKeyParams) (ApiKey, error)
+	SaveBarcodeLookup(ctx context.Context, arg SaveBarcodeLookupParams) error
 	SaveDataImport(ctx context.Context, arg SaveDataImportParams) error
 	SaveFlixPatrolDetails(ctx context.Context, arg SaveFlixPatrolDetailsParams) error
 	SavePageview(ctx context.Context, arg SavePageviewParams) error
@@ -651,6 +714,8 @@ type Querier interface {
 	// distributors is a JSON list (NULL when Wikidata has none).
 	SaveTmdbDistributors(ctx context.Context, arg SaveTmdbDistributorsParams) error
 	SaveTmdbEnwiki(ctx context.Context, arg SaveTmdbEnwikiParams) error
+	SaveUserImportItemCommit(ctx context.Context, arg SaveUserImportItemCommitParams) error
+	SaveUserImportItemMatch(ctx context.Context, arg SaveUserImportItemMatchParams) error
 	SaveUserPreferences(ctx context.Context, arg SaveUserPreferencesParams) error
 	SaveWatchFormatLogo(ctx context.Context, arg SaveWatchFormatLogoParams) error
 	// Changes whenever a name, a mapping or a chart changes, so the index is
@@ -667,6 +732,7 @@ type Querier interface {
 	SetNetflixTitleNetflixID(ctx context.Context, arg SetNetflixTitleNetflixIDParams) error
 	SetTrackedEpisodesFetched(ctx context.Context, tmdbID string) error
 	SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) (int64, error)
+	SetUserImportStatus(ctx context.Context, arg SetUserImportStatusParams) error
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) (int64, error)
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) (int64, error)
 	// SetUserTitleState creates or updates the parts of a user's title state that
@@ -727,6 +793,8 @@ type Querier interface {
 	// cost, for the savings analysis: covered ones and paid ones (paid tickets
 	// price the covered ones that have no face value, and feed the what-if).
 	SubscriptionCinemaWatches(ctx context.Context, userID int64) ([]SubscriptionCinemaWatchesRow, error)
+	// SumUserImportResults adds up what the import wrote.
+	SumUserImportResults(ctx context.Context, importID int64) (SumUserImportResultsRow, error)
 	// SyncRewatchFlags sets is_rewatch from watch_number for one title's watches.
 	SyncRewatchFlags(ctx context.Context, arg SyncRewatchFlagsParams) error
 	TitleMappingStats(ctx context.Context) (TitleMappingStatsRow, error)
@@ -738,6 +806,9 @@ type Querier interface {
 	// way through, most recently aired first. Specials are left out.
 	UpNext(ctx context.Context, arg UpNextParams) ([]UpNextRow, error)
 	UpdateCinemaSubscription(ctx context.Context, arg UpdateCinemaSubscriptionParams) (int64, error)
+	UpdateDiscCopy(ctx context.Context, arg UpdateDiscCopyParams) (int64, error)
+	UpdateDiscRelease(ctx context.Context, arg UpdateDiscReleaseParams) (int64, error)
+	UpdateDiscReleaseImage(ctx context.Context, arg UpdateDiscReleaseImageParams) (int64, error)
 	UpdateNetflixSeasonMapping(ctx context.Context, arg UpdateNetflixSeasonMappingParams) error
 	UpdateRankingSeason(ctx context.Context, arg UpdateRankingSeasonParams) error
 	UpdateTaskSchedule(ctx context.Context, arg UpdateTaskScheduleParams) (TaskSchedule, error)

@@ -241,6 +241,13 @@
 
   <CinemaPlans {onconfirm} />
 
+  <section class="panel pad" aria-labelledby="s-import">
+    <div class="row first">
+      <div class="lab"><b id="s-import">Import your history</b><span class="hint">Bring watches, watchlists and shows in from TV Time or Suite. You review the matches first, and anything you’ve already logged is skipped.</span></div>
+      <div class="ctl"><a class="btn-secondary sm" href="#/import">Import…</a></div>
+    </div>
+  </section>
+
   <section class="panel pad" aria-labelledby="s-look">
     <div class="sh"><h2 id="s-look">Appearance</h2><span class="hint">This device only</span></div>
     <div class="row">
@@ -317,6 +324,7 @@
   .grid { display: grid; gap: 0; }
   .row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: 8px 24px; align-items: center; padding: 14px 0; border-top: 1px solid var(--border-subtle); }
   .grid .row:first-child { border-top: 0; padding-top: 4px; }
+  .row.first { border-top: 0; padding: 0; }
   .lab { display: grid; gap: 3px; }
   .lab b { font-size: 15px; }
   .ctl { display: grid; gap: 8px; justify-items: start; }

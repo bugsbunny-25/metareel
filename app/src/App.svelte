@@ -31,6 +31,9 @@
   import Discover from './pages/Discover.svelte'
   import Show from './pages/Show.svelte'
   import Person from './pages/Person.svelte'
+  import Import from './pages/Import.svelte'
+  import Collection from './pages/Collection.svelte'
+  import Disc from './pages/Disc.svelte'
 
   let logTarget = $state(null)
   let confirmRequest = $state(null)
@@ -70,18 +73,19 @@
   const personMatch = $derived(route.path.match(/^\/person\/(\d+)$/))
   const episodeMatch = $derived(route.path.match(/^\/episode\/(\d+)\/(\d+)\/(\d+)$/))
   const watchMatch = $derived(route.path.match(/^\/watch\/(\d+)$/))
-  const PAGES = { '/': 'home', '/charts': 'charts', '/discover': 'discover', '/tv': 'tv', '/movies': 'movies', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/you': 'you', '/you/stats': 'statsDetailed', '/stats': 'stats', '/settings': 'settings' }
-  const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : personMatch ? 'person' : episodeMatch ? 'episode' : watchMatch ? 'watch' : 'missing'))
+  const discMatch = $derived(route.path.match(/^\/collection\/(\d+)$/))
+  const PAGES = { '/': 'home', '/charts': 'charts', '/discover': 'discover', '/tv': 'tv', '/movies': 'movies', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/you': 'you', '/you/stats': 'statsDetailed', '/stats': 'stats', '/settings': 'settings', '/import': 'import', '/collection': 'collection' }
+  const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : personMatch ? 'person' : episodeMatch ? 'episode' : watchMatch ? 'watch' : discMatch ? 'disc' : 'missing'))
   // Up next became TV and Movies (as on mobile); old links still land on the right one.
   $effect(() => {
     if (route.path === '/up-next') navigate(route.query.tab === 'movies' ? '/movies' : '/tv')
   })
   // Nav groups: the pages each tab owns.
-  const TAB_OF = { show: 'tv', episode: 'tv', watch: 'diary', statsDetailed: 'you', stats: 'you', settings: 'you', library: 'you', watchlist: 'movies' }
+  const TAB_OF = { show: 'tv', episode: 'tv', watch: 'diary', statsDetailed: 'you', stats: 'you', settings: 'you', library: 'you', watchlist: 'movies', disc: 'collection' }
   const tab = $derived(TAB_OF[page] ?? page)
 
   $effect(() => {
-    const NAMES = { charts: 'Top 10', title: 'Title', tv: 'TV', movies: 'Movies', show: 'Episodes', episode: 'Episode', watch: 'Watch', person: 'Person', discover: 'Discover', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', you: 'You', statsDetailed: 'Detailed stats', stats: 'Year in review', settings: 'Settings', missing: 'Not found' }
+    const NAMES = { charts: 'Top 10', title: 'Title', tv: 'TV', movies: 'Movies', show: 'Episodes', episode: 'Episode', watch: 'Watch', person: 'Person', discover: 'Discover', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', you: 'You', statsDetailed: 'Detailed stats', stats: 'Year in review', settings: 'Settings', import: 'Import', collection: 'Collection', disc: 'Disc', missing: 'Not found' }
     document.title = NAMES[page] ? `${NAMES[page]} · metareel` : 'metareel'
   })
   // A new page starts at the top (the hash router would otherwise keep the last page's scroll).
@@ -119,6 +123,7 @@
       <a href="#/tv" aria-current={tab === 'tv' ? 'page' : undefined}>TV</a>
       <a href="#/movies" aria-current={tab === 'movies' ? 'page' : undefined}>Movies</a>
       <a href="#/diary" aria-current={tab === 'diary' ? 'page' : undefined}>Diary</a>
+      <a href="#/collection" aria-current={tab === 'collection' ? 'page' : undefined}>Collection</a>
       <a href="#/you" aria-current={tab === 'you' ? 'page' : undefined}>You</a>
     </nav>
     <div class="tools">
@@ -134,6 +139,7 @@
           <p class="who">Signed in as <b>{session.user.username}</b></p>
           <a href="#/you" onclick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>You</a>
           <a href="#/settings" onclick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>Settings</a>
+          <a href="#/import" onclick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>Import history</a>
           {#if session.user.role === 'admin'}<a href="/admin/">Admin console</a>{/if}
           <button type="button" onclick={signOut}>Sign out</button>
         </div>
@@ -156,6 +162,12 @@
       <Discover {onlog} />
     {:else if page === 'settings'}
       <Settings {onconfirm} />
+    {:else if page === 'import'}
+      <Import {onconfirm} />
+    {:else if page === 'collection'}
+      <Collection />
+    {:else if page === 'disc'}
+      {#key route.path}<Disc id={discMatch[1]} {onconfirm} />{/key}
     {:else if page === 'tv'}
       <TV {onlog} />
     {:else if page === 'movies'}
