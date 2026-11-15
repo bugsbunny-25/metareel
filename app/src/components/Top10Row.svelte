@@ -6,6 +6,7 @@
   import Poster from './Poster.svelte'
   import Icon from './Icon.svelte'
   import Spark from './Spark.svelte'
+  import Numeral from './Numeral.svelte'
 
   let { entry, onlog, onwatchlist } = $props()
 
@@ -19,7 +20,7 @@
 </script>
 
 <tr class:mine>
-  <td class="rank num">{r.rank}</td>
+  <td class="rank"><Numeral value={r.rank} {mine} weight={3.3} label="Number {r.rank}" /></td>
   <td class="move"><span class="chg {r.move.type}" aria-hidden="true">{change}</span><span class="sr">{moveLabel(r.move, r.prev)}</span></td>
   <td class="title">
     <svelte:element this={r.href ? 'a' : 'span'} href={r.href} class="link">
@@ -76,8 +77,8 @@
   .right { text-align: right; }
 
   /* The Home rail's numeral: heavy, outlined, filled with the canvas. */
-  .rank { width: 58px; padding-right: 4px; text-align: right; color: var(--bg-canvas); -webkit-text-stroke: 1.5px var(--border-strong); font: 800 46px/1 var(--font-sans); letter-spacing: -0.06em; }
-  tr.mine .rank { -webkit-text-stroke-color: var(--accent-yours); }
+  .rank { width: 58px; padding-right: 4px; font-size: 46px; }
+  .rank :global(.numeral) { margin-left: auto; }
   .move { width: 64px; }
   .move .chg { font-size: 14.5px; }
 

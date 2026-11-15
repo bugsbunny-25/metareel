@@ -138,7 +138,7 @@ function StepButton({ label, icon, disabled, onPress }: { label: string; icon: '
 
 /** Rank, the move since the day before (▲ ▼ New), poster, title and days in the Top 10. */
 function ChartRow({ entry: e }: { entry: Entry }) {
-  const { colors, fonts } = useTheme();
+  const { colors } = useTheme();
   const m = movement(e);
   const change = changeText(m);
   const tone = change.startsWith('▲') ? colors.deltaUp : change.startsWith('▼') ? colors.deltaDown : change === 'New' ? colors.deltaDebut : colors.textMuted;
@@ -152,7 +152,7 @@ function ChartRow({ entry: e }: { entry: Entry }) {
     >
       {/* Tonight's numeral: heavy, outlined, filled with the canvas. */}
       <View style={styles.rank}>
-        <Numeral value={e.rank} size={46} fill={colors.bgCanvas} stroke={colors.borderStrong} font={fonts.numeral} strokeWidth={1.5} />
+        <Numeral value={e.rank} size={46} strokeWidth={1.5} />
       </View>
       <Text variant="label" num style={[styles.change, { color: tone }]}>
         {change}

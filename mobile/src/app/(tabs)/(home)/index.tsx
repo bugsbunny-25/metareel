@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import type { components } from '@/api/schema';
 import { Button } from '@/components/Button';
@@ -16,7 +16,7 @@ import { Panel, Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { TitleRow } from '@/components/TitleRow';
 import { useDiary, useInCinemas, usePreferences, useShowQueue, useTop10, useTrending } from '@/data/queries';
-import { changeText, type LibraryState, libraryMark, movement, providerName, setScope, useChartReference, useLibrary, useScope } from '@/data/scope';
+import { changeText, type LibraryState, libraryMark, movement, providerName, useLibrary, useScope } from '@/data/scope';
 import { useWindowClass } from '@/layout/window-class';
 import { markEpisode, openEpisode, openLog, openTitle } from '@/lib/actions';
 import { episodeCode, starText, tmdbKind } from '@/lib/format';
@@ -227,7 +227,7 @@ function ChartRail({ query, yours, empty }: { query: ReturnType<typeof useTop10>
  * orange badge on the poster.
  */
 function ChartTile({ item, state }: { item: ChartItem; state?: LibraryState }) {
-  const { colors, fonts } = useTheme();
+  const { colors } = useTheme();
   const wide = useWindowClass() !== 'compact';
   const mark = libraryMark(state);
   const m = movement(item);
@@ -241,7 +241,7 @@ function ChartTile({ item, state }: { item: ChartItem; state?: LibraryState }) {
       }, ${changeText(m)}`}
       style={styles.tile}
     >
-      <Numeral value={item.rank} size={wide ? 100 : 76} fill={colors.bgCanvas} stroke={colors.borderStrong} font={fonts.numeral} overlap={14} />
+      <Numeral value={item.rank} size={wide ? 100 : 76} overlap={14} />
       <View style={styles.tilePoster}>
         <Poster path={item.poster_path} title={item.name} width={92} />
         {mark ? (

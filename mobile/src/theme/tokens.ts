@@ -18,7 +18,13 @@ export const tokens = {
     "deltaDebut": "#8eb4f0",
     "statusStale": "#cdae76",
     "posterHairline": "rgba(255, 255, 255, 0.08)",
-    "focusRing": "#f5f5f7"
+    "focusRing": "#f5f5f7",
+    "numeralTop": "#f4f4f6",
+    "numeralMid": "#9a9aa2",
+    "numeralBottom": "#4a4a50",
+    "numeralYoursTop": "#ffc9a8",
+    "numeralYoursMid": "#ff8a4c",
+    "numeralYoursBottom": "#a8400f"
   },
   "light": {
     "bgCanvas": "#f2f2f4",
@@ -36,7 +42,13 @@ export const tokens = {
     "deltaDebut": "#1f4e8c",
     "statusStale": "#7a5c24",
     "posterHairline": "rgba(0, 0, 0, 0.1)",
-    "focusRing": "#1d1d1f"
+    "focusRing": "#1d1d1f",
+    "numeralTop": "#3a3a40",
+    "numeralMid": "#77777f",
+    "numeralBottom": "#c4c4ca",
+    "numeralYoursTop": "#7a2606",
+    "numeralYoursMid": "#b83c0a",
+    "numeralYoursBottom": "#eea07a"
   },
   "radius": {
     "panel": 18,

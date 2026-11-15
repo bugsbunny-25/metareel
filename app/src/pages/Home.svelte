@@ -16,6 +16,7 @@
   import { toast } from '../lib/toast.svelte.js'
   import { markWatched, epCode } from '../lib/shows.js'
   import TitleRail from '../components/TitleRail.svelte'
+  import Numeral from '../components/Numeral.svelte'
 
   let { onlog } = $props()
 
@@ -318,7 +319,7 @@
       <ol class="top-rail">
         {#each rail as e (e.item.slug)}
           <li>
-            <span class="big num" aria-hidden="true">{e.item.rank}</span>
+            <Numeral value={e.item.rank} class="big" />
             <a class="tile" href={titleHref(e.item.kind, e.item.tmdb_id)}>
               <Poster path={e.poster_path} seed={e.item.tmdb_id ?? e.item.slug} title={e.item.name} width={92} radius={8} size="w185" />
               {#if e.state?.status === 'watchlist'}<span class="mark" aria-hidden="true"><Icon name="bookmark-fill" size={12} /></span>
@@ -455,7 +456,7 @@
   .top-rail li { position: relative; display: flex; align-items: flex-end; flex: none; }
   /* The numeral's font box is taller than its 0.78 line; clipping to the line (digits sit inside
      it) keeps the rail free of vertical overflow, so it only ever scrolls sideways. */
-  .big { height: calc(0.78em + 2px); padding-bottom: 2px; overflow: hidden; margin-right: -14px; color: var(--bg-canvas); -webkit-text-stroke: 2px var(--border-strong); font: 800 100px/0.78 var(--font-sans); letter-spacing: -0.06em; }
+  :global(.numeral.big) { margin-right: -14px; font-size: 100px; }
   .tile { position: relative; z-index: 1; display: block; border-radius: 8px; transition: transform 0.15s ease; }
   .tile:hover { transform: translateY(-3px); }
   .mark { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-yours); color: var(--bg-canvas); }
@@ -488,7 +489,7 @@
     .kpis { grid-template-columns: 1fr 1fr; gap: 8px; }
     .k-row b { font-size: 26px; }
     .k-row svg { display: none; }
-    .big { font-size: 76px; }
+    :global(.numeral.big) { font-size: 76px; }
     .panel, .panel.wide { overflow-x: auto; }
     /* Phones: the columns that matter most stay; the title gets what's left. */
     .tbl .opt { display: none; }
