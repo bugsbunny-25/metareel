@@ -18,6 +18,8 @@ import { useOutbox } from '@/offline';
 import { queryClient } from '@/query/client';
 import { useTheme } from '@/theme';
 
+import { Top10Graph } from '@/components/Top10Graph';
+
 import { About, Charting, Hero, Scores, WhereToWatch } from './title-parts';
 
 /**
@@ -86,7 +88,7 @@ export function ShowView({
       {show.isPending ? <ActivityIndicator color={colors.textMuted} /> : null}
       {show.data ? (
         <>
-          <Hero poster={poster} title={title} tint={mine.data?.title?.poster_color} meta={heroMeta}>
+          <Hero kind="tv" tmdbId={id} poster={poster} title={title} tint={mine.data?.title?.poster_color} meta={heroMeta}>
             <Text variant="muted" num>
               {show.data.progress?.watched_episodes ?? 0} of {show.data.progress?.aired_episodes ?? 0} aired episodes
             </Text>
@@ -106,6 +108,7 @@ export function ShowView({
             </View>
           </Hero>
           <Scores overview={overview.data} />
+          <Top10Graph kind="tv" id={id} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             {seasons.map((s) => (
               <Chip

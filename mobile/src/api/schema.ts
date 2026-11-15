@@ -916,6 +916,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/titles/trending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What is trending on TMDB today
+         * @description TMDB's trending list for the day, live (nothing is stored) and cached in memory for 30 minutes; when TMDB fails after that the last list is served. People are left out of `kind=all`. 502 without a TMDB key or when TMDB fails with nothing cached.
+         */
+        get: operations["getTrendingTitles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/titles/in-cinemas/{country}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Films in cinemas in a country
+         * @description TMDB's now playing for the country (ISO 3166-1 region), first page, live and cached in memory for 30 minutes like trending.
+         */
+        get: operations["getInCinemas"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/titles/tmdb/{kind}/{id}/releases": {
         parameters: {
             query?: never;
@@ -2352,6 +2392,22 @@ export interface components {
             /** @description Average over the last eight weeks */
             pace_minutes_per_week?: number;
         };
+        TitleListResponse: {
+            items: {
+                /** @enum {string} */
+                tmdb_kind: "movie" | "tv";
+                tmdb_id: string;
+                title: string;
+                poster_path?: string;
+                backdrop_path?: string;
+                /** @description YYYY-MM-DD; first air date for TV */
+                release_date?: string;
+                vote_average: number;
+                vote_count: number;
+            }[];
+            /** Format: date-time */
+            fetched_at: string;
+        };
         PersonStat: {
             person_id?: number;
             name?: string;
@@ -2940,6 +2996,8 @@ export interface components {
             stale_days?: number;
             /** @description TMDB provider IDs of the streaming services the user pays for (the rotation's subscribed) */
             services?: number[];
+            /** @description ISO 3166-1 codes in the user's order (stored upper case, duplicates dropped): a title page charts its Top 10 run in the first of these countries it has charted in. */
+            countries?: string[];
             /** @description Push a notification to the user's registered devices when a title on their watchlist arrives on one of `services` (any streaming service when none are listed) in `country`, included in a subscription, free or with ads. Needs `country` and a device (PUT /api/v1/me/devices); off unless true. */
             notify_watchlist_arrivals?: boolean;
         };
@@ -6455,6 +6513,70 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
             /** @description TMDB failed for a person metareel has no credits for */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getTrendingTitles: {
+        parameters: {
+            query?: {
+                kind?: "all" | "movie" | "tv";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trending titles, most trending first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description TMDB unavailable */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getInCinemas: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                country: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Films now playing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description TMDB unavailable */
             502: {
                 headers: {
                     [name: string]: unknown;

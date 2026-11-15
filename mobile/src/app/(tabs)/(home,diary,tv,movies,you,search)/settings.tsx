@@ -6,6 +6,7 @@ import { Linking, Platform, Pressable, StyleSheet, Switch, View } from 'react-na
 import { endpoint, setHomeURL, signOut, useSignedIn } from '@/auth/session';
 import { normalizeHomeURL, URLError } from '@/auth/urls';
 import { Button } from '@/components/Button';
+import { CountryOrder } from '@/components/CountryOrder';
 import { Field } from '@/components/Field';
 import { DetailScreen, Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
@@ -68,6 +69,10 @@ export default function Settings() {
         <Text variant="muted">{homeStatus}</Text>
         {homeError ? <Text style={{ color: colors.deltaDown }}>{homeError}</Text> : null}
         <Button kind="quiet" title="Save" onPress={saveHome} />
+      </Panel>
+
+      <Panel title="Country order">
+        <CountryOrder />
       </Panel>
 
       <Panel title="Cinema subscriptions">

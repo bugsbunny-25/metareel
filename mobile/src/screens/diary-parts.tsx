@@ -32,7 +32,7 @@ export function RecentRow({ title, watches, width, onOpen }: { title: string; wa
             accessibilityLabel={`${x.title}${x.subject_kind === 'episode' ? `, ${episodeCode(x.season_number, x.episode_number)}` : ''}${x.rating ? `, ${x.rating / 2} stars` : ''}`}
             style={({ pressed }) => ({ width: w, gap: 4, opacity: pressed ? 0.8 : 1 })}
           >
-            <Poster path={x.poster_path} title={x.title} width={w} />
+            <Poster path={x.poster_path} title={x.title} width={w} kind={x.tmdb_kind} tmdbId={x.tmdb_id} />
             <Text variant="caption" numberOfLines={1} num style={{ color: x.rating ? colors.accentYours : colors.textMuted }}>
               {x.subject_kind === 'episode' ? `${episodeCode(x.season_number, x.episode_number)}  ` : ''}
               {starText(x.rating)}
@@ -137,7 +137,7 @@ export function TimelineRow({ w, selected, first, onPress }: { w: Watch; selecte
           {day}
         </Text>
       </View>
-      <Poster path={w.poster_path} title={w.title} width={40} />
+      <Poster path={w.poster_path} title={w.title} width={40} kind={w.tmdb_kind} tmdbId={w.tmdb_id} />
       <View style={[styles.rowText, !first && { borderTopColor: colors.borderSubtle, borderTopWidth: StyleSheet.hairlineWidth }]}>
         <Text variant="label" numberOfLines={2} style={{ fontSize: 16, lineHeight: 21 }}>
           {w.title}

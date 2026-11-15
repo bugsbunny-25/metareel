@@ -96,6 +96,8 @@ export function WatchView({ id, embedded }: { id: string; embedded?: boolean }) 
           <TitleRow
             poster={e.poster_path ?? t.data?.title?.poster_path}
             title={e.title ?? t.data?.title?.title ?? ''}
+            kind={e.tmdb_kind}
+            tmdbId={e.tmdb_id}
             subtitle={e.subject_kind === 'episode' ? episodeCode(e.season_number, e.episode_number) : (e.release_date ?? '').slice(0, 4)}
             onPress={() =>
               e.subject_kind === 'episode' && e.season_number != null && e.episode_number != null

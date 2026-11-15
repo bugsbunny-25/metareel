@@ -154,6 +154,8 @@ export default function You() {
                 width={tileW}
                 poster={x.poster_path}
                 title={x.title ?? ''}
+                kind="tv"
+                tmdbId={x.tmdb_id}
                 percent={x.percent ?? 0}
                 onPress={() => openTitle({ kind: 'tv', id: x.tmdb_id ?? '', title: x.title })}
               />
@@ -174,6 +176,8 @@ export default function You() {
                 width={tileW}
                 poster={w.poster_path}
                 title={w.title ?? ''}
+                kind="movie"
+                tmdbId={w.tmdb_id}
                 caption={w.rating ? '★'.repeat(Math.floor(w.rating / 2)) + (w.rating % 2 ? '½' : '') : null}
                 onPress={() => openTitle({ kind: 'movie', id: w.tmdb_id ?? '', title: w.title })}
               />

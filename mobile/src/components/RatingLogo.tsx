@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { Text } from 'react-native';
+import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import { SvgCss } from 'react-native-svg/css';
 
 import { useTheme } from '@/theme';
@@ -28,11 +28,18 @@ export function RatingLogo({ source, rotten, certified, height = 18 }: { source:
     return <SvgCss xml={scheme === 'dark' ? imdbGold : imdbBlack} height={height} width={Math.round(height * 2.41)} accessible={false} />;
   }
   if (source === 'tmdb') {
-    // TMDB's score is marked with a star, not its wordmark.
+    // TMDB's score: a star in TMDB's green-to-blue, drawn (an emoji differs on every system).
     return (
-      <Text accessible={false} style={{ fontSize: Math.round(height * 0.9), lineHeight: height + 2 }}>
-        ⭐
-      </Text>
+      <Svg width={height} height={height} viewBox="0 0 24 24" accessible={false}>
+        <Defs>
+          <LinearGradient id="tmdbStar" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor="#90cea1" />
+            <Stop offset="0.56" stopColor="#3cbec9" />
+            <Stop offset="1" stopColor="#00b3e5" />
+          </LinearGradient>
+        </Defs>
+        <Path fill="url(#tmdbStar)" d="M12 1.8l3.1 6.6 7.2.9-5.3 5 1.4 7.1L12 17.9l-6.4 3.5L7 14.3l-5.3-5 7.2-.9z" />
+      </Svg>
     );
   }
   const src = source === 'rt' ? (certified ? RT.certified : rotten ? RT.rotten : RT.fresh) : rotten ? RT.stale : RT.hot;

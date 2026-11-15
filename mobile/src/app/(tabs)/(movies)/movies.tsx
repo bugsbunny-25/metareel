@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
+import { View } from 'react-native';
 
 import type { components } from '@/api/schema';
 import { Countdown, MediaCard, PosterTile, TickButton } from '@/components/Media';
+import { Chip } from '@/components/Chip';
 import { OutboxBanner } from '@/components/OutboxBanner';
 import { Text } from '@/components/Text';
-import { daysUntil, type Group, hoursText, localDay, moviesSplit } from '@/data/collections';
+import { daysUntil, type FilmSort, type Group, hoursText, localDay, moviesSplit, sortToWatch } from '@/data/collections';
 import { useWatchlist } from '@/data/queries';
 import { CollectionScreen } from '@/layout/CollectionScreen';
 import { useTwoPane } from '@/layout/ListDetail';
@@ -15,6 +17,12 @@ import { TitleView } from '@/screens/TitleView';
 import { useTheme } from '@/theme';
 
 type Film = NonNullable<components['schemas']['TrackedTitleState']>;
+
+const SORTS: [FilmSort, string][] = [
+  ['added', 'Added'],
+  ['latest', 'Latest release'],
+  ['earliest', 'Earliest release'],
+];
 
 const SEGMENTS = [
   { key: 'towatch' as const, label: 'To watch' },
@@ -34,7 +42,11 @@ export default function Movies() {
   const twoPane = useTwoPane();
   const [selected, setSelected] = useState<string | null>(null);
   const today = localDay();
-  const split = useMemo(() => moviesSplit(list.data?.titles ?? [], today), [list.data, today]);
+  const [sort, setSort] = usePersisted<FilmSort>('tabs.movies.sort', 'added', ['added', 'latest', 'earliest']);
+  const split = useMemo(() => {
+    const s = moviesSplit(list.data?.titles ?? [], today);
+    return { ...s, toWatch: sortToWatch(s.toWatch, sort) };
+  }, [list.data, today, sort]);
 
   const groups: Group<Film>[] =
     segment === 'towatch' ? (split.toWatch.length ? [{ key: 'towatch', title: 'Out now', data: split.toWatch }] : []) : split.upcoming;
@@ -71,6 +83,8 @@ export default function Movies() {
             width={width}
             poster={f.poster_path}
             title={f.title ?? ''}
+            kind="movie"
+            tmdbId={f.tmdb_id}
             badge={segment === 'upcoming' ? (days === 1 ? 'Tomorrow' : `${days} days`) : null}
             badgeSide="right"
             caption={segment === 'upcoming' ? releaseText(f.release_date) : null}
@@ -85,7 +99,18 @@ export default function Movies() {
       empty={segment === 'towatch' ? 'No films waiting. Add some to your watchlist from a title page.' : 'No films on your watchlist are still to come.'}
       refreshing={list.isRefetching}
       onRefresh={() => void list.refetch()}
-      banner={<OutboxBanner kinds={['watchlist', 'watch']} />}
+      banner={
+        <>
+          <OutboxBanner kinds={['watchlist', 'watch']} />
+          {segment === 'towatch' && split.toWatch.length > 1 ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }} accessibilityRole="radiogroup" accessibilityLabel="Sort">
+              {SORTS.map(([v, label]) => (
+                <Chip key={v} label={label} selected={sort === v} onPress={() => setSort(v)} />
+              ))}
+            </View>
+          ) : null}
+        </>
+      }
       detail={selected ? <TitleView key={selected} kind="movie" id={selected} embedded /> : null}
       placeholder="Pick a film to see it here."
     />
@@ -113,6 +138,8 @@ function FilmCard({
     <MediaCard
       poster={f.poster_path}
       title={f.title ?? ''}
+      kind="movie"
+      tmdbId={f.tmdb_id}
       selected={selected}
       onPress={() => onOpen(f)}
       accessibilityLabel={f.title}

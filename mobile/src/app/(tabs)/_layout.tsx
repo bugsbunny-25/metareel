@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { TabList, Tabs, TabSlot, TabTrigger, type TabTriggerSlotProps } from 'expo-router/ui';
 import type { PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, View, type ViewProps } from 'react-native';
@@ -34,6 +35,9 @@ export default function TabsLayout() {
               <NavItem rail={rail} label={t.label} icon={t.icon} />
             </TabTrigger>
           ))}
+          {/* On a wide window search sits in the rail with the tabs (as iOS's search
+              tab does), below them; a phone keeps the button beside each title. */}
+          {rail ? <RailSearch /> : null}
         </NavBar>
       </TabList>
       <TabSlot style={{ flex: 1 }} />
@@ -92,7 +96,27 @@ function NavItem({
   );
 }
 
+function RailSearch() {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      onPress={() => router.push('/search')}
+      accessibilityRole="button"
+      accessibilityLabel="Search"
+      style={({ pressed }) => [styles.railItem, styles.railSearch, { opacity: pressed ? 0.7 : 1 }]}
+    >
+      <View style={[styles.pill, { backgroundColor: colors.bgElevated }]}>
+        <Icon name="search" size={22} color={colors.textPrimary} />
+      </View>
+      <Text variant="caption" style={{ color: colors.textMuted, fontSize: 12 }} numberOfLines={1}>
+        Search
+      </Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  railSearch: { marginTop: 12 },
   bar: { paddingTop: 6 },
   barDir: { flexDirection: 'row', alignItems: 'stretch', justifyContent: 'space-around' },
   railDir: { flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start' },

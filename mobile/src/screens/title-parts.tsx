@@ -5,9 +5,11 @@ import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import type { components } from '@/api/schema';
 import { Poster } from '@/components/Poster';
 import { RatingLogo } from '@/components/RatingLogo';
+import { Top10Badge } from '@/components/Top10Badge';
 import { Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { providerName } from '@/data/scope';
+import { useTop10Of } from '@/data/top10now';
 import { useWindowClass } from '@/layout/window-class';
 import { runtimeText, tmdbImage } from '@/lib/format';
 import { useTheme } from '@/theme';
@@ -25,20 +27,33 @@ export function Hero({
   tint,
   meta,
   children,
+  kind,
+  tmdbId,
 }: {
   poster?: string | null;
   title: string;
   tint?: string | null;
   meta: string;
   children?: ReactNode;
+  /** The title, for the Top 10 badge and "No. 2 in films today" when it charts. */
+  kind?: string;
+  tmdbId?: string;
 }) {
   const { colors, radius } = useTheme();
+  const top = useTop10Of(kind, tmdbId);
   const wide = useWindowClass() !== 'compact';
   return (
     <View style={[styles.hero, wide && styles.heroWide, { backgroundColor: colors.bgSurface, borderRadius: radius.hero }]}>
       {tint ? <View style={[StyleSheet.absoluteFill, { backgroundColor: tint, opacity: 0.4, borderRadius: radius.hero }]} /> : null}
       <Poster path={poster} title={title} width={wide ? 180 : 132} />
       <View style={styles.heroText}>
+        {top ? (
+          <View style={styles.top10} accessible accessibilityLabel={`Number ${top.rank} in ${top.category === 'tv_shows' ? 'shows' : 'films'} today on ${providerName(top.provider)}`}>
+            <Top10Badge size={22} />
+            <Text variant="label">No. {top.rank} in {top.category === 'tv_shows' ? 'shows' : 'films'} today</Text>
+            <Text variant="muted">on {providerName(top.provider)}</Text>
+          </View>
+        ) : null}
         <Text variant="display" accessibilityRole="header">
           {title || ' '}
         </Text>
@@ -214,6 +229,7 @@ function Facts({ rows }: { rows: [string, string][] }) {
 }
 
 const styles = StyleSheet.create({
+  top10: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   hero: { flexDirection: 'row', gap: 16, padding: 16, alignItems: 'flex-end', overflow: 'hidden' },
   heroWide: { padding: 24, gap: 24 },
   heroText: { flex: 1, gap: 6 },

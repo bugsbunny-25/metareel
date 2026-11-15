@@ -8,6 +8,7 @@ import {
   moviesSplit,
   nextPerShow,
   recentDistinct,
+  sortToWatch,
   tvToWatch,
   tvUpcoming,
 } from '@/data/collections';
@@ -118,4 +119,12 @@ test('recentDistinct and diaryMonths', () => {
     ['2026-10', 2],
     ['2026-09', 1],
   ]);
+});
+
+test('sortToWatch orders by release date with undated last, or keeps the order added', () => {
+  const f = (id: string, release_date?: string) => ({ tmdb_kind: 'movie', tmdb_id: id, status: 'watchlist', release_date }) as never;
+  const films = [f('a', '2020-05-01'), f('b'), f('c', '2024-01-01'), f('d', '2010-03-03')];
+  expect(sortToWatch(films, 'added').map((x) => x.tmdb_id)).toEqual(['a', 'b', 'c', 'd']);
+  expect(sortToWatch(films, 'latest').map((x) => x.tmdb_id)).toEqual(['c', 'a', 'd', 'b']);
+  expect(sortToWatch(films, 'earliest').map((x) => x.tmdb_id)).toEqual(['d', 'a', 'c', 'b']);
 });

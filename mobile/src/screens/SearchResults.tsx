@@ -72,6 +72,8 @@ export function SearchResults({
         <TitleRow
           poster={r.poster_path}
           title={r.title ?? ''}
+          kind={r.tmdb_kind}
+          tmdbId={r.tmdb_id}
           subtitle={[r.tmdb_kind === 'tv' ? 'Series' : 'Film', year(r.release_date)].filter(Boolean).join(' · ')}
           onPress={() => onPick(r.tmdb_kind ?? 'movie', r.tmdb_id ?? '', r.title, r.poster_path)}
         />

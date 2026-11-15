@@ -587,3 +587,16 @@ Phases 5–7 are independent and can be reordered.
   `services` preference's first entry, or Netflix)?
 - **"Now showing" start**: should picking a showtime later (e.g. from a cinema's
   listings) ever start it automatically? Today the plan only starts it by hand.
+
+**Review changes (2026-11-15):** Tonight gains Trending (TMDB today) and In
+cinemas (TMDB now playing in your country) rows before the Top 10, and "View
+all" under each Top 10 opens a Charts screen (country, service, Movies/Shows,
+any day with a chart, ▲ ▼ movement). Posters of titles in a Top 10 in your
+country today carry a Netflix-style Top 10 badge everywhere but the charts
+(one `/top10/{country}` per country, stored as a plain object because the
+query cache is persisted as JSON); title and show pages say "No. 1 in shows
+today on Prime Video". Settings has a country order; title and show pages
+graph the Top 10 run in the first of those countries the title charted in.
+Movies' To watch sorts by Added, Latest release or Earliest release. On wide
+Android windows Search sits in the rail. TMDB's score is a drawn star in
+TMDB's colours, and Settings' gear is a cog.

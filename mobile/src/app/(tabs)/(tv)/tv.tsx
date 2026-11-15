@@ -110,6 +110,8 @@ export default function TV() {
             width={width}
             poster={i.show.poster_path}
             title={i.show.title ?? ''}
+            kind="tv"
+            tmdbId={i.show.tmdb_id}
             badge={episodeCode(i.show.next_episode?.season_number, i.show.next_episode?.episode_number)}
             percent={i.show.percent ?? 0}
             selected={isShowSel(i.show.tmdb_id)}
@@ -120,6 +122,8 @@ export default function TV() {
             width={width}
             poster={i.ep.poster_path}
             title={i.ep.show_title ?? ''}
+            kind="tv"
+            tmdbId={i.ep.tmdb_id}
             badge={countdownBadge(daysUntil(i.ep.air_date ?? today, today))}
             badgeSide="right"
             caption={episodeCode(i.ep.season_number, i.ep.episode_number)}
@@ -178,6 +182,8 @@ function ShowCard({ show: s, selected, onOpen }: { show: Show; selected: boolean
     <MediaCard
       poster={s.poster_path}
       title={s.title ?? ''}
+      kind="tv"
+      tmdbId={s.tmdb_id}
       selected={selected}
       onPress={onOpen}
       accessibilityLabel={`${s.title}, next ${episodeCode(ep.season_number, ep.episode_number)}`}
@@ -220,6 +226,8 @@ function EpisodeCard({ ep, today, selected, onOpen }: { ep: Episode; today: stri
     <MediaCard
       poster={ep.poster_path}
       title={ep.show_title ?? ''}
+      kind="tv"
+      tmdbId={ep.tmdb_id}
       selected={selected}
       onPress={onOpen}
       accessibilityLabel={`${ep.show_title}, ${episodeCode(ep.season_number, ep.episode_number)}, ${new Date(`${ep.air_date}T12:00:00`).toLocaleDateString()}`}

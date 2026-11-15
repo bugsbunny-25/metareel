@@ -93,8 +93,8 @@ export function isYours(s: { watch_count?: number; favorite?: boolean; status?: 
 
 // Arrow glyphs with the text-presentation selector (U+FE0E) so they take the
 // movement colour instead of drawing as emoji tiles (the web's rows.js).
-export const UP = '⬆︎';
-export const DOWN = '⬇︎';
+export const UP = '▲';
+export const DOWN = '▼';
 
 export type Move = { type: 'up' | 'down' | 'same' | 'debut' | 'reentry'; by: number };
 

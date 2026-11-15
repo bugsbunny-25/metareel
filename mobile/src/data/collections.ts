@@ -145,3 +145,24 @@ export function diaryMonths(watches: Watch[]): Group<Watch>[] {
     monthGroup,
   );
 }
+
+export type FilmSort = 'added' | 'latest' | 'earliest';
+
+/**
+ * To watch in the order picked: as added (the watchlist order moviesSplit
+ * keeps), or by the film's main release date, newest or oldest first.
+ * Undated films go last; ties keep the watchlist order.
+ */
+export function sortToWatch(films: Tracked[], by: FilmSort): Tracked[] {
+  if (by === 'added') return films;
+  const dir = by === 'latest' ? -1 : 1;
+  return films
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => {
+      const x = a.f.release_date;
+      const y = b.f.release_date;
+      if (!x || !y) return !x && !y ? a.i - b.i : !x ? 1 : -1;
+      return x === y ? a.i - b.i : x < y ? -dir : dir;
+    })
+    .map(({ f }) => f);
+}

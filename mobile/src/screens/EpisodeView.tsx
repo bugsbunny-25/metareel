@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 
 import { Button } from '@/components/Button';
 import { Badge } from '@/components/Media';
+import { RatingLogo } from '@/components/RatingLogo';
 import { Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { episodeBadge } from '@/data/collections';
@@ -56,7 +57,6 @@ export function EpisodeView({
     ? [
         e.air_date ? new Date(`${e.air_date}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'Air date TBA',
         runtimeText(e.runtime),
-        e.vote_count ? `⭐ ${e.vote_average?.toFixed(1)}` : '',
       ]
         .filter(Boolean)
         .join(' · ')
@@ -104,6 +104,14 @@ export function EpisodeView({
               <Text variant="muted" num style={{ flexShrink: 1 }}>
                 {meta}
               </Text>
+              {e.vote_count ? (
+                <View style={styles.score} accessible accessibilityLabel={`TMDB ${e.vote_average?.toFixed(1)}`}>
+                  <RatingLogo source="tmdb" height={15} />
+                  <Text variant="label" num>
+                    {e.vote_average?.toFixed(1)}
+                  </Text>
+                </View>
+              ) : null}
             </View>
             {!d.live ? <Text variant="caption">Showing what&apos;s saved; TMDB couldn&apos;t be reached for the rest.</Text> : null}
             <View style={styles.actions}>
@@ -205,6 +213,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   still: { aspectRatio: 16 / 9, overflow: 'hidden', justifyContent: 'flex-end' },
   stillText: { padding: 16, gap: 2 },
+  score: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   eyebrow: { textTransform: 'uppercase', letterSpacing: 1.2 },

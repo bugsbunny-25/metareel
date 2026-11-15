@@ -2,11 +2,13 @@ import { Image } from 'expo-image';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { useTop10Of } from '@/data/top10now';
 import { tmdbImage } from '@/lib/format';
 import { useTheme } from '@/theme';
 
 import { Icon } from './Icon';
 import { Text } from './Text';
+import { Top10Badge } from './Top10Badge';
 
 // The pieces the TV and Movies tabs are built from: an artwork-led card for
 // the list view, a poster tile for the grid, a countdown and a tick.
@@ -15,6 +17,8 @@ import { Text } from './Text';
 export function MediaCard({
   poster,
   title,
+  kind,
+  tmdbId,
   onPress,
   selected,
   right,
@@ -28,8 +32,12 @@ export function MediaCard({
   right?: ReactNode;
   children: ReactNode;
   accessibilityLabel?: string;
+  /** With tmdbId: the Top 10 badge when the title charts today. */
+  kind?: string | null;
+  tmdbId?: string | null;
 }) {
   const { colors, radius } = useTheme();
+  const top = useTop10Of(kind, tmdbId);
   const uri = tmdbImage(poster, 'w185');
   return (
     <Pressable
@@ -55,6 +63,11 @@ export function MediaCard({
             {initials(title)}
           </Text>
         )}
+        {top ? (
+          <View style={styles.top10}>
+            <Top10Badge size={20} />
+          </View>
+        ) : null}
       </View>
       <View style={styles.body}>{children}</View>
       {right ? <View style={styles.right}>{right}</View> : null}
@@ -67,6 +80,8 @@ export function PosterTile({
   poster,
   title,
   width,
+  kind,
+  tmdbId,
   badge,
   badgeSide = 'left',
   percent,
@@ -84,8 +99,12 @@ export function PosterTile({
   caption?: string | null;
   onPress?: () => void;
   selected?: boolean;
+  /** With tmdbId: the Top 10 badge when the title charts today. */
+  kind?: string | null;
+  tmdbId?: string | null;
 }) {
   const { colors } = useTheme();
+  const top = useTop10Of(kind, tmdbId);
   const uri = tmdbImage(poster, width > 120 ? 'w342' : 'w185');
   return (
     <Pressable
@@ -114,6 +133,11 @@ export function PosterTile({
             {title}
           </Text>
         )}
+        {top ? (
+          <View style={styles.top10}>
+            <Top10Badge size={width < 110 ? 22 : 28} />
+          </View>
+        ) : null}
         {badge ? (
           <View style={[styles.badge, badgeSide === 'left' ? { left: 6 } : { right: 6 }]}>
             <Text variant="label" num style={styles.badgeText}>
@@ -209,6 +233,7 @@ const styles = StyleSheet.create({
   body: { flex: 1, paddingVertical: 12, paddingHorizontal: 14, gap: 4, justifyContent: 'center' },
   right: { paddingRight: 14, justifyContent: 'center' },
   tile: { borderRadius: 10, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  top10: { position: 'absolute', top: 5, right: 5 },
   badge: { position: 'absolute', bottom: 6, backgroundColor: 'rgba(11,11,12,0.78)', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
   badgeText: { color: '#f5f5f7', fontSize: 12.5 },
   bar: { height: 4, borderRadius: 2, overflow: 'hidden' },

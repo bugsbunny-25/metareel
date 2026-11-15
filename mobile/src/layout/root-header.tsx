@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { Text } from '@/components/Text';
+import { useWindowClass } from '@/layout/window-class';
 import { useTheme } from '@/theme';
 
 /**
@@ -77,7 +78,9 @@ export const searchAction: RootAction = { label: 'Search', sf: 'magnifyingglass'
  */
 export function RootActions({ actions }: { actions: RootAction[] }) {
   const { colors } = useTheme();
-  if (nativeRootHeader) actions = actions.filter((a) => !a.search);
+  // Search lives with the tabs where they can hold it: iOS's search tab, Android's rail.
+  const rail = useWindowClass() !== 'compact';
+  if (nativeRootHeader || rail) actions = actions.filter((a) => !a.search);
   if (!actions.length) return null;
   if (nativeRootHeader) {
     return (

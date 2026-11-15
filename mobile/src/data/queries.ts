@@ -123,16 +123,49 @@ export function useFormats() {
 }
 
 /** Today's Top 10 movies or shows for a country and service. */
-export function useTop10(country: string, provider: string, category: 'movies' | 'tv-shows' = 'movies') {
+/** One Top 10: the latest, or a past day (date YYYY-MM-DD). */
+export function useTop10(country: string, provider: string, category: 'movies' | 'tv-shows' = 'movies', date?: string) {
   return useQuery({
-    queryKey: ['top10', category, country, provider],
+    queryKey: ['top10', category, country, provider, date ?? ''],
     enabled: !!country && !!provider,
-    queryFn: async ({ signal }) =>
-      unwrap(
+    queryFn: async ({ signal }) => {
+      const params = { path: { country, provider }, query: date ? { date } : {} };
+      return unwrap(
         category === 'movies'
-          ? await api.GET('/api/v1/top10/movies/{country}/{provider}', { params: { path: { country, provider } }, signal })
-          : await api.GET('/api/v1/top10/tv-shows/{country}/{provider}', { params: { path: { country, provider } }, signal }),
-      ),
+          ? await api.GET('/api/v1/top10/movies/{country}/{provider}', { params, signal })
+          : await api.GET('/api/v1/top10/tv-shows/{country}/{provider}', { params, signal }),
+      );
+    },
+  });
+}
+
+/** The days a country and service have charts for, newest first. */
+export function useChartDates(country: string, provider: string) {
+  return useQuery({
+    queryKey: ['chart-dates', country, provider],
+    enabled: !!country && !!provider,
+    staleTime: 30 * 60_000,
+    queryFn: async ({ signal }) =>
+      unwrap(await api.GET('/api/v1/charts/{country}/{provider}/dates', { params: { path: { country, provider }, query: { limit: 366 } }, signal })),
+  });
+}
+
+/** What is trending on TMDB today (the server asks TMDB and keeps it half an hour). */
+export function useTrending() {
+  return useQuery({
+    queryKey: ['trending'],
+    staleTime: 30 * 60_000,
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/titles/trending', { signal })),
+  });
+}
+
+/** Films in cinemas in a country, from TMDB's now playing. */
+export function useInCinemas(country: string) {
+  return useQuery({
+    queryKey: ['in-cinemas', country],
+    enabled: !!country,
+    staleTime: 30 * 60_000,
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/titles/in-cinemas/{country}', { params: { path: { country } }, signal })),
   });
 }
 
@@ -221,5 +254,15 @@ export function useDetailedStats(kind: '' | 'tv' | 'movie') {
     queryKey: ['stats', 'detailed', kind],
     staleTime: 5 * 60_000,
     queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/stats/detailed', { params: { query: { kind } }, signal })),
+  });
+}
+
+/** Every day a title was in a Top 10 (country, service, rank), for its Top 10 graph. */
+export function useTitleRankings(kind: 'movie' | 'tv', id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['title-rankings', kind, id],
+    enabled: enabled && !!id,
+    staleTime: 30 * 60_000,
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/titles/tmdb/{kind}/{id}/rankings', { params: { path: { kind, id } }, signal })),
   });
 }

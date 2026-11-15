@@ -4,15 +4,17 @@ import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } 
 
 import type { components } from '@/api/schema';
 import { Button } from '@/components/Button';
-import { Chip } from '@/components/Chip';
 import { ConnectionNote } from '@/components/ConnectionNote';
 import { Icon } from '@/components/Icon';
 import { OutboxBanner } from '@/components/OutboxBanner';
+import { PosterTile } from '@/components/Media';
 import { Poster } from '@/components/Poster';
+import { RatingLogo } from '@/components/RatingLogo';
+import { ScopePicker } from '@/components/ScopePicker';
 import { Panel, Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { TitleRow } from '@/components/TitleRow';
-import { useDiary, usePreferences, useShowQueue, useTop10 } from '@/data/queries';
+import { useDiary, useInCinemas, usePreferences, useShowQueue, useTop10, useTrending } from '@/data/queries';
 import { changeText, type LibraryState, libraryMark, movement, providerName, setScope, useChartReference, useLibrary, useScope } from '@/data/scope';
 import { useWindowClass } from '@/layout/window-class';
 import Svg, { Text as SvgText } from 'react-native-svg';
@@ -31,6 +33,8 @@ export default function Tonight() {
   const { country, provider } = useScope({ country: prefs.data?.country, provider: prefs.data?.provider });
   const top10 = useTop10(country, provider);
   const top10tv = useTop10(country, provider, 'tv-shows');
+  const trending = useTrending();
+  const cinemas = useInCinemas(country);
   const yours = useLibrary().data;
   const [picking, setPicking] = useState(false);
   const queue = useShowQueue();
@@ -42,7 +46,7 @@ export default function Tonight() {
     <Screen
       title="Tonight"
       refreshing={queue.isRefetching}
-      onRefresh={() => void Promise.all([queue.refetch(), top10.refetch(), top10tv.refetch(), diary.refetch()])}
+      onRefresh={() => void Promise.all([queue.refetch(), top10.refetch(), top10tv.refetch(), diary.refetch(), trending.refetch(), cinemas.refetch()])}
       actions={[searchAction]}
     >
       <ConnectionNote />
@@ -59,6 +63,8 @@ export default function Tonight() {
                 key={s.tmdb_id}
                 poster={s.poster_path}
                 title={s.title ?? ''}
+                kind="tv"
+                tmdbId={s.tmdb_id}
                 subtitle={`${episodeCode(ep.season_number, ep.episode_number)}${ep.name ? ` · ${ep.name}` : ''}`}
                 onPress={() => openEpisode(s.tmdb_id ?? '', ep.season_number ?? 0, ep.episode_number ?? 1)}
                 right={
@@ -78,6 +84,9 @@ export default function Tonight() {
         </Panel>
       ) : null}
 
+      <ListRail title="Trending" hint="Today on TMDB" items={trending.data?.items} loading={trending.isPending} />
+      <ListRail title="In cinemas" hint={`Now playing in ${country}`} items={cinemas.data?.items} loading={cinemas.isPending} />
+
       <View style={{ gap: 8 }}>
         <Pressable
           onPress={() => setPicking((p) => !p)}
@@ -95,11 +104,13 @@ export default function Tonight() {
         </Pressable>
         {picking ? <ScopePicker country={country} provider={provider} /> : null}
         <ChartRail query={top10} yours={yours} empty="No film chart for this service today." />
+        <ViewAll label="All of today's Top 10 films" onPress={() => router.push({ pathname: '/charts', params: { cat: 'movies' } })} />
       </View>
 
       <View style={{ gap: 8 }}>
         <Text variant="heading">Top 10 shows</Text>
         <ChartRail query={top10tv} yours={yours} empty="No show chart for this service today." />
+        <ViewAll label="All of today's Top 10 shows" onPress={() => router.push({ pathname: '/charts', params: { cat: 'tv-shows' } })} />
       </View>
 
       {recent.length ? (
@@ -126,6 +137,71 @@ export default function Tonight() {
   );
 }
 
+type ListItem = components['schemas']['TitleListResponse']['items'][number];
+
+/** A row of posters from a TMDB list (trending, in cinemas), with the Top 10 badge where it applies. */
+function ListRail({ title, hint, items, loading }: { title: string; hint: string; items?: ListItem[]; loading: boolean }) {
+  const { colors } = useTheme();
+  if (!loading && !items?.length) return null;
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={styles.railHead}>
+        <Text variant="heading">{title}</Text>
+        <Text variant="caption">{hint}</Text>
+      </View>
+      {loading ? (
+        <ActivityIndicator color={colors.textMuted} />
+      ) : (
+        <FlatList
+          horizontal
+          data={items}
+          keyExtractor={(i) => `${i.tmdb_kind}-${i.tmdb_id}`}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 12, paddingBottom: 4 }}
+          renderItem={({ item }) => (
+            <View style={{ width: 112, gap: 4 }}>
+              <PosterTile
+                width={112}
+                poster={item.poster_path}
+                title={item.title}
+                kind={item.tmdb_kind}
+                tmdbId={item.tmdb_id}
+                onPress={() => openTitle({ kind: item.tmdb_kind, id: item.tmdb_id, title: item.title })}
+              />
+              <View style={styles.railMeta}>
+                <Text variant="caption" num>
+                  {[item.tmdb_kind === 'tv' ? 'Series' : 'Film', (item.release_date ?? '').slice(0, 4)].filter(Boolean).join(' · ')}
+                </Text>
+                {item.vote_count >= 20 ? (
+                  <>
+                    <RatingLogo source="tmdb" height={11} />
+                    <Text variant="caption" num>
+                      {item.vote_average.toFixed(1)}
+                    </Text>
+                  </>
+                ) : null}
+              </View>
+            </View>
+          )}
+        />
+      )}
+    </View>
+  );
+}
+
+/** "View all", right-aligned under a rail. */
+function ViewAll({ label, onPress }: { label: string; onPress: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="link" accessibilityLabel={label} hitSlop={8} style={styles.viewAll}>
+      <Text variant="label" style={{ color: colors.accentYours }}>
+        View all
+      </Text>
+      <Icon name="chevron" size={16} color={colors.accentYours} />
+    </Pressable>
+  );
+}
+
 /** One Top 10 as a horizontal rail of numbered posters. */
 function ChartRail({ query, yours, empty }: { query: ReturnType<typeof useTop10>; yours?: Map<string, LibraryState>; empty: string }) {
   const { colors } = useTheme();
@@ -141,36 +217,6 @@ function ChartRail({ query, yours, empty }: { query: ReturnType<typeof useTop10>
       contentContainerStyle={{ gap: 4, paddingTop: 6, paddingBottom: 12 }}
       renderItem={({ item }) => <ChartTile item={item} state={item.tmdb_id ? yours?.get(`${tmdbKind(item.kind)}:${item.tmdb_id}`) : undefined} />}
     />
-  );
-}
-
-/** Country and service chips for the Top 10 (the web's per-view ScopePicker). */
-function ScopePicker({ country, provider }: { country: string; provider: string }) {
-  const ref = useChartReference();
-  if (!ref.data) return <ActivityIndicator />;
-  const services = ref.data.providers.filter((p) => p.slug && p.countries?.includes(country));
-  return (
-    <View style={{ gap: 8 }}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-        {services.map((p) => (
-          <Chip key={p.slug} label={providerName(p.slug!)} selected={p.slug === provider} onPress={() => setScope({ provider: p.slug })} />
-        ))}
-      </ScrollView>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-        {ref.data.countries.map((c) => (
-          <Chip
-            key={c.code}
-            label={c.name ?? c.code!}
-            selected={c.code === country}
-            onPress={() => {
-              // Keep the service if it charts there, else take the first that does.
-              const keep = ref.data!.providers.find((p) => p.slug === provider)?.countries?.includes(c.code!);
-              setScope({ country: c.code, provider: keep ? provider : ref.data!.providers.find((p) => p.countries?.includes(c.code!))?.slug });
-            }}
-          />
-        ))}
-      </ScrollView>
-    </View>
   );
 }
 
@@ -234,6 +280,9 @@ function Numeral({ value, size, fill, stroke, font }: { value: number; size: num
 
 const styles = StyleSheet.create({
   tick: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  railHead: { flexDirection: 'row', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' },
+  railMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
+  viewAll: { flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-end', minHeight: 32 },
   tile: { flexDirection: 'row', alignItems: 'flex-end' },
   tilePoster: { zIndex: 1 },
   mark: { position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },

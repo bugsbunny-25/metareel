@@ -15,6 +15,8 @@ export function TitleRow({
   onPress,
   accent,
   selected,
+  kind,
+  tmdbId,
 }: {
   poster?: string | null;
   title: string;
@@ -24,6 +26,9 @@ export function TitleRow({
   accent?: string;
   /** The row shown in the detail pane beside the list. */
   selected?: boolean;
+  /** With tmdbId: the Top 10 badge on the poster when the title charts today. */
+  kind?: string | null;
+  tmdbId?: string | null;
 }) {
   const { colors } = useTheme();
   return (
@@ -34,7 +39,7 @@ export function TitleRow({
       accessibilityState={selected ? { selected: true } : undefined}
       style={({ pressed }) => [styles.row, selected && { backgroundColor: colors.bgElevated, marginHorizontal: -8, paddingHorizontal: 8, borderRadius: 12 }, { opacity: pressed ? 0.75 : 1 }]}
     >
-      <Poster path={poster} title={title} width={44} />
+      <Poster path={poster} title={title} width={44} kind={kind} tmdbId={tmdbId} />
       <View style={styles.text}>
         <Text variant="label" numberOfLines={2} style={accent ? { color: accent } : undefined}>
           {title}

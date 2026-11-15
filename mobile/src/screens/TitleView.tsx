@@ -10,6 +10,8 @@ import { runtimeText, starText, year } from '@/lib/format';
 import { useOutbox } from '@/offline';
 import { useTheme } from '@/theme';
 
+import { Top10Graph } from '@/components/Top10Graph';
+
 import { About, Charting, Hero, Scores, WhereToWatch } from './title-parts';
 
 /**
@@ -40,6 +42,8 @@ export function TitleView({ kind: k, id, embedded }: { kind: string; id: string;
       contentContainerStyle={{ padding: gutter.compact, paddingTop: detail.paddingTop ?? gutter.compact, gap: 16, paddingBottom: 40 }}
     >
       <Hero
+        kind={kind}
+        tmdbId={id}
         poster={poster}
         title={title}
         tint={snap?.poster_color}
@@ -55,6 +59,7 @@ export function TitleView({ kind: k, id, embedded }: { kind: string; id: string;
 
       {overview.isLoading ? <ActivityIndicator color={colors.textMuted} /> : null}
       <Scores overview={overview.data} />
+      <Top10Graph kind={kind} id={id} />
 
       {state?.watch_count ? (
         <Panel title="Your watches">
