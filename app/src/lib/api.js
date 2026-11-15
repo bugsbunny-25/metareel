@@ -155,6 +155,8 @@ export const api = {
   // marking runs of episodes watched (scope: episode | season | up_to | all) or unwatched.
   showQueue: (staleDays, signal) => request('GET', `/me/shows${qs({ stale_days: staleDays })}`, { signal }),
   upcoming: (days, signal) => request('GET', `/me/upcoming${qs({ days })}`, { signal }),
+  // One episode: TMDB's details (live; the stored row when TMDB is out) and your watches of it.
+  episode: (id, season, episode, signal) => request('GET', `/me/shows/${id}/episodes/${season}/${episode}`, { signal }),
   show: (id, includeSpecials, signal) => request('GET', `/me/shows/${id}${qs({ include_specials: includeSpecials ? 'true' : undefined })}`, { signal }),
   markEpisodes: (id, body) => request('POST', `/me/shows/${id}/watched`, { body }),
   // Deletes the watches of those episodes for good. params: { scope, season, episode, include_specials }
@@ -165,4 +167,6 @@ export const api = {
   statsCalendar: (from, to, signal) => request('GET', `/me/stats/calendar${qs({ from, to })}`, { signal }),
   statsYear: (year, signal) => request('GET', `/me/stats/year${qs({ year })}`, { signal }),
   statsRatings: (from, to, signal) => request('GET', `/me/stats/ratings${qs({ from, to })}`, { signal }),
+  // Everything about your shows (kind tv) or films (movie), all time; '' for both.
+  statsDetailed: (kind, signal) => request('GET', `/me/stats/detailed${qs({ kind })}`, { signal }),
 }

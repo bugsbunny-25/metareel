@@ -131,7 +131,7 @@
     <header class="hero">
       <Poster path={title.poster_path} seed={id} title={title.title} width={150} radius={12} size="w342" />
       <div class="hbody">
-        <p class="crumb"><a href="#/up-next">Up next</a> / Episodes</p>
+        <p class="crumb"><a href="#/tv">TV</a> / Episodes</p>
         <h1>{title.title}</h1>
         <p class="sub">
           {#if title.release_date}{title.release_date.slice(0, 4)}{' · '}{/if}{plural(regular.length, 'season')} · {plural(regular.reduce((n, s) => n + s.total_episodes, 0), 'episode')}
@@ -217,10 +217,10 @@
                 </button>
                 <span class="no num">{e.episode_number}</span>
                 <div class="ebody">
-                  <span class="ename">{e.name || 'Untitled episode'}
+                  <a class="ename" href="#/episode/{id}/{e.season_number}/{e.episode_number}">{e.name || 'Untitled episode'}
                     {#if e === next}{' '}<span class="tag">Up next</span>{/if}
                     {#if EPISODE_TYPE[e.episode_type]}{' '}<span class="badge">{EPISODE_TYPE[e.episode_type]}</span>{/if}
-                  </span>
+                  </a>
                   <span class="hint">
                     {#if !e.air_date}No air date yet{:else if isAired}{dayLabel(e.air_date)} {e.air_date.slice(0, 4)}{:else}<span class="new">Airs {dayLabel(e.air_date)} {e.air_date.slice(0, 4)}</span>{/if}
                     {#if e.runtime}{' · '}{e.runtime} min{/if}
@@ -306,13 +306,14 @@
   .eps li:hover { background: var(--bg-elevated); }
   .eps li.next { background: color-mix(in srgb, var(--accent-yours) 9%, transparent); }
   .eps li.future .ename { color: var(--text-muted); }
+  .ename:hover { text-decoration: underline; text-underline-offset: 3px; }
   .tick { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: none; box-shadow: inset 0 0 0 1.5px var(--border-strong); color: var(--accent-on); cursor: pointer; }
   .tick:hover:not(:disabled) { box-shadow: inset 0 0 0 2px var(--accent-yours); }
   .tick[aria-pressed='true'] { background: var(--accent-yours); box-shadow: none; color: #1a0d05; }
   .tick:disabled { cursor: default; opacity: 0.4; }
   .no { color: var(--text-muted); font-weight: 700; text-align: right; }
   .ebody { display: grid; gap: 2px; min-width: 0; }
-  .ename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 15px/1.3 var(--font-display); }
+  .ename { color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 15px/1.3 var(--font-display); }
   .tag { color: var(--accent-yours); font: 700 11.5px/1 var(--font-sans); text-transform: uppercase; letter-spacing: 0.05em; }
   .badge { display: inline-block; padding: 1px 7px; border-radius: 9px; background: var(--bg-elevated); font: 700 11.5px/1.5 var(--font-sans); }
   .when { display: inline-flex; align-items: center; gap: 8px; }

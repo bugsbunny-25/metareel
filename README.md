@@ -813,20 +813,32 @@ now, or recently gone from a service), Library (everything you track, with
 status chips that filter, your average rating and its half-star spread,
 favourites, a poster grid or a list, and a per-title menu that sets the
 status or favourite through `PUT /me/titles/{kind}/{id}` or clears it) and
-Diary (every watch grouped by its
+Diary (your last 4 films and 4 shows, your ratings, every watch grouped by its
 local day, this year's totals, a year heatmap from `/me/stats/calendar`, and
-edit and delete; deletes are permanent and ask first), Up next (shows by
-stage from `/me/shows` -- continue watching, haven't watched in a while, not
-started, on hold, dropped -- each with its next episode, progress and a
-one-click "Watched", then an Upcoming timeline from `/me/upcoming` with
-episodes per week; a Movies tab lists released watchlist movies and ones not
-out yet), a show page (`#/show/:id`: a map of every episode, season tabs,
+edit and delete; deletes are permanent and ask first; each watch has a page,
+`#/watch/:id`, with every detail and its formats and discs as logos), TV
+(`#/tv`, as on mobile: To watch -- shows by stage from `/me/shows`, continue
+watching, haven't watched in a while, not started, on hold, dropped, each with
+its next episode, progress and a one-click "Watched" -- and Upcoming, from
+`/me/upcoming` by day with episodes per week; as cards or a poster grid, the
+choice and the segment remembered per browser; an episode opens its page
+first, `#/episode/:show/:season/:episode` from
+`/me/shows/{id}/episodes/{season}/{episode}`, with "View whole series"),
+Movies (`#/movies`: released watchlist films To watch and Upcoming ones by
+month, list or grid), You (`#/you`: your statistics at a glance, this year,
+whether each cinema plan has broken even this period and what it saved, your
+genres, your shows and films as posters, and links to Settings, the library,
+the watchlist and the year in review; Detailed stats at `#/you/stats` from
+`/me/stats/detailed`, Shows or Movies: time spent, episodes, rewatches,
+most-watched with hours, shows by status, time left and the catch-up date,
+upcoming watch time, trends, weekdays, ratings, genres, people and binges),
+Home also has an Up next row, a show page (`#/show/:id`: a map of every episode, season tabs,
 tick to mark, untick to delete after asking, "watched up to here"), a person page (`#/person/:id`
 from `/people/:id`: photo, born/died, biography, IMDb link; credits, their charted titles and
 what you've seen and bookmarked of their work; the titles of theirs that charted; and the
 filmography by department with a Coming up list, film/series filter, newest/popular/top-rated
 sort and appearances as themselves hidden by default; title pages link their cast and crew
-here, and so do Stats' people) and Stats (one year at a
+here, and so do Stats' people) and Year in review (`#/stats`, one year at a
 time from `/me/stats/year` and `/me/stats/ratings`: watches, hours, titles and
 streaks; watches per month, weekday and hour; your rating spread and how far
 you sit from TMDB, IMDb and RT, overall and per title; genres, decades,

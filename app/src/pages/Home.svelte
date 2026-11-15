@@ -1,4 +1,5 @@
-<!-- Home (#/?date=YYYY-MM-DD for a past day). A breakout hero tinted from its poster, KPI tiles with 14-day trends, the Top 10 rail,
+<!-- Home (#/?date=YYYY-MM-DD for a past day). A breakout hero tinted from its poster, Up next (the next episode of the
+     shows you're watching, as on mobile's Tonight), KPI tiles with 14-day trends, the Top 10 rail,
      movement and your-list tables, and breakouts by country. Everything is for the scope picked beside the Top 10. -->
 <script>
   import Poster from '../components/Poster.svelte'
@@ -13,8 +14,39 @@
   import { sampleColor, seriesPath, debutsPerDay, dayMonth } from '../lib/viz.js'
   import { shortDate, UP, DOWN, isYours } from '../lib/rows.js'
   import { toast } from '../lib/toast.svelte.js'
+  import { markWatched, epCode } from '../lib/shows.js'
 
   let { onlog } = $props()
+
+  // Up next: the next episode of each show you're watching, most recently watched first.
+  let queue = $state(null)
+  let queueNonce = $state(0)
+  let marking = $state(null)
+  $effect(() => {
+    queueNonce
+    const ctrl = new AbortController()
+    api.showQueue(undefined, ctrl.signal).then((q) => (queue = q)).catch(() => {})
+    return () => ctrl.abort()
+  })
+  const upNext = $derived(
+    (queue?.shows ?? [])
+      .filter((s) => s.stage === 'watching' && s.next_episode)
+      .sort((a, b) => (b.last_watched_at ?? '').localeCompare(a.last_watched_at ?? ''))
+      .slice(0, 6),
+  )
+  async function tick(s) {
+    const ep = s.next_episode
+    marking = s.tmdb_id
+    try {
+      await markWatched(s.tmdb_id, { season: ep.season_number, episode: ep.episode_number, precision: 'minute' })
+      toast(`${s.title}: ${epCode(ep.season_number, ep.episode_number)} watched.`)
+      queueNonce++
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      marking = null
+    }
+  }
 
   let loading = $state(true)
   let error = $state('')
@@ -191,6 +223,25 @@
       </section>
     {/if}
 
+    {#if upNext.length}
+      <section class="upnext" aria-labelledby="un-h">
+        <div class="block-head"><h2 id="un-h">Up next</h2><a class="more" href="#/tv">All your shows</a></div>
+        <ul>
+          {#each upNext as s (s.tmdb_id)}
+            {@const ep = s.next_episode}
+            <li>
+              <a class="un-art" href="#/episode/{s.tmdb_id}/{ep.season_number}/{ep.episode_number}" tabindex="-1" aria-hidden="true"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} width={52} radius={6} size="w185" /></a>
+              <a class="un-body" href="#/episode/{s.tmdb_id}/{ep.season_number}/{ep.episode_number}">
+                <b>{s.title}</b>
+                <span><span class="code num">{epCode(ep.season_number, ep.episode_number)}</span>{' '}{ep.name || 'Untitled episode'}</span>
+              </a>
+              <button class="tick" disabled={marking === s.tmdb_id} aria-label="Mark {s.title} {epCode(ep.season_number, ep.episode_number)} watched" title="Watched, just now" onclick={() => tick(s)}><Icon name="check" size={16} /></button>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
     <section class="kpis" aria-label="{past ? dayMonth(data.charts.date) : 'Today'} at a glance">
       <div class="kpi">
         <span class="k-label">New entries {when}</span>
@@ -316,6 +367,18 @@
 {/if}
 
 <style>
+  .upnext { display: grid; gap: 10px; }
+  .upnext ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .upnext li { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px; border-radius: 14px; background: var(--bg-surface); }
+  .un-art { display: block; }
+  .un-body { display: grid; gap: 2px; min-width: 0; color: inherit; text-decoration: none; }
+  .un-body b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 16px/1.25 var(--font-display); }
+  .un-body > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 13.5px; }
+  .un-body:hover b { text-decoration: underline; text-underline-offset: 3px; }
+  .upnext .code { color: var(--accent-yours); font-weight: 700; }
+  .tick { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--bg-elevated); color: var(--text-primary); cursor: pointer; }
+  .tick:hover { background: var(--accent-yours); color: #1a0d05; }
+  .tick:disabled { opacity: 0.5; cursor: default; }
   .home { padding-bottom: 40px; }
   .loading { display: grid; gap: 16px; padding: 8px var(--gutter); }
   .empty { padding: 60px var(--gutter); }

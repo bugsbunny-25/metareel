@@ -2,7 +2,7 @@
      the "Log a watch" dialog and toasts. Signed out, it shows the sign-in screen instead. -->
 <script>
   import { untrack } from 'svelte'
-  import { route } from './lib/router.svelte.js'
+  import { route, navigate } from './lib/router.svelte.js'
   import { session, loadSession, signOut } from './lib/session.svelte.js'
   import { loadReference } from './lib/scope.svelte.js'
   import { library } from './lib/library.svelte.js'
@@ -21,7 +21,12 @@
   import Watchlist from './pages/Watchlist.svelte'
   import Library from './pages/Library.svelte'
   import Stats from './pages/Stats.svelte'
-  import UpNext from './pages/UpNext.svelte'
+  import TV from './pages/TV.svelte'
+  import Movies from './pages/Movies.svelte'
+  import You from './pages/You.svelte'
+  import StatsDetailed from './pages/StatsDetailed.svelte'
+  import Episode from './pages/Episode.svelte'
+  import Watch from './pages/Watch.svelte'
   import Settings from './pages/Settings.svelte'
   import Discover from './pages/Discover.svelte'
   import Show from './pages/Show.svelte'
@@ -63,11 +68,20 @@
   const titleMatch = $derived(route.path.match(/^\/title\/(movie|tv)\/(\d+)$/))
   const showMatch = $derived(route.path.match(/^\/show\/(\d+)$/))
   const personMatch = $derived(route.path.match(/^\/person\/(\d+)$/))
-  const PAGES = { '/': 'home', '/charts': 'charts', '/discover': 'discover', '/up-next': 'upnext', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/stats': 'stats', '/settings': 'settings' }
-  const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : personMatch ? 'person' : 'missing'))
+  const episodeMatch = $derived(route.path.match(/^\/episode\/(\d+)\/(\d+)\/(\d+)$/))
+  const watchMatch = $derived(route.path.match(/^\/watch\/(\d+)$/))
+  const PAGES = { '/': 'home', '/charts': 'charts', '/discover': 'discover', '/tv': 'tv', '/movies': 'movies', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/you': 'you', '/you/stats': 'statsDetailed', '/stats': 'stats', '/settings': 'settings' }
+  const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : personMatch ? 'person' : episodeMatch ? 'episode' : watchMatch ? 'watch' : 'missing'))
+  // Up next became TV and Movies (as on mobile); old links still land on the right one.
+  $effect(() => {
+    if (route.path === '/up-next') navigate(route.query.tab === 'movies' ? '/movies' : '/tv')
+  })
+  // Nav groups: the pages each tab owns.
+  const TAB_OF = { show: 'tv', episode: 'tv', watch: 'diary', statsDetailed: 'you', stats: 'you', settings: 'you', library: 'you', watchlist: 'movies' }
+  const tab = $derived(TAB_OF[page] ?? page)
 
   $effect(() => {
-    const NAMES = { charts: 'Top 10', title: 'Title', upnext: 'Up next', show: 'Episodes', person: 'Person', discover: 'Discover', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', settings: 'Settings', missing: 'Not found' }
+    const NAMES = { charts: 'Top 10', title: 'Title', tv: 'TV', movies: 'Movies', show: 'Episodes', episode: 'Episode', watch: 'Watch', person: 'Person', discover: 'Discover', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', you: 'You', statsDetailed: 'Detailed stats', stats: 'Year in review', settings: 'Settings', missing: 'Not found' }
     document.title = NAMES[page] ? `${NAMES[page]} · metareel` : 'metareel'
   })
   // On a phone the nav scrolls sideways; keep the current page's link in view.
@@ -92,11 +106,10 @@
       <a href="#/charts" aria-current={page === 'charts' ? 'page' : undefined}>Charts</a>
       <a href="#/discover" aria-current={page === 'discover' ? 'page' : undefined}>Discover</a>
       <span class="sep" aria-hidden="true"></span>
-      <a href="#/up-next" aria-current={page === 'upnext' || page === 'show' ? 'page' : undefined}>Up next</a>
-      <a href="#/watchlist" aria-current={page === 'watchlist' ? 'page' : undefined}>Watchlist</a>
-      <a href="#/library" aria-current={page === 'library' ? 'page' : undefined}>Library</a>
-      <a href="#/diary" aria-current={page === 'diary' ? 'page' : undefined}>Diary</a>
-      <a href="#/stats" aria-current={page === 'stats' ? 'page' : undefined}>Stats</a>
+      <a href="#/tv" aria-current={tab === 'tv' ? 'page' : undefined}>TV</a>
+      <a href="#/movies" aria-current={tab === 'movies' ? 'page' : undefined}>Movies</a>
+      <a href="#/diary" aria-current={tab === 'diary' ? 'page' : undefined}>Diary</a>
+      <a href="#/you" aria-current={tab === 'you' ? 'page' : undefined}>You</a>
     </nav>
     <div class="tools">
       <button class="search" type="button" onclick={() => (searchOpen = true)} aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}>
@@ -109,6 +122,7 @@
         <summary aria-label="Account: {session.user.username}"><span class="avatar" aria-hidden="true">{session.user.username.slice(0, 1).toUpperCase()}</span></summary>
         <div class="menu">
           <p class="who">Signed in as <b>{session.user.username}</b></p>
+          <a href="#/you" onclick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>You</a>
           <a href="#/settings" onclick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>Settings</a>
           {#if session.user.role === 'admin'}<a href="/admin/">Admin console</a>{/if}
           <button type="button" onclick={signOut}>Sign out</button>
@@ -132,8 +146,18 @@
       <Discover {onlog} />
     {:else if page === 'settings'}
       <Settings {onconfirm} />
-    {:else if page === 'upnext'}
-      <UpNext {onlog} />
+    {:else if page === 'tv'}
+      <TV {onlog} />
+    {:else if page === 'movies'}
+      <Movies {onlog} />
+    {:else if page === 'you'}
+      <You />
+    {:else if page === 'statsDetailed'}
+      <StatsDetailed />
+    {:else if page === 'episode'}
+      {#key route.path}<Episode show={episodeMatch[1]} season={+episodeMatch[2]} episode={+episodeMatch[3]} {onlog} />{/key}
+    {:else if page === 'watch'}
+      {#key route.path}<Watch id={watchMatch[1]} {onlog} {onconfirm} />{/key}
     {:else if page === 'show'}
       {#key route.path}<Show id={showMatch[1]} {onlog} {onconfirm} />{/key}
     {:else if page === 'person'}
