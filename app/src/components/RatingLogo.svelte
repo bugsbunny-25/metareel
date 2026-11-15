@@ -10,7 +10,6 @@
   import rtCertified from '../assets/ratings/rt-certified-fresh.png'
   import popcornHot from '../assets/ratings/rt-popcorn-hot.png'
   import popcornStale from '../assets/ratings/rt-popcorn-stale.png'
-  import tmdbLogo from '../assets/ratings/tmdb.svg'
 
   /**
    * source: imdb | rt (Tomatometer) | rt-audience (Popcornmeter) | tmdb.
@@ -37,12 +36,14 @@
 {:else if source === 'rt' || source === 'rt-audience'}
   <img class="rating-logo" src={rtSrc} alt={label} title={label} height={height} width={height} />
 {:else if source === 'tmdb'}
-  <img class="rating-logo" src={tmdbLogo} alt={label} title={label} height={height} width={Math.round(height * 2.33)} />
+  <!-- TMDB's score is marked with a star, not its wordmark. -->
+  <span class="rating-logo star" role="img" aria-label={label} title={label} style:font-size="{Math.round(height * 0.95)}px">⭐</span>
 {/if}
 
 <style>
   .rating-logo { display: inline-block; flex: none; vertical-align: -0.2em; object-fit: contain; }
   .imdb { line-height: 0; }
+  .star { line-height: 1; vertical-align: -0.1em; }
   .imdb img { display: block; height: 100%; width: auto; }
   .on-light { display: none !important; }
   :global(:root[data-theme='light']) .imdb:not(.dark) .on-light { display: block !important; }

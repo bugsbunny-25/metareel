@@ -264,7 +264,7 @@
                   <Icon name={t?.status === 'watchlist' ? 'bookmark-fill' : 'bookmark'} size={15} />
                 </button>
               </div>
-              <p class="meta">{f.year ?? 'TBA'} · {f.kind === 'tv' ? 'Series' : 'Film'}{#if rated(f)}{' · '}<span title="TMDB {f.vote_average.toFixed(1)} from {f.vote_count.toLocaleString()} votes">★ {f.vote_average.toFixed(1)}</span>{/if}</p>
+              <p class="meta">{f.year ?? 'TBA'} · {f.kind === 'tv' ? 'Series' : 'Film'}{#if rated(f)}{' · '}<span title="TMDB {f.vote_average.toFixed(1)} from {f.vote_count.toLocaleString()} votes">⭐ {f.vote_average.toFixed(1)}</span>{/if}</p>
               {#if roleLine(f)}<p class="role">{roleLine(f)}</p>{/if}
               {#if seenIt(f)}<p class="seen"><Icon name="check" size={12} />Seen{#if t?.rating}{' · '}{stars(t.rating)}{/if}</p>{/if}
             </li>

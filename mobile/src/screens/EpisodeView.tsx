@@ -56,7 +56,7 @@ export function EpisodeView({
     ? [
         e.air_date ? new Date(`${e.air_date}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'Air date TBA',
         runtimeText(e.runtime),
-        e.vote_count ? `TMDB ${e.vote_average?.toFixed(1)}` : '',
+        e.vote_count ? `⭐ ${e.vote_average?.toFixed(1)}` : '',
       ]
         .filter(Boolean)
         .join(' · ')
