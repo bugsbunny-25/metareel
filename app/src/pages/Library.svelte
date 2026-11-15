@@ -256,7 +256,7 @@
     .kpi b { font-size: 26px; }
     .kpi.rating { grid-column: 1 / -1; order: -1; }
     .kpi:not(.rating) .k-sub { font-size: 11.5px; }
-    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 14px; }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 18px 12px; }
     .sort { margin-left: 0; }
   }
   @media (prefers-reduced-motion: reduce) { .art { transition: none; } }

@@ -475,7 +475,7 @@
   @media (max-width: 600px) {
     .cards { grid-template-columns: 1fr; }
     .card { grid-template-columns: 64px 1fr; gap: 12px; }
-    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tiles { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 18px 12px; }
     .rows li { grid-template-columns: 44px minmax(0, 1fr) auto auto; }
     .rows .bar.slim { display: none; }
     .day { grid-template-columns: 1fr; gap: 8px; }

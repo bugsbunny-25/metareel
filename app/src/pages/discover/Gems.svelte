@@ -223,6 +223,6 @@
   @media (max-width: 760px) {
     .kpis { grid-template-columns: 1fr 1fr; }
     .side { grid-template-columns: 1fr; }
-    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 18px 12px; }
   }
 </style>

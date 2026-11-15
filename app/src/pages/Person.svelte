@@ -362,7 +362,7 @@
     .head { flex-direction: column; padding: 20px; gap: 18px; }
     .face { width: 128px; }
     h1 { font-size: 34px; }
-    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 18px 12px; }
     .soon li { grid-template-columns: 78px minmax(0, 1fr) auto; padding: 6px 0; }
     .s-role { display: none; }
   }
