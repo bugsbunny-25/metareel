@@ -32,6 +32,13 @@ type EpisodeDetail struct {
 	Watches []repository.WatchEntry  `json:"watches"`
 }
 
+// Upper bounds for season and episode numbers (well past any real show), so
+// they fit an int anywhere.
+const (
+	maxSeasonNumber  = 1000
+	maxEpisodeNumber = 100_000
+)
+
 // maxEpisodeWatchPages bounds the diary scan for one episode's watches (200 a page).
 const maxEpisodeWatchPages = 10
 
@@ -40,11 +47,11 @@ func (s *TrackingService) Episode(ctx context.Context, userID int64, tmdbID stri
 	if err := ValidateRef("tv", tmdbID); err != nil {
 		return nil, err
 	}
-	if season < 0 {
-		return nil, &ValidationError{Message: "season must be 0 or more (0 is specials)"}
+	if season < 0 || season > maxSeasonNumber {
+		return nil, &ValidationError{Message: "season must be 0 (specials) to 1000"}
 	}
-	if episode < 1 {
-		return nil, &ValidationError{Message: "episode must be 1 or more"}
+	if episode < 1 || episode > maxEpisodeNumber {
+		return nil, &ValidationError{Message: "episode must be 1 to 100000"}
 	}
 	snap, err := s.titles.Resolve(ctx, "tv", tmdbID)
 	if err != nil {

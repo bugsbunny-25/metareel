@@ -28,8 +28,10 @@ var (
 	ErrLetterboxdNoTMDB = errors.New("letterboxd film has no TMDB id")
 
 	letterboxdFilmPathRe = regexp.MustCompile(`^/(?:[A-Za-z0-9_]+/)?film/([a-z0-9-]{1,120})(?:/|$)`)
-	letterboxdTMDBIDRe   = regexp.MustCompile(`data-tmdb-id="(\d{1,12})"`)
-	letterboxdTMDBTypeRe = regexp.MustCompile(`data-tmdb-type="(movie|tv)"`)
+	// A boxd.it short link's path: one short code.
+	letterboxdShortPathRe = regexp.MustCompile(`^/([A-Za-z0-9]{1,16})/?$`)
+	letterboxdTMDBIDRe    = regexp.MustCompile(`data-tmdb-id="(\d{1,12})"`)
+	letterboxdTMDBTypeRe  = regexp.MustCompile(`data-tmdb-type="(movie|tv)"`)
 )
 
 const (
@@ -108,7 +110,11 @@ func (c *LetterboxdClient) Resolve(ctx context.Context, link string) (Letterboxd
 		if hop >= letterboxdMaxHops {
 			return LetterboxdRef{}, fmt.Errorf("letterboxd: too many redirects")
 		}
-		next, err := c.redirect(ctx, u)
+		code := letterboxdShortPathRe.FindStringSubmatch(u.EscapedPath())
+		if code == nil {
+			return LetterboxdRef{}, ErrLetterboxdNotFilm
+		}
+		next, err := c.redirect(ctx, code[1])
 		if err != nil {
 			return LetterboxdRef{}, err
 		}
@@ -125,8 +131,14 @@ func (c *LetterboxdClient) Resolve(ctx context.Context, link string) (Letterboxd
 	return c.film(ctx, m[1])
 }
 
-func (c *LetterboxdClient) redirect(ctx context.Context, u *url.URL) (*url.URL, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+// letterboxdShortBase is where short links live. The request is built from it
+// and a checked short code, never from the user's URL, so it can't be pointed
+// anywhere else.
+const letterboxdShortBase = "https://boxd.it/"
+
+// redirect asks boxd.it where a short code points.
+func (c *LetterboxdClient) redirect(ctx context.Context, code string) (*url.URL, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, letterboxdShortBase+code, nil)
 	if err != nil {
 		return nil, err
 	}

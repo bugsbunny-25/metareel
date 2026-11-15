@@ -13,7 +13,7 @@ import (
 // draw a poster row and open the title.
 type TMDBListItem struct {
 	Kind         string  `json:"tmdb_kind"` // movie | tv
-	ID           string  `json:"tmdb_id"` // as everywhere else in the API
+	ID           string  `json:"tmdb_id"`   // as everywhere else in the API
 	Title        string  `json:"title"`
 	PosterPath   string  `json:"poster_path,omitempty"`
 	BackdropPath string  `json:"backdrop_path,omitempty"`

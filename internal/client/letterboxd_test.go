@@ -50,6 +50,11 @@ func TestLetterboxdResolve(t *testing.T) {
 		"https://user@letterboxd.com/film/dune-part-two/",
 		"ftp://letterboxd.com/film/dune-part-two/",
 		"not a url",
+		// boxd.it paths that aren't a single short code are refused before any request.
+		"https://boxd.it/a/b",
+		"https://boxd.it/../film/x",
+		"https://boxd.it/",
+		"https://boxd.it/abc%2Fdef",
 	} {
 		if _, err := c.Resolve(ctx, link); !errors.Is(err, ErrLetterboxdNotFilm) {
 			t.Errorf("Resolve(%q): err = %v, want ErrLetterboxdNotFilm", link, err)
