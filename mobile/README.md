@@ -58,11 +58,19 @@ Checks (all run in CI, `.github/workflows/mobile.yml`):
 
 ```bash
 npm run typecheck && npm run lint && npm test
-npm run check:generated         # API types and theme tokens match their sources
+npm run check:generated         # API types, theme tokens and the license list match their sources
 ```
 
 After changing `internal/openapi/spec/public.yaml` run `npm run gen:api`;
 after changing `app/src/tokens.css` run `npm run gen:theme`.
+
+Icons: every app and web icon comes from one drawing in `tools/gen-icons.mjs`
+(the reel). `npm run gen:icons` writes the iOS 26 Icon Composer bundle
+(`assets/metareel.icon`: light, dark, tinted and clear), the Android adaptive
+icon (one fixed dark icon, plus the monochrome layer for themed icons), the
+notification icon, the light and dark splash images, and the favicons in
+`app/public` and `web/public`. Icons are native, so a dev build must be rebuilt
+to show a change.
 
 ## Builds and releases
 

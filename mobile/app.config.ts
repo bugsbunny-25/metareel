@@ -43,7 +43,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     bundleIdentifier: 'io.github.bugsbunny25.metareel',
     buildNumber: String(build),
     supportsTablet: true,
-    icon: './assets/expo.icon',
+    icon: './assets/metareel.icon',
     // Only standard HTTPS (exempt), so App Store Connect doesn't ask about
     // export compliance for every TestFlight build.
     infoPlist: { ITSAppUsesNonExemptEncryption: false },
@@ -51,6 +51,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package: 'io.github.bugsbunny25.metareel',
     versionCode: build,
+    // One fixed (dark) icon: launchers don't redraw app icons when the theme
+    // changes. The monochrome layer is the themed icon, which follows it.
     adaptiveIcon: {
       backgroundColor: '#0b0b0c',
       foregroundImage: './assets/images/android-icon-foreground.png',
@@ -76,7 +78,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // reverse order): see the file.
     './plugins/with-unique-extension-plists.js',
     'expo-router',
-    ['expo-splash-screen', { backgroundColor: '#0b0b0c', image: './assets/images/splash-icon.png', imageWidth: 76 }],
+    // The splash follows the system: the reel on the light or the dark canvas.
+    [
+      'expo-splash-screen',
+      {
+        backgroundColor: '#f2f2f4',
+        image: './assets/images/splash-icon-light.png',
+        imageWidth: 76,
+        dark: { backgroundColor: '#0b0b0c', image: './assets/images/splash-icon.png' },
+      },
+    ],
     ['expo-secure-store', { faceIDPermission: false }],
     'expo-sqlite',
     [
@@ -106,7 +117,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       {
         // Episode reminders are local (phase 6a); watchlist arrivals are
         // pushed by the server through Expo (phase 6b).
-        icon: './assets/images/android-icon-monochrome.png',
+        icon: './assets/images/notification-icon.png',
         enableRemoteNotifications: true,
         color: '#0b0b0c',
         defaultChannel: 'episodes',

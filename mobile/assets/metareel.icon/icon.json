@@ -1,0 +1,104 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "solid": "srgb:0.94900,0.94900,0.95700,1.00000"
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "solid": "srgb:0.07840,0.07840,0.09020,1.00000"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "layers": [
+        {
+          "name": "accent",
+          "image-name": "accent.svg",
+          "hidden-specializations": [
+            {
+              "value": false
+            },
+            {
+              "appearance": "tinted",
+              "value": true
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.4
+      }
+    },
+    {
+      "layers": [
+        {
+          "name": "reel",
+          "image-name-specializations": [
+            {
+              "value": "reel-light.svg"
+            },
+            {
+              "appearance": "dark",
+              "value": "reel-dark.svg"
+            }
+          ],
+          "hidden-specializations": [
+            {
+              "value": false
+            },
+            {
+              "appearance": "tinted",
+              "value": true
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.4
+      }
+    },
+    {
+      "layers": [
+        {
+          "name": "mono",
+          "image-name": "mono.svg",
+          "glass": true,
+          "hidden-specializations": [
+            {
+              "value": true
+            },
+            {
+              "appearance": "tinted",
+              "value": false
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.4
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
