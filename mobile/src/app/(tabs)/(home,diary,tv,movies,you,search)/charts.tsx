@@ -152,7 +152,7 @@ function ChartRow({ entry: e }: { entry: Entry }) {
     >
       {/* Tonight's numeral: heavy, outlined, filled with the canvas. */}
       <View style={styles.rank}>
-        <Numeral value={e.rank} size={46} strokeWidth={1.5} />
+        <Numeral value={e.rank} size={76} strokeWidth={1.5} />
       </View>
       <Text variant="label" num style={[styles.change, { color: tone }]}>
         {change}
@@ -175,6 +175,6 @@ const styles = StyleSheet.create({
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   step: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
-  rank: { width: 52, alignItems: 'flex-end' },
+  rank: { width: 60, alignItems: 'flex-end' },
   change: { width: 40, fontSize: 13 },
 });

@@ -13,8 +13,8 @@ export const fonts = {
   sans: 'SourceSans3_400Regular',
   sansSemi: 'SourceSans3_600SemiBold',
   sansBold: 'SourceSans3_700Bold',
-  /** The Top 10 rail's outlined numerals. */
-  numeral: 'SourceSans3_800ExtraBold',
+  /** The chart rank numerals (Numeral.tsx). */
+  numeral: 'BarlowCondensed_800ExtraBold',
 } as const;
 
 /** Lining, tabular figures for numbers that line up (the web's `.num`). */

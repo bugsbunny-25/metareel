@@ -1,13 +1,17 @@
 import { useId } from 'react';
-import Svg, { Defs, LinearGradient, Stop, Text as SvgText } from 'react-native-svg';
+import Svg, { Defs, G, LinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 
+import { numeralLayout, TRACKING } from '@/lib/numeral';
 import { useTheme } from '@/theme';
 
 /**
- * The chart numeral (Tonight's rail, the Charts list): a heavy digit filled
- * with the canvas, its outline a gradient lit from the top (orange for your
- * titles), clipped to its 0.78em line like the web's Numeral.svelte.
- * overlap pulls the next thing (a poster) over its right edge.
+ * The chart numeral (Tonight's rail, the Charts list), like the web's
+ * Numeral.svelte: Barlow Condensed ExtraBold filled with the canvas, its
+ * outline a gradient lit from the top (orange for your titles), a lone 1
+ * standing on a foot (lib/numeral.ts has the geometry). size is the font
+ * size; strokeWidth the outline in points. The outline is drawn at twice the
+ * width under the fill, so only its outer half shows and the foot joins the
+ * 1's stem as one shape. overlap pulls the next thing (a poster) over it.
  */
 export function Numeral({
   value,
@@ -24,34 +28,36 @@ export function Numeral({
 }) {
   const { colors, fonts } = useTheme();
   const id = `numeral${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
-  const digits = String(value).length;
-  const width = Math.ceil(size * (0.52 * digits - 0.06 * (digits - 1))) + 4;
-  const height = Math.round(size * 0.78) + 2;
+  const L = numeralLayout(value);
+  const k = size / 100; // points per layout unit
   const [top, mid, bottom] = mine
     ? [colors.numeralYoursTop, colors.numeralYoursMid, colors.numeralYoursBottom]
     : [colors.numeralTop, colors.numeralMid, colors.numeralBottom];
+  const layer = (edge: boolean) => (
+    <G key={edge ? 'edge' : 'body'} fill={colors.bgCanvas} stroke={edge ? `url(#${id})` : 'none'} strokeWidth={(strokeWidth * 2) / k} strokeLinejoin="round">
+      <SvgText x={L.x} y={L.baseline} fontFamily={fonts.numeral} fontSize={100} letterSpacing={TRACKING}>
+        {String(value)}
+      </SvgText>
+      {L.foot ? <Rect x={L.foot.x} y={L.foot.y} width={L.foot.w} height={L.foot.h} /> : null}
+    </G>
+  );
   return (
-    <Svg width={width} height={height} style={overlap ? { marginRight: -overlap } : undefined} accessible={false}>
+    <Svg
+      width={L.width * k}
+      height={L.height * k}
+      viewBox={`0 0 ${L.width} ${L.height}`}
+      style={overlap ? { marginRight: -overlap } : undefined}
+      accessible={false}
+    >
       <Defs>
-        <LinearGradient id={id} x1="0" y1="0" x2="0" y2={height} gradientUnits="userSpaceOnUse">
+        <LinearGradient id={id} x1="0" y1="0" x2="0" y2={L.height} gradientUnits="userSpaceOnUse">
           <Stop offset="0" stopColor={top} />
           <Stop offset="0.55" stopColor={mid} />
           <Stop offset="1" stopColor={bottom} />
         </LinearGradient>
       </Defs>
-      <SvgText
-        x={width - 2}
-        y={height - 3}
-        textAnchor="end"
-        fontFamily={fonts.numeral}
-        fontSize={size}
-        letterSpacing={-0.06 * size}
-        fill={colors.bgCanvas}
-        stroke={`url(#${id})`}
-        strokeWidth={strokeWidth}
-      >
-        {String(value)}
-      </SvgText>
+      {layer(true)}
+      {layer(false)}
     </Svg>
   );
 }

@@ -1,3 +1,4 @@
+import { BarlowCondensed_800ExtraBold } from '@expo-google-fonts/barlow-condensed';
 import { SourceSans3_400Regular, SourceSans3_600SemiBold, SourceSans3_700Bold, SourceSans3_800ExtraBold } from '@expo-google-fonts/source-sans-3';
 import { SourceSerif4_600SemiBold, SourceSerif4_700Bold, useFonts } from '@expo-google-fonts/source-serif-4';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
@@ -27,6 +28,7 @@ export default function RootLayout() {
     SourceSans3_600SemiBold,
     SourceSans3_700Bold,
     SourceSans3_800ExtraBold,
+    BarlowCondensed_800ExtraBold,
   });
   return (
     <SafeAreaProvider>

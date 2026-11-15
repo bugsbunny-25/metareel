@@ -456,7 +456,7 @@
   .top-rail li { position: relative; display: flex; align-items: flex-end; flex: none; }
   /* The numeral's font box is taller than its 0.78 line; clipping to the line (digits sit inside
      it) keeps the rail free of vertical overflow, so it only ever scrolls sideways. */
-  :global(.numeral.big) { margin-right: -14px; font-size: 100px; }
+  :global(.numeral.big) { margin-right: -18px; font-size: 150px; }
   .tile { position: relative; z-index: 1; display: block; border-radius: 8px; transition: transform 0.15s ease; }
   .tile:hover { transform: translateY(-3px); }
   .mark { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-yours); color: var(--bg-canvas); }
@@ -489,7 +489,7 @@
     .kpis { grid-template-columns: 1fr 1fr; gap: 8px; }
     .k-row b { font-size: 26px; }
     .k-row svg { display: none; }
-    :global(.numeral.big) { font-size: 76px; }
+    :global(.numeral.big) { font-size: 124px; }
     .panel, .panel.wide { overflow-x: auto; }
     /* Phones: the columns that matter most stay; the title gets what's left. */
     .tbl .opt { display: none; }

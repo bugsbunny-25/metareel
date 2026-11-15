@@ -241,7 +241,7 @@ function ChartTile({ item, state }: { item: ChartItem; state?: LibraryState }) {
       }, ${changeText(m)}`}
       style={styles.tile}
     >
-      <Numeral value={item.rank} size={wide ? 100 : 76} overlap={14} />
+      <Numeral value={item.rank} size={wide ? 150 : 124} overlap={18} />
       <View style={styles.tilePoster}>
         <Poster path={item.poster_path} title={item.name} width={92} />
         {mark ? (

@@ -20,7 +20,7 @@
 </script>
 
 <tr class:mine>
-  <td class="rank"><Numeral value={r.rank} {mine} weight={3.3} label="Number {r.rank}" /></td>
+  <td class="rank"><Numeral value={r.rank} {mine} weight={1.5} label="Number {r.rank}" /></td>
   <td class="move"><span class="chg {r.move.type}" aria-hidden="true">{change}</span><span class="sr">{moveLabel(r.move, r.prev)}</span></td>
   <td class="title">
     <svelte:element this={r.href ? 'a' : 'span'} href={r.href} class="link">
@@ -77,7 +77,7 @@
   .right { text-align: right; }
 
   /* The Home rail's numeral: heavy, outlined, filled with the canvas. */
-  .rank { width: 58px; padding-right: 4px; font-size: 46px; }
+  .rank { width: 60px; padding-right: 4px; font-size: 64px; }
   .rank :global(.numeral) { margin-left: auto; }
   .move { width: 64px; }
   .move .chg { font-size: 14.5px; }
@@ -109,6 +109,6 @@
   .round.on { background: var(--accent-yours); color: var(--bg-canvas); }
   .seen { display: inline-flex; align-items: center; gap: 5px; padding-right: 2px; color: var(--accent-yours); font-size: 13px; letter-spacing: 0.04em; }
 
-  @container top10 (max-width: 560px) { td { padding-inline: 6px; } .move { width: 52px; } .rank { width: 44px; font-size: 36px; } }
+  @container top10 (max-width: 560px) { td { padding-inline: 6px; } .move { width: 52px; } .rank { width: 48px; font-size: 50px; } }
   .link:focus-visible, button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 </style>
