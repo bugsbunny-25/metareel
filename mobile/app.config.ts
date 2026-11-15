@@ -29,6 +29,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'metareel',
   slug: 'metareel',
+  // The EAS project (expo.dev/accounts/bugsbunny-team/projects/metareel) is the
+  // team's, not the signed-in user's; its ID comes from EAS_PROJECT_ID.
+  owner: 'bugsbunny-team',
   version,
   scheme: 'metareel',
   platforms: ['ios', 'android'],
