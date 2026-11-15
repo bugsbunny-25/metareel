@@ -174,7 +174,6 @@
     const seen = new Set()
     return (upcoming?.episodes ?? []).filter((e) => !seen.has(e.tmdb_id) && seen.add(e.tmdb_id))
   })
-  const toWatchTiles = $derived(STAGES.flatMap(([k]) => byStage[k]).filter((s) => s.next_episode))
 </script>
 
 <div class="page">
@@ -209,20 +208,29 @@
       </section>
 
       {#if view.value === 'grid'}
-        <div class="tiles">
-          {#each toWatchTiles as s (s.tmdb_id)}
-            {@const ep = s.next_episode}
-            <a class="ptile" href={nextHref(s)} class:stalled={s.stage === 'stalled'}>
-              <span class="pwrap">
-                <Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={150} radius={10} size="w342" />
-                <span class="corner num">{epCode(ep.season_number, ep.episode_number)}</span>
-              </span>
-              <span class="bar" aria-hidden="true"><i style:width="{s.percent}%"></i></span>
-              <span class="name">{s.title}</span>
-              <span class="meta">{ep.name || 'Untitled episode'}</span>
-            </a>
-          {/each}
-        </div>
+        <!-- The grid keeps the stages: one heading and poster grid per stage. -->
+        {#each STAGES as [key, name, hint]}
+          {@const list = byStage[key]}
+          {#if list.length}
+            <section class="stage" aria-labelledby="sg-{key}">
+              <div class="sh"><h2 id="sg-{key}">{name}</h2><span class="n num">{list.length}</span><span class="hint">{typeof hint === 'function' ? hint(queue.stale_days ?? 30) : hint}</span></div>
+              <div class="tiles">
+                {#each list as s (s.tmdb_id)}
+                  {@const ep = s.next_episode}
+                  <a class="ptile" href={nextHref(s)} class:stalled={s.stage === 'stalled'}>
+                    <span class="pwrap">
+                      <Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={150} radius={10} size="w342" />
+                      {#if ep}<span class="corner num">{epCode(ep.season_number, ep.episode_number)}</span>{/if}
+                    </span>
+                    <span class="bar" aria-hidden="true"><i style:width="{s.percent}%"></i></span>
+                    <span class="name">{s.title}</span>
+                    <span class="meta">{ep ? ep.name || 'Untitled episode' : s.next_air_date ? `Next episode ${dayLabel(s.next_air_date)}` : 'Nothing aired to watch'}</span>
+                  </a>
+                {/each}
+              </div>
+            </section>
+          {/if}
+        {/each}
       {:else}
       {#each STAGES as [key, name, hint]}
         {@const list = byStage[key]}
@@ -481,10 +489,13 @@
   @media (max-width: 600px) {
     .cards { grid-template-columns: 1fr; }
     .card { grid-template-columns: 64px 1fr; gap: 12px; }
-    .tiles { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 18px 12px; }
     .rows li { grid-template-columns: 44px minmax(0, 1fr) auto auto; }
     .rows .bar.slim { display: none; }
     .day { grid-template-columns: 1fr; gap: 8px; }
     .uh .seg { margin-left: 0; }
+  }
+  @media (max-width: 760px) {
+    /* As many columns as fit, at least 124px (Discover's grid): posters never grow to half the screen. */
+    .tiles { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 18px 12px; }
   }
 </style>

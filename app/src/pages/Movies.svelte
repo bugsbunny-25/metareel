@@ -181,9 +181,12 @@
   @media (max-width: 600px) {
     .tabs { order: 5; flex-basis: 100%; }
     .tabs button { flex: 1; white-space: nowrap; padding: 0 8px; }
-    .tiles { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 18px 12px; }
     .more { margin-left: 0; order: 5; width: 100%; }
     .rows li { grid-template-columns: 48px minmax(0, 1fr) auto; }
     .rows li :global(details) { display: none; }
+  }
+  @media (max-width: 760px) {
+    /* As many columns as fit, at least 124px (Discover's grid): posters never grow to half the screen. */
+    .tiles { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 18px 12px; }
   }
 </style>
