@@ -75,8 +75,9 @@
   tr:not(:first-child) td:not(.rank):not(.move) { box-shadow: inset 0 1px 0 var(--border-subtle); }
   .right { text-align: right; }
 
-  .rank { width: 36px; padding-right: 2px; text-align: right; color: var(--text-muted); font: 700 21px/1 var(--font-display); }
-  tr.mine .rank { color: var(--accent-yours); }
+  /* The Home rail's numeral: heavy, outlined, filled with the canvas. */
+  .rank { width: 58px; padding-right: 4px; text-align: right; color: var(--bg-canvas); -webkit-text-stroke: 1.5px var(--border-strong); font: 800 46px/1 var(--font-sans); letter-spacing: -0.06em; }
+  tr.mine .rank { -webkit-text-stroke-color: var(--accent-yours); }
   .move { width: 64px; }
   .move .chg { font-size: 14.5px; }
 
@@ -107,6 +108,6 @@
   .round.on { background: var(--accent-yours); color: var(--bg-canvas); }
   .seen { display: inline-flex; align-items: center; gap: 5px; padding-right: 2px; color: var(--accent-yours); font-size: 13px; letter-spacing: 0.04em; }
 
-  @container top10 (max-width: 560px) { td { padding-inline: 6px; } .move { width: 52px; } }
+  @container top10 (max-width: 560px) { td { padding-inline: 6px; } .move { width: 52px; } .rank { width: 44px; font-size: 36px; } }
   .link:focus-visible, button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 </style>

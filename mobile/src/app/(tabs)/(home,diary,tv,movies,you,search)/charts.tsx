@@ -5,6 +5,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-
 import type { components } from '@/api/schema';
 import { DateTimeField } from '@/components/DateTimeField';
 import { Icon } from '@/components/Icon';
+import { Numeral } from '@/components/Numeral';
 import { Poster } from '@/components/Poster';
 import { ScopePicker } from '@/components/ScopePicker';
 import { Text } from '@/components/Text';
@@ -137,7 +138,7 @@ function StepButton({ label, icon, disabled, onPress }: { label: string; icon: '
 
 /** Rank, the move since the day before (▲ ▼ New), poster, title and days in the Top 10. */
 function ChartRow({ entry: e }: { entry: Entry }) {
-  const { colors } = useTheme();
+  const { colors, fonts } = useTheme();
   const m = movement(e);
   const change = changeText(m);
   const tone = change.startsWith('▲') ? colors.deltaUp : change.startsWith('▼') ? colors.deltaDown : change === 'New' ? colors.deltaDebut : colors.textMuted;
@@ -149,9 +150,10 @@ function ChartRow({ entry: e }: { entry: Entry }) {
       accessibilityLabel={`Number ${e.rank}: ${e.name}, ${change}`}
       style={({ pressed }) => [styles.row, { borderBottomColor: colors.borderSubtle, opacity: pressed ? 0.7 : 1 }]}
     >
-      <Text variant="title" num style={styles.rank}>
-        {e.rank}
-      </Text>
+      {/* Tonight's numeral: heavy, outlined, filled with the canvas. */}
+      <View style={styles.rank}>
+        <Numeral value={e.rank} size={46} fill={colors.bgCanvas} stroke={colors.borderStrong} font={fonts.numeral} strokeWidth={1.5} />
+      </View>
       <Text variant="label" num style={[styles.change, { color: tone }]}>
         {change}
       </Text>
@@ -173,6 +175,6 @@ const styles = StyleSheet.create({
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   step: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
-  rank: { width: 30, textAlign: 'right' },
+  rank: { width: 52, alignItems: 'flex-end' },
   change: { width: 40, fontSize: 13 },
 });

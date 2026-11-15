@@ -8,6 +8,7 @@ import { ConnectionNote } from '@/components/ConnectionNote';
 import { Icon } from '@/components/Icon';
 import { OutboxBanner } from '@/components/OutboxBanner';
 import { PosterTile } from '@/components/Media';
+import { Numeral } from '@/components/Numeral';
 import { Poster } from '@/components/Poster';
 import { RatingLogo } from '@/components/RatingLogo';
 import { ScopePicker } from '@/components/ScopePicker';
@@ -17,7 +18,6 @@ import { TitleRow } from '@/components/TitleRow';
 import { useDiary, useInCinemas, usePreferences, useShowQueue, useTop10, useTrending } from '@/data/queries';
 import { changeText, type LibraryState, libraryMark, movement, providerName, setScope, useChartReference, useLibrary, useScope } from '@/data/scope';
 import { useWindowClass } from '@/layout/window-class';
-import Svg, { Text as SvgText } from 'react-native-svg';
 import { markEpisode, openEpisode, openLog, openTitle } from '@/lib/actions';
 import { episodeCode, starText, tmdbKind } from '@/lib/format';
 import { searchAction } from '@/layout/root-header';
@@ -241,7 +241,7 @@ function ChartTile({ item, state }: { item: ChartItem; state?: LibraryState }) {
       }, ${changeText(m)}`}
       style={styles.tile}
     >
-      <Numeral value={item.rank} size={wide ? 100 : 76} fill={colors.bgCanvas} stroke={colors.borderStrong} font={fonts.numeral} />
+      <Numeral value={item.rank} size={wide ? 100 : 76} fill={colors.bgCanvas} stroke={colors.borderStrong} font={fonts.numeral} overlap={14} />
       <View style={styles.tilePoster}>
         <Poster path={item.poster_path} title={item.name} width={92} />
         {mark ? (
@@ -251,30 +251,6 @@ function ChartTile({ item, state }: { item: ChartItem; state?: LibraryState }) {
         ) : null}
       </View>
     </Pressable>
-  );
-}
-
-/** An outlined numeral, clipped to its 0.78em line like the web's .big. */
-function Numeral({ value, size, fill, stroke, font }: { value: number; size: number; fill: string; stroke: string; font: string }) {
-  const digits = String(value).length;
-  const width = Math.ceil(size * (0.52 * digits - 0.06 * (digits - 1))) + 4;
-  const height = Math.round(size * 0.78) + 2;
-  return (
-    <Svg width={width} height={height} style={{ marginRight: -14 }} accessible={false}>
-      <SvgText
-        x={width - 2}
-        y={height - 3}
-        textAnchor="end"
-        fontFamily={font}
-        fontSize={size}
-        letterSpacing={-0.06 * size}
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={2}
-      >
-        {String(value)}
-      </SvgText>
-    </Svg>
   );
 }
 
