@@ -714,12 +714,6 @@
    "url": "https://github.com/paulmillr/noble-hashes"
   },
   {
-   "name": "@noxcturnal/noxcturnal-darwin-arm64",
-   "version": "0.1.13",
-   "license": "MIT",
-   "url": "https://github.com/expo/noxcturnal"
-  },
-  {
    "name": "@oxc-project/types",
    "version": "0.154.0",
    "license": "MIT",
@@ -2113,12 +2107,6 @@
   },
   {
    "name": "lightningcss",
-   "version": "1.33.0",
-   "license": "MPL-2.0",
-   "url": "https://github.com/parcel-bundler/lightningcss"
-  },
-  {
-   "name": "lightningcss-darwin-arm64",
    "version": "1.33.0",
    "license": "MPL-2.0",
    "url": "https://github.com/parcel-bundler/lightningcss"

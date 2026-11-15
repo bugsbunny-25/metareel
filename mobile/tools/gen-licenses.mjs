@@ -50,6 +50,10 @@ function walk(dir, deps) {
     const at = resolve(dir, name);
     if (!at) continue; // an optional dependency for another platform
     const pkg = read(at);
+    // A prebuilt binary for one OS or CPU (lightningcss-darwin-arm64, …): npm
+    // installs a different one per machine, so listing it would make the file
+    // differ between a Mac and CI. Its parent package is listed.
+    if (pkg.os || pkg.cpu) continue;
     const key = `${pkg.name}@${pkg.version}`;
     if (seen.has(key)) continue;
     seen.set(key, { name: pkg.name, version: pkg.version, license: license(pkg), url: link(pkg) });
