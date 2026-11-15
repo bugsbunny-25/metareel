@@ -5,6 +5,7 @@
      can't be reached the stored episode is shown and the page says so. -->
 <script>
   import Icon from '../components/Icon.svelte'
+  import Poster from '../components/Poster.svelte'
   import { api } from '../lib/api.js'
   import { posterSrc, stars, starsLabel } from '../lib/rows.js'
   import { localDay, dayLabel, clock } from '../lib/dates.js'
@@ -77,8 +78,9 @@
   {:else if !data}
     <div class="skeleton" style="height:420px" aria-busy="true" aria-label="Loading"></div>
   {:else if e}
-    <header class="hero" style:background-image={still ? `url(${still})` : undefined}>
-      <div class="scrim"></div>
+    <!-- Without a still (often the case before an episode airs) the header is compact, with the show's poster. -->
+    <header class="hero" class:bare={!still} style:background-image={still ? `url(${still})` : undefined}>
+      {#if still}<div class="scrim"></div>{:else}<a href="#/show/{show}" tabindex="-1" aria-hidden="true"><Poster path={data.show?.poster_path ?? null} seed={show} {title} width={96} radius={8} size="w185" /></a>{/if}
       <div class="htext">
         <a class="show" href="#/show/{show}">{title} ›</a>
         <p class="code num">{epCode(season, episode)}</p>
@@ -160,9 +162,11 @@
 </div>
 
 <style>
-  .page { padding: 20px var(--gutter) 48px; display: grid; gap: 20px; max-width: 1320px; }
-  .hero { position: relative; display: flex; align-items: flex-end; min-height: 300px; aspect-ratio: 21 / 8; max-height: 460px; border-radius: 20px; overflow: hidden; background: var(--bg-surface) center / cover no-repeat; }
+  .page { padding: 20px var(--gutter) 48px; display: grid; gap: 20px; }
+  .hero { position: relative; display: flex; align-items: flex-end; height: clamp(240px, 34vw, 460px); border-radius: 20px; overflow: hidden; background: var(--bg-surface) center / cover no-repeat; }
   .scrim { position: absolute; inset: 0; background: linear-gradient(to top, rgb(11 11 12 / 0.92), rgb(11 11 12 / 0.25) 60%, transparent); }
+  .hero.bare { height: auto; align-items: center; gap: 4px; padding: 16px; }
+  .hero.bare .htext { padding: 8px 12px; color: var(--text-primary); }
   .htext { position: relative; display: grid; gap: 4px; padding: 26px 28px; color: #f5f5f7; }
   .show { color: var(--accent-yours); font: 700 13px/1 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none; }
   .show:hover { text-decoration: underline; }
@@ -182,11 +186,11 @@
   dt { color: var(--text-muted); font-size: 13px; font-weight: 600; padding-top: 2px; }
   dd { margin: 0; }
   .eyebrow { margin: 0 0 10px; color: var(--text-muted); font: 700 12.5px/1 var(--font-sans); letter-spacing: 0.1em; text-transform: uppercase; }
-  .cast { display: flex; gap: 14px; margin: 0; padding: 0 0 8px; list-style: none; overflow-x: auto; }
-  .cast li { flex: none; width: 100px; }
+  .cast { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 16px 14px; margin: 0; padding: 0; list-style: none; }
+  .cast li { min-width: 0; }
   .cast a { display: grid; gap: 4px; color: inherit; text-decoration: none; }
   .cast a:hover b { text-decoration: underline; }
-  .face { display: grid; place-items: center; width: 100px; height: 134px; border-radius: 10px; overflow: hidden; background: var(--bg-elevated); color: var(--text-muted); font-weight: 700; }
+  .face { display: grid; place-items: center; width: 100%; aspect-ratio: 3 / 4; border-radius: 10px; overflow: hidden; background: var(--bg-elevated); color: var(--text-muted); font-weight: 700; }
   .face img { width: 100%; height: 100%; object-fit: cover; }
   .cast b { font: 600 13.5px/1.25 var(--font-sans); }
   .cast .hint { font-size: 12.5px; }
@@ -203,9 +207,12 @@
   .step .hint { display: inline-flex; align-items: center; gap: 4px; }
   .step b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 15px/1.3 var(--font-display); }
 
+  @media (max-width: 600px) {
+    .cast { display: flex; overflow-x: auto; padding-bottom: 8px; }
+    .cast li { flex: none; width: 100px; }
+  }
   @media (max-width: 960px) {
     .cols { grid-template-columns: 1fr; }
     h1 { font-size: 30px; }
-    .hero { min-height: 220px; aspect-ratio: 16 / 9; }
   }
 </style>

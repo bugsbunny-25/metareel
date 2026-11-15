@@ -148,6 +148,7 @@
         </section>
       {/if}
 
+      <div class="wide trio">
       <section class="panel pad">
         <h2>This week</h2>
         <b class="mid num">{plural(s.this_week?.watches ?? 0, noun(1), noun(2))}</b>
@@ -163,6 +164,7 @@
         <b class="mid num">{plural(s.this_year?.watches ?? 0, noun(1), noun(2))}</b>
         <span class="hint num">{shortDuration(s.this_year?.minutes ?? 0)}</span>
       </section>
+      </div>
 
       <section class="panel pad wide">
         <div class="ph">
@@ -244,7 +246,7 @@
 </div>
 
 <style>
-  .page { padding: 20px var(--gutter) 48px; display: grid; gap: 18px; max-width: 1320px; }
+  .page { padding: 20px var(--gutter) 48px; display: grid; gap: 18px; }
   .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
   .crumb { margin: 0; color: var(--text-muted); font-size: 14px; }
   .crumb a { color: inherit; }
@@ -257,6 +259,8 @@
   .grid > section { gap: 10px; }
   .wide { grid-column: 1 / -1; }
   .half { grid-column: span 2; }
+  .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .trio > section { gap: 10px; }
   .tall { grid-column: span 2; grid-row: span 2; }
   .ph { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
   .ph h2 { margin-right: auto; }
@@ -283,6 +287,7 @@
   @media (max-width: 1100px) {
     .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .half, .tall { grid-column: 1 / -1; grid-row: auto; }
+    .trio { grid-template-columns: 1fr; }
   }
   @media (max-width: 520px) {
     .big { font-size: 30px; }

@@ -367,7 +367,8 @@
 {/if}
 
 <style>
-  .upnext { display: grid; gap: 10px; }
+  .upnext { display: grid; gap: 10px; margin: 24px var(--gutter) 0; }
+  .upnext .block-head { margin-bottom: 0; }
   .upnext ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
   .upnext li { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px; border-radius: 14px; background: var(--bg-surface); }
   .un-art { display: block; }

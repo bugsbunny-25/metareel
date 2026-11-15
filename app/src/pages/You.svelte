@@ -150,7 +150,7 @@
 </div>
 
 <style>
-  .page { padding: 20px var(--gutter) 48px; display: grid; gap: 26px; max-width: 1320px; }
+  .page { padding: 20px var(--gutter) 48px; display: grid; gap: 26px; }
   .profile { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; }
   .avatar { display: grid; place-items: center; width: 76px; height: 76px; border-radius: 50%; border: 2px solid var(--accent-yours); background: var(--bg-elevated); font: 700 34px/1 var(--font-display); }
   .who { flex: 1; min-width: 180px; }

@@ -286,7 +286,7 @@
   .recent { gap: 14px; }
   .rrow { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px; }
   .rrow h2 { font-size: 15px !important; color: var(--text-muted); }
-  .rrow ul { display: flex; gap: 12px; margin: 0; padding: 0; list-style: none; overflow-x: auto; }
+  .rrow ul { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 0; list-style: none; }
   .rrow a { display: grid; gap: 4px; justify-items: center; color: inherit; text-decoration: none; }
   .rrow a:hover :global(.poster) { outline: 2px solid var(--accent-yours); outline-offset: 2px; }
   .cap { color: var(--accent-yours); font-size: 12.5px; font-weight: 600; white-space: nowrap; }

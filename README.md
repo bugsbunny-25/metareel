@@ -832,7 +832,7 @@ the watchlist and the year in review; Detailed stats at `#/you/stats` from
 `/me/stats/detailed`, Shows or Movies: time spent, episodes, rewatches,
 most-watched with hours, shows by status, time left and the catch-up date,
 upcoming watch time, trends, weekdays, ratings, genres, people and binges),
-Home also has an Up next row, a show page (`#/show/:id`: a map of every episode, season tabs,
+an Up next row on Home with one-click Watched, a show page (`#/show/:id`: a map of every episode, season tabs,
 tick to mark, untick to delete after asking, "watched up to here"), a person page (`#/person/:id`
 from `/people/:id`: photo, born/died, biography, IMDb link; credits, their charted titles and
 what you've seen and bookmarked of their work; the titles of theirs that charted; and the
