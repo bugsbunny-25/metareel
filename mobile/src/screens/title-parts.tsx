@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import type { components } from '@/api/schema';
@@ -8,10 +8,12 @@ import { RatingLogo } from '@/components/RatingLogo';
 import { Top10Badge } from '@/components/Top10Badge';
 import { Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
+import { usePreferences, useTitleAvailability } from '@/data/queries';
 import { providerName } from '@/data/scope';
 import { useTop10Of } from '@/data/top10now';
 import { useWindowClass } from '@/layout/window-class';
 import { runtimeText, tmdbImage } from '@/lib/format';
+import { MiniSegment } from '@/screens/stats-parts';
 import { useTheme } from '@/theme';
 
 // The sections a film's page and a show's page share: the artwork-tinted
@@ -106,12 +108,26 @@ function Score({ label, value, logo }: { label: string; value: string; logo: Rea
   );
 }
 
-export function WhereToWatch({ overview, country }: { overview?: Overview; country?: string }) {
+/**
+ * Where to watch, in your default country or any country in your order
+ * (Settings), switched here. The default's providers come with the overview;
+ * another country's are asked for when picked.
+ */
+export function WhereToWatch({ overview, country, kind, id }: { overview?: Overview; country?: string; kind: 'movie' | 'tv'; id: string }) {
   const { colors } = useTheme();
-  const avail = overview?.availability?.countries?.[country ?? ''] ?? Object.values(overview?.availability?.countries ?? {})[0];
+  const prefs = usePreferences();
+  const options = [...new Set([country, ...(prefs.data?.countries ?? [])].filter((c): c is string => !!c))];
+  const [picked, setPicked] = useState<string>();
+  const where = picked && options.includes(picked) ? picked : country;
+  const other = useTitleAvailability(kind, id, where, where !== country);
+  const avail =
+    where !== country
+      ? other.data?.countries?.[where ?? '']
+      : (overview?.availability?.countries?.[country ?? ''] ?? Object.values(overview?.availability?.countries ?? {})[0]);
   const streams: Provider[] = [...(avail?.flatrate ?? []), ...(avail?.free ?? []), ...(avail?.ads ?? [])];
   const buy: Provider[] = [...(avail?.rent ?? []), ...(avail?.buy ?? [])].filter((p, i, all) => all.findIndex((x) => x.provider_id === p.provider_id) === i);
-  if (!streams.length && !buy.length) return null;
+  const switchable = options.length > 1 && !!overview?.availability;
+  if (!streams.length && !buy.length && !switchable) return null;
   const row = (list: Provider[]) => (
     <View style={styles.providers}>
       {list.map((p) => (
@@ -135,8 +151,15 @@ export function WhereToWatch({ overview, country }: { overview?: Overview; count
     </View>
   );
   return (
-    <Panel title={`Where to watch${country ? ` in ${country}` : ''}`}>
-      {streams.length ? row(streams) : <Text variant="muted">Not streaming here.</Text>}
+    <Panel title={switchable ? 'Where to watch' : `Where to watch${country ? ` in ${country}` : ''}`}>
+      {switchable && where ? <MiniSegment options={options.map((c) => [c, c] as [string, string])} value={where} onChange={setPicked} /> : null}
+      {where !== country && other.isPending ? (
+        <Text variant="muted">Loading…</Text>
+      ) : streams.length ? (
+        row(streams)
+      ) : (
+        <Text variant="muted">Not streaming in {where ?? 'this country'}.</Text>
+      )}
       {buy.length ? (
         <>
           <Text variant="caption">Rent or buy</Text>

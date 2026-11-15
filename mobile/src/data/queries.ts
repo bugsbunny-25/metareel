@@ -258,6 +258,17 @@ export function useDetailedStats(kind: '' | 'tv' | 'movie') {
   });
 }
 
+/** Where a title streams in one country (Where to watch, for a country other than your default). */
+export function useTitleAvailability(kind: Kind, id: string, country: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['title-availability', kind, id, country ?? ''],
+    enabled: enabled && !!id && !!country,
+    staleTime: 30 * 60_000,
+    queryFn: async ({ signal }) =>
+      unwrap(await api.GET('/api/v1/titles/tmdb/{kind}/{id}/availability', { params: { path: { kind, id }, query: { country } }, signal })),
+  });
+}
+
 /** Every day a title was in a Top 10 (country, service, rank), for its Top 10 graph. */
 export function useTitleRankings(kind: 'movie' | 'tv', id: string, enabled = true) {
   return useQuery({

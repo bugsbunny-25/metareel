@@ -171,7 +171,7 @@ export function ShowView({
               })}
             </Panel>
           ) : null}
-          <WhereToWatch overview={overview.data} country={country} />
+          <WhereToWatch overview={overview.data} country={country} kind={'tv'} id={id} />
           <Charting overview={overview.data} />
           <About metadata={overview.data?.metadata} kind="tv" />
         </>

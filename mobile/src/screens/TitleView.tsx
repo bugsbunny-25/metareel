@@ -71,7 +71,7 @@ export function TitleView({ kind: k, id, embedded }: { kind: string; id: string;
         </Panel>
       ) : null}
 
-      <WhereToWatch overview={overview.data} country={country} />
+      <WhereToWatch overview={overview.data} country={country} kind={kind} id={id} />
       <Charting overview={overview.data} />
       <About metadata={m} kind={kind} />
     </ScrollView>

@@ -12,6 +12,7 @@
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
   import { scope, countryName, providerName } from '../lib/scope.svelte.js'
+  import { prefs } from '../lib/prefs.svelte.js'
   import { sampleColor, seriesPath, compact, dayMonth } from '../lib/viz.js'
   import { stars } from '../lib/rows.js'
   import { addDays, localDay } from '../lib/dates.js'
@@ -81,7 +82,11 @@
   const best = $derived(positions.length ? positions.reduce((a, b) => (b.rank < a.rank ? b : a)) : null)
   const r = $derived(d?.ov.ratings ?? null)
   const tmdbScore = $derived(r?.sources?.find((x) => x.source === 'tmdb')?.value ?? m.vote_average ?? null)
-  const here = $derived(d?.ov.availability?.countries?.[scope.country] ?? null)
+  // Where to watch: the chart country, or any country in your order (Settings), picked here.
+  const whereOptions = $derived([...new Set([scope.country, ...(prefs.values.countries ?? [])])])
+  let wherePicked = $state(null)
+  const where = $derived(wherePicked && whereOptions.includes(wherePicked) ? wherePicked : scope.country)
+  const here = $derived(d?.ov.availability?.countries?.[where] ?? null)
   // One logo per service: plan tiers ("Netflix Standard with Ads", "… Amazon Channel") collapse
   // into the base service when it's there.
   const streaming = $derived.by(() => {
@@ -90,7 +95,7 @@
     const all = [...seen.values()]
     return all.filter((p) => !all.some((o) => o !== p && p.provider_name.startsWith(o.provider_name + ' ')))
   })
-  const lastRemoved = $derived((d?.offerHistory?.events ?? []).filter((e) => e.country === scope.country && e.event === 'removed' && e.monetization === 'flatrate').at(-1) ?? null)
+  const lastRemoved = $derived((d?.offerHistory?.events ?? []).filter((e) => e.country === where && e.event === 'removed' && e.monetization === 'flatrate').at(-1) ?? null)
   const nfViews = $derived(d?.ov.netflix?.total_views || 0)
 
   // Cast & crew (stored once the credits job has run, else live from TMDB). Crew are grouped
@@ -244,7 +249,16 @@
         {/if}
 
         <section class="panel pad">
-          <h2>Where to watch · {scope.country}</h2>
+          {#if whereOptions.length > 1}
+            <div class="wh">
+              <h2>Where to watch</h2>
+              <div class="seg" role="group" aria-label="Country">
+                {#each whereOptions as c (c)}<button aria-pressed={c === where} title={countryName(c)} onclick={() => (wherePicked = c)}>{c}</button>{/each}
+              </div>
+            </div>
+          {:else}
+            <h2>Where to watch · {where}</h2>
+          {/if}
           {#if !d.catalogued}
             <p class="note">metareel hasn’t looked up where this streams yet.</p>
           {:else if errs.availability}
@@ -254,7 +268,7 @@
           {:else if lastRemoved}
             <p class="left">Left {lastRemoved.provider_name} on {dayMonth(lastRemoved.observed_at.slice(0, 10))}. Not on a subscription service here now.</p>
           {:else}
-            <p class="note">Not on a subscription service in {countryName(scope.country)} right now.</p>
+            <p class="note">Not on a subscription service in {countryName(where)} right now.</p>
           {/if}
           <p class="source">{d.ov.availability?.attribution ?? 'Watch provider data by JustWatch, via TMDB'}</p>
         </section>
@@ -314,6 +328,10 @@
   .chart { display: block; width: 100%; height: auto; padding: 0 12px 2px; }
   .ann { fill: var(--text-primary); font: italic 400 12px var(--font-display); }
   .source { margin: 0; padding: 0 12px; color: var(--text-muted); font-size: 12px; }
+  .wh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+  .seg { display: inline-flex; flex-wrap: wrap; padding: 2px; border-radius: 9px; background: var(--bg-elevated); }
+  .seg button { height: 28px; padding: 0 11px; border: 0; border-radius: 7px; background: none; color: var(--text-muted); font: 600 13px/1 var(--font-sans); cursor: pointer; }
+  .seg button[aria-pressed='true'] { background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); }
   .panel.pad .source { padding: 0; }
   .note { margin: 0; padding: 0 12px 6px; color: var(--text-muted); font: italic 400 15px/22px var(--font-display); }
   .panel.pad .note { padding: 0; }
