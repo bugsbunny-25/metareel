@@ -79,8 +79,8 @@
         <caption class="sr">{cat === 'tv' ? 'Shows' : 'Films'}: {providerName(scope.provider)} Top 10 in {inCountry(scope.country)} on {chart.date}</caption>
         <thead>
           <tr>
-            <th scope="col"><span class="sr">Rank</span></th>
             <th scope="col"><span class="sr">Change</span></th>
+            <th scope="col"><span class="sr">Rank</span></th>
             <th scope="col">Title</th>
             <th scope="col" class="hn">14 days</th>
             <th scope="col" class="hn right">Days</th>

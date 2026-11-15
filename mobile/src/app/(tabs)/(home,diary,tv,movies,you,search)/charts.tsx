@@ -136,7 +136,10 @@ function StepButton({ label, icon, disabled, onPress }: { label: string; icon: '
   );
 }
 
-/** Rank, the move since the day before (▲ ▼ New), poster, title and days in the Top 10. */
+/**
+ * The move since the day before (▲ ▼ New), then the rank numeral with the
+ * poster over its edge (as on Tonight's rail), the title and days in the Top 10.
+ */
 function ChartRow({ entry: e }: { entry: Entry }) {
   const { colors } = useTheme();
   const m = movement(e);
@@ -150,14 +153,14 @@ function ChartRow({ entry: e }: { entry: Entry }) {
       accessibilityLabel={`Number ${e.rank}: ${e.name}, ${change}`}
       style={({ pressed }) => [styles.row, { borderBottomColor: colors.borderSubtle, opacity: pressed ? 0.7 : 1 }]}
     >
-      {/* Tonight's numeral: heavy, outlined, filled with the canvas. */}
-      <View style={styles.rank}>
-        <Numeral value={e.rank} size={76} strokeWidth={1.5} />
-      </View>
       <Text variant="label" num style={[styles.change, { color: tone }]}>
         {change}
       </Text>
-      <Poster path={e.poster_path} title={e.name} width={44} />
+      {/* Right-aligned so the posters line up; the poster sits over the numeral's edge. */}
+      <View style={styles.pair}>
+        <Numeral value={e.rank} size={76} strokeWidth={1.5} overlap={5} />
+        <Poster path={e.poster_path} title={e.name} width={44} />
+      </View>
       <View style={{ flex: 1, gap: 2 }}>
         <Text variant="label" numberOfLines={2}>
           {e.name}
@@ -175,6 +178,6 @@ const styles = StyleSheet.create({
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   step: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
-  rank: { width: 60, alignItems: 'flex-end' },
-  change: { width: 40, fontSize: 13 },
+  change: { width: 36, fontSize: 13 },
+  pair: { width: 96, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
 });

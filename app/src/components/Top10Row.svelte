@@ -1,5 +1,5 @@
-<!-- Top 10 row. Artwork-led, 64px: serif titles, change as coloured arrows (green up, red down,
-     blue New), a 14-day trend, days, IMDb, RT (tan when stale) and origin. Your titles (anything in
+<!-- Top 10 row. Artwork-led, 64px: the change first (green up, red down, blue New), then the
+     rank numeral with the poster over its edge (as on Home's rail), serif titles, a 14-day trend, days, IMDb, RT (tan when stale) and origin. Your titles (anything in
      your library) get an orange wash with an orange edge, rank and trend line. -->
 <script>
   import { chartRow, moveLabel, changeText, isYours, stars, starsLabel, shortDate } from '../lib/rows.js'
@@ -20,11 +20,17 @@
 </script>
 
 <tr class:mine>
-  <td class="rank"><Numeral value={r.rank} {mine} weight={1.5} label="Number {r.rank}" /></td>
   <td class="move"><span class="chg {r.move.type}" aria-hidden="true">{change}</span><span class="sr">{moveLabel(r.move, r.prev)}</span></td>
+  <td class="rank">
+    <span class="pair">
+      <Numeral value={r.rank} {mine} weight={1.5} label="Number {r.rank}" />
+      <svelte:element this={r.href ? 'a' : 'span'} href={r.href} class="art" tabindex="-1" aria-hidden="true">
+        <Poster path={r.poster} seed={r.seed} title={r.name} width={40} radius={5} size="w185" />
+      </svelte:element>
+    </span>
+  </td>
   <td class="title">
     <svelte:element this={r.href ? 'a' : 'span'} href={r.href} class="link">
-      <Poster path={r.poster} seed={r.seed} title={r.name} width={36} radius={5} size="w185" />
       <span class="text">
         <span class="name">{r.name}</span>
         <span class="meta">
@@ -76,14 +82,17 @@
   tr:not(:first-child) td:not(.rank):not(.move) { box-shadow: inset 0 1px 0 var(--border-subtle); }
   .right { text-align: right; }
 
-  /* The Home rail's numeral: heavy, outlined, filled with the canvas. */
-  .rank { width: 60px; padding-right: 4px; font-size: 64px; }
-  .rank :global(.numeral) { margin-left: auto; }
-  .move { width: 64px; }
+  .move { width: 52px; padding-right: 0; }
   .move .chg { font-size: 14.5px; }
+  /* The Home rail's pairing: the numeral, right-aligned so the posters line up, under the
+     poster's left edge. */
+  .rank { width: 92px; padding-left: 0; font-size: 64px; }
+  .pair { display: flex; align-items: center; justify-content: flex-end; }
+  .pair :global(.numeral) { margin-right: -5px; }
+  .art { position: relative; display: block; line-height: 0; }
 
   .title { width: 100%; max-width: 0; }
-  .link { display: flex; align-items: center; gap: 12px; min-width: 0; color: inherit; text-decoration: none; }
+  .link { display: flex; align-items: center; min-width: 0; color: inherit; text-decoration: none; }
   .text { display: grid; min-width: 0; }
   .name { overflow: hidden; text-overflow: ellipsis; font: 600 16px/21px var(--font-display); }
   a.link:hover .name { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
@@ -109,6 +118,6 @@
   .round.on { background: var(--accent-yours); color: var(--bg-canvas); }
   .seen { display: inline-flex; align-items: center; gap: 5px; padding-right: 2px; color: var(--accent-yours); font-size: 13px; letter-spacing: 0.04em; }
 
-  @container top10 (max-width: 560px) { td { padding-inline: 6px; } .move { width: 52px; } .rank { width: 48px; font-size: 50px; } }
+  @container top10 (max-width: 560px) { td { padding-inline: 6px; } .move { width: 44px; } .rank { width: 78px; font-size: 50px; } }
   .link:focus-visible, button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 </style>
