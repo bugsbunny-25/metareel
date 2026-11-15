@@ -86,7 +86,7 @@ func (r *TrackingRepository) ApplyVenueImport(ctx context.Context, creates []Ven
 			v.Status = "open"
 		}
 		id, err := q.CreateVenue(ctx, sqlc.CreateVenueParams{
-			Name: v.Name, Chain: toNullString(v.Chain), Address: toNullString(v.Address),
+			Name: v.Name, Chain: toNullString(v.Chain), Address: toNullString(v.Address), Postcode: toNullString(v.Postcode),
 			City: toNullString(v.City), Region: toNullString(v.Region), Country: toNullString(v.Country),
 			Latitude: floatPtrNull(v.Latitude), Longitude: floatPtrNull(v.Longitude),
 			Timezone: toNullString(v.Timezone), OpenedOn: toNullString(v.OpenedOn), ClosedOn: toNullString(v.ClosedOn),
@@ -103,7 +103,7 @@ func (r *TrackingRepository) ApplyVenueImport(ctx context.Context, creates []Ven
 	for _, f := range fills {
 		v := f.Venue
 		n, err := q.FillVenueBlanks(ctx, sqlc.FillVenueBlanksParams{ID: f.ID,
-			Chain: toNullString(v.Chain), Address: toNullString(v.Address), City: toNullString(v.City), Region: toNullString(v.Region),
+			Chain: toNullString(v.Chain), Address: toNullString(v.Address), Postcode: toNullString(v.Postcode), City: toNullString(v.City), Region: toNullString(v.Region),
 			Latitude: floatPtrNull(v.Latitude), Longitude: floatPtrNull(v.Longitude), Timezone: toNullString(v.Timezone), OpenedOn: toNullString(v.OpenedOn),
 			ClosedOn: toNullString(v.ClosedOn), Note: toNullString(v.Note)})
 		if err != nil {

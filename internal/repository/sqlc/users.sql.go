@@ -35,39 +35,39 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 }
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (user_id, token_hash, expires_at, user_agent, ip)
+INSERT INTO sessions (user_id, token_hash, expires_at, user_agent, ip, device_name, remember_device)
 VALUES (?1, ?2, datetime('now', CAST(?3 AS TEXT)),
-        ?4, ?5)
-RETURNING id, user_id, token_hash, created_at, last_seen_at, expires_at, user_agent, ip
+        ?4, ?5, ?6, ?7)
+RETURNING id, expires_at
 `
 
 type CreateSessionParams struct {
-	UserID    int64  `json:"user_id"`
-	TokenHash string `json:"token_hash"`
-	Ttl       string `json:"ttl"`
-	UserAgent string `json:"user_agent"`
-	Ip        string `json:"ip"`
+	UserID         int64  `json:"user_id"`
+	TokenHash      string `json:"token_hash"`
+	Ttl            string `json:"ttl"`
+	UserAgent      string `json:"user_agent"`
+	Ip             string `json:"ip"`
+	DeviceName     string `json:"device_name"`
+	RememberDevice bool   `json:"remember_device"`
 }
 
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
+type CreateSessionRow struct {
+	ID        int64     `json:"id"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (CreateSessionRow, error) {
 	row := q.db.QueryRowContext(ctx, createSession,
 		arg.UserID,
 		arg.TokenHash,
 		arg.Ttl,
 		arg.UserAgent,
 		arg.Ip,
+		arg.DeviceName,
+		arg.RememberDevice,
 	)
-	var i Session
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.TokenHash,
-		&i.CreatedAt,
-		&i.LastSeenAt,
-		&i.ExpiresAt,
-		&i.UserAgent,
-		&i.Ip,
-	)
+	var i CreateSessionRow
+	err := row.Scan(&i.ID, &i.ExpiresAt)
 	return i, err
 }
 
@@ -102,11 +102,17 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 const deleteExpiredSessions = `-- name: DeleteExpiredSessions :execrows
 DELETE FROM sessions
 WHERE expires_at <= datetime('now')
-   OR last_seen_at <= datetime('now', CAST(?1 AS TEXT))
+   OR last_seen_at <= datetime('now', CASE WHEN remember_device THEN CAST(?1 AS TEXT)
+                                           ELSE CAST(?2 AS TEXT) END)
 `
 
-func (q *Queries) DeleteExpiredSessions(ctx context.Context, idle string) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteExpiredSessions, idle)
+type DeleteExpiredSessionsParams struct {
+	DeviceIdle string `json:"device_idle"`
+	Idle       string `json:"idle"`
+}
+
+func (q *Queries) DeleteExpiredSessions(ctx context.Context, arg DeleteExpiredSessionsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteExpiredSessions, arg.DeviceIdle, arg.Idle)
 	if err != nil {
 		return 0, err
 	}
@@ -193,12 +199,14 @@ JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = ?1
   AND u.disabled = 0
   AND s.expires_at > datetime('now')
-  AND s.last_seen_at > datetime('now', CAST(?2 AS TEXT))
+  AND s.last_seen_at > datetime('now', CASE WHEN s.remember_device THEN CAST(?2 AS TEXT)
+                                            ELSE CAST(?3 AS TEXT) END)
 `
 
 type GetActiveSessionParams struct {
-	TokenHash string `json:"token_hash"`
-	Idle      string `json:"idle"`
+	TokenHash  string `json:"token_hash"`
+	DeviceIdle string `json:"device_idle"`
+	Idle       string `json:"idle"`
 }
 
 type GetActiveSessionRow struct {
@@ -210,10 +218,11 @@ type GetActiveSessionRow struct {
 }
 
 // GetActiveSession returns a session that has not expired, was used within
-// the idle window (idle is a negative modifier, e.g. '-604800 seconds') and
-// belongs to an enabled user.
+// its idle window and belongs to an enabled user. idle and device_idle are
+// negative modifiers (e.g. '-604800 seconds'); device_idle applies to
+// "remember this device" sessions.
 func (q *Queries) GetActiveSession(ctx context.Context, arg GetActiveSessionParams) (GetActiveSessionRow, error) {
-	row := q.db.QueryRowContext(ctx, getActiveSession, arg.TokenHash, arg.Idle)
+	row := q.db.QueryRowContext(ctx, getActiveSession, arg.TokenHash, arg.DeviceIdle, arg.Idle)
 	var i GetActiveSessionRow
 	err := row.Scan(
 		&i.ID,
@@ -223,6 +232,32 @@ func (q *Queries) GetActiveSession(ctx context.Context, arg GetActiveSessionPara
 		&i.Role,
 	)
 	return i, err
+}
+
+const getActiveSessionDigest = `-- name: GetActiveSessionDigest :one
+SELECT s.token_hash
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.id = ?1
+  AND u.disabled = 0
+  AND s.expires_at > datetime('now')
+  AND s.last_seen_at > datetime('now', CASE WHEN s.remember_device THEN CAST(?2 AS TEXT)
+                                            ELSE CAST(?3 AS TEXT) END)
+`
+
+type GetActiveSessionDigestParams struct {
+	ID         int64  `json:"id"`
+	DeviceIdle string `json:"device_idle"`
+	Idle       string `json:"idle"`
+}
+
+// GetActiveSessionDigest returns the token digest of an active session by
+// id (same rules as GetActiveSession), for the local-URL probe.
+func (q *Queries) GetActiveSessionDigest(ctx context.Context, arg GetActiveSessionDigestParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getActiveSessionDigest, arg.ID, arg.DeviceIdle, arg.Idle)
+	var token_hash string
+	err := row.Scan(&token_hash)
+	return token_hash, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
@@ -248,29 +283,38 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 }
 
 const listActiveSessions = `-- name: ListActiveSessions :many
-SELECT s.id, s.user_id, u.username, s.created_at, s.last_seen_at, s.expires_at, s.user_agent, s.ip
+SELECT s.id, s.user_id, u.username, s.created_at, s.last_seen_at, s.expires_at, s.user_agent, s.ip,
+       s.device_name, s.remember_device
 FROM sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.expires_at > datetime('now')
-  AND s.last_seen_at > datetime('now', CAST(?1 AS TEXT))
+  AND s.last_seen_at > datetime('now', CASE WHEN s.remember_device THEN CAST(?1 AS TEXT)
+                                            ELSE CAST(?2 AS TEXT) END)
 ORDER BY s.last_seen_at DESC, s.id DESC
 `
 
-type ListActiveSessionsRow struct {
-	ID         int64     `json:"id"`
-	UserID     int64     `json:"user_id"`
-	Username   string    `json:"username"`
-	CreatedAt  time.Time `json:"created_at"`
-	LastSeenAt time.Time `json:"last_seen_at"`
-	ExpiresAt  time.Time `json:"expires_at"`
-	UserAgent  string    `json:"user_agent"`
-	Ip         string    `json:"ip"`
+type ListActiveSessionsParams struct {
+	DeviceIdle string `json:"device_idle"`
+	Idle       string `json:"idle"`
 }
 
-// ListActiveSessions lists unexpired sessions used within the idle window
-// (idle is a negative modifier, e.g. '-604800 seconds'), newest use first.
-func (q *Queries) ListActiveSessions(ctx context.Context, idle string) ([]ListActiveSessionsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listActiveSessions, idle)
+type ListActiveSessionsRow struct {
+	ID             int64     `json:"id"`
+	UserID         int64     `json:"user_id"`
+	Username       string    `json:"username"`
+	CreatedAt      time.Time `json:"created_at"`
+	LastSeenAt     time.Time `json:"last_seen_at"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	UserAgent      string    `json:"user_agent"`
+	Ip             string    `json:"ip"`
+	DeviceName     string    `json:"device_name"`
+	RememberDevice bool      `json:"remember_device"`
+}
+
+// ListActiveSessions lists unexpired sessions used within their idle window
+// (see GetActiveSession), newest use first.
+func (q *Queries) ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]ListActiveSessionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveSessions, arg.DeviceIdle, arg.Idle)
 	if err != nil {
 		return nil, err
 	}
@@ -287,6 +331,8 @@ func (q *Queries) ListActiveSessions(ctx context.Context, idle string) ([]ListAc
 			&i.ExpiresAt,
 			&i.UserAgent,
 			&i.Ip,
+			&i.DeviceName,
+			&i.RememberDevice,
 		); err != nil {
 			return nil, err
 		}

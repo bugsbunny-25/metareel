@@ -2,12 +2,14 @@
      toggle, a meta line and optional extra lines (children). Titles without a TMDB ID (rare in
      JustWatch data) show without a link or toggle. kind: movie | tv. -->
 <script>
+  import RatingLogo from './RatingLogo.svelte'
   import Poster from './Poster.svelte'
   import Icon from './Icon.svelte'
   import { library } from '../lib/library.svelte.js'
   import { toast } from '../lib/toast.svelte.js'
 
-  let { kind, tmdbId = null, title, poster = null, meta = '', badge = '', badgeTone = '', children } = $props()
+  /** badgeLogo: imdb | rt | tmdb puts that source's mark before the badge (a rating). */
+  let { kind, tmdbId = null, title, poster = null, meta = '', badge = '', badgeTone = '', badgeLogo = '', badgeRotten = false, children } = $props()
 
   const t = $derived(tmdbId ? library.get(kind, tmdbId) : null)
   const on = $derived(t?.status === 'watchlist')
@@ -26,8 +28,8 @@
 
 <li class="tile">
   <svelte:element this={href ? 'a' : 'div'} class="art" {href}>
-    <Poster path={poster} seed={tmdbId ?? title} {title} width={170} radius={10} size="w342" />
-    {#if badge}<span class="badge {badgeTone}">{badge}</span>{/if}
+    <Poster path={poster} seed={tmdbId ?? title} {title} {kind} {tmdbId} width={170} radius={10} size="w342" />
+    {#if badge}<span class="badge {badgeTone}" class:logo={!!badgeLogo}>{#if badgeLogo}<RatingLogo source={badgeLogo} rotten={badgeRotten} dark height={13} />{/if}{badge}</span>{/if}
     {#if seen}<span class="seen" title="You’ve seen it"><Icon name="check" size={12} /></span>{/if}
   </svelte:element>
   <div class="tt">
@@ -49,8 +51,9 @@
   .art :global(.poster) { width: 100% !important; }
   .badge { position: absolute; left: 8px; bottom: 8px; padding: 3px 7px; border-radius: 8px; background: rgb(0 0 0 / 0.74); color: #fff; font-size: 12px; font-weight: 700; }
   .badge.gold { color: #f5c518; }
+  .badge.logo { display: inline-flex; align-items: center; gap: 5px; color: #fff; }
   .badge.new { color: var(--delta-debut); }
-  .seen { position: absolute; right: 8px; top: 8px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-yours); color: var(--bg-canvas); }
+  .seen { position: absolute; left: 8px; top: 8px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-yours); color: var(--bg-canvas); }
   .tt { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-top: 4px; }
   .name { font: 700 15.5px/1.25 var(--font-display); color: inherit; text-decoration: none; }
   a.name:hover { text-decoration: underline; text-underline-offset: 3px; }

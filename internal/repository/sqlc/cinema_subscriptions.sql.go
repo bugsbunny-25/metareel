@@ -63,6 +63,24 @@ func (q *Queries) DeleteCinemaSubscription(ctx context.Context, arg DeleteCinema
 	return result.RowsAffected()
 }
 
+const deleteCinemaSubscriptionPeriods = `-- name: DeleteCinemaSubscriptionPeriods :exec
+DELETE FROM cinema_subscription_periods WHERE subscription_id = ?1
+`
+
+func (q *Queries) DeleteCinemaSubscriptionPeriods(ctx context.Context, subscriptionID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteCinemaSubscriptionPeriods, subscriptionID)
+	return err
+}
+
+const deleteCinemaSubscriptionPrices = `-- name: DeleteCinemaSubscriptionPrices :exec
+DELETE FROM cinema_subscription_prices WHERE subscription_id = ?1
+`
+
+func (q *Queries) DeleteCinemaSubscriptionPrices(ctx context.Context, subscriptionID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteCinemaSubscriptionPrices, subscriptionID)
+	return err
+}
+
 const getCinemaSubscription = `-- name: GetCinemaSubscription :one
 SELECT id, user_id, plan, chain, price_minor, currency, period, started_on, ended_on, note, created_at, updated_at
 FROM cinema_subscriptions WHERE id = ?1 AND user_id = ?2
@@ -91,6 +109,113 @@ func (q *Queries) GetCinemaSubscription(ctx context.Context, arg GetCinemaSubscr
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const insertCinemaSubscriptionPeriod = `-- name: InsertCinemaSubscriptionPeriod :exec
+INSERT INTO cinema_subscription_periods (subscription_id, started_on, ended_on)
+VALUES (?1, ?2, ?3)
+`
+
+type InsertCinemaSubscriptionPeriodParams struct {
+	SubscriptionID int64          `json:"subscription_id"`
+	StartedOn      string         `json:"started_on"`
+	EndedOn        sql.NullString `json:"ended_on"`
+}
+
+func (q *Queries) InsertCinemaSubscriptionPeriod(ctx context.Context, arg InsertCinemaSubscriptionPeriodParams) error {
+	_, err := q.db.ExecContext(ctx, insertCinemaSubscriptionPeriod, arg.SubscriptionID, arg.StartedOn, arg.EndedOn)
+	return err
+}
+
+const insertCinemaSubscriptionPrice = `-- name: InsertCinemaSubscriptionPrice :exec
+INSERT INTO cinema_subscription_prices (subscription_id, effective_on, price_minor)
+VALUES (?1, ?2, ?3)
+`
+
+type InsertCinemaSubscriptionPriceParams struct {
+	SubscriptionID int64  `json:"subscription_id"`
+	EffectiveOn    string `json:"effective_on"`
+	PriceMinor     int64  `json:"price_minor"`
+}
+
+func (q *Queries) InsertCinemaSubscriptionPrice(ctx context.Context, arg InsertCinemaSubscriptionPriceParams) error {
+	_, err := q.db.ExecContext(ctx, insertCinemaSubscriptionPrice, arg.SubscriptionID, arg.EffectiveOn, arg.PriceMinor)
+	return err
+}
+
+const listCinemaSubscriptionPeriods = `-- name: ListCinemaSubscriptionPeriods :many
+
+SELECT p.id, p.subscription_id, p.started_on, p.ended_on
+FROM cinema_subscription_periods p
+JOIN cinema_subscriptions s ON s.id = p.subscription_id
+WHERE s.user_id = ?1
+ORDER BY p.subscription_id, p.started_on, p.id
+`
+
+// Periods (runs between cancelling and resubscribing) and price changes of a
+// user's plans, oldest first.
+func (q *Queries) ListCinemaSubscriptionPeriods(ctx context.Context, userID int64) ([]CinemaSubscriptionPeriod, error) {
+	rows, err := q.db.QueryContext(ctx, listCinemaSubscriptionPeriods, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CinemaSubscriptionPeriod{}
+	for rows.Next() {
+		var i CinemaSubscriptionPeriod
+		if err := rows.Scan(
+			&i.ID,
+			&i.SubscriptionID,
+			&i.StartedOn,
+			&i.EndedOn,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCinemaSubscriptionPrices = `-- name: ListCinemaSubscriptionPrices :many
+SELECT p.id, p.subscription_id, p.effective_on, p.price_minor
+FROM cinema_subscription_prices p
+JOIN cinema_subscriptions s ON s.id = p.subscription_id
+WHERE s.user_id = ?1
+ORDER BY p.subscription_id, p.effective_on, p.id
+`
+
+func (q *Queries) ListCinemaSubscriptionPrices(ctx context.Context, userID int64) ([]CinemaSubscriptionPrice, error) {
+	rows, err := q.db.QueryContext(ctx, listCinemaSubscriptionPrices, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CinemaSubscriptionPrice{}
+	for rows.Next() {
+		var i CinemaSubscriptionPrice
+		if err := rows.Scan(
+			&i.ID,
+			&i.SubscriptionID,
+			&i.EffectiveOn,
+			&i.PriceMinor,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listCinemaSubscriptions = `-- name: ListCinemaSubscriptions :many

@@ -45,6 +45,10 @@ func TestOverpassCinemas(t *testing.T) {
 	if _, err := c.Towns(ctx, "GB"); err != nil || !strings.Contains(gotQuery, `node["place"~"^(city|town)$"](area.c)`) {
 		t.Fatalf("towns query = %s, %v", gotQuery, err)
 	}
+	if _, err := c.Addresses(ctx, "GB"); err != nil || !strings.Contains(gotQuery, `nwr["amenity"="cinema"][!"addr:street"][!"addr:place"][!"addr:full"](area.c)->.x;`) ||
+		!strings.Contains(gotQuery, `nwr(around.x:75)["addr:housenumber"]`) || !strings.Contains(gotQuery, `way(pivot.in)["addr:housenumber"]`) || !strings.HasSuffix(gotQuery, "out center tags;") {
+		t.Fatalf("addresses query = %s, %v", gotQuery, err)
+	}
 	if _, err := c.Cinemas(ctx, `GB"];node(1);//`); err == nil {
 		t.Fatal("country code not validated")
 	}

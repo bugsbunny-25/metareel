@@ -100,11 +100,11 @@ WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id);
 
 -- name: CreateVenue :one
 INSERT INTO venues (name, chain, address, city, region, country, latitude, longitude,
-                    timezone, opened_on, closed_on, status, note, created_by)
+                    timezone, opened_on, closed_on, status, note, created_by, postcode)
 VALUES (sqlc.arg(name), sqlc.narg(chain), sqlc.narg(address), sqlc.narg(city), sqlc.narg(region),
         sqlc.narg(country), sqlc.narg(latitude), sqlc.narg(longitude), sqlc.narg(timezone),
         sqlc.narg(opened_on), sqlc.narg(closed_on), sqlc.arg(status), sqlc.narg(note),
-        sqlc.narg(created_by))
+        sqlc.narg(created_by), sqlc.narg(postcode))
 RETURNING id;
 
 -- name: UpdateVenue :execrows
@@ -112,6 +112,7 @@ UPDATE venues SET
     name = sqlc.arg(name),
     chain = sqlc.narg(chain),
     address = sqlc.narg(address),
+    postcode = sqlc.narg(postcode),
     city = sqlc.narg(city),
     region = sqlc.narg(region),
     country = sqlc.narg(country),
@@ -128,25 +129,25 @@ WHERE id = sqlc.arg(id);
 
 -- name: GetVenue :one
 SELECT id, name, chain, address, city, region, country, latitude, longitude, timezone,
-       opened_on, closed_on, status, replaced_by_venue_id, note, created_by, created_at, updated_at
+       opened_on, closed_on, status, replaced_by_venue_id, note, created_by, created_at, updated_at, postcode
 FROM venues WHERE id = sqlc.arg(id);
 
 -- ListVenues searches the shared venue list: each word of the query (up to
--- four) must appear in the name, chain, city or address, so "pvr mumbai"
--- finds a PVR in Mumbai. Names starting with the first word come first,
+-- four) must appear in the name, chain, city, address or postcode, so "pvr
+-- mumbai" finds a PVR in Mumbai and "amc 10036" the AMC in that ZIP. Names starting with the first word come first,
 -- then open cinemas before closed ones.
 -- name: ListVenues :many
 SELECT v.id, v.name, v.chain, v.address, v.city, v.region, v.country, v.latitude, v.longitude,
        v.timezone, v.opened_on, v.closed_on, v.status, v.replaced_by_venue_id, v.note,
-       v.created_by, v.created_at, v.updated_at,
+       v.created_by, v.created_at, v.updated_at, v.postcode,
        CAST((SELECT COUNT(*) FROM venue_screens s WHERE s.venue_id = v.id) AS INTEGER) AS screen_count
 FROM venues v,
      (SELECT CAST(sqlc.arg(w1) AS TEXT) AS w1, CAST(sqlc.arg(w2) AS TEXT) AS w2,
              CAST(sqlc.arg(w3) AS TEXT) AS w3, CAST(sqlc.arg(w4) AS TEXT) AS w4) q
-WHERE (q.w1 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w1 || '%')
-  AND (q.w2 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w2 || '%')
-  AND (q.w3 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w3 || '%')
-  AND (q.w4 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '')) LIKE '%' || q.w4 || '%')
+WHERE (q.w1 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '') || ' ' || COALESCE(v.postcode, '')) LIKE '%' || q.w1 || '%')
+  AND (q.w2 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '') || ' ' || COALESCE(v.postcode, '')) LIKE '%' || q.w2 || '%')
+  AND (q.w3 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '') || ' ' || COALESCE(v.postcode, '')) LIKE '%' || q.w3 || '%')
+  AND (q.w4 = '' OR (v.name || ' ' || COALESCE(v.chain, '') || ' ' || COALESCE(v.city, '') || ' ' || COALESCE(v.address, '') || ' ' || COALESCE(v.postcode, '')) LIKE '%' || q.w4 || '%')
   AND (CAST(sqlc.arg(country) AS TEXT) = '' OR v.country = sqlc.arg(country))
   AND (CAST(sqlc.arg(include_closed) AS INTEGER) = 1 OR v.status <> 'closed')
 ORDER BY CASE WHEN q.w1 <> '' AND v.name LIKE q.w1 || '%' THEN 0 ELSE 1 END,
@@ -246,3 +247,20 @@ SELECT l.content_type, l.data, CAST(COALESCE(f.logo_version, '') AS TEXT) AS log
 FROM watch_formats f
 JOIN watch_format_logos l ON l.format_id = f.id
 WHERE f.slug = sqlc.arg(slug);
+
+-- ListVenuesInBox lists cinemas with coordinates inside a latitude /
+-- longitude box (the caller computes the box around a point and the exact
+-- distance), with how often the user has watched there. Capped by limit;
+-- the caller asks for far more than it returns.
+-- name: ListVenuesInBox :many
+SELECT v.id, v.name, v.chain, v.address, v.postcode, v.city, v.region, v.country, v.latitude, v.longitude,
+       v.timezone, v.opened_on, v.closed_on, v.status, v.replaced_by_venue_id, v.note,
+       v.created_by, v.created_at, v.updated_at,
+       CAST((SELECT COUNT(*) FROM venue_screens s WHERE s.venue_id = v.id) AS INTEGER) AS screen_count,
+       CAST((SELECT COUNT(*) FROM watch_entries w WHERE w.venue_id = v.id AND w.user_id = sqlc.arg(user_id)) AS INTEGER) AS your_watches,
+       CAST(COALESCE((SELECT MAX(w.ended_at) FROM watch_entries w WHERE w.venue_id = v.id AND w.user_id = sqlc.arg(user_id)), '') AS TEXT) AS your_last_watch
+FROM venues v
+WHERE v.latitude >= CAST(sqlc.arg(min_lat) AS REAL) AND v.latitude <= CAST(sqlc.arg(max_lat) AS REAL)
+  AND v.longitude >= CAST(sqlc.arg(min_lon) AS REAL) AND v.longitude <= CAST(sqlc.arg(max_lon) AS REAL)
+  AND (CAST(sqlc.arg(include_closed) AS INTEGER) = 1 OR v.status <> 'closed')
+LIMIT sqlc.arg(limit);

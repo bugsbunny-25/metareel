@@ -115,9 +115,11 @@ export const getRun = (id) => req(`/task-runs/${id}`)
 export const getRunLogs = (id) => req(`/task-runs/${id}/logs`)
 
 // ── Sign-in, users and sessions ─────────────────────────────────────
-export const getAuthSession = () => req('/session', { base: AUTH })
-export const login = (username, password) => req('/login', { method: 'POST', body: { username, password }, base: AUTH })
-export const logout = () => req('/logout', { method: 'POST', base: AUTH })
+// The console has its own sign-in (client=admin: its own session cookie), separate
+// from the user app's at /, so being signed in to one never shows in the other.
+export const getAuthSession = () => req('/session', { base: AUTH, query: { client: 'admin' } })
+export const login = (username, password) => req('/login', { method: 'POST', body: { username, password, client: 'admin' }, base: AUTH, query: { client: 'admin' } })
+export const logout = () => req('/logout', { method: 'POST', base: AUTH, query: { client: 'admin' } })
 export const listUsers = () => req('/users')
 export const createUser = (body) => req('/users', { method: 'POST', body })
 export const updateUser = (username, body) => req(`/users/${encodeURIComponent(username)}`, { method: 'PATCH', body })

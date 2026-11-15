@@ -6,6 +6,7 @@
      order; there's no manual reordering yet. -->
 <script>
   import Poster from '../components/Poster.svelte'
+  import ProviderLogo from '../components/ProviderLogo.svelte'
   import Icon from '../components/Icon.svelte'
   import { api } from '../lib/api.js'
   import { library, libKey } from '../lib/library.svelte.js'
@@ -157,7 +158,7 @@
             <tr>
               <td class="title">
                 <a class="cell" href="#/title/{t.tmdb_kind}/{t.tmdb_id}">
-                  <Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} width={44} radius={5} size="w185" />
+                  <Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} kind={t.tmdb_kind} tmdbId={t.tmdb_id} width={44} radius={5} size="w185" />
                   <span class="text">
                     <span class="name">{t.title}</span>
                     <span class="meta">{t.tmdb_kind === 'tv' ? 'Series' : 'Film'}{#if year(t.release_date)}{' · '}{year(t.release_date)}{/if}{#if length(t)}{' · '}{length(t)}{/if}{#if t.watch_count}{' · '}watched {t.watch_count}×{/if}</span>
@@ -176,8 +177,8 @@
               <td class="where">
                 {#if t.info?.streaming.length}
                   <span class="providers">
-                    {#each t.info.streaming.slice(0, 3) as s}
-                      {#if s.link}<a class="pill strong" href={s.link} target="_blank" rel="noopener noreferrer">{s.provider_name}</a>{:else}<span class="pill strong">{s.provider_name}</span>{/if}
+                    {#each t.info.streaming.slice(0, 3) as s (s.provider_name)}
+                      <ProviderLogo name={s.provider_name} logo={s.logo_path} link={s.url || s.link || null} size={30} />
                     {/each}
                     {#if t.info.streaming.length > 3}<span class="pill">+{t.info.streaming.length - 3}</span>{/if}
                   </span>

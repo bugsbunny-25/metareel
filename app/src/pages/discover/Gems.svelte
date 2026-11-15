@@ -2,6 +2,7 @@
      subscription, free or with ads, and not in its Top 10 over the last 90 days. One request
      (up to 200); kind, service, rating and "hide what I've seen" filter in the browser. -->
 <script>
+  import RatingLogo from '../../components/RatingLogo.svelte'
   import Poster from '../../components/Poster.svelte'
   import Icon from '../../components/Icon.svelte'
   import BarList from '../../components/BarList.svelte'
@@ -77,7 +78,7 @@
 {:else if !data.total}
   <section class="empty">
     <h2>No hidden gems found in {inCountry(country)}</h2>
-    <p>Gems need IMDb ratings and streaming availability in {inCountry(country)}; metareel gathers both as it maps the charts. Try another country in the top bar.</p>
+    <p>Gems need IMDb ratings and streaming availability in {inCountry(country)}; metareel gathers both as it maps the charts. Try another country in the pickers at the top of Discover.</p>
   </section>
 {:else}
   <section class="kpis" aria-label="Hidden gems at a glance">
@@ -108,8 +109,8 @@
             {@const t = library.get(it.kind, it.tmdb_id)}
             <li class="tile" class:mine={!!t}>
               <a class="art" href="#/title/{it.kind}/{it.tmdb_id}">
-                <Poster path={it.poster_path ?? null} seed={it.tmdb_id} title={it.title} width={170} radius={10} size="w342" />
-                <span class="score num" title="IMDb {it.imdb_rating} from {it.imdb_votes?.toLocaleString()} votes">★ {it.imdb_rating?.toFixed(1)}</span>
+                <Poster path={it.poster_path ?? null} seed={it.tmdb_id} title={it.title} kind={it.kind} tmdbId={it.tmdb_id} width={170} radius={10} size="w342" />
+                <span class="score num" title="IMDb {it.imdb_rating} from {it.imdb_votes?.toLocaleString()} votes"><RatingLogo source="imdb" dark height={13} />{it.imdb_rating?.toFixed(1)}</span>
               </a>
               <div class="tt">
                 <a class="name" href="#/title/{it.kind}/{it.tmdb_id}">{it.title}</a>
@@ -185,7 +186,7 @@
   .art { position: relative; display: block; transition: transform 0.15s ease; }
   .art:hover { transform: translateY(-2px); }
   .art :global(.poster) { width: 100% !important; }
-  .score { position: absolute; left: 8px; bottom: 8px; padding: 3px 7px; border-radius: 8px; background: rgb(0 0 0 / 0.72); color: #f5c518; font-size: 12.5px; font-weight: 700; }
+  .score { position: absolute; left: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 8px; background: rgb(0 0 0 / 0.72); color: #f5c518; font-size: 12.5px; font-weight: 700; }
   .tt { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-top: 4px; }
   .name { font: 700 15.5px/1.25 var(--font-display); color: inherit; text-decoration: none; }
   .name:hover { text-decoration: underline; text-underline-offset: 3px; }
@@ -222,6 +223,6 @@
   @media (max-width: 760px) {
     .kpis { grid-template-columns: 1fr 1fr; }
     .side { grid-template-columns: 1fr; }
-    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 18px 12px; }
   }
 </style>

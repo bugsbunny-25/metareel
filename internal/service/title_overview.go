@@ -2,13 +2,19 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
+	"github.com/bugsbunny-25/metareel/internal/client"
 	"github.com/bugsbunny-25/metareel/internal/repository"
 	"github.com/bugsbunny-25/metareel/internal/repository/sqlc"
 	"github.com/bugsbunny-25/metareel/internal/scraper/flixpatrol"
@@ -24,8 +30,29 @@ type TitleOverviewService struct {
 	mapping   *TitleMappingService // optional: the overview's ids section
 	// engagement: optional, Netflix engagement report rows
 	engagement *repository.EngagementRepository
+	// letterboxd: optional, resolves Letterboxd links in Lookup
+	letterboxd letterboxdResolver
 	now        func() time.Time
+
+	// details: optional, fetches and stores TMDB details for a title metareel
+	// has never seen (Trending, search), so its page has metadata and where
+	// to watch. One attempt per title per detailsRetry, missing or not.
+	details      detailsFetcher
+	detailsMu    sync.Mutex
+	detailsTried map[string]time.Time
+	detailsGroup singleflight.Group
 }
+
+// detailsFetcher fetches and stores one title's TMDB details
+// (TitleMetadataService.RefreshDetails); nil, nil when TMDB has no such title.
+type detailsFetcher interface {
+	RefreshDetails(ctx context.Context, ref repository.TmdbRef) (*client.TMDBFullDetails, error)
+}
+
+const (
+	detailsRetry    = 6 * time.Hour
+	detailsTriedMax = 5000
+)
 
 func NewTitleOverviewService(analytics *repository.AnalyticsRepository, flix *repository.FlixPatrolRepository, metadata *repository.MetadataRepository, ratings *RatingsService) *TitleOverviewService {
 	return &TitleOverviewService{analytics: analytics, flix: flix, metadata: metadata, ratings: ratings, now: time.Now}
@@ -35,6 +62,48 @@ func NewTitleOverviewService(analytics *repository.AnalyticsRepository, flix *re
 func (s *TitleOverviewService) WithEngagement(repo *repository.EngagementRepository) *TitleOverviewService {
 	s.engagement = repo
 	return s
+}
+
+// WithDetailsFetcher fetches TMDB details on demand for titles that have none
+// stored (never charted, not on a watchlist).
+func (s *TitleOverviewService) WithDetailsFetcher(f detailsFetcher) *TitleOverviewService {
+	s.details = f
+	s.detailsTried = map[string]time.Time{}
+	return s
+}
+
+// fetchDetails stores ref's TMDB details once per detailsRetry and reports
+// whether it ran a fetch. Concurrent requests for one title share the fetch.
+func (s *TitleOverviewService) fetchDetails(ctx context.Context, ref TmdbRef) bool {
+	if s.details == nil {
+		return false
+	}
+	key := ref.String()
+	now := s.now()
+	s.detailsMu.Lock()
+	if at, ok := s.detailsTried[key]; ok && now.Sub(at) < detailsRetry {
+		s.detailsMu.Unlock()
+		return false
+	}
+	if len(s.detailsTried) >= detailsTriedMax {
+		for k, at := range s.detailsTried {
+			if now.Sub(at) >= detailsRetry {
+				delete(s.detailsTried, k)
+			}
+		}
+	}
+	s.detailsMu.Unlock()
+	_, err, _ := s.detailsGroup.Do(key, func() (any, error) {
+		_, err := s.details.RefreshDetails(context.WithoutCancel(ctx), ref)
+		s.detailsMu.Lock()
+		s.detailsTried[key] = s.now()
+		s.detailsMu.Unlock()
+		return nil, err
+	})
+	if err != nil {
+		slog.Warn("on-demand tmdb details failed", slog.String("ref", key), slog.Any("err", err))
+	}
+	return err == nil
 }
 
 // WithMapping adds every known external ID to overviews.
@@ -606,6 +675,12 @@ func (s *TitleOverviewService) Overview(ctx context.Context, ref TmdbRef, q Over
 	if err != nil {
 		return nil, err
 	}
+	// No details yet (a ratings lookup may have stored only IDs): fetch them.
+	if (meta == nil || meta.DetailsFetchedAt == nil) && s.fetchDetails(ctx, ref) {
+		if meta, err = s.metadata.Get(ctx, ref); err != nil {
+			return nil, err
+		}
+	}
 	if meta != nil {
 		known = true
 		if q.Include["metadata"] {
@@ -699,4 +774,49 @@ func (s *TitleOverviewService) currentPositions(ctx context.Context, rankings []
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Rank < out[j].Rank })
 	return out
+}
+
+// letterboxdResolver turns a Letterboxd link into a TMDB reference.
+type letterboxdResolver interface {
+	Resolve(ctx context.Context, link string) (client.LetterboxdRef, error)
+}
+
+// WithLetterboxd lets Lookup resolve Letterboxd links (shared to the mobile app).
+func (s *TitleOverviewService) WithLetterboxd(r letterboxdResolver) *TitleOverviewService {
+	s.letterboxd = r
+	return s
+}
+
+// LookupLetterboxd resolves a boxd.it or letterboxd.com film link to its
+// TMDB title, plus the charted titles mapped to it. The title is returned
+// even when metareel has never charted it: Letterboxd vouches for the id.
+func (s *TitleOverviewService) LookupLetterboxd(ctx context.Context, link string) (*LookupResult, error) {
+	link = strings.TrimSpace(link)
+	if !client.IsLetterboxdURL(link) {
+		return nil, &ValidationError{Message: "letterboxd must be a boxd.it or letterboxd.com link"}
+	}
+	if s.letterboxd == nil {
+		return nil, fmt.Errorf("%w: letterboxd lookups are not configured", ErrUpstream)
+	}
+	ref, err := s.letterboxd.Resolve(ctx, link)
+	switch {
+	case err == nil:
+	case errors.Is(err, client.ErrLetterboxdNotFilm):
+		return nil, &ValidationError{Message: "that Letterboxd link is not a film"}
+	case errors.Is(err, client.ErrLetterboxdNoTMDB):
+		return nil, fmt.Errorf("%w: the Letterboxd film has no TMDB id", ErrTitleNotFound)
+	default:
+		return nil, fmt.Errorf("%w: letterboxd: %v", ErrUpstream, err)
+	}
+	out, err := s.Lookup(ctx, "", ref.Kind+":"+ref.TmdbID, "", "")
+	if errors.Is(err, ErrTitleNotFound) || errors.Is(err, sql.ErrNoRows) {
+		out, err = &LookupResult{Refs: []LookupRef{}, Titles: []RankedTitle{}}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(out.Refs) == 0 {
+		out.Refs = append(out.Refs, LookupRef{Kind: ref.Kind, TmdbID: ref.TmdbID})
+	}
+	return out, nil
 }

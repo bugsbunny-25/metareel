@@ -36,6 +36,7 @@ const (
 type cinemaSource interface {
 	Cinemas(ctx context.Context, country string) ([]client.OSMPlace, error)
 	Towns(ctx context.Context, country string) ([]client.OSMPlace, error)
+	Addresses(ctx context.Context, country string) ([]client.OSMPlace, error)
 }
 
 // venueTownKm: a cinema without addr:city takes the nearest city or town
@@ -78,10 +79,11 @@ type VenueImportCountry struct {
 	Skipped    int                  `json:"skipped"`    // unnamed or private
 	Duplicates int                  `json:"duplicates"` // mapped twice in OSM, merged
 	Created    int                  `json:"created"`
-	Linked     int                  `json:"linked"` // existing venues matched by Wikidata ID or name, now carrying the OSM ref
-	Filled     int                  `json:"filled"` // existing venues that gained an empty field
-	Known      int                  `json:"known"`  // imported before and still in OSM
-	Gone       int                  `json:"gone"`   // imported before, no longer in OSM (kept)
+	Linked     int                  `json:"linked"`             // existing venues matched by Wikidata ID or name, now carrying the OSM ref
+	Filled     int                  `json:"filled"`             // existing venues that gained an empty field
+	Borrowed   int                  `json:"borrowed_addresses"` // cinemas without an address in OSM that took one from the building they're in or next to
+	Known      int                  `json:"known"`              // imported before and still in OSM
+	Gone       int                  `json:"gone"`               // imported before, no longer in OSM (kept)
 	Historic   *VenueImportHistoric `json:"historic,omitempty"`
 	Error      string               `json:"error,omitempty"`
 }
@@ -148,19 +150,38 @@ func (s *VenueImporter) importCountry(ctx context.Context, cc string, runLog fun
 			towns = newTownIndex(t)
 		}
 	}
+	// Cinemas mapped as a point inside a mall or building often carry no
+	// address of their own; it's on what they sit in, or next door.
+	var addrs *addressIndex
+	var nearby []client.OSMPlace
+	if missingAddress(places) {
+		if s.gap > 0 && sleepCtx(ctx, s.gap) != nil {
+			return out, ctx.Err()
+		}
+		if a, err := s.src.Addresses(ctx, cc); err != nil {
+			if ctx.Err() != nil {
+				return out, ctx.Err()
+			}
+			runLog("warn", fmt.Sprintf("%s: nearby addresses didn't load (%v); cinemas without an address in OSM get none", cc, err))
+		} else {
+			addrs, nearby = newAddressIndex(a), a
+		}
+	}
+	postcodes := newPostcodeIndex(places, nearby)
 	existing, err := s.store.VenuesForImport(ctx, cc)
 	if err != nil {
 		return out, err
 	}
-	creates, fills, plan := s.plan(cc, places, existing, towns)
+	creates, fills, plan := s.plan(cc, places, existing, towns, addrs, postcodes)
+	out.Borrowed = plan.borrowed
 	out.Skipped, out.Duplicates, out.Linked, out.Known, out.Gone = plan.skipped, plan.duplicates, plan.linked, plan.known, plan.gone
 	res, err := s.store.ApplyVenueImport(ctx, creates, fills)
 	if err != nil {
 		return out, err
 	}
 	out.Created, out.Filled = res.Created, res.Filled
-	runLog("info", fmt.Sprintf("%s: %d cinemas in OpenStreetMap; %d new, %d matched to venues entered before, %d already imported, %d gained missing details, %d skipped (unnamed or private), %d duplicates merged, %d no longer in OSM (kept)",
-		cc, out.Fetched, out.Created, out.Linked, out.Known, out.Filled, out.Skipped, out.Duplicates, out.Gone))
+	runLog("info", fmt.Sprintf("%s: %d cinemas in OpenStreetMap; %d new, %d matched to venues entered before, %d already imported, %d gained missing details, %d took their address from the building they're in or next to, %d skipped (unnamed or private), %d duplicates merged, %d no longer in OSM (kept)",
+		cc, out.Fetched, out.Created, out.Linked, out.Known, out.Filled, out.Borrowed, out.Skipped, out.Duplicates, out.Gone))
 	if res.RefsSkipped > 0 {
 		runLog("warn", fmt.Sprintf("%s: %d OSM or Wikidata IDs already belong to another venue and were not moved", cc, res.RefsSkipped))
 	}
@@ -193,10 +214,10 @@ func (s *VenueImporter) fetch(ctx context.Context, cc string, runLog func(level,
 	}
 }
 
-type importPlan struct{ skipped, duplicates, linked, known, gone int }
+type importPlan struct{ skipped, duplicates, linked, known, gone, borrowed int }
 
 // plan turns OSM places into creates and fills against the country's venues.
-func (s *VenueImporter) plan(cc string, places []client.OSMPlace, existing []repository.ImportVenueRow, towns *townIndex) ([]repository.VenueImportCreate, []repository.VenueImportFill, importPlan) {
+func (s *VenueImporter) plan(cc string, places []client.OSMPlace, existing []repository.ImportVenueRow, towns *townIndex, addrs *addressIndex, postcodes *postcodeIndex) ([]repository.VenueImportCreate, []repository.VenueImportFill, importPlan) {
 	var p importPlan
 	// A Wikidata ID on several cinemas is the chain's, not a cinema's.
 	qids := map[string]int{}
@@ -230,6 +251,35 @@ func (s *VenueImporter) plan(cc string, places []client.OSMPlace, existing []rep
 		if !ok {
 			p.skipped++
 			continue
+		}
+		if v.Address == nil && addrs != nil {
+			if a := addrs.nearest(pl.Lat, pl.Lon); a != nil {
+				v.Address = &a.address
+				if v.Postcode == nil {
+					v.Postcode = a.postcode
+				}
+				if v.City == nil {
+					v.City = a.city
+				}
+				if v.Region == nil {
+					v.Region = a.region
+				}
+				p.borrowed++
+			}
+		}
+		// A postcode names the city and state other addresses with it use
+		// (and, for a US ZIP, the state on its own).
+		if v.Postcode != nil && (v.City == nil || v.Region == nil) {
+			city, region := postcodes.lookup(*v.Postcode)
+			if v.City == nil {
+				v.City = city
+			}
+			if v.Region == nil {
+				v.Region = region
+			}
+			if v.Region == nil {
+				v.Region = regionForPostcode(cc, *v.Postcode)
+			}
 		}
 		if v.City == nil && towns != nil {
 			v.City = towns.nearest(pl.Lat, pl.Lon)
@@ -277,6 +327,95 @@ func (s *VenueImporter) plan(cc string, places []client.OSMPlace, existing []rep
 		}
 	}
 	return creates, fills, p
+}
+
+func missingAddress(places []client.OSMPlace) bool {
+	for _, p := range places {
+		if osmAddress(p.Tags) == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// osmAddress is an element's street address: addr:full, else the house
+// number with addr:street (or addr:place, for addresses with no street).
+func osmAddress(t map[string]string) *string {
+	if a := strings.TrimSpace(t["addr:full"]); a != "" {
+		a = clip(a, 300)
+		return &a
+	}
+	street := strings.TrimSpace(t["addr:street"])
+	if street == "" {
+		street = strings.TrimSpace(t["addr:place"])
+	}
+	if street == "" {
+		return nil
+	}
+	a := clip(strings.TrimSpace(strings.TrimSpace(t["addr:housenumber"])+" "+street), 300)
+	return &a
+}
+
+// Borrowed addresses: a point this close, or an area (building, mall) whose
+// centre is this close, is taken to be where the cinema is.
+const (
+	venueAddrPointM = 75
+	venueAddrAreaM  = 300
+)
+
+// addressIndex finds the nearest addressed feature, bucketed like townIndex.
+type addressIndex struct {
+	cells map[[2]int][]addrPlace
+}
+
+type addrPlace struct {
+	lat, lon               float64
+	area                   bool
+	address                string
+	postcode, city, region *string
+}
+
+func newAddressIndex(places []client.OSMPlace) *addressIndex {
+	ix := &addressIndex{cells: map[[2]int][]addrPlace{}}
+	for _, p := range places {
+		a := osmAddress(p.Tags)
+		if a == nil {
+			continue
+		}
+		region := tagPtr(p.Tags, "addr:state")
+		if region == nil {
+			region = tagPtr(p.Tags, "addr:province")
+		}
+		c := townCell(p.Lat, p.Lon)
+		ix.cells[c] = append(ix.cells[c], addrPlace{p.Lat, p.Lon, p.Type != "node", *a, osmPostcode(p.Tags), tagPtr(p.Tags, "addr:city"), region})
+	}
+	return ix
+}
+
+// nearest is the closest addressed point within venueAddrPointM, else the
+// closest addressed area within venueAddrAreaM, or nil.
+func (ix *addressIndex) nearest(lat, lon float64) *addrPlace {
+	c := townCell(lat, lon)
+	var point, area *addrPlace
+	pointM, areaM := float64(venueAddrPointM), float64(venueAddrAreaM)
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			for i, a := range ix.cells[[2]int{c[0] + dy, c[1] + dx}] {
+				d := haversineM(lat, lon, a.lat, a.lon)
+				cand := &ix.cells[[2]int{c[0] + dy, c[1] + dx}][i]
+				if d <= pointM {
+					point, pointM = cand, d
+				}
+				if a.area && d <= areaM {
+					area, areaM = cand, d
+				}
+			}
+		}
+	}
+	if point != nil {
+		return point
+	}
+	return area
 }
 
 func missingCity(places []client.OSMPlace) bool {
@@ -380,12 +519,8 @@ func (s *VenueImporter) venueFromOSM(cc string, pl client.OSMPlace) (repository.
 	lat, lon := pl.Lat, pl.Lon
 	v := repository.Venue{Name: clip(name, 200), Country: &cc, Latitude: &lat, Longitude: &lon, Status: "open"}
 	v.Chain = tagPtr(t, "brand")
-	if addr := strings.TrimSpace(t["addr:full"]); addr != "" {
-		v.Address = &addr
-	} else if street := strings.TrimSpace(t["addr:street"]); street != "" {
-		addr := strings.TrimSpace(strings.TrimSpace(t["addr:housenumber"]) + " " + street)
-		v.Address = &addr
-	}
+	v.Address = osmAddress(t)
+	v.Postcode = osmPostcode(t)
 	v.City = tagPtr(t, "addr:city")
 	if v.Region = tagPtr(t, "addr:state"); v.Region == nil {
 		v.Region = tagPtr(t, "addr:province")

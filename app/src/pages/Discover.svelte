@@ -1,5 +1,5 @@
 <!-- Discover (#/discover?tab=new|calendar|gems|elsewhere|leaderboard|netflix|trends|services), for
-     the country (and, where a tab is per service, the service) in the top bar. The rotation
+     the country (and, where a tab is per service, the service) picked beside the heading. The rotation
      response is loaded here and shared: its services group offers into the service you'd pay
      for, on every tab. Each tab keeps its own filters in the query; switching tabs clears them. -->
 <script>
@@ -11,6 +11,7 @@
   import Leaderboards from './discover/Leaderboards.svelte'
   import NetflixTop10 from './discover/NetflixTop10.svelte'
   import Trends from './discover/Trends.svelte'
+  import ScopePicker from '../components/ScopePicker.svelte'
   import '../discover.css'
   import { api } from '../lib/api.js'
   import { scope, inCountry, providerName } from '../lib/scope.svelte.js'
@@ -57,9 +58,12 @@
 
 <div class="page">
   <header class="head">
-    <div>
-      <h1>Discover</h1>
-      <p class="sub">{sub}</p>
+    <div class="title">
+      <div>
+        <h1>Discover</h1>
+        <p class="sub">{sub}</p>
+      </div>
+      <ScopePicker label="Discover" />
     </div>
     <div class="tabs" role="tablist" aria-label="Discover">
       {#each TABS as [t, label]}
@@ -90,6 +94,7 @@
 <style>
   .page { display: grid; gap: 20px; padding: 20px var(--gutter) 48px; }
   .head { display: grid; gap: 14px; }
+  .title { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 20px; }
   h1 { margin: 0; font: 700 32px/1.1 var(--font-display); letter-spacing: -0.02em; }
   .sub { margin: 4px 0 0; color: var(--text-muted); font-size: 15px; }
   .tabs { display: flex; flex-wrap: wrap; gap: 6px; }

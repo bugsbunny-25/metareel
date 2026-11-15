@@ -174,6 +174,7 @@ FROM watch_entries w
 JOIN tmdb_credits cr ON cr.tmdb_kind = w.tmdb_kind AND cr.tmdb_id = w.tmdb_id
 JOIN tmdb_people p ON p.person_id = cr.person_id
 WHERE w.user_id = sqlc.arg(user_id)
+  AND (CAST(sqlc.arg(kind) AS TEXT) = '' OR w.tmdb_kind = CAST(sqlc.arg(kind) AS TEXT))
   AND ((CAST(sqlc.arg(job) AS TEXT) = '' AND cr.credit_type = 'cast')
        OR (CAST(sqlc.arg(job) AS TEXT) <> '' AND cr.job = CAST(sqlc.arg(job) AS TEXT)))
   AND (CAST(sqlc.arg(from_day) AS TEXT) = '' OR w.watched_on >= CAST(sqlc.arg(from_day) AS TEXT))
@@ -181,6 +182,29 @@ WHERE w.user_id = sqlc.arg(user_id)
 GROUP BY p.person_id, p.name, profile_path
 ORDER BY titles DESC, watches DESC, p.name COLLATE NOCASE
 LIMIT sqlc.arg(limit);
+
+-- StatsWatchRows lists every watch of a kind ('' for both) with how long it
+-- was, its title, poster and genres: the detailed stats (time per title,
+-- trends, binges, genres) are grouped from these in Go.
+-- name: StatsWatchRows :many
+SELECT
+    w.tmdb_kind, w.tmdb_id, w.subject_kind, w.watched_on,
+    CAST(COALESCE(w.season_number, -1) AS INTEGER) AS season_number,
+    CAST(COALESCE(w.episode_number, -1) AS INTEGER) AS episode_number,
+    CAST(COALESCE(w.runtime_minutes_used, e.runtime, t.runtime, c.runtime, 0) AS INTEGER) AS minutes,
+    w.is_rewatch,
+    CAST(COALESCE(w.rating, 0) AS INTEGER) AS rating,
+    CAST(COALESCE(NULLIF(t.title, ''), NULLIF(c.title, ''), '') AS TEXT) AS display_title,
+    CAST(COALESCE(NULLIF(t.poster_path, ''), NULLIF(c.poster_path, ''), '') AS TEXT) AS poster_path,
+    CAST(COALESCE(t.genres, '') AS TEXT) AS genres
+FROM watch_entries w
+LEFT JOIN tracked_episodes e ON w.subject_kind = 'episode' AND e.tmdb_id = w.tmdb_id
+     AND e.season_number = w.season_number AND e.episode_number = w.episode_number
+LEFT JOIN tmdb_titles t ON t.tmdb_kind = w.tmdb_kind AND t.tmdb_id = w.tmdb_id
+LEFT JOIN tracked_titles c ON c.tmdb_kind = w.tmdb_kind AND c.tmdb_id = w.tmdb_id
+WHERE w.user_id = sqlc.arg(user_id)
+  AND (CAST(sqlc.arg(kind) AS TEXT) = '' OR w.tmdb_kind = CAST(sqlc.arg(kind) AS TEXT))
+ORDER BY w.watched_on, w.id;
 
 -- StatsSpendByCurrency totals money per currency. Amounts are never
 -- converted between currencies: there is no rate to do it honestly with.
@@ -264,7 +288,9 @@ SELECT
     u.tmdb_kind, u.tmdb_id,
     CAST(COALESCE(NULLIF(t.title, ''), NULLIF(c.title, ''), '') AS TEXT) AS display_title,
     wp.provider_id, wp.provider_name, wp.monetization,
-    CAST(COALESCE(wp.link, '') AS TEXT) AS link
+    CAST(COALESCE(wp.link, '') AS TEXT) AS link,
+    CAST(COALESCE(wp.logo_path, '') AS TEXT) AS logo_path,
+    CAST(COALESCE(wp.url, '') AS TEXT) AS url
 FROM user_titles u
 JOIN tmdb_watch_providers wp ON wp.tmdb_kind = u.tmdb_kind AND wp.tmdb_id = u.tmdb_id
 LEFT JOIN tmdb_titles t ON t.tmdb_kind = u.tmdb_kind AND t.tmdb_id = u.tmdb_id

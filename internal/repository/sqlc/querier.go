@@ -58,7 +58,7 @@ type Querier interface {
 	CountWebhookDeliveriesByStatus(ctx context.Context) ([]CountWebhookDeliveriesByStatusRow, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
 	CreateCinemaSubscription(ctx context.Context, arg CreateCinemaSubscriptionParams) (int64, error)
-	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (CreateSessionRow, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskRunLog(ctx context.Context, arg CreateTaskRunLogParams) error
 	CreateTaskSchedule(ctx context.Context, arg CreateTaskScheduleParams) (TaskSchedule, error)
@@ -72,6 +72,8 @@ type Querier interface {
 	DeleteAPIKey(ctx context.Context, id int64) (int64, error)
 	DeleteChartRankings(ctx context.Context, arg DeleteChartRankingsParams) error
 	DeleteCinemaSubscription(ctx context.Context, arg DeleteCinemaSubscriptionParams) (int64, error)
+	DeleteCinemaSubscriptionPeriods(ctx context.Context, subscriptionID int64) error
+	DeleteCinemaSubscriptionPrices(ctx context.Context, subscriptionID int64) error
 	// DeleteEmptyUserTitle removes a state row that holds nothing worth keeping
 	// (no status, no rating, not a favourite, no watches), so clearing a
 	// watchlist entry does not leave a dangling row behind.
@@ -79,7 +81,7 @@ type Querier interface {
 	// DeleteEpisodeWatches removes every watch of the chosen episodes. scope is
 	// as for ListMarkableEpisodes.
 	DeleteEpisodeWatches(ctx context.Context, arg DeleteEpisodeWatchesParams) (int64, error)
-	DeleteExpiredSessions(ctx context.Context, idle string) (int64, error)
+	DeleteExpiredSessions(ctx context.Context, arg DeleteExpiredSessionsParams) (int64, error)
 	// One kind of a title's evidence, or all of it (kind '').
 	DeleteMappingEvidence(ctx context.Context, arg DeleteMappingEvidenceParams) (int64, error)
 	// Netflix "What We Watched" engagement reports.
@@ -87,12 +89,16 @@ type Querier interface {
 	// Netflix matches made through a FlixPatrol title (whose match was cleared).
 	DeleteNetflixEvidenceVia(ctx context.Context, titleID sql.NullInt64) ([]int64, error)
 	DeleteNetflixMostPopular(ctx context.Context) error
+	DeleteNotificationLog(ctx context.Context, arg DeleteNotificationLogParams) error
+	DeletePushTickets(ctx context.Context, ticketIds []string) error
 	// TMDB release dates of movies (migration 000024) and the observations of
 	// when a movie reached streaming, for release windows.
 	DeleteReleaseDates(ctx context.Context, arg DeleteReleaseDatesParams) error
 	DeleteSeasonEpisodes(ctx context.Context, arg DeleteSeasonEpisodesParams) error
 	DeleteSessionByHash(ctx context.Context, tokenHash string) (DeleteSessionByHashRow, error)
 	DeleteSessionByID(ctx context.Context, id int64) (string, error)
+	// Receipts are kept by Expo for about a day; older tickets can't be checked.
+	DeleteStalePushTickets(ctx context.Context) (int64, error)
 	// Retention: drop logs of runs that started before the cutoff.
 	DeleteTaskRunLogsBefore(ctx context.Context, olderThan string) (int64, error)
 	DeleteTaskRunsBefore(ctx context.Context, olderThan string) (int64, error)
@@ -104,6 +110,7 @@ type Querier interface {
 	DeleteTmdbWatchProviders(ctx context.Context, arg DeleteTmdbWatchProvidersParams) error
 	DeleteTrackedSeason(ctx context.Context, arg DeleteTrackedSeasonParams) error
 	DeleteUser(ctx context.Context, username string) (int64, error)
+	DeleteUserDevice(ctx context.Context, arg DeleteUserDeviceParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, username string) (int64, error)
 	DeleteUserSessionsExcept(ctx context.Context, arg DeleteUserSessionsExceptParams) (int64, error)
 	DeleteUserTag(ctx context.Context, arg DeleteUserTagParams) (int64, error)
@@ -115,6 +122,7 @@ type Querier interface {
 	DeleteWatchEntry(ctx context.Context, arg DeleteWatchEntryParams) (int64, error)
 	DeleteWatchFormatLogo(ctx context.Context, formatID int64) error
 	DeleteWebhook(ctx context.Context, id int64) (int64, error)
+	DisableUserDevice(ctx context.Context, id int64) error
 	// One netflix_seasons row per season title a TV title charted with.
 	EnsureNetflixSeasons(ctx context.Context) error
 	EnsureNetflixTitle(ctx context.Context, arg EnsureNetflixTitleParams) (NetflixTitle, error)
@@ -149,9 +157,13 @@ type Querier interface {
 	FindTmdbRefsByNetflixID(ctx context.Context, arg FindTmdbRefsByNetflixIDParams) ([]FindTmdbRefsByNetflixIDRow, error)
 	FindVenueByRef(ctx context.Context, arg FindVenueByRefParams) (int64, error)
 	// GetActiveSession returns a session that has not expired, was used within
-	// the idle window (idle is a negative modifier, e.g. '-604800 seconds') and
-	// belongs to an enabled user.
+	// its idle window and belongs to an enabled user. idle and device_idle are
+	// negative modifiers (e.g. '-604800 seconds'); device_idle applies to
+	// "remember this device" sessions.
 	GetActiveSession(ctx context.Context, arg GetActiveSessionParams) (GetActiveSessionRow, error)
+	// GetActiveSessionDigest returns the token digest of an active session by
+	// id (same rules as GetActiveSession), for the local-URL probe.
+	GetActiveSessionDigest(ctx context.Context, arg GetActiveSessionDigestParams) (string, error)
 	// Operations: settings lookups, chart freshness.
 	GetAppSetting(ctx context.Context, key string) (string, error)
 	GetCinemaSubscription(ctx context.Context, arg GetCinemaSubscriptionParams) (CinemaSubscription, error)
@@ -165,6 +177,7 @@ type Querier interface {
 	GetNetflixTitle(ctx context.Context, id int64) (GetNetflixTitleRow, error)
 	GetNetflixTitleRow(ctx context.Context, id int64) (NetflixTitle, error)
 	GetPerson(ctx context.Context, personID int64) (GetPersonRow, error)
+	GetPosterColor(ctx context.Context, posterPath string) (string, error)
 	GetPreviousChartSnapshot(ctx context.Context, arg GetPreviousChartSnapshotParams) (ChartSnapshot, error)
 	GetTaskRunByID(ctx context.Context, id int64) (TaskRun, error)
 	GetTaskScheduleByID(ctx context.Context, id int64) (TaskSchedule, error)
@@ -190,11 +203,16 @@ type Querier interface {
 	GetWatchFormatLogo(ctx context.Context, slug string) (GetWatchFormatLogoRow, error)
 	GetWebhook(ctx context.Context, id int64) (Webhook, error)
 	GetWebhookDeliveryPayload(ctx context.Context, id int64) (string, error)
+	InsertCinemaSubscriptionPeriod(ctx context.Context, arg InsertCinemaSubscriptionPeriodParams) error
+	InsertCinemaSubscriptionPrice(ctx context.Context, arg InsertCinemaSubscriptionPriceParams) error
 	InsertCredit(ctx context.Context, arg InsertCreditParams) error
 	InsertEpisode(ctx context.Context, arg InsertEpisodeParams) error
 	InsertMappingEvent(ctx context.Context, arg InsertMappingEventParams) error
 	InsertNetflixEngagement(ctx context.Context, arg InsertNetflixEngagementParams) error
 	InsertNetflixMostPopular(ctx context.Context, arg InsertNetflixMostPopularParams) error
+	// Records a notification; 0 rows means it was already sent.
+	InsertNotificationLog(ctx context.Context, arg InsertNotificationLogParams) (int64, error)
+	InsertPushTicket(ctx context.Context, arg InsertPushTicketParams) error
 	InsertRanking(ctx context.Context, arg InsertRankingParams) error
 	InsertReleaseDate(ctx context.Context, arg InsertReleaseDateParams) error
 	InsertTitleLink(ctx context.Context, arg InsertTitleLinkParams) error
@@ -208,13 +226,17 @@ type Querier interface {
 	LatestNetflixGlobalWeek(ctx context.Context) (string, error)
 	// API keys for the public API, and admin-editable settings.
 	ListAPIKeys(ctx context.Context) ([]ApiKey, error)
-	// ListActiveSessions lists unexpired sessions used within the idle window
-	// (idle is a negative modifier, e.g. '-604800 seconds'), newest use first.
-	ListActiveSessions(ctx context.Context, idle string) ([]ListActiveSessionsRow, error)
+	ListActiveDeviceTokens(ctx context.Context, userID int64) ([]ListActiveDeviceTokensRow, error)
+	// ListActiveSessions lists unexpired sessions used within their idle window
+	// (see GetActiveSession), newest use first.
+	ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]ListActiveSessionsRow, error)
 	// Distinct targets of every FlixPatrol schedule (enabled or not).
 	ListAllFlixPatrolTargets(ctx context.Context) ([]ListAllFlixPatrolTargetsRow, error)
 	ListAllMappingEvidence(ctx context.Context) ([]MappingEvidence, error)
 	ListAppSettings(ctx context.Context) ([]AppSetting, error)
+	// Users with the title on their watchlist and a device to notify, with their
+	// preferences (JSON) for the country / services / opt-in checks.
+	ListArrivalWatchers(ctx context.Context, arg ListArrivalWatchersParams) ([]ListArrivalWatchersRow, error)
 	// Episodes airing between two dates of shows with a subscription, free or
 	// ad-supported offer in a country (optionally from one provider).
 	ListCalendarEpisodes(ctx context.Context, arg ListCalendarEpisodesParams) ([]ListCalendarEpisodesRow, error)
@@ -236,6 +258,10 @@ type Querier interface {
 	// 'YYYY-MM-DD HH:MM:SS' UTC, then row id), oldest first: keyset paging, so
 	// many charts sharing one changed_at are read page by page.
 	ListChartsChangedAfter(ctx context.Context, arg ListChartsChangedAfterParams) ([]ListChartsChangedAfterRow, error)
+	// Periods (runs between cancelling and resubscribing) and price changes of a
+	// user's plans, oldest first.
+	ListCinemaSubscriptionPeriods(ctx context.Context, userID int64) ([]CinemaSubscriptionPeriod, error)
+	ListCinemaSubscriptionPrices(ctx context.Context, userID int64) ([]CinemaSubscriptionPrice, error)
 	// Cinema subscriptions of a user and the watches they covered.
 	ListCinemaSubscriptions(ctx context.Context, userID int64) ([]CinemaSubscription, error)
 	// Netflix titles mapped only by a Wikidata label match (source
@@ -257,6 +283,8 @@ type Querier interface {
 	// analytics.
 	ListCreditsOfType(ctx context.Context, creditType string) ([]ListCreditsOfTypeRow, error)
 	ListDataImports(ctx context.Context) ([]DataImport, error)
+	// Tickets old enough for their receipt (a datetime modifier such as '-15 minutes').
+	ListDuePushTickets(ctx context.Context, arg ListDuePushTicketsParams) ([]ListDuePushTicketsRow, error)
 	// Pending deliveries whose next attempt is due, of enabled webhooks.
 	ListDueWebhookDeliveries(ctx context.Context, limit int64) ([]ListDueWebhookDeliveriesRow, error)
 	ListEnabledTaskSchedules(ctx context.Context) ([]TaskSchedule, error)
@@ -478,6 +506,8 @@ type Querier interface {
 	// Windows are SQLite datetime modifiers, e.g. '-3 days' and '-30 days'.
 	// TV shows stored before seasons were kept are due once, and so are titles
 	// with watch providers whose JustWatch offer URLs were never looked up.
+	// Watchlisted titles are included (as recently charting) even if they never
+	// charted.
 	ListTmdbRefsDueForDetails(ctx context.Context, arg ListTmdbRefsDueForDetailsParams) ([]ListTmdbRefsDueForDetailsRow, error)
 	// TMDB titles FlixPatrol titles are mapped to, without a Rotten Tomatoes
 	// slug, whose RT search backoff has expired; most recently charting first,
@@ -509,6 +539,7 @@ type Querier interface {
 	// Episodes airing after today and up to a day of shows in the user's
 	// library, except the ones on hold, dropped or not wanted.
 	ListUpcomingEpisodes(ctx context.Context, arg ListUpcomingEpisodesParams) ([]ListUpcomingEpisodesRow, error)
+	ListUserDevices(ctx context.Context, userID int64) ([]ListUserDevicesRow, error)
 	ListUserTags(ctx context.Context, userID int64) ([]ListUserTagsRow, error)
 	// ListUserTitles lists a user's tracked titles with their display metadata.
 	// An empty status lists every tracked title. The sort key is passed through a
@@ -519,14 +550,19 @@ type Querier interface {
 	ListVenueRefs(ctx context.Context, venueID int64) ([]VenueRef, error)
 	ListVenueScreens(ctx context.Context, venueID int64) ([]VenueScreen, error)
 	// ListVenues searches the shared venue list: each word of the query (up to
-	// four) must appear in the name, chain, city or address, so "pvr mumbai"
-	// finds a PVR in Mumbai. Names starting with the first word come first,
+	// four) must appear in the name, chain, city, address or postcode, so "pvr
+	// mumbai" finds a PVR in Mumbai and "amc 10036" the AMC in that ZIP. Names starting with the first word come first,
 	// then open cinemas before closed ones.
 	ListVenues(ctx context.Context, arg ListVenuesParams) ([]ListVenuesRow, error)
 	// Cinema import (venues.import): every venue of a country with the refs
 	// the import matches on, and a fill-in update that never overwrites a value
 	// someone already set.
 	ListVenuesForImport(ctx context.Context, country sql.NullString) ([]ListVenuesForImportRow, error)
+	// ListVenuesInBox lists cinemas with coordinates inside a latitude /
+	// longitude box (the caller computes the box around a point and the exact
+	// distance), with how often the user has watched there. Capped by limit;
+	// the caller asks for far more than it returns.
+	ListVenuesInBox(ctx context.Context, arg ListVenuesInBoxParams) ([]ListVenuesInBoxRow, error)
 	// ListWatchEntries is the diary, newest local day first. Paging is by the
 	// (watched_on, id) cursor; an empty cursor_on starts at the newest entry.
 	ListWatchEntries(ctx context.Context, arg ListWatchEntriesParams) ([]ListWatchEntriesRow, error)
@@ -611,6 +647,7 @@ type Querier interface {
 	SaveDataImport(ctx context.Context, arg SaveDataImportParams) error
 	SaveFlixPatrolDetails(ctx context.Context, arg SaveFlixPatrolDetailsParams) error
 	SavePageview(ctx context.Context, arg SavePageviewParams) error
+	SavePosterColor(ctx context.Context, arg SavePosterColorParams) error
 	// distributors is a JSON list (NULL when Wikidata has none).
 	SaveTmdbDistributors(ctx context.Context, arg SaveTmdbDistributorsParams) error
 	SaveTmdbEnwiki(ctx context.Context, arg SaveTmdbEnwikiParams) error
@@ -678,6 +715,10 @@ type Querier interface {
 	// episode's runtime, then the title's, so an imprecise watch still counts.
 	// Every statement is scoped by user_id.
 	StatsTotals(ctx context.Context, arg StatsTotalsParams) (StatsTotalsRow, error)
+	// StatsWatchRows lists every watch of a kind ('' for both) with how long it
+	// was, its title, poster and genres: the detailed stats (time per title,
+	// trends, binges, genres) are grouped from these in Go.
+	StatsWatchRows(ctx context.Context, arg StatsWatchRowsParams) ([]StatsWatchRowsRow, error)
 	// StatsWatchedTitles lists the distinct titles watched in a range with the
 	// metadata the genre, decade and country breakdowns are built from in Go
 	// (genres and origin countries are JSON arrays on tmdb_titles).
@@ -733,6 +774,10 @@ type Querier interface {
 	// Every statement is scoped by user_id; nothing here may read another
 	// user's rows.
 	UpsertTrackedTitle(ctx context.Context, arg UpsertTrackedTitleParams) error
+	// Push notifications: registered devices, what was sent, pending receipts.
+	// Registers a device, or moves an existing token to this user and session
+	// (a phone signed in again) and enables it again.
+	UpsertUserDevice(ctx context.Context, arg UpsertUserDeviceParams) (int64, error)
 	UpsertUserTag(ctx context.Context, arg UpsertUserTagParams) (UserTag, error)
 	UpsertVenueRef(ctx context.Context, arg UpsertVenueRefParams) error
 	// WatchlistInCharts finds watchlist titles on a Top 10 right now. This is

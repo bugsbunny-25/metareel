@@ -61,7 +61,15 @@ export const api = {
   providers: (signal) => request('GET', '/providers', { signal }),
 
   // Charts and movement
-  top10: (category, country, provider, signal) => request('GET', `/top10/${seg(category)}/${country}/${provider}`, { signal }),
+  /** date: YYYY-MM-DD for a past chart; omitted for the latest. */
+  /** Every service's latest movie and TV charts in a country (for the Top 10 badge). */
+  top10Country: (country, signal) => request('GET', `/top10/${country}`, { signal }),
+  // Live lists from TMDB, cached by the server for half an hour.
+  trending: (kind, signal) => request('GET', `/titles/trending${qs({ kind })}`, { signal }),
+  inCinemas: (country, signal) => request('GET', `/titles/in-cinemas/${country}`, { signal }),
+  top10: (category, country, provider, signal, date) => request('GET', `/top10/${seg(category)}/${country}/${provider}${qs({ date })}`, { signal }),
+  /** Dates a scope has charts for, newest first: { items: [{ date, category, entries }] }. */
+  chartDates: (country, provider, signal) => request('GET', `/charts/${country}/${provider}/dates${qs({ limit: 366 })}`, { signal }),
   top10History: (category, country, provider, from, to, signal) =>
     request('GET', `/top10/${seg(category)}/${country}/${provider}/history${qs({ from, to })}`, { signal }),
   movers: (country, provider, date, signal) => request('GET', `/movers${qs({ country, provider, date })}`, { signal }),
@@ -95,6 +103,8 @@ export const api = {
   ratingsBatch: (ids, signal) => request('GET', `/titles/tmdb/ratings${qs({ ids: ids.join(',') })}`, { signal }),
   overview: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}`, { signal }),
   timeline: (kind, id, country, signal) => request('GET', `/titles/tmdb/${kind}/${id}/timeline${qs({ country })}`, { signal }),
+  /** Every day the title was in a Top 10 (country, service, rank) and a summary per chart. */
+  rankings: (kind, id, signal, from) => request('GET', `/titles/tmdb/${kind}/${id}/rankings${qs({ from })}`, { signal }),
   history: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/history`, { signal }),
   availabilityHistory: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/availability/history`, { signal }),
   credits: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/credits`, { signal }),
@@ -152,6 +162,8 @@ export const api = {
   // marking runs of episodes watched (scope: episode | season | up_to | all) or unwatched.
   showQueue: (staleDays, signal) => request('GET', `/me/shows${qs({ stale_days: staleDays })}`, { signal }),
   upcoming: (days, signal) => request('GET', `/me/upcoming${qs({ days })}`, { signal }),
+  // One episode: TMDB's details (live; the stored row when TMDB is out) and your watches of it.
+  episode: (id, season, episode, signal) => request('GET', `/me/shows/${id}/episodes/${season}/${episode}`, { signal }),
   show: (id, includeSpecials, signal) => request('GET', `/me/shows/${id}${qs({ include_specials: includeSpecials ? 'true' : undefined })}`, { signal }),
   markEpisodes: (id, body) => request('POST', `/me/shows/${id}/watched`, { body }),
   // Deletes the watches of those episodes for good. params: { scope, season, episode, include_specials }
@@ -162,4 +174,6 @@ export const api = {
   statsCalendar: (from, to, signal) => request('GET', `/me/stats/calendar${qs({ from, to })}`, { signal }),
   statsYear: (year, signal) => request('GET', `/me/stats/year${qs({ year })}`, { signal }),
   statsRatings: (from, to, signal) => request('GET', `/me/stats/ratings${qs({ from, to })}`, { signal }),
+  // Everything about your shows (kind tv) or films (movie), all time; '' for both.
+  statsDetailed: (kind, signal) => request('GET', `/me/stats/detailed${qs({ kind })}`, { signal }),
 }

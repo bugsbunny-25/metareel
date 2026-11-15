@@ -1,5 +1,8 @@
 name: ci
 
+# Go only: the server, its tests and govulncheck. The jobs run when Go code,
+# the schema/queries or the build tooling change (the UIs are built by
+# container.yml, the mobile app by mobile.yml).
 on:
   pull_request:
     branches: [main]
@@ -21,9 +24,49 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR supersedes its running checks; main and release runs
+# (inputs.ref) are never cancelled.
+concurrency:
+  group: ci-${{ inputs.ref || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Which files changed, so the jobs below can skip themselves. The workflow
+  # itself always runs: its jobs are required checks on main (ruleset
+  # main-pr), and a job skipped by its `if` counts as passed while a workflow
+  # that never started blocks the merge. Called by release.yml (inputs.ref
+  # set), everything runs.
+  # If this job fails, everything runs.
+  changes:
+    if: ${{ !inputs.ref }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name == 'push'
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            go:
+              - 'cmd/**'
+              - 'internal/**'
+              - 'db/**'
+              - 'tools/**'
+              - 'go.mod'
+              - 'go.sum'
+              - 'sqlc.yaml'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
+
   go-quality:
     name: go-quality
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.go == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -68,6 +111,8 @@ jobs:
 
   integration:
     name: integration
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.go == 'true') }}
     runs-on: ubuntu-latest
     services:
       redis:
@@ -106,6 +151,8 @@ jobs:
 
   govulncheck:
     name: govulncheck
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.go == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

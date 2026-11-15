@@ -20,6 +20,7 @@ type VenueInput struct {
 	Name              string   `json:"name"`
 	Chain             *string  `json:"chain"`
 	Address           *string  `json:"address"`
+	Postcode          *string  `json:"postcode"` // ZIP / PIN / postcode, at most 20 characters
 	City              *string  `json:"city"`
 	Region            *string  `json:"region"`
 	Country           *string  `json:"country"`
@@ -285,6 +286,9 @@ func (s *TrackingService) venueFrom(in VenueInput, current repository.Venue) (re
 		return repository.Venue{}, &ValidationError{Message: "name is required"}
 	}
 	out.Chain, out.Address = trimmedPtr(in.Chain), trimmedPtr(in.Address)
+	if out.Postcode = normPostcode(trimmedPtr(in.Postcode)); out.Postcode != nil && len([]rune(*out.Postcode)) > 20 {
+		return repository.Venue{}, &ValidationError{Message: "postcode must be at most 20 characters"}
+	}
 	out.City, out.Region, out.Note = trimmedPtr(in.City), trimmedPtr(in.Region), trimmedPtr(in.Note)
 	out.ReplacedByVenueID = in.ReplacedByVenueID
 
@@ -322,6 +326,11 @@ func (s *TrackingService) venueFrom(in VenueInput, current repository.Venue) (re
 		}
 	}
 	out.OpenedOn, out.ClosedOn = trimmedPtr(in.OpenedOn), trimmedPtr(in.ClosedOn)
+
+	// A US ZIP names the state on its own.
+	if out.Region == nil && out.Postcode != nil && out.Country != nil {
+		out.Region = regionForPostcode(*out.Country, *out.Postcode)
+	}
 
 	if status := trimmedPtr(in.Status); status != nil {
 		if !trackingVenueStatus[*status] {

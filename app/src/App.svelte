@@ -1,10 +1,10 @@
-<!-- App shell: top bar (brand, primary nav, scope pickers, theme, account), the routed page,
+<!-- App shell: top bar (brand, primary nav, search, theme, account), the routed page,
      the "Log a watch" dialog and toasts. Signed out, it shows the sign-in screen instead. -->
 <script>
   import { untrack } from 'svelte'
-  import { route } from './lib/router.svelte.js'
+  import { route, navigate } from './lib/router.svelte.js'
   import { session, loadSession, signOut } from './lib/session.svelte.js'
-  import { scope, reference, setScope, loadReference, providerName } from './lib/scope.svelte.js'
+  import { loadReference } from './lib/scope.svelte.js'
   import { library } from './lib/library.svelte.js'
   import { loadPrefs } from './lib/prefs.svelte.js'
   import { theme, toggleTheme } from './lib/theme.svelte.js'
@@ -21,7 +21,12 @@
   import Watchlist from './pages/Watchlist.svelte'
   import Library from './pages/Library.svelte'
   import Stats from './pages/Stats.svelte'
-  import UpNext from './pages/UpNext.svelte'
+  import TV from './pages/TV.svelte'
+  import Movies from './pages/Movies.svelte'
+  import You from './pages/You.svelte'
+  import StatsDetailed from './pages/StatsDetailed.svelte'
+  import Episode from './pages/Episode.svelte'
+  import Watch from './pages/Watch.svelte'
   import Settings from './pages/Settings.svelte'
   import Discover from './pages/Discover.svelte'
   import Show from './pages/Show.svelte'
@@ -63,13 +68,31 @@
   const titleMatch = $derived(route.path.match(/^\/title\/(movie|tv)\/(\d+)$/))
   const showMatch = $derived(route.path.match(/^\/show\/(\d+)$/))
   const personMatch = $derived(route.path.match(/^\/person\/(\d+)$/))
-  const PAGES = { '/': 'home', '/charts': 'charts', '/discover': 'discover', '/up-next': 'upnext', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/stats': 'stats', '/settings': 'settings' }
-  const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : personMatch ? 'person' : 'missing'))
-  const providers = $derived(reference.providers.filter((p) => p.countries.includes(scope.country)))
+  const episodeMatch = $derived(route.path.match(/^\/episode\/(\d+)\/(\d+)\/(\d+)$/))
+  const watchMatch = $derived(route.path.match(/^\/watch\/(\d+)$/))
+  const PAGES = { '/': 'home', '/charts': 'charts', '/discover': 'discover', '/tv': 'tv', '/movies': 'movies', '/watchlist': 'watchlist', '/library': 'library', '/diary': 'diary', '/you': 'you', '/you/stats': 'statsDetailed', '/stats': 'stats', '/settings': 'settings' }
+  const page = $derived(PAGES[route.path] ?? (titleMatch ? 'title' : showMatch ? 'show' : personMatch ? 'person' : episodeMatch ? 'episode' : watchMatch ? 'watch' : 'missing'))
+  // Up next became TV and Movies (as on mobile); old links still land on the right one.
+  $effect(() => {
+    if (route.path === '/up-next') navigate(route.query.tab === 'movies' ? '/movies' : '/tv')
+  })
+  // Nav groups: the pages each tab owns.
+  const TAB_OF = { show: 'tv', episode: 'tv', watch: 'diary', statsDetailed: 'you', stats: 'you', settings: 'you', library: 'you', watchlist: 'movies' }
+  const tab = $derived(TAB_OF[page] ?? page)
 
   $effect(() => {
-    const NAMES = { charts: 'Top 10', title: 'Title', upnext: 'Up next', show: 'Episodes', person: 'Person', discover: 'Discover', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', stats: 'Stats', settings: 'Settings', missing: 'Not found' }
+    const NAMES = { charts: 'Top 10', title: 'Title', tv: 'TV', movies: 'Movies', show: 'Episodes', episode: 'Episode', watch: 'Watch', person: 'Person', discover: 'Discover', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', you: 'You', statsDetailed: 'Detailed stats', stats: 'Year in review', settings: 'Settings', missing: 'Not found' }
     document.title = NAMES[page] ? `${NAMES[page]} · metareel` : 'metareel'
+  })
+  // A new page starts at the top (the hash router would otherwise keep the last page's scroll).
+  // Only the path counts: filters and tabs in the query keep your place.
+  let lastPath = route.path
+  $effect(() => {
+    const p = route.path
+    if (p !== lastPath) {
+      lastPath = p
+      window.scrollTo(0, 0)
+    }
   })
   // On a phone the nav scrolls sideways; keep the current page's link in view.
   let nav = $state(null)
@@ -93,30 +116,15 @@
       <a href="#/charts" aria-current={page === 'charts' ? 'page' : undefined}>Charts</a>
       <a href="#/discover" aria-current={page === 'discover' ? 'page' : undefined}>Discover</a>
       <span class="sep" aria-hidden="true"></span>
-      <a href="#/up-next" aria-current={page === 'upnext' || page === 'show' ? 'page' : undefined}>Up next</a>
-      <a href="#/watchlist" aria-current={page === 'watchlist' ? 'page' : undefined}>Watchlist</a>
-      <a href="#/library" aria-current={page === 'library' ? 'page' : undefined}>Library</a>
-      <a href="#/diary" aria-current={page === 'diary' ? 'page' : undefined}>Diary</a>
-      <a href="#/stats" aria-current={page === 'stats' ? 'page' : undefined}>Stats</a>
+      <a href="#/tv" aria-current={tab === 'tv' ? 'page' : undefined}>TV</a>
+      <a href="#/movies" aria-current={tab === 'movies' ? 'page' : undefined}>Movies</a>
+      <a href="#/diary" aria-current={tab === 'diary' ? 'page' : undefined}>Diary</a>
+      <a href="#/you" aria-current={tab === 'you' ? 'page' : undefined}>You</a>
     </nav>
     <div class="tools">
       <button class="search" type="button" onclick={() => (searchOpen = true)} aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}>
         <Icon name="search" size={15} /><span class="label">Search</span><kbd>{mac ? '⌘' : 'Ctrl'} K</kbd>
       </button>
-      <label class="pick">
-        <span class="sr">Country</span>
-        <select value={scope.country} onchange={(e) => setScope({ country: e.currentTarget.value })} disabled={!reference.loaded}>
-          {#each reference.countries as c}<option value={c.code}>{c.name}</option>{/each}
-          {#if !reference.loaded}<option value={scope.country}>{scope.country}</option>{/if}
-        </select>
-      </label>
-      <label class="pick">
-        <span class="sr">Service</span>
-        <select value={scope.provider} onchange={(e) => setScope({ provider: e.currentTarget.value })} disabled={!reference.loaded}>
-          {#each providers as p}<option value={p.slug}>{providerName(p.slug)}</option>{/each}
-          {#if !reference.loaded}<option value={scope.provider}>{providerName(scope.provider)}</option>{/if}
-        </select>
-      </label>
       <button class="icon-btn" type="button" onclick={toggleTheme} aria-label="Switch to {theme.effective === 'light' ? 'dark' : 'light'} mode" title="Switch to {theme.effective === 'light' ? 'dark' : 'light'} mode">
         {theme.effective === 'light' ? '☾' : '☀'}
       </button>
@@ -124,6 +132,7 @@
         <summary aria-label="Account: {session.user.username}"><span class="avatar" aria-hidden="true">{session.user.username.slice(0, 1).toUpperCase()}</span></summary>
         <div class="menu">
           <p class="who">Signed in as <b>{session.user.username}</b></p>
+          <a href="#/you" onclick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>You</a>
           <a href="#/settings" onclick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>Settings</a>
           {#if session.user.role === 'admin'}<a href="/admin/">Admin console</a>{/if}
           <button type="button" onclick={signOut}>Sign out</button>
@@ -147,8 +156,18 @@
       <Discover {onlog} />
     {:else if page === 'settings'}
       <Settings {onconfirm} />
-    {:else if page === 'upnext'}
-      <UpNext {onlog} />
+    {:else if page === 'tv'}
+      <TV {onlog} />
+    {:else if page === 'movies'}
+      <Movies {onlog} />
+    {:else if page === 'you'}
+      <You />
+    {:else if page === 'statsDetailed'}
+      <StatsDetailed />
+    {:else if page === 'episode'}
+      {#key route.path}<Episode show={episodeMatch[1]} season={+episodeMatch[2]} episode={+episodeMatch[3]} {onlog} />{/key}
+    {:else if page === 'watch'}
+      {#key route.path}<Watch id={watchMatch[1]} {onlog} {onconfirm} />{/key}
     {:else if page === 'show'}
       {#key route.path}<Show id={showMatch[1]} {onlog} {onconfirm} />{/key}
     {:else if page === 'person'}
@@ -185,11 +204,6 @@
   .primary a { color: var(--text-muted); text-decoration: none; white-space: nowrap; }
   .primary a:hover, .primary a[aria-current='page'] { color: var(--text-primary); }
   .tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-  .pick select {
-    height: 32px; padding: 0 28px 0 12px; border: 0; border-radius: 16px; appearance: none; cursor: pointer;
-    background: var(--bg-elevated) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a1a1a8' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 11px center;
-    color: var(--text-primary); font: 600 13px/1 var(--font-sans);
-  }
   .search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--bg-elevated); color: var(--text-muted); font: 500 13px/1 var(--font-sans); cursor: pointer; }
   .search:hover { color: var(--text-primary); }
   .search .label { min-width: 90px; text-align: left; }
@@ -217,10 +231,16 @@
     .search .label { display: none; }
   }
   @media (max-width: 1023px) {
-    .bar { gap: 14px; height: auto; min-height: 56px; flex-wrap: wrap; padding-block: 8px; }
-    .tools { margin-left: 0; width: 100%; }
+    /* Brand and tools share the first row; the nav gets a full row of its own. */
+    .bar { gap: 8px 14px; height: auto; min-height: 56px; flex-wrap: wrap; padding-block: 10px 6px; }
+    .tools { margin-left: auto; order: 2; }
+    .primary { order: 3; flex-basis: 100%; }
     .search .label, .search kbd { display: none; }
     .primary { max-width: 100%; gap: 14px; overflow-x: auto; white-space: nowrap; scrollbar-width: none; padding-right: 20px; mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
     .search { width: 32px; padding: 0; justify-content: center; }
+  }
+  @media (max-width: 440px) {
+    .primary { gap: 11px; font-size: 14px; padding-right: 0; mask-image: none; }
+    .primary .sep { display: none; }
   }
 </style>

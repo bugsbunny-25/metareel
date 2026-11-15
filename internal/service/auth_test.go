@@ -107,16 +107,16 @@ func TestLoginAndSessions(t *testing.T) {
 	}
 
 	for _, tc := range []struct{ user, pw string }{{"alice", "wrong password"}, {"bob", "long enough pw"}} {
-		if _, err := f.sessions.Login(ctx, tc.user, tc.pw, "test", "10.0.0.1"); !errors.Is(err, ErrInvalidLogin) {
+		if _, err := f.sessions.Login(ctx, LoginInput{Username: tc.user, Password: tc.pw, UserAgent: "test", IP: "10.0.0.1"}); !errors.Is(err, ErrInvalidLogin) {
 			t.Fatalf("login %s/%s: err = %v, want ErrInvalidLogin", tc.user, tc.pw, err)
 		}
 	}
 	var vErr *ValidationError
-	if _, err := f.sessions.Login(ctx, "", "", "test", "10.0.0.1"); !errors.As(err, &vErr) {
+	if _, err := f.sessions.Login(ctx, LoginInput{Username: "", Password: "", UserAgent: "test", IP: "10.0.0.1"}); !errors.As(err, &vErr) {
 		t.Fatalf("empty login: err = %v", err)
 	}
 
-	res, err := f.sessions.Login(ctx, "ALICE", "long enough pw", "test", "10.0.0.1")
+	res, err := f.sessions.Login(ctx, LoginInput{Username: "ALICE", Password: "long enough pw", UserAgent: "test", IP: "10.0.0.1"})
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestLoginAndSessions(t *testing.T) {
 	if _, err := f.sessions.Lookup(ctx, res.Token); !errors.Is(err, ErrSessionInvalid) {
 		t.Fatalf("session of disabled user: err = %v", err)
 	}
-	if _, err := f.sessions.Login(ctx, "alice", "long enough pw", "test", "10.0.0.2"); !errors.Is(err, ErrInvalidLogin) {
+	if _, err := f.sessions.Login(ctx, LoginInput{Username: "alice", Password: "long enough pw", UserAgent: "test", IP: "10.0.0.2"}); !errors.Is(err, ErrInvalidLogin) {
 		t.Fatalf("login while disabled: err = %v", err)
 	}
 	if err := f.users.SetDisabled(ctx, "alice", false); err != nil {
@@ -160,7 +160,7 @@ func TestLoginAndSessions(t *testing.T) {
 	}
 
 	// A new password ends existing sessions.
-	res2, err := f.sessions.Login(ctx, "alice", "long enough pw", "test", "10.0.0.3")
+	res2, err := f.sessions.Login(ctx, LoginInput{Username: "alice", Password: "long enough pw", UserAgent: "test", IP: "10.0.0.3"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,8 +172,8 @@ func TestLoginAndSessions(t *testing.T) {
 	}
 
 	// Logout ends only that session; unknown tokens are a no-op.
-	a, _ := f.sessions.Login(ctx, "alice", "a new long password", "test", "10.0.0.4")
-	b, _ := f.sessions.Login(ctx, "alice", "a new long password", "test", "10.0.0.5")
+	a, _ := f.sessions.Login(ctx, LoginInput{Username: "alice", Password: "a new long password", UserAgent: "test", IP: "10.0.0.4"})
+	b, _ := f.sessions.Login(ctx, LoginInput{Username: "alice", Password: "a new long password", UserAgent: "test", IP: "10.0.0.5"})
 	if err := f.sessions.Logout(ctx, a.Token); err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestSessionExpiryAndCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	login := func() string {
-		res, err := f.sessions.Login(ctx, "alice", "long enough pw", "", "10.0.0.1")
+		res, err := f.sessions.Login(ctx, LoginInput{Username: "alice", Password: "long enough pw", UserAgent: "", IP: "10.0.0.1"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -249,7 +249,7 @@ func TestLoginRateLimit(t *testing.T) {
 	var limited int
 	for i := range 6 {
 		ip := "10.0.1." + string(rune('1'+i))
-		if _, err := f.sessions.Login(ctx, "alice", "wrong password", "", ip); errors.Is(err, ErrLoginRateLimited) {
+		if _, err := f.sessions.Login(ctx, LoginInput{Username: "alice", Password: "wrong password", UserAgent: "", IP: ip}); errors.Is(err, ErrLoginRateLimited) {
 			limited++
 		}
 	}
@@ -259,7 +259,7 @@ func TestLoginRateLimit(t *testing.T) {
 	// Per IP: burst of 10, across usernames.
 	limited = 0
 	for i := range 11 {
-		if _, err := f.sessions.Login(ctx, "user"+string(rune('a'+i)), "wrong password", "", "10.0.2.1"); errors.Is(err, ErrLoginRateLimited) {
+		if _, err := f.sessions.Login(ctx, LoginInput{Username: "user" + string(rune('a'+i)), Password: "wrong password", UserAgent: "", IP: "10.0.2.1"}); errors.Is(err, ErrLoginRateLimited) {
 			limited++
 		}
 	}
@@ -278,7 +278,7 @@ func TestAuthenticateKeysAndSessions(t *testing.T) {
 	if _, err := f.users.Create(ctx, "alice", "long enough pw", RoleReader); err != nil {
 		t.Fatal(err)
 	}
-	sess, err := f.sessions.Login(ctx, "alice", "long enough pw", "", "10.0.0.1")
+	sess, err := f.sessions.Login(ctx, LoginInput{Username: "alice", Password: "long enough pw", UserAgent: "", IP: "10.0.0.1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,8 +387,8 @@ func TestSessionListAndRevoke(t *testing.T) {
 	if _, err := f.users.Create(ctx, "alice", "long enough pw", RoleReader); err != nil {
 		t.Fatal(err)
 	}
-	a, _ := f.sessions.Login(ctx, "alice", "long enough pw", "ua-a", "10.0.0.1")
-	b, _ := f.sessions.Login(ctx, "alice", "long enough pw", "ua-b", "10.0.0.2")
+	a, _ := f.sessions.Login(ctx, LoginInput{Username: "alice", Password: "long enough pw", UserAgent: "ua-a", IP: "10.0.0.1"})
+	b, _ := f.sessions.Login(ctx, LoginInput{Username: "alice", Password: "long enough pw", UserAgent: "ua-b", IP: "10.0.0.2"})
 	list, err := f.sessions.List(ctx)
 	if err != nil || len(list) != 2 || list[0].Username != "alice" {
 		t.Fatalf("List = %+v, %v", list, err)
@@ -408,7 +408,7 @@ func TestSessionListAndRevoke(t *testing.T) {
 		t.Fatalf("revoke twice: err = %v", err)
 	}
 	// RevokeUserExcept keeps the given session.
-	c, _ := f.sessions.Login(ctx, "alice", "long enough pw", "ua-c", "10.0.0.3")
+	c, _ := f.sessions.Login(ctx, LoginInput{Username: "alice", Password: "long enough pw", UserAgent: "ua-c", IP: "10.0.0.3"})
 	sb, _ := f.sessions.Lookup(ctx, b.Token)
 	if n, err := f.sessions.RevokeUserExcept(ctx, "alice", sb.ID); err != nil || n != 1 {
 		t.Fatalf("RevokeUserExcept = %d, %v; want 1", n, err)

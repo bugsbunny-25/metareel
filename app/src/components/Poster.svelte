@@ -1,8 +1,13 @@
 <script>
   // Shared by every direction: 2:3 lock, inner hairline, deterministic placeholder.
   import { posterSrc } from '../lib/rows.js';
+  import { top10Of, top10Text } from '../lib/top10now.svelte.js';
+  import Top10Badge from './Top10Badge.svelte';
 
-  let { path = null, title, seed = title, width = 40, size = 'w342', radius = 2 } = $props();
+  /** kind + tmdbId (optional) put the Top 10 badge on titles charting in your country today;
+   *  chart pages leave them out, since the chart itself says so. */
+  let { path = null, title, seed = title, width = 40, size = 'w342', radius = 2, kind = null, tmdbId = null } = $props();
+  const top = $derived(kind && tmdbId ? top10Of(kind, tmdbId) : null);
 
   const src = $derived(posterSrc(path, size));
   let failedSrc = $state(null); // a 404 falls back to the same placeholder as a null path
@@ -21,6 +26,7 @@
   {:else}
     <span class="ph" style:--a="{angle}deg" aria-hidden="true">{initials}</span>
   {/if}
+  {#if top}<span class="badge" class:small={width < 60}><Top10Badge size={width < 60 ? 16 : width < 110 ? 22 : 28} title={top10Text(top)} /></span>{/if}
 </span>
 
 <style>
@@ -44,6 +50,8 @@
     box-shadow: inset 0 0 0 1px var(--poster-hairline);
     pointer-events: none;
   }
+  .badge { position: absolute; top: 5px; right: 5px; z-index: 1; }
+  .badge.small { top: 2px; right: 2px; }
   img {
     display: block;
     width: 100%;

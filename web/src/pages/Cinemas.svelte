@@ -53,7 +53,7 @@
 
   // ── Drawer: one cinema, or a new one ──────────────────────────────
   const blankVenue = () => ({
-    name: '', chain: '', address: '', city: '', region: '', country: '', timezone: '',
+    name: '', chain: '', address: '', postcode: '', city: '', region: '', country: '', timezone: '',
     latitude: '', longitude: '', opened_on: '', closed_on: '', status: 'open', note: '',
   })
   let detail = $state(null) // { venue, screens, aliases, watch_count }
@@ -87,7 +87,7 @@
     saving = true
     try {
       const body = {
-        name: form.name.trim(), chain: text(form.chain), address: text(form.address), city: text(form.city),
+        name: form.name.trim(), chain: text(form.chain), address: text(form.address), postcode: text(form.postcode), city: text(form.city),
         region: text(form.region), country: text(form.country), timezone: text(form.timezone),
         latitude: num(form.latitude), longitude: num(form.longitude),
         opened_on: text(form.opened_on), closed_on: text(form.closed_on), status: form.status, note: text(form.note),
@@ -257,185 +257,189 @@
   const zones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
 </script>
 
-<PageHeader
-  title="Cinemas"
-  desc="The cinemas and screens watches are logged at. Users add cinemas while logging; correct, complete or close them here."
-  info="Shared by everyone. Each watch keeps the name and city it was logged with, so renaming a cinema never rewrites a diary. A cinema with watches can't be deleted: set its status to closed instead."
->
-  {#snippet actions()}
-    <a class="btn" href={href('/runs', { type: 'venues.import' })}><Icon name="list" /> Import runs</a>
-    <button class="btn" onclick={importOSM} disabled={importing} title="Every cinema OpenStreetMap has in {country || 'the configured countries'}">Import from OpenStreetMap{country ? ` (${country})` : ''}</button>
-    <button class="btn btn-primary" onclick={() => setQuery({ open: 'new' })}><Icon name="plus" /> Add cinema</button>
-  {/snippet}
-</PageHeader>
+<div class="page">
+  <PageHeader
+    title="Cinemas"
+    desc="The cinemas and screens watches are logged at. Users add cinemas while logging; correct, complete or close them here."
+    info="Shared by everyone. Each watch keeps the name and city it was logged with, so renaming a cinema never rewrites a diary. A cinema with watches can't be deleted: set its status to closed instead."
+  >
+    {#snippet actions()}
+      <a class="btn" href={href('/runs', { type: 'venues.import' })}><Icon name="list" /> Import runs</a>
+      <button class="btn" onclick={importOSM} disabled={importing} title="Every cinema OpenStreetMap has in {country || 'the configured countries'}">Import from OpenStreetMap{country ? ` (${country})` : ''}</button>
+      <button class="btn btn-primary" onclick={() => setQuery({ open: 'new' })}><Icon name="plus" /> Add cinema</button>
+    {/snippet}
+  </PageHeader>
 
-<div class="filters">
-  <div class="search">
-    <span class="icon"><Icon name="search" /></span>
-    <input class="input" placeholder="Search by name or city" bind:value={search} aria-label="Search cinemas" />
+  <div class="filters">
+    <div class="search">
+      <span class="icon"><Icon name="search" /></span>
+      <input class="input" placeholder="Search by name, city or postcode" bind:value={search} aria-label="Search cinemas" />
+    </div>
+    <input class="input cc" placeholder="Country" maxlength="2" value={country} aria-label="Country code"
+      onchange={(e) => setQuery({ country: e.currentTarget.value.trim().toUpperCase() }, { replace: true })} />
+    <label class="check"><input type="checkbox" checked={showClosed} onchange={(e) => setQuery({ closed: e.currentTarget.checked ? '1' : '' }, { replace: true })} /> Include closed</label>
   </div>
-  <input class="input cc" placeholder="Country" maxlength="2" value={country} aria-label="Country code"
-    onchange={(e) => setQuery({ country: e.currentTarget.value.trim().toUpperCase() }, { replace: true })} />
-  <label class="check"><input type="checkbox" checked={showClosed} onchange={(e) => setQuery({ closed: e.currentTarget.checked ? '1' : '' }, { replace: true })} /> Include closed</label>
-</div>
 
-{#if error}<div class="alert-error">{error}</div>{/if}
+  {#if error}<div class="alert-error">{error}</div>{/if}
 
-<div class="card">
-  {#if loading && !venues.length}
-    <p class="muted">Loading cinemas…</p>
-  {:else if !venues.length}
-    <p class="muted">{q || country ? 'No cinemas match.' : 'No cinemas yet. Users add them while logging, or add one here.'}</p>
-  {:else}
-    <table class="table">
-      <thead><tr><th>Name</th><th>City</th><th>Country</th><th>Time zone</th><th class="num">Screens</th><th>Status</th></tr></thead>
-      <tbody>
-        {#each venues as v (v.id)}
-          <tr class="clickable" class:dim={v.status === 'closed'} onclick={() => setQuery({ open: v.id })}>
-            <td><a href="#/cinemas?open={v.id}" onclick={(e) => { e.preventDefault(); setQuery({ open: v.id }) }}>{v.name}</a>{#if v.chain}<div class="muted">{v.chain}</div>{/if}</td>
-            <td>{v.city ?? '—'}</td>
-            <td>{v.country ?? '—'}</td>
-            <td class="muted">{v.timezone ?? '—'}</td>
-            <td class="num">{v.screen_count}</td>
-            <td><span class="badge {statusBadge[v.status] ?? ''}">{v.status}</span></td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-    {#if venues.length === 200}<p class="muted">Showing the first 200; search to narrow it down.</p>{/if}
-    <p class="muted small attribution">Imported cinema data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>.</p>
+  <div class="card">
+    {#if loading && !venues.length}
+      <p class="muted">Loading cinemas…</p>
+    {:else if !venues.length}
+      <p class="muted">{q || country ? 'No cinemas match.' : 'No cinemas yet. Users add them while logging, or add one here.'}</p>
+    {:else}
+      <table class="table">
+        <thead><tr><th>Name</th><th>City</th><th>Postcode</th><th>Country</th><th>Time zone</th><th class="num">Screens</th><th>Status</th></tr></thead>
+        <tbody>
+          {#each venues as v (v.id)}
+            <tr class="clickable" class:dim={v.status === 'closed'} onclick={() => setQuery({ open: v.id })}>
+              <td><a href="#/cinemas?open={v.id}" onclick={(e) => { e.preventDefault(); setQuery({ open: v.id }) }}>{v.name}</a>{#if v.chain}<div class="muted">{v.chain}</div>{/if}</td>
+              <td>{v.city ?? '—'}{#if v.region}<span class="muted">, {v.region}</span>{/if}</td>
+              <td class="muted">{v.postcode ?? '—'}</td>
+              <td>{v.country ?? '—'}</td>
+              <td class="muted">{v.timezone ?? '—'}</td>
+              <td class="num">{v.screen_count}</td>
+              <td><span class="badge {statusBadge[v.status] ?? ''}">{v.status}</span></td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      {#if venues.length === 200}<p class="muted">Showing the first 200; search to narrow it down.</p>{/if}
+      <p class="muted small attribution">Imported cinema data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>.</p>
+    {/if}
+  </div>
+
+  {#if form && detail}
+    <Drawer onclose={() => { screen = null; setQuery({ open: '' }) }}>
+      {#snippet header()}
+        <div class="dh">{detail.venue ? detail.venue.name : 'Add a cinema'}</div>
+        {#if detail.venue}<div class="muted">{detail.watch_count} {detail.watch_count === 1 ? 'watch' : 'watches'} logged here · id {detail.venue.id}</div>{/if}
+      {/snippet}
+
+      <section>
+        <div class="grid2">
+          <label class="wide">Name<input class="input" bind:value={form.name} required /></label>
+          <label>Chain<input class="input" bind:value={form.chain} placeholder="e.g. PVR, Odeon" /></label>
+          <label>Status
+            <select class="input" bind:value={form.status}>{#each STATUSES as [v, l]}<option value={v}>{l}</option>{/each}</select>
+          </label>
+          <label class="wide">Address<input class="input" bind:value={form.address} /></label>
+          <label>Postcode<input class="input" bind:value={form.postcode} maxlength="20" placeholder="ZIP, PIN or postcode" /></label>
+          <label>City<input class="input" bind:value={form.city} /></label>
+          <label>Region<input class="input" bind:value={form.region} placeholder="State or province" /></label>
+          <label>Country<input class="input cc" bind:value={form.country} maxlength="2" placeholder="GB" /></label>
+          <label>Time zone
+            <input class="input" bind:value={form.timezone} list="tz-list" placeholder="Europe/London" />
+            <datalist id="tz-list">{#each zones as z}<option value={z}></option>{/each}</datalist>
+          </label>
+          <label>Latitude<input class="input num" bind:value={form.latitude} inputmode="decimal" /></label>
+          <label>Longitude<input class="input num" bind:value={form.longitude} inputmode="decimal" /></label>
+          <label>Opened<input class="input" type="date" bind:value={form.opened_on} /></label>
+          <label>Closed<input class="input" type="date" bind:value={form.closed_on} /></label>
+          <label class="wide">Note<input class="input" bind:value={form.note} /></label>
+        </div>
+        <p class="muted small">The time zone files a watch at this cinema under the right local day; latitude and longitude go together.</p>
+      </section>
+
+      {#if detail.venue}
+        <section>
+          <h3>Screens <span class="muted">({detail.screens.length})</span></h3>
+          {#if detail.screens.length}
+            <table class="table compact">
+              <thead><tr><th>Screen</th><th class="num">Seats</th><th>Size</th><th class="num">Ratio</th><th></th></tr></thead>
+              <tbody>
+                {#each detail.screens as s (s.id)}
+                  <tr>
+                    <td>{s.name}{#if s.number}<span class="muted"> · no. {s.number}</span>{/if}{#if s.note}<div class="muted">{s.note}</div>{/if}</td>
+                    <td class="num">{s.seats ?? '—'}</td>
+                    <td>{size(s) || '—'}</td>
+                    <td class="num">{s.aspect_ratio ? `${s.aspect_ratio.toFixed(2)}:1` : '—'}</td>
+                    <td class="right">
+                      <button class="btn btn-sm" onclick={() => editScreen(s)}>Edit</button>
+                      <button class="btn btn-sm" onclick={() => removeScreen(s)} title="Delete screen"><Icon name="trash" /></button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+          {#if screen}
+            <div class="sub-form">
+              <div class="grid3">
+                <label class="wide">Name<input class="input" bind:value={screen.name} placeholder="Screen 1, IMAX, Audi 3" /></label>
+                <label>Number<input class="input num" bind:value={screen.number} inputmode="numeric" /></label>
+                <label>Seats<input class="input num" bind:value={screen.seats} inputmode="numeric" /></label>
+                <label>Width<input class="input num" bind:value={screen.width} inputmode="decimal" /></label>
+                <label>Height<input class="input num" bind:value={screen.height} inputmode="decimal" /></label>
+                <label>Unit<select class="input" bind:value={screen.dim_unit}><option value="m">metres</option><option value="ft">feet</option></select></label>
+                <label>Aspect ratio<input class="input" bind:value={screen.aspect_ratio} placeholder="1.90:1" /></label>
+                <label>From<input class="input" type="date" bind:value={screen.effective_from} /></label>
+                <label>To<input class="input" type="date" bind:value={screen.effective_to} /></label>
+                <label class="wide">Note<input class="input" bind:value={screen.note} /></label>
+              </div>
+              <div class="row-actions">
+                <button class="btn" onclick={() => (screen = null)}>Cancel</button>
+                <button class="btn btn-primary" disabled={!screen.name.trim()} onclick={saveScreen}>{screen.id ? 'Save screen' : 'Add screen'}</button>
+              </div>
+            </div>
+          {:else}
+            <button class="btn btn-sm" onclick={() => editScreen(null)}><Icon name="plus" /> Add screen</button>
+          {/if}
+        </section>
+
+        <section>
+          <h3>Former names</h3>
+          {#if detail.aliases?.length}
+            <ul class="aliases">
+              {#each detail.aliases as a (a.id)}
+                <li>
+                  <span>{a.name}</span>
+                  <span class="muted">{a.from_date ?? '…'} – {a.to_date ?? '…'}</span>
+                  <button class="btn btn-sm btn-ghost" onclick={() => removeAlias(a)} title="Remove"><Icon name="x" /></button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          <div class="alias-form">
+            <input class="input" bind:value={alias.name} placeholder="Former name" aria-label="Former name" />
+            <input class="input" type="date" bind:value={alias.from_date} aria-label="Used from" />
+            <input class="input" type="date" bind:value={alias.to_date} aria-label="Used until" />
+            <button class="btn btn-sm" disabled={!alias.name.trim()} onclick={addAlias}>Add</button>
+          </div>
+        </section>
+
+        <section>
+          <h3>Merge into another cinema</h3>
+          <p class="muted">For a duplicate: everything here moves to the cinema you pick, and this one is deleted.</p>
+          <input class="input" bind:value={mergeQ} placeholder="Search the cinema to keep, e.g. pvr mumbai" aria-label="Cinema to merge into" />
+          {#if mergeHits.length}
+            <ul class="merge-hits">
+              {#each mergeHits as h (h.id)}
+                <li>
+                  <span><b>{h.name}</b> <span class="muted">{[h.city, h.country].filter(Boolean).join(', ')}{h.status !== 'open' ? ` · ${h.status}` : ''} · id {h.id}</span></span>
+                  <button class="btn btn-sm" disabled={merging} onclick={() => mergeInto(h)}>Merge into this</button>
+                </li>
+              {/each}
+            </ul>
+          {:else if mergeQ.trim().length >= 2}
+            <p class="muted">No other cinema matches.</p>
+          {/if}
+        </section>
+      {/if}
+
+      {#snippet footer()}
+        {#if detail.venue && detail.watch_count === 0}
+          <button class="btn btn-ghost danger" onclick={removeVenue}><Icon name="trash" /> Delete</button>
+        {:else if detail.venue}
+          <span class="muted small">Has watches: set the status to closed rather than deleting.</span>
+        {/if}
+        <span class="grow"></span>
+        <button class="btn" onclick={() => setQuery({ open: '' })}>Close</button>
+        <button class="btn btn-primary" disabled={saving || !form.name.trim()} onclick={saveVenue}>{saving ? 'Saving…' : detail.venue ? 'Save' : 'Add cinema'}</button>
+      {/snippet}
+    </Drawer>
   {/if}
 </div>
-
-{#if form && detail}
-  <Drawer onclose={() => { screen = null; setQuery({ open: '' }) }}>
-    {#snippet header()}
-      <div class="dh">{detail.venue ? detail.venue.name : 'Add a cinema'}</div>
-      {#if detail.venue}<div class="muted">{detail.watch_count} {detail.watch_count === 1 ? 'watch' : 'watches'} logged here · id {detail.venue.id}</div>{/if}
-    {/snippet}
-
-    <section>
-      <div class="grid2">
-        <label class="wide">Name<input class="input" bind:value={form.name} required /></label>
-        <label>Chain<input class="input" bind:value={form.chain} placeholder="e.g. PVR, Odeon" /></label>
-        <label>Status
-          <select class="input" bind:value={form.status}>{#each STATUSES as [v, l]}<option value={v}>{l}</option>{/each}</select>
-        </label>
-        <label class="wide">Address<input class="input" bind:value={form.address} /></label>
-        <label>City<input class="input" bind:value={form.city} /></label>
-        <label>Region<input class="input" bind:value={form.region} /></label>
-        <label>Country<input class="input cc" bind:value={form.country} maxlength="2" placeholder="GB" /></label>
-        <label>Time zone
-          <input class="input" bind:value={form.timezone} list="tz-list" placeholder="Europe/London" />
-          <datalist id="tz-list">{#each zones as z}<option value={z}></option>{/each}</datalist>
-        </label>
-        <label>Latitude<input class="input num" bind:value={form.latitude} inputmode="decimal" /></label>
-        <label>Longitude<input class="input num" bind:value={form.longitude} inputmode="decimal" /></label>
-        <label>Opened<input class="input" type="date" bind:value={form.opened_on} /></label>
-        <label>Closed<input class="input" type="date" bind:value={form.closed_on} /></label>
-        <label class="wide">Note<input class="input" bind:value={form.note} /></label>
-      </div>
-      <p class="muted small">The time zone files a watch at this cinema under the right local day; latitude and longitude go together.</p>
-    </section>
-
-    {#if detail.venue}
-      <section>
-        <h3>Screens <span class="muted">({detail.screens.length})</span></h3>
-        {#if detail.screens.length}
-          <table class="table compact">
-            <thead><tr><th>Screen</th><th class="num">Seats</th><th>Size</th><th class="num">Ratio</th><th></th></tr></thead>
-            <tbody>
-              {#each detail.screens as s (s.id)}
-                <tr>
-                  <td>{s.name}{#if s.number}<span class="muted"> · no. {s.number}</span>{/if}{#if s.note}<div class="muted">{s.note}</div>{/if}</td>
-                  <td class="num">{s.seats ?? '—'}</td>
-                  <td>{size(s) || '—'}</td>
-                  <td class="num">{s.aspect_ratio ? `${s.aspect_ratio.toFixed(2)}:1` : '—'}</td>
-                  <td class="right">
-                    <button class="btn btn-sm" onclick={() => editScreen(s)}>Edit</button>
-                    <button class="btn btn-sm" onclick={() => removeScreen(s)} title="Delete screen"><Icon name="trash" /></button>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-        {#if screen}
-          <div class="sub-form">
-            <div class="grid3">
-              <label class="wide">Name<input class="input" bind:value={screen.name} placeholder="Screen 1, IMAX, Audi 3" /></label>
-              <label>Number<input class="input num" bind:value={screen.number} inputmode="numeric" /></label>
-              <label>Seats<input class="input num" bind:value={screen.seats} inputmode="numeric" /></label>
-              <label>Width<input class="input num" bind:value={screen.width} inputmode="decimal" /></label>
-              <label>Height<input class="input num" bind:value={screen.height} inputmode="decimal" /></label>
-              <label>Unit<select class="input" bind:value={screen.dim_unit}><option value="m">metres</option><option value="ft">feet</option></select></label>
-              <label>Aspect ratio<input class="input" bind:value={screen.aspect_ratio} placeholder="1.90:1" /></label>
-              <label>From<input class="input" type="date" bind:value={screen.effective_from} /></label>
-              <label>To<input class="input" type="date" bind:value={screen.effective_to} /></label>
-              <label class="wide">Note<input class="input" bind:value={screen.note} /></label>
-            </div>
-            <div class="row-actions">
-              <button class="btn" onclick={() => (screen = null)}>Cancel</button>
-              <button class="btn btn-primary" disabled={!screen.name.trim()} onclick={saveScreen}>{screen.id ? 'Save screen' : 'Add screen'}</button>
-            </div>
-          </div>
-        {:else}
-          <button class="btn btn-sm" onclick={() => editScreen(null)}><Icon name="plus" /> Add screen</button>
-        {/if}
-      </section>
-
-      <section>
-        <h3>Former names</h3>
-        {#if detail.aliases?.length}
-          <ul class="aliases">
-            {#each detail.aliases as a (a.id)}
-              <li>
-                <span>{a.name}</span>
-                <span class="muted">{a.from_date ?? '…'} – {a.to_date ?? '…'}</span>
-                <button class="btn btn-sm btn-ghost" onclick={() => removeAlias(a)} title="Remove"><Icon name="x" /></button>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-        <div class="alias-form">
-          <input class="input" bind:value={alias.name} placeholder="Former name" aria-label="Former name" />
-          <input class="input" type="date" bind:value={alias.from_date} aria-label="Used from" />
-          <input class="input" type="date" bind:value={alias.to_date} aria-label="Used until" />
-          <button class="btn btn-sm" disabled={!alias.name.trim()} onclick={addAlias}>Add</button>
-        </div>
-      </section>
-
-      <section>
-        <h3>Merge into another cinema</h3>
-        <p class="muted">For a duplicate: everything here moves to the cinema you pick, and this one is deleted.</p>
-        <input class="input" bind:value={mergeQ} placeholder="Search the cinema to keep, e.g. pvr mumbai" aria-label="Cinema to merge into" />
-        {#if mergeHits.length}
-          <ul class="merge-hits">
-            {#each mergeHits as h (h.id)}
-              <li>
-                <span><b>{h.name}</b> <span class="muted">{[h.city, h.country].filter(Boolean).join(', ')}{h.status !== 'open' ? ` · ${h.status}` : ''} · id {h.id}</span></span>
-                <button class="btn btn-sm" disabled={merging} onclick={() => mergeInto(h)}>Merge into this</button>
-              </li>
-            {/each}
-          </ul>
-        {:else if mergeQ.trim().length >= 2}
-          <p class="muted">No other cinema matches.</p>
-        {/if}
-      </section>
-    {/if}
-
-    {#snippet footer()}
-      {#if detail.venue && detail.watch_count === 0}
-        <button class="btn btn-ghost danger" onclick={removeVenue}><Icon name="trash" /> Delete</button>
-      {:else if detail.venue}
-        <span class="muted small">Has watches: set the status to closed rather than deleting.</span>
-      {/if}
-      <span class="grow"></span>
-      <button class="btn" onclick={() => setQuery({ open: '' })}>Close</button>
-      <button class="btn btn-primary" disabled={saving || !form.name.trim()} onclick={saveVenue}>{saving ? 'Saving…' : detail.venue ? 'Save' : 'Add cinema'}</button>
-    {/snippet}
-  </Drawer>
-{/if}
 
 <style>
   .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }

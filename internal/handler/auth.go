@@ -12,10 +12,26 @@ import (
 )
 
 const (
-	// SessionCookie holds a session token for browsers.
+	// SessionCookie holds the user app's session token (and the public API's,
+	// for browsers).
 	SessionCookie = "metareel_session"
-	principalKey  = "metareel.principal"
+	// AdminSessionCookie holds the admin console's session token. The two are
+	// separate sign-ins: signing in to the app at / doesn't sign you in to
+	// /admin, or the other way round, and signing out of one keeps the other.
+	AdminSessionCookie = "metareel_admin_session"
+	principalKey       = "metareel.principal"
 )
+
+// adminClient reports whether an /auth request is the admin console's
+// (?client=admin), which uses AdminSessionCookie.
+func adminClient(c *echo.Context) bool { return c.QueryParam("client") == "admin" }
+
+func cookieName(admin bool) string {
+	if admin {
+		return AdminSessionCookie
+	}
+	return SessionCookie
+}
 
 // Authenticate guards the public API. A request authenticates with one of:
 //   - an API key in X-API-Key, or as "Authorization: Bearer mr_…";
@@ -54,7 +70,7 @@ func (h *Handler) AdminAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		r := c.Request()
 		signedIn := false
-		if token := sessionToken(r); token != "" && h.Auth != nil {
+		if token := sessionToken(r, true); token != "" && h.Auth != nil {
 			p, err := h.Auth.AuthenticateSession(r.Context(), token)
 			switch {
 			case err == nil:
@@ -80,12 +96,14 @@ func (h *Handler) AdminAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// AuthSession: GET /api/v1/auth/session tells the admin console whether it
-// needs a sign-in and who is signed in (user is null otherwise). Never 401.
+// AuthSession: GET /api/v1/auth/session tells a client whether the admin
+// console needs a sign-in and who is signed in to that client (user is null
+// otherwise): the app's session, or the admin console's with ?client=admin.
+// Never 401.
 func (h *Handler) AuthSession(c *echo.Context) error {
 	out := map[string]any{"admin_login_required": h.AdminLoginRequired, "user": nil}
 	r := c.Request()
-	if token := sessionToken(r); token != "" && h.Auth != nil {
+	if token := sessionToken(r, adminClient(c)); token != "" && h.Auth != nil {
 		p, err := h.Auth.AuthenticateSession(r.Context(), token)
 		switch {
 		case err == nil:
@@ -133,12 +151,13 @@ func bearerToken(r *http.Request) string {
 	return ""
 }
 
-// sessionToken is the session token a request carries (Bearer or cookie).
-func sessionToken(r *http.Request) string {
+// sessionToken is the session token a request carries: a Bearer token, else
+// the admin console's cookie (admin) or the app's.
+func sessionToken(r *http.Request, admin bool) string {
 	if t := bearerToken(r); strings.HasPrefix(t, service.SessionTokenPrefix) {
 		return t
 	}
-	if ck, err := r.Cookie(SessionCookie); err == nil {
+	if ck, err := r.Cookie(cookieName(admin)); err == nil {
 		return ck.Value
 	}
 	return ""
@@ -147,17 +166,30 @@ func sessionToken(r *http.Request) string {
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	// Client "admin" signs in to the admin console (its own cookie); also
+	// accepted as ?client=admin.
+	Client string `json:"client"`
+	// Native clients (the mobile app): what the device calls itself, and a
+	// long-lived "remember this device" session.
+	DeviceName     string `json:"device_name"`
+	RememberDevice bool   `json:"remember_device"`
 }
 
-// Login: POST /api/v1/auth/login {"username","password"}. Sets the session
-// cookie and returns the token once, for non-browser clients.
+// Login: POST /api/v1/auth/login {"username","password","client"?,
+// "device_name"?,"remember_device"?}. Sets the app's session cookie (the
+// admin console's with ?client=admin or "client":"admin") and returns the
+// token once, for non-browser clients, with the session id and probe key the
+// mobile app uses to check a local URL (see Probe).
 func (h *Handler) Login(c *echo.Context) error {
 	var req loginRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
 	}
 	r := c.Request()
-	out, err := h.Sessions.Login(r.Context(), req.Username, req.Password, r.UserAgent(), c.RealIP())
+	out, err := h.Sessions.Login(r.Context(), service.LoginInput{
+		Username: req.Username, Password: req.Password, UserAgent: r.UserAgent(), IP: c.RealIP(),
+		DeviceName: req.DeviceName, RememberDevice: req.RememberDevice,
+	})
 	var vErr *service.ValidationError
 	switch {
 	case err == nil:
@@ -172,22 +204,57 @@ func (h *Handler) Login(c *echo.Context) error {
 		h.logger().Error("login", "err", err)
 		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
 	}
-	c.SetCookie(sessionCookie(r, out.Token, out.ExpiresAt))
+	admin := adminClient(c) || req.Client == "admin"
+	c.SetCookie(sessionCookie(r, cookieName(admin), out.Token, out.ExpiresAt))
+	c.Response().Header().Set("Cache-Control", "no-store")
+	return c.JSON(http.StatusOK, out)
+}
+
+type probeRequest struct {
+	SessionID int64  `json:"session_id"`
+	Nonce     string `json:"nonce"`
+}
+
+// Probe: POST /api/v1/auth/probe {"session_id","nonce"} answers
+// {"proof": hex HMAC-SHA256(probe_key, nonce)}. Unauthenticated: a mobile
+// app calls it on a plain-HTTP local URL to check the server is the one it
+// signed in to before sending its token there. Unknown sessions get a proof
+// that won't match, never an error.
+func (h *Handler) Probe(c *echo.Context) error {
+	var req probeRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
+	}
+	out, err := h.Sessions.Probe(c.Request().Context(), req.SessionID, req.Nonce, c.RealIP())
+	var vErr *service.ValidationError
+	switch {
+	case err == nil:
+	case errors.As(err, &vErr):
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": vErr.Error()})
+	case errors.Is(err, service.ErrProbeRateLimited):
+		c.Response().Header().Set("Retry-After", "1")
+		return c.JSON(http.StatusTooManyRequests, map[string]any{"error": err.Error()})
+	default:
+		h.logger().Error("probe", "err", err)
+		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
+	}
 	c.Response().Header().Set("Cache-Control", "no-store")
 	return c.JSON(http.StatusOK, out)
 }
 
 // Logout: POST /api/v1/auth/logout ends the request's session (Bearer token
-// or cookie) and clears the cookie. Always 204.
+// or cookie) and clears the cookie: the app's, or the admin console's with
+// ?client=admin (the other sign-in stays). Always 204.
 func (h *Handler) Logout(c *echo.Context) error {
 	r := c.Request()
-	if token := sessionToken(r); token != "" {
+	admin := adminClient(c)
+	if token := sessionToken(r, admin); token != "" {
 		if err := h.Sessions.Logout(r.Context(), token); err != nil {
 			h.logger().Error("logout", "err", err)
 			return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
 		}
 	}
-	c.SetCookie(sessionCookie(r, "", time.Unix(0, 0)))
+	c.SetCookie(sessionCookie(r, cookieName(admin), "", time.Unix(0, 0)))
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -205,9 +272,9 @@ func (h *Handler) Me(c *echo.Context) error {
 // sessionCookie is HttpOnly and SameSite=Strict (never sent by other sites);
 // Secure when the request came over HTTPS (directly or via a proxy), so it
 // still works on a plain-HTTP LAN. A zero-time expiry deletes it.
-func sessionCookie(r *http.Request, value string, expires time.Time) *http.Cookie {
+func sessionCookie(r *http.Request, name, value string, expires time.Time) *http.Cookie {
 	ck := &http.Cookie{
-		Name:     SessionCookie,
+		Name:     name,
 		Value:    value,
 		Path:     "/",
 		Expires:  expires,

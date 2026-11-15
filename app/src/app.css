@@ -21,7 +21,9 @@ img { max-width: 100%; }
 /* Panels and tables shared by pages. */
 .panel { padding: 16px 8px 10px; border-radius: var(--radius-panel); background: var(--bg-surface); min-width: 0; }
 .panel.pad { padding: 18px 20px; display: grid; gap: 8px; align-content: start; }
-.panel-h { display: flex; align-items: baseline; gap: 12px; padding: 0 12px 8px; }
+.panel-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; padding: 0 12px 8px; }
+/* The heading keeps its line; a hint that doesn't fit beside it drops below. */
+.panel-h h2 { flex: none; max-width: 100%; }
 .panel-h h2, .panel.pad h2 { margin: 0; font: 700 18px/1.25 var(--font-display); }
 .hint { color: var(--text-muted); font-size: 13px; }
 .tbl { width: 100%; border-collapse: separate; border-spacing: 0; }

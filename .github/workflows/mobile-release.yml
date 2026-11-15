@@ -1,0 +1,68 @@
+name: mobile-release
+
+# Builds the mobile app on EAS for a release; called by release.yml for the
+# release's commit (tag vX.Y.Z). The app has the
+# same version as the server and the image: release.yml checked that the
+# commit's package.json carries it, app.config.ts reads it from there, and
+# the iOS build number and Android versionCode are computed from it
+# (mobile/version.ts), so every later release is higher in both stores.
+#   - iOS: a production build, submitted to TestFlight (not awaited).
+#   - Android: a signed release APK with the EAS-managed keystore; its
+#     download URL is returned so release.yml attaches the APK to the GitHub
+#     Release. The keystore never reaches GitHub, and the APK is never a
+#     workflow artifact.
+# Needs the EXPO_TOKEN secret and the EAS_PROJECT_ID variable in the "mobile"
+# environment; without EXPO_TOKEN the job is skipped and the release has no
+# mobile builds. The APK and the JS bundle are public: they contain no server
+# URL and no secrets.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit to build"
+        required: true
+        type: string
+    outputs:
+      apk_url:
+        description: "Download URL of the Android APK on EAS (empty when skipped)"
+        value: ${{ jobs.build.outputs.apk_url }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: mobile
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: mobile
+    outputs:
+      apk_url: ${{ steps.android.outputs.apk_url }}
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+    steps:
+      - name: EXPO_TOKEN is not set
+        if: env.EXPO_TOKEN == ''
+        working-directory: .
+        run: echo "::warning::EXPO_TOKEN is not set; the release ships without mobile builds."
+      - uses: actions/checkout@v7
+        if: env.EXPO_TOKEN != ''
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/setup-mobile
+        if: env.EXPO_TOKEN != ''
+        with:
+          expo-token: ${{ secrets.EXPO_TOKEN }}
+      - name: iOS build on EAS, submitted to TestFlight
+        if: env.EXPO_TOKEN != ''
+        run: eas build --platform ios --profile production --auto-submit --non-interactive --no-wait
+      - name: Android APK build on EAS
+        id: android
+        if: env.EXPO_TOKEN != ''
+        run: |
+          eas build --platform android --profile release-apk --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+          echo "apk_url=$(jq -r '.[0].artifacts.buildUrl' "$RUNNER_TEMP/build.json")" >> "$GITHUB_OUTPUT"

@@ -12,7 +12,7 @@
   <div class="plot" style:height="{height}px" role="img" aria-label="{label}: {items.map((d) => `${d.label} ${d.value}${unit}`).join(', ')}">
     {#each items as d, i}
       <div class="col" title={d.title ?? `${d.label}: ${d.value}${unit}`}>
-        {#if i === peak && d.value > 0}<span class="peak num">{d.value}</span>{/if}
+        {#if i === peak && d.value > 0}<span class="peak num">{d.value}{unit}</span>{/if}
         <i class:hl={i === highlight} class:zero={!d.value} style:height="{d.value ? Math.max(3, (d.value / max) * (height - 18)) : 2}px"></i>
       </div>
     {/each}

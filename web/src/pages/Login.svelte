@@ -1,7 +1,7 @@
 <script>
+  // Shown only when the server requires an admin sign-in (AUTH_REQUIRE_ADMIN_LOGIN).
   import Icon from '../components/Icon.svelte'
   import { auth, signIn, signOut } from '../lib/auth.svelte.js'
-  import { route, navigate, href } from '../lib/router.svelte.js'
 
   let username = $state('')
   let password = $state('')
@@ -18,8 +18,6 @@
     try {
       await signIn(username.trim(), password)
       password = ''
-      // Opened from the "Sign in" link: go back to where the user was.
-      if (route.path === '/login') navigate(route.query.next || '/')
     } catch (err) {
       error = err.message
     } finally {
@@ -52,9 +50,7 @@
       <button class="btn" onclick={switchUser}><Icon name="logOut" size={14} />Sign in as someone else</button>
     {:else}
       <div class="login-title">Sign in</div>
-      {#if auth.loginRequired}
-        <p class="small muted">This server requires an admin account to use the console.</p>
-      {/if}
+      <p class="small muted">This server requires an admin account to use the console.</p>
       {#if error}<div class="alert alert-error small"><Icon name="alert" size={14} />{error}</div>{/if}
       <form onsubmit={submit}>
         <label class="field">
@@ -70,9 +66,6 @@
           {#if busy}<span class="spinner"></span>{:else}<Icon name="lock" size={14} />{/if}Sign in
         </button>
       </form>
-      {#if !auth.loginRequired}
-        <p class="small muted login-foot"><a href={href(route.query.next || '/')}>Back to the console</a> (signing in is optional on this server)</p>
-      {/if}
     {/if}
   </div>
 </div>

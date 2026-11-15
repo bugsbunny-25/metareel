@@ -164,6 +164,17 @@ func (q *Queries) EnsureUserTitle(ctx context.Context, arg EnsureUserTitleParams
 	return err
 }
 
+const getPosterColor = `-- name: GetPosterColor :one
+SELECT color FROM poster_colors WHERE poster_path = ?1
+`
+
+func (q *Queries) GetPosterColor(ctx context.Context, posterPath string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getPosterColor, posterPath)
+	var color string
+	err := row.Scan(&color)
+	return color, err
+}
+
 const getTitleSnapshot = `-- name: GetTitleSnapshot :one
 SELECT
     CAST(COALESCE(NULLIF(t.title, ''), NULLIF(c.title, ''), '') AS TEXT) AS title,
@@ -979,6 +990,21 @@ type RollupUserTitleParams struct {
 // a FROM-clause subquery with the row being updated.
 func (q *Queries) RollupUserTitle(ctx context.Context, arg RollupUserTitleParams) error {
 	_, err := q.db.ExecContext(ctx, rollupUserTitle, arg.UserID, arg.TmdbKind, arg.TmdbID)
+	return err
+}
+
+const savePosterColor = `-- name: SavePosterColor :exec
+INSERT INTO poster_colors (poster_path, color) VALUES (?1, ?2)
+ON CONFLICT(poster_path) DO UPDATE SET color = excluded.color, computed_at = CURRENT_TIMESTAMP
+`
+
+type SavePosterColorParams struct {
+	PosterPath string `json:"poster_path"`
+	Color      string `json:"color"`
+}
+
+func (q *Queries) SavePosterColor(ctx context.Context, arg SavePosterColorParams) error {
+	_, err := q.db.ExecContext(ctx, savePosterColor, arg.PosterPath, arg.Color)
 	return err
 }
 

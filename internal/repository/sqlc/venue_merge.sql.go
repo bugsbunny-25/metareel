@@ -28,6 +28,7 @@ const fillVenueBlanksFrom = `-- name: FillVenueBlanksFrom :execrows
 UPDATE venues SET
     chain = COALESCE(chain, (SELECT s.chain FROM venues s WHERE s.id = ?1)),
     address = COALESCE(address, (SELECT s.address FROM venues s WHERE s.id = ?1)),
+    postcode = COALESCE(postcode, (SELECT s.postcode FROM venues s WHERE s.id = ?1)),
     city = COALESCE(city, (SELECT s.city FROM venues s WHERE s.id = ?1)),
     region = COALESCE(region, (SELECT s.region FROM venues s WHERE s.id = ?1)),
     country = COALESCE(country, (SELECT s.country FROM venues s WHERE s.id = ?1)),

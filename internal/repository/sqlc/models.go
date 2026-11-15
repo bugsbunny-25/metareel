@@ -55,6 +55,20 @@ type CinemaSubscription struct {
 	UpdatedAt  string         `json:"updated_at"`
 }
 
+type CinemaSubscriptionPeriod struct {
+	ID             int64          `json:"id"`
+	SubscriptionID int64          `json:"subscription_id"`
+	StartedOn      string         `json:"started_on"`
+	EndedOn        sql.NullString `json:"ended_on"`
+}
+
+type CinemaSubscriptionPrice struct {
+	ID             int64  `json:"id"`
+	SubscriptionID int64  `json:"subscription_id"`
+	EffectiveOn    string `json:"effective_on"`
+	PriceMinor     int64  `json:"price_minor"`
+}
+
 type DataImport struct {
 	Source       string         `json:"source"`
 	Etag         sql.NullString `json:"etag"`
@@ -205,6 +219,26 @@ type NetflixTop10Global struct {
 	CumulativeWeeks   sql.NullInt64   `json:"cumulative_weeks"`
 }
 
+type NotificationLog struct {
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	Kind      string `json:"kind"`
+	Ref       string `json:"ref"`
+	CreatedAt string `json:"created_at"`
+}
+
+type PosterColor struct {
+	PosterPath string `json:"poster_path"`
+	Color      string `json:"color"`
+	ComputedAt string `json:"computed_at"`
+}
+
+type PushTicket struct {
+	TicketID  string `json:"ticket_id"`
+	DeviceID  int64  `json:"device_id"`
+	CreatedAt string `json:"created_at"`
+}
+
 type Ranking struct {
 	ID                int64          `json:"id"`
 	TitleID           int64          `json:"title_id"`
@@ -219,14 +253,16 @@ type Ranking struct {
 }
 
 type Session struct {
-	ID         int64     `json:"id"`
-	UserID     int64     `json:"user_id"`
-	TokenHash  string    `json:"token_hash"`
-	CreatedAt  time.Time `json:"created_at"`
-	LastSeenAt time.Time `json:"last_seen_at"`
-	ExpiresAt  time.Time `json:"expires_at"`
-	UserAgent  string    `json:"user_agent"`
-	Ip         string    `json:"ip"`
+	ID             int64     `json:"id"`
+	UserID         int64     `json:"user_id"`
+	TokenHash      string    `json:"token_hash"`
+	CreatedAt      time.Time `json:"created_at"`
+	LastSeenAt     time.Time `json:"last_seen_at"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	UserAgent      string    `json:"user_agent"`
+	Ip             string    `json:"ip"`
+	DeviceName     string    `json:"device_name"`
+	RememberDevice bool      `json:"remember_device"`
 }
 
 type TaskRun struct {
@@ -505,6 +541,19 @@ type User struct {
 	LastLoginAt  sql.NullTime `json:"last_login_at"`
 }
 
+type UserDevice struct {
+	ID           int64          `json:"id"`
+	UserID       int64          `json:"user_id"`
+	SessionID    sql.NullInt64  `json:"session_id"`
+	Platform     string         `json:"platform"`
+	PushProvider string         `json:"push_provider"`
+	Token        string         `json:"token"`
+	AppVersion   sql.NullString `json:"app_version"`
+	CreatedAt    string         `json:"created_at"`
+	LastSeenAt   string         `json:"last_seen_at"`
+	DisabledAt   sql.NullString `json:"disabled_at"`
+}
+
 type UserPreference struct {
 	UserID    int64  `json:"user_id"`
 	Data      string `json:"data"`
@@ -554,6 +603,7 @@ type Venue struct {
 	CreatedBy         sql.NullInt64   `json:"created_by"`
 	CreatedAt         string          `json:"created_at"`
 	UpdatedAt         string          `json:"updated_at"`
+	Postcode          sql.NullString  `json:"postcode"`
 }
 
 type VenueAlias struct {

@@ -5,7 +5,8 @@ info:
   description: >
     The admin console's API. When the server runs with
     AUTH_REQUIRE_ADMIN_LOGIN=true, every route needs a signed-in user with the
-    admin role (the metareel_session cookie from POST /api/v1/auth/login, or
+    admin role (the metareel_admin_session cookie from POST
+    /api/v1/auth/login?client=admin, or
     "Authorization: Bearer mrs_..."): 401 without a valid session, 403 for
     other roles. API keys never open the admin API. Without that setting the
     admin API is open (keep it off the public internet). Browser requests that
@@ -2158,8 +2159,8 @@ components:
     SessionCookie:
       type: apiKey
       in: cookie
-      name: metareel_session
-      description: Session cookie set by POST /api/v1/auth/login (admin role)
+      name: metareel_admin_session
+      description: The admin console's session cookie, set by POST /api/v1/auth/login?client=admin (admin role). The user app's metareel_session doesn't open the admin API.
     BearerSession:
       type: http
       scheme: bearer
@@ -2556,7 +2557,7 @@ components:
       properties:
         task_type:
           type: string
-          enum: [flixpatrol.top10.scrape, titles.enrich, titles.metadata, ratings.prewarm, netflix.top10.import, netflix.titles.match, imdb.ratings.import, mapping.refresh, maintenance]
+          enum: [flixpatrol.top10.scrape, titles.enrich, titles.metadata, ratings.prewarm, netflix.top10.import, netflix.titles.match, imdb.ratings.import, mapping.refresh, notifications.dispatch, maintenance]
           description: See GET /api/v1/admin/task-types
         name:
           type: string
@@ -2770,8 +2771,10 @@ components:
         expires_at: { type: string, format: date-time, description: Absolute expiry; idle sessions end earlier }
         user_agent: { type: string }
         ip: { type: string }
+        device_name: { type: string, description: "The name a native client gave at sign-in; empty for browsers" }
+        remember_device: { type: boolean, description: "A long-lived \"remember this device\" session" }
         current: { type: boolean, description: The session making this request }
-      required: [id, user_id, username, created_at, last_seen_at, expires_at, user_agent, ip, current]
+      required: [id, user_id, username, created_at, last_seen_at, expires_at, user_agent, ip, device_name, remember_device, current]
 
     ApiKey:
       type: object

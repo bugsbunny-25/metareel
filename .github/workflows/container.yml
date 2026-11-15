@@ -1,5 +1,8 @@
 name: container
 
+# The image holds the server and both web UIs (the Dockerfile's frontend
+# stages run their npm ci and build), so this is also the UIs' build check.
+# The build runs when anything that goes into the image changes.
 on:
   pull_request:
     branches: [main]
@@ -13,7 +16,7 @@ on:
         required: true
         type: string
       version:
-        description: "Release tag to publish the image as (e.g. v0.2.0-alpha)"
+        description: "Release tag to publish the image as (e.g. v0.5.0)"
         required: true
         type: string
     outputs:
@@ -36,8 +39,44 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Which files changed, so the jobs below can skip themselves. The workflow
+  # itself always runs: its jobs are required checks on main (ruleset
+  # main-pr), and a job skipped by its `if` counts as passed while a workflow
+  # that never started blocks the merge. Called by release.yml (inputs.ref
+  # set), everything runs.
+  # If this job fails, everything runs.
+  changes:
+    if: ${{ !inputs.ref }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      image: ${{ steps.filter.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name == 'push'
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            image:
+              - 'cmd/**'
+              - 'internal/**'
+              - 'db/**'
+              - 'go.mod'
+              - 'go.sum'
+              - 'web/**'
+              - 'app/**'
+              - 'Dockerfile'
+              - '.dockerignore'
+              - '.github/workflows/container.yml'
+              - '.github/scripts/cleanup-main-images.sh'
+
   build-scan-publish:
     name: build-scan-publish
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.image == 'true') }}
     runs-on: ubuntu-latest
     outputs:
       image_name: ${{ steps.meta.outputs.image_name }}
@@ -107,6 +146,9 @@ jobs:
           file: Dockerfile
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            VERSION=${{ inputs.version || 'main' }}
+            REVISION=${{ github.sha }}
           platforms: linux/amd64,linux/arm64
 
       - name: Trivy scan (PR image)

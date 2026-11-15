@@ -67,6 +67,16 @@ type TitleSnapshot struct {
 // Known reports whether anything is known about the title.
 func (s TitleSnapshot) Known() bool { return s.Title != "" }
 
+// PosterColor returns the cached colour of a poster, or sql.ErrNoRows.
+func (r *TrackingRepository) PosterColor(ctx context.Context, posterPath string) (string, error) {
+	return r.q.GetPosterColor(ctx, posterPath)
+}
+
+// SavePosterColor caches a poster's colour.
+func (r *TrackingRepository) SavePosterColor(ctx context.Context, posterPath, color string) error {
+	return r.q.SavePosterColor(ctx, sqlc.SavePosterColorParams{PosterPath: posterPath, Color: color})
+}
+
 // SaveTrackedTitle caches a title's display metadata.
 func (r *TrackingRepository) SaveTrackedTitle(ctx context.Context, t TrackedTitle) error {
 	err := r.q.UpsertTrackedTitle(ctx, sqlc.UpsertTrackedTitleParams{

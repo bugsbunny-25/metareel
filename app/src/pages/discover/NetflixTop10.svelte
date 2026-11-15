@@ -1,6 +1,6 @@
 <!-- Netflix's own Top 10 (#/discover?tab=netflix&nf=country|alltime&week=YYYY-MM-DD): the weekly
      global lists (four categories, with hours and views), the weekly list for the country in the
-     top bar (films and shows, ranks only: that is all Netflix publishes per country) and the
+     pickers at the top of Discover (films and shows, ranks only: that is all Netflix publishes per country) and the
      all-time most popular (views in the first 91 days). Each row carries the TMDB poster of the
      title it's mapped to; unmapped titles get a placeholder. -->
 <script>

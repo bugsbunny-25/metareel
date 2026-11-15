@@ -26,9 +26,18 @@ type Preferences struct {
 	// Services are the TMDB provider IDs of the streaming services the user
 	// pays for (at most 20): Discover's rotation reads them as subscribed.
 	Services []int64 `json:"services,omitempty"`
+	// NotifyWatchlistArrivals: send a push notification (mobile app) when a
+	// title on the watchlist arrives on one of Services (any service when
+	// none are listed) in Country. Off unless set.
+	NotifyWatchlistArrivals *bool `json:"notify_watchlist_arrivals,omitempty"`
+	// Countries are ISO 3166-1 codes in the user's order (at most 20): a
+	// title page charts its Top 10 run in the first of them it charted in.
+	Countries []string `json:"countries,omitempty"`
 }
 
 const maxPreferredServices = 20
+
+const maxPreferredCountries = 20
 
 var providerSlugRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
@@ -71,7 +80,7 @@ func (s *TrackingService) SetPreferences(ctx context.Context, userID int64, in P
 		return nil
 	}
 	p := Preferences{Country: upper(in.Country), Currency: upper(in.Currency), Provider: trimmedPtr(in.Provider),
-		ScreenUnit: trimmedPtr(in.ScreenUnit), StaleDays: in.StaleDays}
+		ScreenUnit: trimmedPtr(in.ScreenUnit), StaleDays: in.StaleDays, NotifyWatchlistArrivals: in.NotifyWatchlistArrivals}
 	if len(in.Services) > maxPreferredServices {
 		return nil, &ValidationError{Message: "at most 20 services"}
 	}
@@ -81,6 +90,18 @@ func (s *TrackingService) SetPreferences(ctx context.Context, userID int64, in P
 		}
 		if !slices.Contains(p.Services, id) {
 			p.Services = append(p.Services, id)
+		}
+	}
+	if len(in.Countries) > maxPreferredCountries {
+		return nil, &ValidationError{Message: "at most 20 countries"}
+	}
+	for _, c := range in.Countries {
+		c = strings.ToUpper(strings.TrimSpace(c))
+		if !countryRe.MatchString(c) {
+			return nil, &ValidationError{Message: "countries must be 2-letter ISO 3166-1 codes"}
+		}
+		if !slices.Contains(p.Countries, c) {
+			p.Countries = append(p.Countries, c)
 		}
 	}
 	switch {

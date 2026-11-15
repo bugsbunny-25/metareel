@@ -14,6 +14,7 @@ ORDER BY v.id;
 UPDATE venues SET
     chain     = COALESCE(chain, sqlc.narg(chain)),
     address   = COALESCE(address, sqlc.narg(address)),
+    postcode  = COALESCE(postcode, sqlc.narg(postcode)),
     city      = COALESCE(city, sqlc.narg(city)),
     region    = COALESCE(region, sqlc.narg(region)),
     latitude  = COALESCE(latitude, sqlc.narg(latitude)),
@@ -26,6 +27,7 @@ UPDATE venues SET
 WHERE id = sqlc.arg(id)
   AND ((chain IS NULL AND sqlc.narg(chain) IS NOT NULL)
     OR (address IS NULL AND sqlc.narg(address) IS NOT NULL)
+    OR (postcode IS NULL AND sqlc.narg(postcode) IS NOT NULL)
     OR (city IS NULL AND sqlc.narg(city) IS NOT NULL)
     OR (region IS NULL AND sqlc.narg(region) IS NOT NULL)
     OR (latitude IS NULL AND sqlc.narg(latitude) IS NOT NULL)

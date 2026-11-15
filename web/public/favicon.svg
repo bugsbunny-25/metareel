@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><style>.l{display:none}@media (prefers-color-scheme: light){.l{display:inline}.d{display:none}}</style><g class="d"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><defs>
+  <linearGradient id="lit" x1="0" y1="182" x2="0" y2="842" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#f4f4f6"/><stop offset=".55" stop-color="#9a9aa2"/><stop offset="1" stop-color="#5a5a62"/>
+  </linearGradient>
+  <radialGradient id="bg" cx="512" cy="358.4" r="819.2" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#1c1c20"/><stop offset="1" stop-color="#0b0b0c"/>
+  </radialGradient>
+</defs><rect width="1024" height="1024" rx="230.4" fill="url(#bg)"/><g><circle cx="512" cy="512" r="330" fill="none" stroke="url(#lit)" stroke-width="44"/><circle cx="512.0" cy="322.0" r="86" fill="#0b0b0c" stroke="url(#lit)" stroke-width="26"/><circle cx="692.7" cy="453.3" r="86" fill="#0b0b0c" stroke="url(#lit)" stroke-width="26"/><circle cx="623.7" cy="665.7" r="86" fill="#0b0b0c" stroke="url(#lit)" stroke-width="26"/><circle cx="400.3" cy="665.7" r="86" fill="#0b0b0c" stroke="url(#lit)" stroke-width="26"/><circle cx="331.3" cy="453.3" r="99" fill="#ff8a4c"/><circle cx="512" cy="512" r="34" fill="url(#lit)"/></g></svg></g><g class="l"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><defs>
+  <linearGradient id="litL" x1="0" y1="182" x2="0" y2="842" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#3a3a40"/><stop offset=".55" stop-color="#5e5e66"/><stop offset="1" stop-color="#8a8a92"/>
+  </linearGradient>
+  <radialGradient id="bgL" cx="512" cy="358.4" r="819.2" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e6e6ea"/>
+  </radialGradient>
+</defs><rect width="1024" height="1024" rx="230.4" fill="url(#bgL)"/><g><circle cx="512" cy="512" r="330" fill="none" stroke="url(#litL)" stroke-width="44"/><circle cx="512.0" cy="322.0" r="86" fill="#f2f2f4" stroke="url(#litL)" stroke-width="26"/><circle cx="692.7" cy="453.3" r="86" fill="#f2f2f4" stroke="url(#litL)" stroke-width="26"/><circle cx="623.7" cy="665.7" r="86" fill="#f2f2f4" stroke="url(#litL)" stroke-width="26"/><circle cx="400.3" cy="665.7" r="86" fill="#f2f2f4" stroke="url(#litL)" stroke-width="26"/><circle cx="331.3" cy="453.3" r="99" fill="#ff8a4c"/><circle cx="512" cy="512" r="34" fill="url(#litL)"/></g></svg></g></svg>

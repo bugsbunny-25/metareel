@@ -153,10 +153,18 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 | `flixpatrol.top10.scrape` | `FlixPatrolJob` | Charts only; tags the new TV rankings with seasons, enqueues `titles.enrich` for new titles and hourly re-checks for unpublished charts |
 | `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Mapping sync (linked Netflix titles' mappings first), matching with backoff, RT via Wikidata then search (per TMDB title, backoff in `tmdb_titles.next_rt_at`), mapping sync; then seasons |
 | `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists) + watch providers with each offer's URL from JustWatch (`title_offers.go`), Wikidata IDs, films' Wikidata distributors (P750, `tmdb_titles.distributors`, monthly); then seasons |
+
+A title the job never covers (never charted, not watchlisted, e.g. one opened
+from Trending or search) gets its TMDB details on demand: the title overview
+(`/titles/tmdb/{kind}/{id}`) fetches and stores them through
+`TitleMetadataService.RefreshDetails` the first time it finds none, at most
+once per title every 6 hours (shared by concurrent requests), so the page has
+metadata and where to watch instead of a 404.
 | `ratings.prewarm` | `RatingsService.Prewarm` | Charting titles' expired ratings |
 | `netflix.top10.import` | `NetflixImporter.Run` | Netflix TSVs, matching of up to 400 due Netflix titles (mapping sync, Netflix IDs, Wikidata, JustWatch), seasons |
 | `netflix.titles.match` | `NetflixImporter.RunMatch` | Netflix title matching backlog (or `title_ids`), Netflix IDs of up to 200 more titles, then seasons |
 | `imdb.ratings.import` | `IMDbImporter` | IMDb `title.ratings.tsv.gz`; known IDs also go to `imdb_rating_history` when changed |
+| `notifications.dispatch` | `PushService.Run` | Mobile push notifications (see [Push notifications](#push-notifications-servicepush_notifygo)); hourly, does nothing unless `PUSH_ENABLED` |
 | `venues.import` | `VenueImporter` | Cinemas from OpenStreetMap (see [Cinema import](#cinema-import-servicevenue_importgo)); run by hand, no schedule |
 | `tmdb.credits.refresh` | `CreditsRefresher` | `tmdb_people` + `tmdb_credits` of every TMDB title: `/movie/{id}/credits`, or `/tv/{id}?append_to_response=aggregate_credits` (with `created_by` as Creator); keeps the top 25 cast and the jobs in `creditJobs` (TV: 10 per job by episodes); never-fetched first, again after 60 days (`tmdb_titles.credits_fetched_at`), 1,000 a run, 250 ms apart; each title replaced in one transaction |
 | `tmdb.episodes.refresh` | `EpisodesRefresher` | `tmdb_episodes` of TV shows with a stored TMDB season list: seasons aired in the last 3 years, undated and the latest (`append_to_response=season/N`, 20 per request, 250 ms apart); due daily when an episode airs within -14..+60 days or a season starts within 30 days, weekly for returning statuses, else monthly (`tmdb_titles.episodes_fetched_at`); each fetched season replaced in one transaction |
@@ -411,6 +419,53 @@ other than same-origin / none, or an `Origin` whose host is not the request's
 admin API (open, or signed in with a SameSite=Strict cookie); clients without
 those headers (curl) pass.
 
+## Push notifications (`service/push_notify.go`)
+
+The mobile app registers its Expo push token with `PUT /me/devices`
+(`user_devices`, tied to the registering session: signing out deletes the
+session and the device with it). `notifications.dispatch` (hourly at :15)
+then:
+
+1. Fetches receipts for tickets older than 15 minutes (`push_tickets`; Expo
+   keeps them about a day) and disables devices reported
+   `DeviceNotRegistered`.
+2. Reads `watch_provider_events` after its own cursor
+   (`notifications.cursor.offers` in `app_settings`; the first run only sets
+   it, so history is never sent), 500 at a time.
+3. For each title that was `added` as `flatrate`, `free` or `ads`, finds users
+   with it on their watchlist and an active device, whose preferences have
+   `notify_watchlist_arrivals`, the event's `country`, and the provider among
+   their `services` (any provider when they list none).
+4. Records `(user, watchlist_arrival, kind:id)` in `notification_log` (so each
+   title is announced once per user) and sends "Now on <service>" to every
+   device through `client.ExpoPush` (100 per request), with `data.url` =
+   `/title/<kind>/<id>` for the app to open and Android channel `arrivals`.
+   If a request fails, that batch's log rows are removed and the cursor stays,
+   so the next run retries.
+
+Re-registering a token that belongs to another user moves the device to
+the caller: that is how a phone switches accounts, and tokens are never
+returned by the API, so taking over someone's device needs their token from
+elsewhere (accepted).
+
+Arrivals only exist for titles whose watch providers are refreshed: the
+`titles.metadata` candidates include every watchlisted title on the short
+window, ranked after titles that are actually charting so a long watchlist
+can't crowd them out of a run. Push and access tokens never reach logs or
+errors; Expo's error messages quote the push token, so only error codes are
+kept.
+
+## Letterboxd links (`client/letterboxd.go`)
+
+`GET /titles/lookup?letterboxd=` (the mobile app's share sheet) resolves a
+`boxd.it` short link or a `letterboxd.com` film / review URL: redirects are
+followed by hand (at most 3, only to boxd.it or letterboxd.com), the film slug
+is read from the path, and the film page's `data-tmdb-id` / `data-tmdb-type`
+give the TMDB title. A plain GET, no cookies, no challenge handling: anything
+but a 200 is an upstream error (502) and the app falls back to a title search.
+Answers are cached in memory (a day; a link that isn't a film or has no TMDB
+id for an hour).
+
 ## Title search (`service/search.go`)
 
 `GET /search` matches the names of every mapped TMDB title (TMDB title and
@@ -533,9 +588,22 @@ name has no Latin letters), `brand` as chain, `addr:*`, the element's
 coordinates, the IANA zone at them (`tzf`, embedded boundaries, no network)
 and `start_date` / `opening_date` when it is a full date. Unnamed and
 `access=private|no` elements are skipped; one cinema mapped as a node and its
-building (same name within 150 m) is imported once. A cinema without
-`addr:city` takes the nearest `place=city|town` node within 20 km (a second
-query, only when needed).
+building (same name within 150 m) is imported once. The address is
+`addr:full`, else the house number with `addr:street` (or `addr:place`, for
+addresses without a street). A cinema with no address of its own (often a
+point inside a mall or building) borrows one: a query, only when needed,
+returns addressed features within 75 m of such cinemas and the addressed
+ways and relations they sit inside (`is_in`); the nearest point within 75 m
+wins, else the nearest area within 300 m, and its city and state come along
+when the cinema has none. `addr:postcode` is kept (migration 39, `venues.postcode`,
+tidied to single spaces and upper case) and borrowed with an address. A
+cinema with a postcode but no city or state takes the ones most often named
+with that postcode by the country's other cinemas and the nearby addressed
+features (none on a tie); a US ZIP also gives the state from its first three
+digits (`venue_postcode.go`; no such table for India, whose PIN prefixes
+cross state lines). Hand-entered venues get the state from a US ZIP the same
+way. A cinema still without a city takes the nearest `place=city|town` node
+within 20 km (another query, only when needed).
 
 Matching, in order: `venue_refs` `osm_id` (`node/123`); the `wikidata` tag
 against a venue's `wikidata_id` (ignored when several cinemas carry the same
@@ -564,7 +632,7 @@ the opening date and address, so a rebuilt or reopened cinema is never
 closed. Unmatched ones are created `closed`.
 
 Venue search (`ListVenues`) matches up to four words, each anywhere in the
-name, chain, city or address, and ranks names starting with the first word
+name, chain, city, address or postcode, and ranks names starting with the first word
 first, then open cinemas before closed ones. The user app's picker includes
 closed cinemas.
 
@@ -579,12 +647,21 @@ is deleted. Watches keep their `venue_name_at_watch`.
 
 `cinema_subscriptions` (migration 35) holds a user's plans: name, chain,
 price per `month` or `year` in minor units with a currency, `started_on`
-(first billing day) and `ended_on`. A watch has `subscription_id` (only the
+(first billing day) and `ended_on`. Migration 38 adds its history:
+`cinema_subscription_periods` (runs: cancelling and resubscribing leaves a
+gap between two periods; only the last may be open, and they may not
+overlap) and `cinema_subscription_prices` (a price from each date; the
+earliest also covers bills before its date). The plan's `started_on`,
+`ended_on` and `price_minor` are kept in step as a summary (first start, last
+end, the price in effect today). The API takes `periods` and `prices`; a
+client that omits them edits the stored history through the summary fields
+(the first start, the last end, today's price). A watch has `subscription_id` (only the
 user's own plan; checked on write) and `face_value_minor`, what the ticket
 would have cost; `price_minor` stays what was paid (an upcharge).
-`GET /me/subscriptions/savings` works it out on read: bills are the start
-day and each month or year after it (clamped to month ends) up to today or
-the end; covered watches in the plan's currency are valued at their face
+`GET /me/subscriptions/savings` works it out on read: each run bills on its
+start day and each month or year after it (clamped to month ends) up to
+today or its end, at the price in effect on each bill day, and the gaps
+between runs bill nothing; covered watches in the plan's currency are valued at their face
 value or the median single ticket paid at the plan's chain (venue chain or
 name containing it), else at any cinema, in that currency; savings = value -
 bills - extras paid on covered watches. The what-if sums the last 12 months
@@ -598,6 +675,13 @@ selection (`keepCredits`) live from TMDB, cached in memory with the people
 (`tmdbCache`: 12 hours, misses an hour, 1,000 entries each), `source: tmdb`.
 `GET /api/v1/me/people/search` is TMDB's person search, for the user app's
 search palette.
+`GET /api/v1/titles/trending` and `GET /api/v1/titles/in-cinemas/{country}`
+(`service/title_lists.go`) are TMDB's `/trending/{kind}/day` and
+`/movie/now_playing?region=`, asked live for the home screens' Trending and In
+cinemas rows and kept in memory for 30 minutes per list and country (a failed
+refresh serves the last list). Nothing is stored. The apps' Top 10 badge needs
+no endpoint of its own: one `/top10/{country}` per country (every service's
+latest charts, ~12 KB gzipped) is cached and matched locally.
 `GET /api/v1/people/{id}` lists a person's credited titles with each title's
 FlixPatrol record (`ListPersonChartStats`, all stored charts), and adds their
 TMDB profile and filmography (`service/credits_person.go`): one
@@ -685,7 +769,15 @@ in Stats like cinema formats; `media` is still set (`bluray_4k`, `bluray`,
 `dvd`, or VHS / file / print without a disc format) so older readers keep
 working. The console's Cinemas page edits venues through admin copies of the
 `/me/venues` routes; the same rules apply (watches snapshot the name and
-city; a venue with watches is closed, not deleted). Admins can upload format
+city; a venue with watches is closed, not deleted).
+`GET /me/venues/nearby` (`TrackingService.NearbyVenues`) computes a
+latitude/longitude box around the point (every longitude near the poles or
+across the antimeridian), lists up to 5,000 cinemas in it through the
+`idx_venues_lat_lon` index (`ListVenuesInBox`, with the caller's watch count
+and latest watch there), then computes haversine distances in Go, keeps those
+within the radius and sorts them; a cinema the user has watched at counts as
+250 m closer. The request logger (`handler.RequestLogger`, echo's default
+with `redactURI`) logs `lat` and `lon` as `REDACTED`. Admins can upload format
 logos in bulk: the console matches each file to a format by its name
 (`<slug>.<ext>`). Logo files are not kept in the repo (they are trademarks); they live only in the database once uploaded.
 
@@ -804,6 +896,11 @@ The public API accepts an API key or a user's session; `handler.Authenticate`
   → session token when it starts with `mrs_`, otherwise API key; else the
   `metareel_session` cookie. Only one credential is checked, and one that is
   sent must be valid (no fallback to the cookie or to anonymous).
+- The admin console has its own sign-in: `/auth/login`, `/auth/logout` and
+  `/auth/session` with `?client=admin` use the `metareel_admin_session`
+  cookie, and `AdminAuth` reads only that cookie (or a Bearer session). The
+  public and `/me` routes read only `metareel_session`. So the app at `/` and
+  the console at `/admin`, same origin, never show each other's sign-in.
 - API keys are looked up in `APIKeyService`'s in-memory digest map (no DB).
   Sessions are looked up by PBKDF2 digest (`hashToken`, its own salt) in
   `SessionService`, which caches active sessions for 30 s; revocations made
@@ -820,6 +917,23 @@ The public API accepts an API key or a user's session; `handler.Authenticate`
   at most 4 argon2id hashes run at once (19 MiB each). The response sets the
   HttpOnly, SameSite=Strict cookie and returns the token once. `/api/v1/auth`
   sits behind `SameOriginWrites`, so other sites can't sign a browser in or out.
+  Native clients send neither `Origin` nor `Sec-Fetch-Site`, so their Bearer
+  writes pass that check (`TestNativeClientBearerWrites`).
+- Device sessions: a login with `remember_device` stores `sessions.remember_device`
+  and gets `AUTH_DEVICE_SESSION_TTL`; `GetActiveSession`, `ListActiveSessions`
+  and `DeleteExpiredSessions` pick the idle timeout per row
+  (`AUTH_DEVICE_SESSION_IDLE_TIMEOUT` for device sessions). `device_name` is
+  cleaned (control characters dropped, 64 runes) and listed with the session.
+- Local-URL probe (`SessionService.Probe`, `POST /api/v1/auth/probe`, no
+  credentials): `probe_key = HMAC-SHA256(token_digest, "metareel/probe/v1")`
+  is returned at login and recomputed from the stored digest, never stored;
+  the answer is `HMAC-SHA256(probe_key, nonce)`. Unknown or ended sessions are
+  answered with a per-process random key so live ids aren't revealed; 20
+  probes per IP, then 1 a second.
+- Client IP (`c.RealIP()`, used by every rate limit and stored on sessions):
+  the connecting address unless `SERVER_TRUSTED_PROXIES` is set, in which case
+  `echo.ExtractIPFromXFFHeader` walks `X-Forwarded-For` through only those
+  ranges (loopback and private ranges are not trusted implicitly).
 - Users are created by `AUTH_ADMIN_*` on first start (`server.bootstrapAdmin`,
   only while `users` is empty) and managed with `metareel user …`
   (`cmd/server/user.go`) or the console's Users & sessions page.
@@ -845,6 +959,13 @@ the self-protection rules) but nothing is refused.
   an error when sign-in is required but none exists.
 
 ## Tracking (`service/tracking.go`, `service/tracking_titles.go`)
+
+Poster colours (`service/poster_colors.go`): `GET /me/titles/{kind}/{id}`
+adds `poster_color` (#rrggbb, the mean of every pixel of TMDB's w92 poster)
+for the mobile app's tinted heroes. The first request for a poster downloads
+it from `image.tmdb.org` (2 s budget, only paths matching a TMDB image path,
+512 KB cap) and caches the result in `poster_colors` by poster path; a failure
+just leaves the field out.
 
 `/api/v1/me/...` is one user's watchlist, statuses, watch log and tags. The
 group is wired in `router.Register` as
@@ -875,6 +996,14 @@ fresh, else fetches `TitleDetails` and caches it in `tracked_titles`. A TMDB
 404 becomes `ErrTrackedTitleUnknown` (HTTP 404), so a mistyped id cannot be
 stored; a TMDB outage falls back to the cached snapshot, and with no
 `TMDB_API_KEY` tracking keeps working with empty metadata instead of failing.
+
+### Glance (`service/tracking_glance.go`)
+
+`GET /me/glance` is the mobile widgets' one call: `UpNext` (3 shows),
+the first of `UpcomingEpisodes` in the next 60 days, the active cinema plan
+with the most covered watches (its `planSavings`, current month) and the
+newest diary entry. No new queries; the app stores the response for its
+widgets and refreshes it after a sync and from the background task.
 
 ### Time
 
@@ -927,6 +1056,12 @@ request through `append_to_response`. The season list comes from the show's
 own details, which include season 0; `number_of_seasons` does not.
 `trackedEpisodesTTL` is a day, shorter than the title TTL, because an episode
 missing from the cache is an episode missing from up-next.
+
+An episode's details (`GET /me/shows/{id}/episodes/{season}/{episode}`) come
+live from TMDB's episode endpoint (`TMDBClient.TVEpisode`: synopsis, still,
+score, directors, writers, at most 12 guest stars) and are not stored; when
+TMDB fails the cached `tracked_episodes` row answers with `live: false`. The
+user's watches of the episode are read from the diary filtered to the show.
 
 Bulk marking (`POST /me/shows/{id}/watched`) selects episodes with
 `ListMarkableEpisodes`, whose `scope` is `episode`, `season`, `up_to` or
@@ -1012,6 +1147,16 @@ through the read-only pool.
 - **Genres, countries, decades and languages** are decoded in Go from
   `tmdb_titles`' JSON columns, following the same approach as the chart-side
   genre analytics rather than relying on SQLite's JSON functions.
+- **Detailed stats** (`/me/stats/detailed`, `tracking_stats_detailed.go`)
+  read one row per watch of a kind (`StatsWatchRows`, with its minutes,
+  title, poster and genres) and group them in Go: totals, top titles by
+  time, 12 weekly (Monday-start) and monthly trends plus every year, the day
+  of the week, ratings, genres by titles, binges (most episodes of one show
+  on one local day) and streaks. Actors and directors come from
+  `StatsTopPeople`, now filtered by kind. For shows it adds stages (the
+  queue's `stageOf`), time left (aired, unseen episodes of shows being
+  watched, stalled or not started), upcoming runtime by month for six
+  months, and a catch-up date from the last eight weeks' pace.
 - **Ratings against the crowd** compare a 1-10 half-star rating directly with
   TMDB and IMDb (both 0-10) and with a Rotten Tomatoes percentage divided by
   ten. TMDB and IMDb come back nullable; the Rotten Tomatoes value arrives
@@ -1353,9 +1498,13 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `SERVER_READ_TIMEOUT` | `15s` | Echo read timeout |
 | `SERVER_WRITE_TIMEOUT` | `15s` | Echo write timeout |
 | `SERVER_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown window |
+| `SERVER_TRUSTED_PROXIES` | (empty) | Reverse proxies (IPs/CIDRs, comma separated) whose `X-Forwarded-For` names the client; empty ignores forwarded headers |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `DATABASE_URL` | `file:./data/metareel.db?...` | SQLite DSN (WAL + busy timeout + FK enforcement) |
 | `DATABASE_MIGRATIONS_DIR` | `db/migrations` | Goose migrations directory |
+| `PUSH_ENABLED` | `false` | Send mobile push notifications (`notifications.dispatch`); off, the job does nothing |
+| `EXPO_ACCESS_TOKEN` | — | Expo access token, only if the Expo project requires one for push (never logged) |
+| `EXPO_PUSH_URL` | `https://exp.host` | Expo push service base URL |
 | `WEBHOOK_ALLOW_LOOPBACK` | `false` | Let webhook URLs resolve to loopback (a receiver on the same host outside Docker); link-local, multicast and unspecified addresses are always refused |
 | `DATABASE_READ_CONNS` | `4` | Read-only connections (`query_only`) serving charts, analytics and title overviews next to the single writer; `0` serves them from the writer |
 | `REDIS_ADDR` | `localhost:6379` | Redis address |
@@ -1398,6 +1547,8 @@ All config is loaded from environment variables (with `.env` auto-loaded in deve
 | `AUTH_REQUIRE_ADMIN_LOGIN` | `false` | Require a signed-in admin for the admin console and `/api/v1/admin` |
 | `AUTH_SESSION_TTL` | `720h` | Absolute lifetime of a user's sign-in session |
 | `AUTH_SESSION_IDLE_TIMEOUT` | `168h` | A session unused this long ends (capped at the TTL) |
+| `AUTH_DEVICE_SESSION_TTL` | `4320h` | Absolute lifetime of a "remember this device" session (mobile app) |
+| `AUTH_DEVICE_SESSION_IDLE_TIMEOUT` | `2160h` | A device session unused this long ends (capped at its TTL) |
 | `AUTH_ADMIN_USERNAME` | _(empty)_ | Creates the first admin on startup while no users exist |
 | `AUTH_ADMIN_PASSWORD` / `AUTH_ADMIN_PASSWORD_FILE` | _(empty)_ | That admin's password, or a file holding it (trailing newline trimmed); never logged |
 
@@ -1496,6 +1647,10 @@ metareel/
 │   └── queries/                  # sqlc input files (one per domain)
 ├── web/
 │   └── dist/                     # Built SPA assets (not committed; mount or copy in)
+├── mobile/                       # Expo / React Native app (own package.json; see mobile/README.md)
+│   ├── src/api/schema.ts         # Generated from internal/openapi/spec/public.yaml
+│   ├── src/theme/tokens.ts       # Generated from app/src/tokens.css
+│   └── plugins/with-home-http.js # HTTP only to the home-network host
 ├── tools/
 │   ├── go.mod                    # Isolated dev tool deps (air, asynqmon, miniredis)
 │   └── cmd/devredis/main.go      # In-process miniredis server for local dev

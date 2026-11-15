@@ -62,11 +62,27 @@ paths:
       security: []
       summary: Sign in with a username and password
       description: >
-        Starts a session. Sets the metareel_session cookie (HttpOnly,
+        Starts a session. Sets the metareel_session cookie (the admin
+        console's metareel_admin_session with client=admin; HttpOnly,
         SameSite=Strict, Secure over HTTPS) and returns the session token
-        once, for clients that send it as a Bearer token. Attempts are rate
-        limited per client IP and failed attempts per username (429 with
-        Retry-After). Cross-site browser requests are refused (403).
+        once, for clients that send it as a Bearer token. Native clients (the
+        mobile app) may name the device and ask for a "remember this device"
+        session, which lasts AUTH_DEVICE_SESSION_TTL (default 180 days) and
+        ends after AUTH_DEVICE_SESSION_IDLE_TIMEOUT (default 90 days) unused;
+        it is revocable like any session. Attempts are rate limited per
+        client IP and failed attempts per username (429 with Retry-After);
+        behind a reverse proxy, set SERVER_TRUSTED_PROXIES so the client IP
+        is the real one. Cross-site browser requests are refused (403).
+      parameters:
+        - name: client
+          in: query
+          required: false
+          schema: { type: string, enum: [admin] }
+          description: >
+            "admin" for the admin console, which has its own sign-in and the
+            metareel_admin_session cookie; without it, the user app's
+            metareel_session. The two are separate: one being signed in never
+            signs in the other.
       requestBody:
         required: true
         content:
@@ -78,7 +94,7 @@ paths:
           description: Signed in
           headers:
             Set-Cookie:
-              description: metareel_session=<token>
+              description: metareel_session=<token>, or metareel_admin_session=<token> for client=admin
               schema:
                 type: string
           content:
@@ -104,14 +120,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/probe:
+    post:
+      operationId: probeLocalURL
+      security: []
+      summary: Prove this is the server a device signed in to
+      description: >
+        For the mobile app's optional plain-HTTP home-network URL. Before
+        sending its token over HTTP, the app sends its session id and a fresh
+        random nonce; the server answers proof = hex(HMAC-SHA256(probe_key,
+        nonce)), where probe_key is the value returned at sign-in (derived
+        from the stored token digest, never stored itself). The app compares
+        with its own computation. Sessions that don't exist or have ended get
+        a proof that never matches (not an error), so the endpoint doesn't
+        reveal which ids are live. Rate limited per client IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProbeRequest"
+      responses:
+        "200":
+          description: The proof
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429":
+          description: Too many probes from this client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/auth/logout:
     post:
       operationId: logout
       security: []
       summary: End the current session
       description: >
-        Ends the session of the Bearer session token or cookie sent, and
-        clears the cookie. Succeeds also when there is no session.
+        Ends the session of the Bearer session token or cookie sent (the
+        admin console's with client=admin), and clears that cookie; the other
+        sign-in stays. Succeeds also when there is no session.
+      parameters:
+        - name: client
+          in: query
+          required: false
+          schema: { type: string, enum: [admin] }
+          description: >
+            "admin" for the admin console, which has its own sign-in and the
+            metareel_admin_session cookie; without it, the user app's
+            metareel_session. The two are separate: one being signed in never
+            signs in the other.
       responses:
         "204":
           description: Signed out
@@ -121,8 +182,19 @@ paths:
       security: []
       summary: Whether the admin console needs a sign-in, and who is signed in
       description: >
-        Used by the admin console. Never 401: user is null without a valid
-        session cookie or Bearer session token.
+        Used by the admin console (client=admin) and the user app. Never 401:
+        user is null without a valid session cookie for that client or a
+        Bearer session token.
+      parameters:
+        - name: client
+          in: query
+          required: false
+          schema: { type: string, enum: [admin] }
+          description: >
+            "admin" for the admin console, which has its own sign-in and the
+            metareel_admin_session cookie; without it, the user app's
+            metareel_session. The two are separate: one being signed in never
+            signs in the other.
       responses:
         "200":
           description: Sign-in state
@@ -1301,7 +1373,11 @@ paths:
         - name: netflix
           in: query
           schema: { type: string, example: "81231974", description: "Netflix title ID (netflix.com/title/<id>), from Wikidata or Tudum's Top 10" }
-      description: Give exactly one of imdb, tmdb, slug or netflix.
+        - name: letterboxd
+          in: query
+          required: false
+          schema: { type: string, example: "https://boxd.it/aRvI", description: "A boxd.it short link or a letterboxd.com film (or review) URL; resolved through the film page's TMDB id, cached a day. 400 when the link is not a film, 404 when the film has no TMDB id, 502 when Letterboxd can't be reached or refuses (the mobile app then falls back to a search)" }
+      description: Give exactly one of imdb, tmdb, slug, netflix or letterboxd. A Letterboxd film is returned in items even when metareel has never charted it.
       responses:
         "200":
           description: TMDB titles and FlixPatrol titles
@@ -1570,6 +1646,72 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "502":
           description: TMDB failed for a person metareel has no credits for
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/version:
+    get:
+      operationId: getVersion
+      summary: The running server's version
+      description: >-
+        The version and git revision stamped into the build (Dockerfile build
+        args VERSION and REVISION), and the Go release. A build without them
+        reports version "dev".
+      responses:
+        "200":
+          description: Version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionResponse" }
+
+  /api/v1/titles/trending:
+    get:
+      operationId: getTrendingTitles
+      summary: What is trending on TMDB today
+      description: >-
+        TMDB's trending list for the day, live (nothing is stored) and cached in
+        memory for 30 minutes; when TMDB fails after that the last list is
+        served. People are left out of `kind=all`. 502 without a TMDB key or
+        when TMDB fails with nothing cached.
+      parameters:
+        - name: kind
+          in: query
+          schema: { type: string, enum: [all, movie, tv], default: all }
+      responses:
+        "200":
+          description: Trending titles, most trending first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TitleListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502":
+          description: TMDB unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/titles/in-cinemas/{country}:
+    get:
+      operationId: getInCinemas
+      summary: Films in cinemas in a country
+      description: >-
+        TMDB's now playing for the country (ISO 3166-1 region), first page, live
+        and cached in memory for 30 minutes like trending.
+      parameters:
+        - name: country
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[A-Za-z]{2}$" }
+      responses:
+        "200":
+          description: Films now playing
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TitleListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502":
+          description: TMDB unavailable
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -2591,6 +2733,33 @@ paths:
         "401": { $ref: "#/components/responses/TrackingUnauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/me/shows/{id}/episodes/{season}/{episode}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string }, description: "TMDB TV show ID (numeric)" }
+      - { name: season, in: path, required: true, schema: { type: integer, minimum: 0 }, description: 0 is specials }
+      - { name: episode, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      operationId: getEpisode
+      tags: [Tracking]
+      summary: One episode, with your watches of it
+      description: >
+        TMDB's details for the episode (synopsis, still, score, directors,
+        writers, up to 12 guest stars), fetched live and not stored, and the
+        user's watches of it, newest first. When TMDB can't be reached the
+        cached name, air date and runtime are returned with live false.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The episode
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EpisodeDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/me/shows/{id}/watched:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string }, description: "TMDB TV show ID (numeric)" }
@@ -2842,6 +3011,131 @@ paths:
         "401": { $ref: "#/components/responses/TrackingUnauthorized" }
         "403": { $ref: "#/components/responses/TrackingCrossSite" }
 
+  /api/v1/me/glance:
+    get:
+      operationId: getGlance
+      tags: [Tracking]
+      summary: The widget summary
+      description: >
+        A small summary for home-screen widgets and background refresh: the
+        next episode of up to 3 shows in progress (as /me/up-next), the next
+        episode airing in the coming 60 days (as /me/upcoming), the active
+        cinema plan with the most covered watches and its current month, and
+        the last diary entry. Each part is null (up_next empty) when there is
+        nothing to show.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  up_next: { type: array, items: { $ref: "#/components/schemas/UpNextEpisode" } }
+                  next_airing:
+                    nullable: true
+                    allOf: [{ $ref: "#/components/schemas/UpcomingEpisode" }]
+                  subscription:
+                    type: object
+                    nullable: true
+                    properties:
+                      id: { type: integer }
+                      plan: { type: string }
+                      chain: { type: string }
+                      currency: { type: string }
+                      period: { type: string }
+                      month: { type: string, description: YYYY-MM }
+                      watches_this_month: { type: integer }
+                      break_even_watches: { type: integer, description: Covered watches a period needs to pay off }
+                      saved_minor: { type: integer, description: Over the plan's whole life; negative = it cost more }
+                      watches: { type: integer, description: Covered watches over the plan's life }
+                  last_watch:
+                    type: object
+                    nullable: true
+                    properties:
+                      id: { type: integer }
+                      tmdb_kind: { type: string, enum: [movie, tv] }
+                      tmdb_id: { type: string }
+                      title: { type: string }
+                      poster_path: { type: string }
+                      season_number: { type: integer }
+                      episode_number: { type: integer }
+                      watched_on: { type: string, format: date }
+                      ended_at: { type: string }
+                      rating: { type: integer }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/devices:
+    get:
+      operationId: listDevices
+      tags: [Account]
+      summary: Your devices registered for push notifications
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: The devices, most recently seen first, and whether this server sends push notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  devices: { type: array, items: { $ref: "#/components/schemas/UserDevice" } }
+                  push_enabled: { type: boolean }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+    put:
+      operationId: registerDevice
+      tags: [Account]
+      summary: Register this device for push notifications
+      description: >
+        Stores the device's Expo push token for the signed-in user and the
+        session making the request (re-registering a token moves it to this
+        user and session and enables it again). Signing out of that session
+        removes the device. Tokens are never logged or returned.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceInput" }
+      responses:
+        "200":
+          description: The registered device
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device: { $ref: "#/components/schemas/UserDevice" }
+                  push_enabled: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+
+  /api/v1/me/devices/{id}:
+    delete:
+      operationId: deleteDevice
+      tags: [Account]
+      summary: Unregister one of your devices
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Removed }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+        "403": { $ref: "#/components/responses/TrackingCrossSite" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/me/shows:
     get:
       operationId: showQueue
@@ -2991,7 +3285,7 @@ paths:
     put:
       operationId: updateCinemaSubscription
       tags: [Tracking]
-      summary: Replace a cinema subscription (e.g. set ended_on to end it)
+      summary: Replace a cinema subscription (end it, resubscribe with a new run, add a price change)
       security: [{ BearerSession: [] }, { SessionCookie: [] }]
       requestBody:
         required: true
@@ -3097,7 +3391,7 @@ paths:
         - BearerSession: []
         - SessionCookie: []
       parameters:
-        - { name: q, in: query, required: false, schema: { type: string }, description: "Words (up to four, e.g. pvr mumbai) each matched in the name, chain, city or address; names starting with the first word come first" }
+        - { name: q, in: query, required: false, schema: { type: string }, description: "Words (up to four, e.g. pvr mumbai) each matched in the name, chain, city, address or postcode; names starting with the first word come first" }
         - { name: country, in: query, required: false, schema: { type: string }, description: ISO 3166-1 alpha-2 }
         - { name: include_closed, in: query, required: false, schema: { type: boolean, default: false } }
         - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 200 } }
@@ -3149,6 +3443,50 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /api/v1/me/venues/nearby:
+    get:
+      operationId: nearbyVenues
+      tags: [Tracking]
+      summary: Cinemas near a position
+      description: >
+        For "which cinema am I in?" in the mobile app: cinemas within
+        radius_km of a point, nearest first, a cinema you have watched at
+        moved ahead of others up to 250 m closer (so your usual cinema beats
+        its neighbour in the same mall when GPS is a little off). The
+        position is used for this query only; it is not stored, and the
+        request log shows lat and lon as REDACTED.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: lon, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: radius_km, in: query, required: false, schema: { type: number, default: 10, minimum: 0.1, maximum: 100 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: include_closed, in: query, required: false, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Nearby cinemas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  venues:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/Venue"
+                        - type: object
+                          properties:
+                            distance_m: { type: integer, description: Great-circle distance in metres }
+                            your_watches: { type: integer, description: How many of your watches were here }
+                            your_last_watch: { type: string, format: date-time, description: When your latest watch here ended (UTC); absent if none }
+                          required: [distance_m, your_watches]
+                  radius_km: { type: number }
+                  limit: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
   /api/v1/me/venues/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -3422,6 +3760,35 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/StatsRatings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/TrackingUnauthorized" }
+
+  /api/v1/me/stats/detailed:
+    get:
+      operationId: getStatsDetailed
+      tags: [Tracking]
+      summary: Everything about the shows or the films you watched
+      description: >
+        All-time figures for one kind (tv or movie; empty for both): watch
+        time, watches, rewatches, distinct titles, this year / month / week,
+        the current and longest streak, the five titles you spent the most
+        time on, weekly (12), monthly (12) and yearly trends, the day of the
+        week, ratings, genres (by titles), the top five actors and directors,
+        and the biggest binges (most episodes of one show in a day). For tv
+        it adds your shows by stage, the time left on the ones in progress,
+        the episodes still to air in the next six months by month, your
+        pace over the last eight weeks and the date you'd catch up at it.
+      security:
+        - BearerSession: []
+        - SessionCookie: []
+      parameters:
+        - { name: kind, in: query, required: false, schema: { type: string, enum: ["", tv, movie] } }
+      responses:
+        "200":
+          description: The statistics
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DetailedStats" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/TrackingUnauthorized" }
 
@@ -3721,6 +4088,117 @@ components:
         currency: { type: string }
         watches: { type: integer }
         total_minor: { type: integer }
+    PeriodStat:
+      type: object
+      properties:
+        label: { type: string, description: "YYYY-MM-DD (a week's Monday), YYYY-MM, YYYY or a weekday's name" }
+        watches: { type: integer }
+        minutes: { type: integer }
+    DetailedStats:
+      type: object
+      properties:
+        kind: { type: string }
+        minutes: { type: integer, description: Watch time, from each watch's runtime }
+        watches: { type: integer }
+        rewatches: { type: integer }
+        titles: { type: integer }
+        episodes: { type: integer }
+        movies: { type: integer }
+        shows: { type: integer, description: Distinct shows with a watch }
+        films: { type: integer, description: Distinct films watched }
+        this_year: { $ref: "#/components/schemas/PeriodStat" }
+        this_year_episodes: { type: integer }
+        this_year_movies: { type: integer }
+        this_week: { $ref: "#/components/schemas/PeriodStat" }
+        this_month: { $ref: "#/components/schemas/PeriodStat" }
+        streak:
+          type: object
+          properties:
+            current: { type: integer }
+            longest: { type: integer }
+        top_titles:
+          type: array
+          items:
+            type: object
+            properties:
+              tmdb_kind: { type: string }
+              tmdb_id: { type: string }
+              title: { type: string }
+              poster_path: { type: string }
+              watches: { type: integer }
+              minutes: { type: integer }
+        trend:
+          type: object
+          properties:
+            weeks: { type: array, items: { $ref: "#/components/schemas/PeriodStat" } }
+            months: { type: array, items: { $ref: "#/components/schemas/PeriodStat" } }
+            years: { type: array, items: { $ref: "#/components/schemas/PeriodStat" } }
+        by_weekday: { type: array, items: { $ref: "#/components/schemas/PeriodStat" }, description: Sunday first }
+        ratings:
+          type: object
+          properties:
+            rated: { type: integer }
+            average: { type: number, description: "1-10 half-stars; absent with nothing rated" }
+            distribution: { type: object, additionalProperties: { type: integer }, description: Rating (1-10) to watches }
+        genres:
+          type: array
+          items:
+            type: object
+            properties:
+              label: { type: string }
+              count: { type: integer, description: Titles }
+        actors: { type: array, items: { $ref: "#/components/schemas/PersonStat" } }
+        directors: { type: array, items: { $ref: "#/components/schemas/PersonStat" } }
+        binges:
+          type: array
+          items:
+            type: object
+            properties:
+              tmdb_id: { type: string }
+              title: { type: string }
+              poster_path: { type: string }
+              day: { type: string, format: date }
+              episodes: { type: integer }
+              minutes: { type: integer }
+        shows_by_stage:
+          type: array
+          description: tv only
+          items:
+            type: object
+            properties:
+              key: { type: string, enum: [watching, stalled, not_started, on_hold, caught_up, dropped] }
+              label: { type: string }
+              count: { type: integer }
+        minutes_left: { type: integer, description: "tv only: aired episodes not seen yet, of shows you're watching, stalled on or haven't started" }
+        upcoming_by_month: { type: array, items: { $ref: "#/components/schemas/PeriodStat" }, description: "tv only: episodes still to air and their runtime, by month" }
+        catch_up_date: { type: string, format: date, description: "tv only: when minutes_left runs out at pace_minutes_per_week; absent with no recent watching" }
+        pace_minutes_per_week: { type: integer, description: Average over the last eight weeks }
+    VersionResponse:
+      type: object
+      required: [version, go]
+      properties:
+        version: { type: string, example: v0.4.0 }
+        revision: { type: string, description: First 12 characters of the git commit, example: 548cd59feac3 }
+        go: { type: string, example: go1.27.1 }
+    TitleListResponse:
+      type: object
+      required: [items, fetched_at]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [tmdb_kind, tmdb_id, title, vote_average, vote_count]
+            properties:
+              tmdb_kind: { type: string, enum: [movie, tv] }
+              tmdb_id: { type: string }
+              title: { type: string }
+              poster_path: { type: string }
+              backdrop_path: { type: string }
+              release_date: { type: string, description: "YYYY-MM-DD; first air date for TV" }
+              vote_average: { type: number }
+              vote_count: { type: integer }
+        fetched_at: { type: string, format: date-time }
     PersonStat:
       type: object
       properties:
@@ -3935,6 +4413,8 @@ components:
               provider_name: { type: string }
               monetization: { type: string }
               link: { type: string }
+              logo_path: { type: string, description: "TMDB provider logo path (https://image.tmdb.org/t/p/w92{logo_path}); omitted when unknown" }
+              url: { type: string, description: "The service's own page for the title (JustWatch); omitted when unknown" }
         recently_left:
           type: array
           description: >
@@ -3984,6 +4464,7 @@ components:
         name: { type: string }
         chain: { type: string, nullable: true }
         address: { type: string, nullable: true }
+        postcode: { type: string, nullable: true, maxLength: 20, description: "ZIP, PIN or postcode; a US ZIP fills region (the state) when none is given" }
         city: { type: string, nullable: true }
         region: { type: string, nullable: true }
         country: { type: string, nullable: true, description: ISO 3166-1 alpha-2, stored uppercase }
@@ -4006,6 +4487,7 @@ components:
         name: { type: string }
         chain: { type: string, nullable: true }
         address: { type: string, nullable: true }
+        postcode: { type: string, nullable: true, maxLength: 20, description: "ZIP, PIN or postcode; a US ZIP fills region (the state) when none is given" }
         city: { type: string, nullable: true }
         region: { type: string, nullable: true }
         country: { type: string, nullable: true, description: ISO 3166-1 alpha-2 }
@@ -4091,26 +4573,55 @@ components:
         id: { type: integer, format: int64 }
         plan: { type: string, example: AMC Stubs A-List }
         chain: { type: string, nullable: true, description: Matched against a venue's chain or name to suggest the plan when logging }
-        price_minor: { type: integer, description: Per period, minor units }
+        price_minor: { type: integer, description: "Per period, minor units: the price in effect today (see prices)" }
         currency: { type: string, example: USD }
         period: { type: string, enum: [month, year] }
-        started_on: { type: string, format: date, description: The first billing day }
-        ended_on: { type: string, format: date, nullable: true }
+        started_on: { type: string, format: date, description: The first billing day of the first run }
+        ended_on: { type: string, format: date, nullable: true, description: The end of the last run; null while it runs }
         note: { type: string, nullable: true }
         created_at: { type: string }
         updated_at: { type: string }
+        periods:
+          type: array
+          description: The runs of the plan, oldest first. Cancelling and resubscribing leaves a gap between two runs, and gaps are not billed.
+          items: { $ref: "#/components/schemas/CinemaSubscriptionPeriod" }
+        prices:
+          type: array
+          description: What a billing period cost from each date, oldest first; the earliest also covers bills before its date.
+          items: { $ref: "#/components/schemas/CinemaSubscriptionPrice" }
+    CinemaSubscriptionPeriod:
+      type: object
+      required: [started_on]
+      properties:
+        started_on: { type: string, format: date, description: The run's first billing day }
+        ended_on: { type: string, format: date, nullable: true, description: Null while it runs; only the last run may be open }
+    CinemaSubscriptionPrice:
+      type: object
+      required: [from, price_minor]
+      properties:
+        from: { type: string, format: date, description: "First bill at this price (the first price may omit it: the plan's start)" }
+        price_minor: { type: integer, minimum: 0 }
     CinemaSubscriptionInput:
       type: object
-      required: [plan, price_minor, currency, started_on]
+      description: >
+        A plan. Send periods and prices to set its history. Without periods,
+        started_on and ended_on are its only run (create) or move the first
+        start and the last end of the stored runs (update). Without prices,
+        price_minor is its only price (create) or replaces the price in effect
+        today (update). Runs must not overlap and only the last may be open;
+        one price per date.
+      required: [plan, currency]
       properties:
         plan: { type: string, maxLength: 100 }
         chain: { type: string, nullable: true, maxLength: 100 }
-        price_minor: { type: integer, minimum: 0 }
+        price_minor: { type: integer, minimum: 0, description: Required without prices on create }
         currency: { type: string, description: ISO 4217 }
         period: { type: string, enum: [month, year], default: month }
-        started_on: { type: string, format: date }
+        started_on: { type: string, format: date, description: Required without periods on create }
         ended_on: { type: string, format: date, nullable: true }
         note: { type: string, nullable: true, maxLength: 500 }
+        periods: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/CinemaSubscriptionPeriod" } }
+        prices: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/CinemaSubscriptionPrice" } }
     WatchContext:
       type: object
       description: >
@@ -4270,6 +4781,8 @@ components:
         expires_at: { type: string, format: date-time }
         user_agent: { type: string }
         ip: { type: string }
+        device_name: { type: string, description: "The name a native client gave at sign-in; empty for browsers" }
+        remember_device: { type: boolean, description: "A long-lived \"remember this device\" session" }
         current: { type: boolean, description: The session making the request }
     Preferences:
       type: object
@@ -4284,6 +4797,40 @@ components:
           maxItems: 20
           items: { type: integer }
           description: "TMDB provider IDs of the streaming services the user pays for (the rotation's subscribed)"
+        countries:
+          type: array
+          maxItems: 20
+          items: { type: string, pattern: "^[A-Za-z]{2}$" }
+          description: >-
+            ISO 3166-1 codes in the user's order (stored upper case, duplicates
+            dropped): a title page charts its Top 10 run in the first of these
+            countries it has charted in.
+        notify_watchlist_arrivals:
+          type: boolean
+          description: >
+            Push a notification to the user's registered devices when a title
+            on their watchlist arrives on one of `services` (any streaming
+            service when none are listed) in `country`, included in a
+            subscription, free or with ads. Needs `country` and a device
+            (PUT /api/v1/me/devices); off unless true.
+    UserDevice:
+      type: object
+      description: A phone registered for push notifications. Its token is never returned.
+      properties:
+        id: { type: integer }
+        platform: { type: string, enum: [ios, android] }
+        app_version: { type: string }
+        created_at: { type: string }
+        last_seen_at: { type: string }
+        disabled: { type: boolean, description: The push service reported the token as no longer registered }
+        session_id: { type: integer, description: The session that registered it; signing out of it removes the device }
+    DeviceInput:
+      type: object
+      required: [platform, token]
+      properties:
+        platform: { type: string, enum: [ios, android] }
+        token: { type: string, description: "Expo push token, ExponentPushToken[...]" }
+        app_version: { type: string, maxLength: 32 }
     QueueEpisode:
       type: object
       properties:
@@ -4318,6 +4865,44 @@ components:
           nullable: true
           description: The first aired episode not seen yet
         next_air_date: { type: string, format: date, nullable: true, description: The next episode still to air }
+    EpisodeDetail:
+      type: object
+      properties:
+        show:
+          type: object
+          properties:
+            tmdb_id: { type: string }
+            title: { type: string }
+            poster_path: { type: string }
+        episode:
+          type: object
+          properties:
+            id: { type: integer, description: TMDB episode ID (0 when only the cached basics are known) }
+            season_number: { type: integer }
+            episode_number: { type: integer }
+            name: { type: string }
+            overview: { type: string }
+            air_date: { type: string, description: "YYYY-MM-DD, empty when TBA" }
+            episode_type: { type: string, description: "standard, finale, mid_season" }
+            runtime: { type: integer, description: Minutes, 0 when unknown }
+            still_path: { type: string, description: "TMDB image path (https://image.tmdb.org/t/p/w780{still_path})" }
+            vote_average: { type: number }
+            vote_count: { type: integer }
+            directors: { type: array, items: { type: string } }
+            writers: { type: array, items: { type: string } }
+            guest_stars:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  name: { type: string }
+                  character: { type: string }
+                  profile_path: { type: string }
+        live: { type: boolean, description: "false: TMDB couldn't be reached, only the cached basics" }
+        watches:
+          type: array
+          items: { $ref: "#/components/schemas/WatchEntry" }
     UpcomingEpisode:
       allOf:
         - $ref: "#/components/schemas/QueueEpisode"
@@ -4356,6 +4941,7 @@ components:
         number_of_seasons: { type: integer }
         number_of_episodes: { type: integer }
         charted: { type: boolean, description: Whether metareel knows this title from a chart }
+        poster_color: { type: string, pattern: "^#[0-9a-f]{6}$", description: "Average colour of the poster (#rrggbb), for artwork-tinted surfaces; only on GET /api/v1/me/titles/{kind}/{id}, and absent when there is no poster or it couldn't be fetched" }
     TrackedTitleState:
       type: object
       nullable: true
@@ -5722,7 +6308,43 @@ components:
         password:
           type: string
           format: password
+        device_name:
+          type: string
+          maxLength: 64
+          description: What the device calls itself (e.g. "Pixel Fold"), shown in session lists; control characters are dropped
+        remember_device:
+          type: boolean
+          default: false
+          description: Ask for a long-lived device session (AUTH_DEVICE_SESSION_TTL / AUTH_DEVICE_SESSION_IDLE_TIMEOUT)
+        client:
+          type: string
+          enum: [admin]
+          description: "admin signs in to the admin console (its own cookie), like ?client=admin"
       required: [username, password]
+
+    ProbeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        session_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: session_id from the sign-in response
+        nonce:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{16,128}$"
+          description: A fresh random value from the client (base64url or hex)
+      required: [session_id, nonce]
+
+    ProbeResult:
+      type: object
+      additionalProperties: false
+      properties:
+        proof:
+          type: string
+          description: hex HMAC-SHA256(probe_key, nonce)
+      required: [proof]
 
     LoginResult:
       type: object
@@ -5735,6 +6357,16 @@ components:
           type: string
           format: date-time
           description: Absolute expiry; the session also ends after the idle timeout without use
+        session_id:
+          type: integer
+          format: int64
+          description: This session's id (as listed under /api/v1/me/account), for the local-URL probe
+        probe_key:
+          type: string
+          description: hex key for POST /api/v1/auth/probe; keep it with the token
+        remember_device:
+          type: boolean
+          description: Whether this is a long-lived device session
         user:
           type: object
           additionalProperties: false
@@ -5748,7 +6380,7 @@ components:
               type: string
               enum: [admin, reader]
           required: [id, username, role]
-      required: [token, expires_at, user]
+      required: [token, expires_at, session_id, probe_key, remember_device, user]
 
     Principal:
       type: object

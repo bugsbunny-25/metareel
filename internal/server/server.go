@@ -187,8 +187,10 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	// diary reads use the read-only pool, like the other read services.
 	trackingWrite := repository.NewTrackingRepository(db)
 	trackingRead := repository.NewTrackingRepository(readDB)
-	trackedTitles := service.NewTrackedTitleService(log, client.NewTMDB(httpClient, cfg.TMDB.APIKey), trackingWrite, trackingRead)
-	tracking := service.NewTrackingService(log, trackingWrite, trackingRead, trackedTitles)
+	tmdbClient := client.NewTMDB(httpClient, cfg.TMDB.APIKey)
+	trackedTitles := service.NewTrackedTitleService(log, tmdbClient, trackingWrite, trackingRead)
+	tracking := service.NewTrackingService(log, trackingWrite, trackingRead, trackedTitles).
+		WithPosterColors(service.NewPosterColorService(log, trackingWrite, tmdbClient))
 
 	h := &handler.Handler{
 		Top10:      top10Read,
@@ -213,7 +215,8 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 
 		Charts: service.NewChartsService(analyticsRepo),
 		Overview: service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping).
-			WithEngagement(engagementRepo),
+			WithLetterboxd(client.NewLetterboxd(cfg.HTTP.Timeout, cfg.HTTP.UserAgent)).
+			WithEngagement(engagementRepo).WithDetailsFetcher(taskBootstrap.Metadata),
 		Analytics: service.NewAnalyticsService(analyticsRepo, readMetadataRepo, repository.NewImportsRepository(readDB), repository.NewRatingsRepository(readDB)).
 			WithEpisodes(episodesRepo).WithCredits(creditsRepo),
 		History:        service.NewHistoryService(historyRepo, readMetadataRepo),
@@ -225,6 +228,8 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Timeline:       service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),
 		Search:         service.NewSearchService(repository.NewSearchRepository(readDB)),
 		Tracking:       tracking,
+		Lists:          service.NewTitleListsService(client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
+		Push:           taskruntime.NewPushService(log, db, cfg),
 		Webhooks:       webhooks,
 		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,
 			taskScheduleRepo, taskBootstrap.Maintenance).WithMapping(repository.NewMappingRepository(db)),

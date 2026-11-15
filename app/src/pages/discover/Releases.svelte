@@ -1,4 +1,4 @@
-<!-- New & upcoming on the service in the top bar (#/discover?tab=new&when=new|soon&kind=&days=):
+<!-- New & upcoming on the service in the pickers at the top of Discover (#/discover?tab=new&when=new|soon&kind=&days=):
      what it added per day (/titles/new, live from JustWatch, up to 30 days) and what it has
      announced (/titles/upcoming, soonest first, undated last). One request per view; kind and
      "hide what I've seen" filter in the browser. -->
@@ -78,7 +78,8 @@
 
   const label = (it) => it.kind === 'tv' && it.season_title && it.season_title !== it.title ? `${it.title}: ${it.season_title}` : it.title
   const meta = (it) => [it.kind === 'tv' ? 'Series' : 'Film', it.year, (it.genres ?? []).slice(0, 2).join(', ')].filter(Boolean).join(' · ')
-  const badge = (it) => (it.imdb_rating ? `★ ${it.imdb_rating.toFixed(1)}` : it.tomatometer != null ? `${it.tomatometer}%` : '')
+  const badge = (it) => (it.imdb_rating ? it.imdb_rating.toFixed(1) : it.tomatometer != null ? `${it.tomatometer}%` : '')
+  const badgeLogo = (it) => (it.imdb_rating ? 'imdb' : it.tomatometer != null ? 'rt' : '')
   const pick = (patch) => setQuery(patch, { replace: true })
   const svc = $derived(data?.service?.name ?? providerName(provider))
 </script>
@@ -121,7 +122,7 @@
   {#if !list.length}
     <section class="d-empty">
       <h2>{all.length ? 'Nothing left after the filters' : when === 'new' ? `Nothing new on ${svc} lately` : `Nothing announced on ${svc}`}</h2>
-      <p>{all.length ? 'Show what you’ve seen, or pick All.' : `JustWatch lists nothing for ${svc} in ${inCountry(country)} here. Try another service in the top bar.`}</p>
+      <p>{all.length ? 'Show what you’ve seen, or pick All.' : `JustWatch lists nothing for ${svc} in ${inCountry(country)} here. Try another service in the pickers at the top of Discover.`}</p>
     </section>
   {:else}
     <div class="d-layout">
@@ -131,7 +132,7 @@
             <h3>{dayHead(d)} <span class="hint num">{items.length} {items.length === 1 ? 'title' : 'titles'}</span></h3>
             <ul class="d-grid">
               {#each items as it (`${it.justwatch_id}:${it.season_number ?? ''}:${it.date ?? ''}`)}
-                <TitleTile kind={it.kind} tmdbId={it.tmdb_id} title={label(it)} poster={it.poster_url} meta={meta(it)} badge={badge(it)} badgeTone="gold" />
+                <TitleTile kind={it.kind} tmdbId={it.tmdb_id} title={label(it)} poster={it.poster_url} meta={meta(it)} badge={badge(it)} badgeLogo={badgeLogo(it)} badgeRotten={!it.imdb_rating && it.tomatometer < 60} badgeTone="gold" />
               {/each}
             </ul>
           </section>

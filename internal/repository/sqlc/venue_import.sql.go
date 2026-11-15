@@ -34,31 +34,34 @@ const fillVenueBlanks = `-- name: FillVenueBlanks :execrows
 UPDATE venues SET
     chain     = COALESCE(chain, ?1),
     address   = COALESCE(address, ?2),
-    city      = COALESCE(city, ?3),
-    region    = COALESCE(region, ?4),
-    latitude  = COALESCE(latitude, ?5),
-    longitude = COALESCE(longitude, ?6),
-    timezone  = COALESCE(timezone, ?7),
-    opened_on = COALESCE(opened_on, ?8),
-    closed_on = CASE WHEN status = 'closed' THEN COALESCE(closed_on, ?9) ELSE closed_on END,
-    note      = COALESCE(note, ?10),
+    postcode  = COALESCE(postcode, ?3),
+    city      = COALESCE(city, ?4),
+    region    = COALESCE(region, ?5),
+    latitude  = COALESCE(latitude, ?6),
+    longitude = COALESCE(longitude, ?7),
+    timezone  = COALESCE(timezone, ?8),
+    opened_on = COALESCE(opened_on, ?9),
+    closed_on = CASE WHEN status = 'closed' THEN COALESCE(closed_on, ?10) ELSE closed_on END,
+    note      = COALESCE(note, ?11),
     updated_at = CURRENT_TIMESTAMP
-WHERE id = ?11
+WHERE id = ?12
   AND ((chain IS NULL AND ?1 IS NOT NULL)
     OR (address IS NULL AND ?2 IS NOT NULL)
-    OR (city IS NULL AND ?3 IS NOT NULL)
-    OR (region IS NULL AND ?4 IS NOT NULL)
-    OR (latitude IS NULL AND ?5 IS NOT NULL)
-    OR (longitude IS NULL AND ?6 IS NOT NULL)
-    OR (timezone IS NULL AND ?7 IS NOT NULL)
-    OR (opened_on IS NULL AND ?8 IS NOT NULL)
-    OR (status = 'closed' AND closed_on IS NULL AND ?9 IS NOT NULL)
-    OR (note IS NULL AND ?10 IS NOT NULL))
+    OR (postcode IS NULL AND ?3 IS NOT NULL)
+    OR (city IS NULL AND ?4 IS NOT NULL)
+    OR (region IS NULL AND ?5 IS NOT NULL)
+    OR (latitude IS NULL AND ?6 IS NOT NULL)
+    OR (longitude IS NULL AND ?7 IS NOT NULL)
+    OR (timezone IS NULL AND ?8 IS NOT NULL)
+    OR (opened_on IS NULL AND ?9 IS NOT NULL)
+    OR (status = 'closed' AND closed_on IS NULL AND ?10 IS NOT NULL)
+    OR (note IS NULL AND ?11 IS NOT NULL))
 `
 
 type FillVenueBlanksParams struct {
 	Chain     sql.NullString  `json:"chain"`
 	Address   sql.NullString  `json:"address"`
+	Postcode  sql.NullString  `json:"postcode"`
 	City      sql.NullString  `json:"city"`
 	Region    sql.NullString  `json:"region"`
 	Latitude  sql.NullFloat64 `json:"latitude"`
@@ -74,6 +77,7 @@ func (q *Queries) FillVenueBlanks(ctx context.Context, arg FillVenueBlanksParams
 	result, err := q.db.ExecContext(ctx, fillVenueBlanks,
 		arg.Chain,
 		arg.Address,
+		arg.Postcode,
 		arg.City,
 		arg.Region,
 		arg.Latitude,

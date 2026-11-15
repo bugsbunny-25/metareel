@@ -44,3 +44,13 @@ export function remember(key, value) {
 export function recall(key, fallback = null) {
   try { return JSON.parse(localStorage.getItem(`metareel.log.${key}`)) ?? fallback } catch { return fallback }
 }
+
+/** Minor units as money, e.g. 2499 USD → "$24.99"; whole amounts of 100 and up drop the cents. */
+export function formatMoney(minor, currency) {
+  const v = (minor ?? 0) / 10 ** fractionDigits(currency)
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: Math.abs(v) >= 100 ? 0 : fractionDigits(currency) }).format(v)
+  } catch {
+    return `${v.toFixed(2)} ${currency}`
+  }
+}

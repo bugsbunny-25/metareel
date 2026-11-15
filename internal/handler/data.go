@@ -11,6 +11,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/bugsbunny-25/metareel/internal/buildinfo"
 	"github.com/bugsbunny-25/metareel/internal/service"
 )
 
@@ -35,7 +36,7 @@ func writeData(c *echo.Context, out any, err error) error {
 		return c.JSON(http.StatusNotFound, map[string]any{"error": err.Error()})
 	case errors.Is(err, sql.ErrNoRows):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": "not found"})
-	case errors.Is(err, service.ErrRatingsUnavailable), errors.Is(err, service.ErrUpstream), errors.Is(err, service.ErrPersonUnavailable), errors.Is(err, service.ErrCreditsUnavailable):
+	case errors.Is(err, service.ErrRatingsUnavailable), errors.Is(err, service.ErrUpstream), errors.Is(err, service.ErrPersonUnavailable), errors.Is(err, service.ErrCreditsUnavailable), errors.Is(err, service.ErrListsUnavailable):
 		return c.JSON(http.StatusBadGateway, map[string]any{"error": err.Error()})
 	default:
 		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
@@ -399,7 +400,17 @@ func (h *Handler) GetTitleRatingsBatch(c *echo.Context) error {
 
 // LookupTitle: GET /api/v1/titles/lookup?imdb=tt…|tmdb=movie:425|slug=…|netflix=81231974
 func (h *Handler) LookupTitle(c *echo.Context) error {
-	out, err := h.Overview.Lookup(c.Request().Context(), c.QueryParam("imdb"), c.QueryParam("tmdb"), c.QueryParam("slug"), c.QueryParam("netflix"))
+	ctx := c.Request().Context()
+	if lb := c.QueryParam("letterboxd"); lb != "" {
+		for _, p := range []string{"imdb", "tmdb", "slug", "netflix"} {
+			if c.QueryParam(p) != "" {
+				return badRequest(c, errors.New("give exactly one of imdb, tmdb (kind:id), slug, netflix or letterboxd"))
+			}
+		}
+		out, err := h.Overview.LookupLetterboxd(ctx, lb)
+		return writeData(c, out, err)
+	}
+	out, err := h.Overview.Lookup(ctx, c.QueryParam("imdb"), c.QueryParam("tmdb"), c.QueryParam("slug"), c.QueryParam("netflix"))
 	return writeData(c, out, err)
 }
 
@@ -713,5 +724,24 @@ func (h *Handler) RematchTitle(c *echo.Context) error {
 // GetDataQuality: GET /api/v1/admin/data-quality
 func (h *Handler) GetDataQuality(c *echo.Context) error {
 	out, err := h.DataQuality.Report(c.Request().Context())
+	return writeData(c, out, err)
+}
+
+// GetVersion reports the running server's version: GET /api/v1/version
+func (h *Handler) GetVersion(c *echo.Context) error {
+	return c.JSON(http.StatusOK, buildinfo.Get())
+}
+
+// GetTrending lists what is trending on TMDB today (live, cached for half an
+// hour): GET /api/v1/titles/trending[?kind=all|movie|tv]
+func (h *Handler) GetTrending(c *echo.Context) error {
+	out, err := h.Lists.Trending(c.Request().Context(), c.QueryParam("kind"))
+	return writeData(c, out, err)
+}
+
+// GetInCinemas lists the films in cinemas in a country, from TMDB's now
+// playing (live, cached for half an hour): GET /api/v1/titles/in-cinemas/{country}
+func (h *Handler) GetInCinemas(c *echo.Context) error {
+	out, err := h.Lists.InCinemas(c.Request().Context(), c.Param("country"))
 	return writeData(c, out, err)
 }

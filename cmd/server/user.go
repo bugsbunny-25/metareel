@@ -57,7 +57,8 @@ func runUserCommand(cfg *config.Config, args []string, stdin io.Reader, stdout i
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	repo := repository.NewUserRepository(db)
 	sessions := service.NewSessionService(log, repo,
-		service.SessionConfig{TTL: cfg.Auth.SessionTTL, IdleTimeout: cfg.Auth.SessionIdleTimeout})
+		service.SessionConfig{TTL: cfg.Auth.SessionTTL, IdleTimeout: cfg.Auth.SessionIdleTimeout,
+			DeviceTTL: cfg.Auth.DeviceSessionTTL, DeviceIdleTimeout: cfg.Auth.DeviceSessionIdleTimeout})
 	users := service.NewUserService(log, repo, sessions)
 
 	cmd, rest := args[0], args[1:]

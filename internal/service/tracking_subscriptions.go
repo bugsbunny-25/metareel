@@ -34,18 +34,43 @@ var SubscriptionPlans = []SubscriptionPlan{
 }
 
 // SubscriptionInput creates or replaces a plan.
+//
+// Periods are the runs of the plan: cancelling and resubscribing leaves a gap
+// between two periods, and gaps are not billed. Prices are what a billing
+// period cost from each date. When periods are omitted, started_on and
+// ended_on describe the plan's only run (on create) or move the first start
+// and the last end of its stored runs (on update). When prices are omitted,
+// price_minor is the plan's only price (on create) or replaces the price in
+// effect today (on update).
 type SubscriptionInput struct {
-	Plan       string  `json:"plan"`
-	Chain      *string `json:"chain"`
-	PriceMinor *int64  `json:"price_minor"`
-	Currency   string  `json:"currency"`
-	Period     string  `json:"period"` // month (default) | year
-	StartedOn  string  `json:"started_on"`
-	EndedOn    *string `json:"ended_on"`
-	Note       *string `json:"note"`
+	Plan       string                     `json:"plan"`
+	Chain      *string                    `json:"chain"`
+	PriceMinor *int64                     `json:"price_minor"`
+	Currency   string                     `json:"currency"`
+	Period     string                     `json:"period"` // month (default) | year
+	StartedOn  string                     `json:"started_on"`
+	EndedOn    *string                    `json:"ended_on"`
+	Note       *string                    `json:"note"`
+	Periods    *[]SubscriptionPeriodInput `json:"periods"`
+	Prices     *[]SubscriptionPriceInput  `json:"prices"`
 }
 
-func (s *TrackingService) subscriptionFrom(in SubscriptionInput) (repository.CinemaSubscription, error) {
+// SubscriptionPeriodInput is one run of a plan.
+type SubscriptionPeriodInput struct {
+	StartedOn string  `json:"started_on"`
+	EndedOn   *string `json:"ended_on"`
+}
+
+// SubscriptionPriceInput is a price from a date on.
+type SubscriptionPriceInput struct {
+	From       string `json:"from"`
+	PriceMinor *int64 `json:"price_minor"`
+}
+
+const maxSubscriptionHistory = 200
+
+// subscriptionFrom validates a plan. prev is the stored plan on update (nil on create).
+func (s *TrackingService) subscriptionFrom(in SubscriptionInput, prev *repository.CinemaSubscription) (repository.CinemaSubscription, error) {
 	out := repository.CinemaSubscription{Plan: strings.TrimSpace(in.Plan), Chain: trimmedPtr(in.Chain), Note: trimmedPtr(in.Note),
 		Currency: strings.ToUpper(strings.TrimSpace(in.Currency)), Period: strings.TrimSpace(in.Period), StartedOn: strings.TrimSpace(in.StartedOn)}
 	if n := len([]rune(out.Plan)); n == 0 || n > 100 {
@@ -57,10 +82,6 @@ func (s *TrackingService) subscriptionFrom(in SubscriptionInput) (repository.Cin
 	if out.Note != nil && len([]rune(*out.Note)) > 500 {
 		return out, &ValidationError{Message: "note must be at most 500 characters"}
 	}
-	if in.PriceMinor == nil || *in.PriceMinor < 0 || *in.PriceMinor > 1e9 {
-		return out, &ValidationError{Message: "price_minor is required: what the plan costs per period, in minor units (cents, pence, paise)"}
-	}
-	out.PriceMinor = *in.PriceMinor
 	if !currencyRe.MatchString(out.Currency) {
 		return out, &ValidationError{Message: "currency must be a 3-letter ISO 4217 code, e.g. USD"}
 	}
@@ -70,21 +91,145 @@ func (s *TrackingService) subscriptionFrom(in SubscriptionInput) (repository.Cin
 	if out.Period != "month" && out.Period != "year" {
 		return out, &ValidationError{Message: "period must be month or year"}
 	}
-	start, err := time.Parse(time.DateOnly, out.StartedOn)
-	if err != nil {
-		return out, &ValidationError{Message: "started_on must be a date (YYYY-MM-DD)"}
+
+	// Periods: given, else one run (create), else the stored runs with the
+	// first start and last end moved (update).
+	var periods []SubscriptionPeriodInput
+	switch {
+	case in.Periods != nil:
+		periods = *in.Periods
+	case prev == nil:
+		periods = []SubscriptionPeriodInput{{StartedOn: in.StartedOn, EndedOn: in.EndedOn}}
+	default:
+		for _, p := range prev.Periods {
+			periods = append(periods, SubscriptionPeriodInput{StartedOn: p.StartedOn, EndedOn: p.EndedOn})
+		}
+		if len(periods) == 0 {
+			periods = []SubscriptionPeriodInput{{}}
+		}
+		if v := strings.TrimSpace(in.StartedOn); v != "" {
+			periods[0].StartedOn = v
+		}
+		periods[len(periods)-1].EndedOn = in.EndedOn
 	}
-	if end := trimmedPtr(in.EndedOn); end != nil {
-		e, err := time.Parse(time.DateOnly, *end)
-		if err != nil {
-			return out, &ValidationError{Message: "ended_on must be a date (YYYY-MM-DD)"}
+	var err error
+	if out.Periods, err = validPeriods(periods); err != nil {
+		return out, err
+	}
+	out.StartedOn = out.Periods[0].StartedOn
+	out.EndedOn = out.Periods[len(out.Periods)-1].EndedOn
+
+	// Prices: given, else one price (create), else the stored prices with the
+	// one in effect today replaced (update).
+	today := time.Now().UTC().Format(time.DateOnly)
+	var prices []SubscriptionPriceInput
+	switch {
+	case in.Prices != nil:
+		prices = *in.Prices
+	case prev == nil || len(prev.Prices) == 0:
+		prices = []SubscriptionPriceInput{{From: out.StartedOn, PriceMinor: in.PriceMinor}}
+	default:
+		cur := priceIndex(prev.Prices, today)
+		for i, p := range prev.Prices {
+			v := p.PriceMinor
+			if i == cur && in.PriceMinor != nil {
+				v = *in.PriceMinor
+			}
+			prices = append(prices, SubscriptionPriceInput{From: p.From, PriceMinor: &v})
 		}
-		if e.Before(start) {
-			return out, &ValidationError{Message: "ended_on must not be before started_on"}
+	}
+	if out.Prices, err = validPrices(prices, out.StartedOn); err != nil {
+		return out, err
+	}
+	out.PriceMinor = out.Prices[priceIndex(out.Prices, today)].PriceMinor
+	return out, nil
+}
+
+// validPeriods checks a plan's runs: real dates, each ending on or after it
+// starts, in order without overlapping, and only the last one still running.
+func validPeriods(in []SubscriptionPeriodInput) ([]repository.SubscriptionPeriod, error) {
+	if len(in) == 0 {
+		return nil, &ValidationError{Message: "periods needs at least one run of the plan"}
+	}
+	if len(in) > maxSubscriptionHistory {
+		return nil, &ValidationError{Message: "periods can have at most 200 runs"}
+	}
+	out := make([]repository.SubscriptionPeriod, 0, len(in))
+	for _, p := range in {
+		start := strings.TrimSpace(p.StartedOn)
+		if _, err := time.Parse(time.DateOnly, start); err != nil {
+			return nil, &ValidationError{Message: "started_on must be a date (YYYY-MM-DD)"}
 		}
-		out.EndedOn = end
+		end := trimmedPtr(p.EndedOn)
+		if end != nil {
+			if _, err := time.Parse(time.DateOnly, *end); err != nil {
+				return nil, &ValidationError{Message: "ended_on must be a date (YYYY-MM-DD)"}
+			}
+			if *end < start {
+				return nil, &ValidationError{Message: "ended_on must not be before started_on"}
+			}
+		}
+		out = append(out, repository.SubscriptionPeriod{StartedOn: start, EndedOn: end})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].StartedOn < out[j].StartedOn })
+	for i := 1; i < len(out); i++ {
+		prev := out[i-1]
+		if prev.EndedOn == nil {
+			return nil, &ValidationError{Message: "only the latest period can still be running: end the one from " + prev.StartedOn + " before resubscribing"}
+		}
+		if out[i].StartedOn <= *prev.EndedOn {
+			return nil, &ValidationError{Message: "periods overlap: the one from " + out[i].StartedOn + " starts before the previous one ended (" + *prev.EndedOn + ")"}
+		}
 	}
 	return out, nil
+}
+
+// validPrices checks a plan's prices: real dates, one price per date, amounts
+// in range. Sorted by date; a first price dated after the plan began is moved
+// back to its start, since something was billed from day one.
+func validPrices(in []SubscriptionPriceInput, start string) ([]repository.SubscriptionPrice, error) {
+	if len(in) == 0 {
+		return nil, &ValidationError{Message: "prices needs at least one price"}
+	}
+	if len(in) > maxSubscriptionHistory {
+		return nil, &ValidationError{Message: "prices can have at most 200 changes"}
+	}
+	out := make([]repository.SubscriptionPrice, 0, len(in))
+	seen := map[string]bool{}
+	for _, p := range in {
+		from := strings.TrimSpace(p.From)
+		if from == "" {
+			from = start
+		}
+		if _, err := time.Parse(time.DateOnly, from); err != nil {
+			return nil, &ValidationError{Message: "a price's from must be a date (YYYY-MM-DD)"}
+		}
+		if p.PriceMinor == nil || *p.PriceMinor < 0 || *p.PriceMinor > 1e9 {
+			return nil, &ValidationError{Message: "price_minor is required: what the plan costs per period, in minor units (cents, pence, paise)"}
+		}
+		if seen[from] {
+			return nil, &ValidationError{Message: "two prices start on " + from + "; keep one"}
+		}
+		seen[from] = true
+		out = append(out, repository.SubscriptionPrice{From: from, PriceMinor: *p.PriceMinor})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].From < out[j].From })
+	if out[0].From > start {
+		out[0].From = start
+	}
+	return out, nil
+}
+
+// priceIndex is the index of the price in effect on a day: the latest one
+// dated on or before it, else the earliest.
+func priceIndex(prices []repository.SubscriptionPrice, day string) int {
+	idx := 0
+	for i, p := range prices {
+		if p.From <= day {
+			idx = i
+		}
+	}
+	return idx
 }
 
 // ListSubscriptions returns a user's plans and the well-known ones to pick from.
@@ -97,7 +242,7 @@ func (s *TrackingService) ListSubscriptions(ctx context.Context, userID int64) (
 }
 
 func (s *TrackingService) CreateSubscription(ctx context.Context, userID int64, in SubscriptionInput) (repository.CinemaSubscription, error) {
-	sub, err := s.subscriptionFrom(in)
+	sub, err := s.subscriptionFrom(in, nil)
 	if err != nil {
 		return sub, err
 	}
@@ -109,7 +254,11 @@ func (s *TrackingService) CreateSubscription(ctx context.Context, userID int64, 
 }
 
 func (s *TrackingService) UpdateSubscription(ctx context.Context, userID, id int64, in SubscriptionInput) (repository.CinemaSubscription, error) {
-	sub, err := s.subscriptionFrom(in)
+	prev, err := s.write.CinemaSubscription(ctx, userID, id)
+	if err != nil {
+		return prev, err
+	}
+	sub, err := s.subscriptionFrom(in, &prev)
 	if err != nil {
 		return sub, err
 	}
@@ -157,8 +306,8 @@ func (s *TrackingService) checkSubscription(ctx context.Context, userID int64, c
 type SubscriptionSavings struct {
 	repository.CinemaSubscription
 	Active        bool           `json:"active"`
-	Bills         int            `json:"bills"`          // periods paid so far
-	PaidMinor     int64          `json:"paid_minor"`     // bills x price
+	Bills         int            `json:"bills"`          // billing periods paid so far, across every run
+	PaidMinor     int64          `json:"paid_minor"`     // each bill at the price then
 	Watches       int            `json:"watches"`        // covered watches in the plan's currency
 	ValueMinor    int64          `json:"value_minor"`    // their face value (some estimated)
 	Estimated     int            `json:"estimated"`      // covered watches valued at your usual ticket price
@@ -214,10 +363,6 @@ func (s *TrackingService) Savings(ctx context.Context, userID int64) (map[string
 
 func planSavings(sub repository.CinemaSubscription, watches []repository.CinemaWatchCost, today string) SubscriptionSavings {
 	r := SubscriptionSavings{CinemaSubscription: sub, Months: []SavingsMonth{}}
-	end := today
-	if sub.EndedOn != nil && *sub.EndedOn < today {
-		end = *sub.EndedOn
-	}
 	r.Active = sub.EndedOn == nil || *sub.EndedOn >= today
 	months := map[string]*SavingsMonth{}
 	month := func(day string) *SavingsMonth {
@@ -227,10 +372,10 @@ func planSavings(sub repository.CinemaSubscription, watches []repository.CinemaW
 		}
 		return months[k]
 	}
-	for _, bill := range billingDays(sub.StartedOn, end, sub.Period) {
+	for _, b := range planBills(sub, today) {
 		r.Bills++
-		r.PaidMinor += sub.PriceMinor
-		month(bill).CostMinor += sub.PriceMinor
+		r.PaidMinor += b.PriceMinor
+		month(b.Day).CostMinor += b.PriceMinor
 	}
 
 	usual := usualTicket(watches, sub.Chain, sub.Currency)
@@ -288,6 +433,36 @@ func planSavings(sub repository.CinemaSubscription, watches []repository.CinemaW
 	}
 	sort.Slice(r.Months, func(i, j int) bool { return r.Months[i].Month < r.Months[j].Month })
 	return r
+}
+
+// Bill is one billing day of a plan and what it charged.
+type Bill struct {
+	Day        string
+	PriceMinor int64
+}
+
+// planBills are a plan's bills up to today: each run bills on its start day
+// and every period after (no bills in the gaps between runs), each at the
+// price in effect that day.
+func planBills(sub repository.CinemaSubscription, today string) []Bill {
+	periods, prices := sub.Periods, sub.Prices
+	if len(periods) == 0 {
+		periods = []repository.SubscriptionPeriod{{StartedOn: sub.StartedOn, EndedOn: sub.EndedOn}}
+	}
+	if len(prices) == 0 {
+		prices = []repository.SubscriptionPrice{{From: sub.StartedOn, PriceMinor: sub.PriceMinor}}
+	}
+	var out []Bill
+	for _, p := range periods {
+		end := today
+		if p.EndedOn != nil && *p.EndedOn < today {
+			end = *p.EndedOn
+		}
+		for _, day := range billingDays(p.StartedOn, end, sub.Period) {
+			out = append(out, Bill{Day: day, PriceMinor: prices[priceIndex(prices, day)].PriceMinor})
+		}
+	}
+	return out
 }
 
 // billingDays are the days a plan bills from start to end: the start day and

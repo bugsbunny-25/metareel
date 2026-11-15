@@ -315,3 +315,10 @@ SELECT data, CAST(updated_at AS TEXT) AS updated_at FROM user_preferences WHERE 
 INSERT INTO user_preferences (user_id, data, updated_at)
 VALUES (sqlc.arg(user_id), sqlc.arg(data), CURRENT_TIMESTAMP)
 ON CONFLICT (user_id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP;
+
+-- name: GetPosterColor :one
+SELECT color FROM poster_colors WHERE poster_path = sqlc.arg(poster_path);
+
+-- name: SavePosterColor :exec
+INSERT INTO poster_colors (poster_path, color) VALUES (sqlc.arg(poster_path), sqlc.arg(color))
+ON CONFLICT(poster_path) DO UPDATE SET color = excluded.color, computed_at = CURRENT_TIMESTAMP;

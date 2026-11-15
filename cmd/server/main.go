@@ -10,11 +10,19 @@ import (
 	"strings"
 	_ "time/tzdata"
 
+	"github.com/bugsbunny-25/metareel/internal/buildinfo"
 	"github.com/bugsbunny-25/metareel/internal/config"
 	"github.com/bugsbunny-25/metareel/internal/server"
 )
 
+// Stamped at build time: -ldflags "-X main.version=v1.2.3 -X main.revision=<git sha>".
+var (
+	version  string
+	revision string
+)
+
 func main() {
+	buildinfo.Set(version, revision)
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config load failed", slog.Any("err", err))

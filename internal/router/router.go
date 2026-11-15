@@ -20,9 +20,19 @@ func isAdminPath(p string) bool {
 
 // Register wires all routes and middleware onto the given Echo instance.
 func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
+	// Behind a reverse proxy, take the client from X-Forwarded-For, but
+	// only through the configured proxies; otherwise the connecting address
+	// (headers are never trusted by default).
+	if nets, err := cfg.Server.TrustedProxyNets(); err == nil && len(nets) > 0 {
+		opts := []echo.TrustOption{echo.TrustLoopback(false), echo.TrustLinkLocal(false), echo.TrustPrivateNet(false)}
+		for _, n := range nets {
+			opts = append(opts, echo.TrustIPRange(n))
+		}
+		e.IPExtractor = echo.ExtractIPFromXFFHeader(opts...)
+	}
 	e.Use(emw.Recover())
 	e.Use(emw.RequestID())
-	e.Use(emw.RequestLogger())
+	e.Use(handler.RequestLogger())
 	e.Use(emw.Gzip())
 	// CORS for the public API only: the admin UI is same-origin, and other
 	// websites a LAN user opens must not be able to drive /api/v1/admin.
@@ -44,6 +54,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	auth := e.Group("/api/v1/auth", handler.SameOriginWrites)
 	auth.POST("/login", h.Login)
 	auth.POST("/logout", h.Logout)
+	auth.POST("/probe", h.Probe) // unauthenticated: the mobile app checks a local URL
 	auth.GET("/me", h.Me, h.Authenticate)
 	auth.GET("/session", h.AuthSession)
 
@@ -66,6 +77,9 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	me.DELETE("/sessions/:id", h.RevokeMySession)
 	me.GET("/preferences", h.GetPreferences)
 	me.PUT("/preferences", h.SetPreferences)
+	me.GET("/devices", h.ListDevices)
+	me.PUT("/devices", h.RegisterDevice)
+	me.DELETE("/devices/:id", h.DeleteDevice)
 	me.GET("/titles", h.ListTrackedTitles)
 	me.GET("/titles/search", h.SearchTrackedTitles)
 	me.GET("/people/search", h.SearchPeople)
@@ -89,6 +103,7 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	me.PUT("/subscriptions/:id", h.UpdateSubscription)
 	me.DELETE("/subscriptions/:id", h.DeleteSubscription)
 	me.GET("/venues", h.ListVenues)
+	me.GET("/venues/nearby", h.NearbyVenues) // before /venues/:id
 	me.POST("/venues", h.CreateVenue)
 	me.GET("/venues/:id", h.GetVenue)
 	me.PUT("/venues/:id", h.UpdateVenue)
@@ -101,15 +116,18 @@ func Register(e *echo.Echo, h *handler.Handler, cfg *config.Config) {
 	me.GET("/shows", h.ShowQueue)
 	me.GET("/upcoming", h.Upcoming)
 	me.GET("/shows/:id", h.GetShow)
+	me.GET("/shows/:id/episodes/:season/:episode", h.GetEpisode)
 	me.POST("/shows/:id/watched", h.MarkEpisodes)
 	me.DELETE("/shows/:id/watched", h.UnmarkEpisodes)
 	me.GET("/up-next", h.UpNext)
+	me.GET("/glance", h.Glance)
 	me.GET("/stats/summary", h.GetStatsSummary)
 	me.GET("/stats/calendar", h.GetStatsCalendar)
 	me.GET("/stats/year", h.GetStatsYear)
 	me.GET("/stats/ratings", h.GetStatsRatings)
 	me.GET("/stats/spend", h.GetStatsSpend)
 	me.GET("/stats/people", h.GetStatsPeople)
+	me.GET("/stats/detailed", h.GetStatsDetailed)
 	me.GET("/watchlist/insights", h.GetWatchlistInsights)
 
 	// Admin API and UI. The UI reads the same data through these admin
@@ -220,6 +238,9 @@ func registerReadRoutes(g *echo.Group, h *handler.Handler) {
 	g.GET("/titles/tmdb/:kind/:id/releases", h.GetTitleReleases)
 	g.GET("/titles/tmdb/:kind/:id/credits", h.GetTitleCredits)
 	g.GET("/people/:id", h.GetPerson)
+	g.GET("/titles/trending", h.GetTrending)
+	g.GET("/version", h.GetVersion)
+	g.GET("/titles/in-cinemas/:country", h.GetInCinemas)
 	g.GET("/availability/changes", h.GetAvailabilityChanges)
 	g.GET("/calendar/:country", h.GetCalendar)
 	g.GET("/titles/tmdb/:kind/:id/netflix", h.GetTitleNetflix)

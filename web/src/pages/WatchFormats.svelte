@@ -281,172 +281,174 @@
   }
 </script>
 
-<PageHeader
-  title="Premium formats"
-  desc="The formats a watch can be logged in, and their logos. One screening can carry several, because a brand, a projection, a sound system and a motion rig are separate things."
-  info="Formats are shared with everyone who logs watches. Retiring one keeps it on the watches that already have it, which is why there is no delete. Logos show next to the label in the user app."
->
-  {#snippet actions()}
-    <button class="btn btn-primary" onclick={() => open(null)}>
-      <Icon name="plus" /> Add format
-    </button>
-  {/snippet}
-</PageHeader>
-
-{#if error}
-  <div class="alert-error">{error}</div>
-{/if}
-
-{#if loading}
-  <div class="card">Loading formats…</div>
-{:else if formats.length === 0}
-  <div class="card">No formats yet. Add the first one.</div>
-{:else}
-  <p class="muted summary">{formats.length} formats · {withLogo} with a logo · {formats.filter((f) => !f.active).length} retired</p>
-  <div class="card">
-    <label
-      class="drop bulk"
-      class:over={bulkOver}
-      ondragover={(e) => { e.preventDefault(); bulkOver = true }}
-      ondragleave={() => (bulkOver = false)}
-      ondrop={(e) => { e.preventDefault(); bulkOver = false; uploadMany(e.dataTransfer?.files) }}
-    >
-      <input type="file" multiple accept={LOGO_TYPES.join(',')} disabled={bulkBusy} onchange={(e) => { uploadMany(e.currentTarget.files); e.currentTarget.value = '' }} />
-      <span><b>{bulkBusy ? 'Uploading…' : 'Upload logos in bulk'}</b> — drop files named after each format’s slug, e.g. <code>imax.svg</code>, <code>uhd-blu-ray.png</code>, <code>criterion.svg</code></span>
-      <span class="muted">Each file replaces that format’s logo. Files that match no slug are skipped.</span>
-    </label>
-    {#if bulk.length}
-      <ul class="bulk-results">
-        {#each bulk as b}
-          <li class={b.status}>
-            <code>{b.name}</code>
-            <span>{b.status === 'pending' ? 'waiting…' : b.status === 'ok' ? `✓ ${b.message}` : b.status === 'skip' ? `skipped: ${b.message}` : `✗ ${b.message}`}</span>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </div>
-  {#each CATEGORIES as cat}
-    {@const rows = formats.filter((f) => f.category === cat.value)}
-    {#if rows.length}
-      <div class="card">
-        <h3>{cat.label} <span class="muted">— {cat.hint}</span></h3>
-        <table class="table">
-          <thead>
-            <tr>
-              <th class="logo-col">Logo</th>
-              <th>Label</th>
-              <th>Slug</th>
-              <th class="num">Order</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each rows as f (f.id)}
-              <tr class:dim={!f.active}>
-                <td class="logo-col">
-                  {#if f.logo_url}
-                    <span class="thumb" title={f.logo_display === 'mono' ? 'Shown white' : 'Original colours'}><img class:mono={f.logo_display === 'mono'} src={f.logo_url} alt="{f.label} logo" /></span>
-                  {:else}
-                    <button class="add-logo" onclick={() => open(f)} title="Add a logo for {f.label}">+ Logo</button>
-                  {/if}
-                </td>
-                <td>
-                  {f.label}
-                  {#if f.note}<div class="muted">{f.note}</div>{/if}
-                </td>
-                <td><code>{f.slug}</code></td>
-                <td class="num">{f.sort_order}</td>
-                <td>
-                  {#if f.active}
-                    <span class="badge badge-success">Available</span>
-                  {:else}
-                    <span class="badge badge-warning">Retired</span>
-                  {/if}
-                </td>
-                <td class="right">
-                  <button class="btn btn-sm" onclick={() => open(f)}>Edit</button>
-                  <button class="btn btn-sm" onclick={() => toggleActive(f)}>
-                    {f.active ? 'Retire' : 'Restore'}
-                  </button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
-  {/each}
-{/if}
-
-{#if editing}
-  <Modal title={editing.id ? `Edit ${editing.label}` : 'Add a format'} onclose={close}>
-    <div class="form-row">
-      <label for="fmt-label">Label</label>
-      <input id="fmt-label" class="input" bind:value={editing.label} placeholder="IMAX 70mm" />
-    </div>
-    {#if !editing.id}
-      <div class="form-row">
-        <label for="fmt-slug">Slug</label>
-        <input id="fmt-slug" class="input" bind:value={editing.slug} placeholder="imax-70mm" />
-        <div class="muted">Lowercase words joined by hyphens. It never changes, because watches reference it.</div>
-      </div>
-    {/if}
-    <div class="form-row">
-      <label for="fmt-category">Category</label>
-      <select id="fmt-category" class="input" bind:value={editing.category}>
-        {#each CATEGORIES as c}
-          <option value={c.value}>{c.label} — {c.hint}</option>
-        {/each}
-      </select>
-    </div>
-    <div class="form-row">
-      <label for="fmt-note">Note</label>
-      <input id="fmt-note" class="input" bind:value={editing.note} placeholder="Optional" />
-    </div>
-    <div class="form-row">
-      <label for="fmt-order">Sort order</label>
-      <input id="fmt-order" class="input num" type="number" bind:value={editing.sort_order} />
-    </div>
-
-    <div class="form-row">
-      <span class="lbl" id="fmt-logo-h">Logo</span>
-      {#if shown}
-        <div class="previews" aria-labelledby="fmt-logo-h">
-          <button type="button" class="pv dark" class:chosen={editing.logo_display !== 'mono'} aria-pressed={editing.logo_display !== 'mono'} onclick={() => (editing.logo_display = 'original')}>
-            <img src={shown} alt="{editing.label || 'New format'} logo in its original colours" /><span>Original</span>
-          </button>
-          <button type="button" class="pv dark" class:chosen={editing.logo_display === 'mono'} aria-pressed={editing.logo_display === 'mono'} onclick={() => (editing.logo_display = 'mono')}>
-            <img class="mono" src={shown} alt="{editing.label || 'New format'} logo drawn white" /><span>Monochrome (white)</span>
-          </button>
-          <span class="pv light"><img src={shown} alt="{editing.label || 'New format'} logo on white" /><span>Original on white</span></span>
-        </div>
-        <div class="muted">{picked ? 'Uploads when you save the format. ' : ''}The apps show it on a dark plate; pick which version (saved with the format). A dark upload is switched to white automatically. The file itself never changes, and other clients get both the file and this choice.</div>
-      {/if}
-      <label
-        class="drop"
-        class:over={dragging}
-        ondragover={(e) => { e.preventDefault(); dragging = true }}
-        ondragleave={() => (dragging = false)}
-        ondrop={onDrop}
-      >
-        <input type="file" accept={LOGO_TYPES.join(',')} disabled={logoBusy} onchange={(e) => { choose(e.currentTarget.files?.[0]); e.currentTarget.value = '' }} />
-        <span><b>{logoBusy ? 'Uploading…' : shown ? 'Replace the logo' : 'Add a logo'}</b> — drop an image here or click to choose one</span>
-        <span class="muted">PNG, SVG, WebP, JPEG or GIF, up to 512 KB and 4096px a side. SVGs may only hold shapes, text, gradients and filters (no styles, scripts or embedded images). A transparent PNG or SVG, wider than it is tall, reads best; it's shown about 20px high.</span>
-      </label>
-      {#if shown}
-        <button class="btn btn-sm remove" onclick={removeLogo} disabled={logoBusy}>{picked ? 'Don’t use this file' : 'Remove logo'}</button>
-      {/if}
-    </div>
-    {#snippet footer()}
-      <button class="btn" onclick={close}>Cancel</button>
-      <button class="btn btn-primary" onclick={save} disabled={saving || logoBusy || !editing.label}>
-        {saving ? 'Saving…' : 'Save'}
+<div class="page">
+  <PageHeader
+    title="Premium formats"
+    desc="The formats a watch can be logged in, and their logos. One screening can carry several, because a brand, a projection, a sound system and a motion rig are separate things."
+    info="Formats are shared with everyone who logs watches. Retiring one keeps it on the watches that already have it, which is why there is no delete. Logos show next to the label in the user app."
+  >
+    {#snippet actions()}
+      <button class="btn btn-primary" onclick={() => open(null)}>
+        <Icon name="plus" /> Add format
       </button>
     {/snippet}
-  </Modal>
-{/if}
+  </PageHeader>
+
+  {#if error}
+    <div class="alert-error">{error}</div>
+  {/if}
+
+  {#if loading}
+    <div class="card">Loading formats…</div>
+  {:else if formats.length === 0}
+    <div class="card">No formats yet. Add the first one.</div>
+  {:else}
+    <p class="muted summary">{formats.length} formats · {withLogo} with a logo · {formats.filter((f) => !f.active).length} retired</p>
+    <div class="card">
+      <label
+        class="drop bulk"
+        class:over={bulkOver}
+        ondragover={(e) => { e.preventDefault(); bulkOver = true }}
+        ondragleave={() => (bulkOver = false)}
+        ondrop={(e) => { e.preventDefault(); bulkOver = false; uploadMany(e.dataTransfer?.files) }}
+      >
+        <input type="file" multiple accept={LOGO_TYPES.join(',')} disabled={bulkBusy} onchange={(e) => { uploadMany(e.currentTarget.files); e.currentTarget.value = '' }} />
+        <span><b>{bulkBusy ? 'Uploading…' : 'Upload logos in bulk'}</b> — drop files named after each format’s slug, e.g. <code>imax.svg</code>, <code>uhd-blu-ray.png</code>, <code>criterion.svg</code></span>
+        <span class="muted">Each file replaces that format’s logo. Files that match no slug are skipped.</span>
+      </label>
+      {#if bulk.length}
+        <ul class="bulk-results">
+          {#each bulk as b}
+            <li class={b.status}>
+              <code>{b.name}</code>
+              <span>{b.status === 'pending' ? 'waiting…' : b.status === 'ok' ? `✓ ${b.message}` : b.status === 'skip' ? `skipped: ${b.message}` : `✗ ${b.message}`}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+    {#each CATEGORIES as cat}
+      {@const rows = formats.filter((f) => f.category === cat.value)}
+      {#if rows.length}
+        <div class="card">
+          <h3>{cat.label} <span class="muted">— {cat.hint}</span></h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th class="logo-col">Logo</th>
+                <th>Label</th>
+                <th>Slug</th>
+                <th class="num">Order</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each rows as f (f.id)}
+                <tr class:dim={!f.active}>
+                  <td class="logo-col">
+                    {#if f.logo_url}
+                      <span class="thumb" title={f.logo_display === 'mono' ? 'Shown white' : 'Original colours'}><img class:mono={f.logo_display === 'mono'} src={f.logo_url} alt="{f.label} logo" /></span>
+                    {:else}
+                      <button class="add-logo" onclick={() => open(f)} title="Add a logo for {f.label}">+ Logo</button>
+                    {/if}
+                  </td>
+                  <td>
+                    {f.label}
+                    {#if f.note}<div class="muted">{f.note}</div>{/if}
+                  </td>
+                  <td><code>{f.slug}</code></td>
+                  <td class="num">{f.sort_order}</td>
+                  <td>
+                    {#if f.active}
+                      <span class="badge badge-success">Available</span>
+                    {:else}
+                      <span class="badge badge-warning">Retired</span>
+                    {/if}
+                  </td>
+                  <td class="right">
+                    <button class="btn btn-sm" onclick={() => open(f)}>Edit</button>
+                    <button class="btn btn-sm" onclick={() => toggleActive(f)}>
+                      {f.active ? 'Retire' : 'Restore'}
+                    </button>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    {/each}
+  {/if}
+
+  {#if editing}
+    <Modal title={editing.id ? `Edit ${editing.label}` : 'Add a format'} onclose={close}>
+      <div class="form-row">
+        <label for="fmt-label">Label</label>
+        <input id="fmt-label" class="input" bind:value={editing.label} placeholder="IMAX 70mm" />
+      </div>
+      {#if !editing.id}
+        <div class="form-row">
+          <label for="fmt-slug">Slug</label>
+          <input id="fmt-slug" class="input" bind:value={editing.slug} placeholder="imax-70mm" />
+          <div class="muted">Lowercase words joined by hyphens. It never changes, because watches reference it.</div>
+        </div>
+      {/if}
+      <div class="form-row">
+        <label for="fmt-category">Category</label>
+        <select id="fmt-category" class="input" bind:value={editing.category}>
+          {#each CATEGORIES as c}
+            <option value={c.value}>{c.label} — {c.hint}</option>
+          {/each}
+        </select>
+      </div>
+      <div class="form-row">
+        <label for="fmt-note">Note</label>
+        <input id="fmt-note" class="input" bind:value={editing.note} placeholder="Optional" />
+      </div>
+      <div class="form-row">
+        <label for="fmt-order">Sort order</label>
+        <input id="fmt-order" class="input num" type="number" bind:value={editing.sort_order} />
+      </div>
+
+      <div class="form-row">
+        <span class="lbl" id="fmt-logo-h">Logo</span>
+        {#if shown}
+          <div class="previews" aria-labelledby="fmt-logo-h">
+            <button type="button" class="pv dark" class:chosen={editing.logo_display !== 'mono'} aria-pressed={editing.logo_display !== 'mono'} onclick={() => (editing.logo_display = 'original')}>
+              <img src={shown} alt="{editing.label || 'New format'} logo in its original colours" /><span>Original</span>
+            </button>
+            <button type="button" class="pv dark" class:chosen={editing.logo_display === 'mono'} aria-pressed={editing.logo_display === 'mono'} onclick={() => (editing.logo_display = 'mono')}>
+              <img class="mono" src={shown} alt="{editing.label || 'New format'} logo drawn white" /><span>Monochrome (white)</span>
+            </button>
+            <span class="pv light"><img src={shown} alt="{editing.label || 'New format'} logo on white" /><span>Original on white</span></span>
+          </div>
+          <div class="muted">{picked ? 'Uploads when you save the format. ' : ''}The apps show it on a dark plate; pick which version (saved with the format). A dark upload is switched to white automatically. The file itself never changes, and other clients get both the file and this choice.</div>
+        {/if}
+        <label
+          class="drop"
+          class:over={dragging}
+          ondragover={(e) => { e.preventDefault(); dragging = true }}
+          ondragleave={() => (dragging = false)}
+          ondrop={onDrop}
+        >
+          <input type="file" accept={LOGO_TYPES.join(',')} disabled={logoBusy} onchange={(e) => { choose(e.currentTarget.files?.[0]); e.currentTarget.value = '' }} />
+          <span><b>{logoBusy ? 'Uploading…' : shown ? 'Replace the logo' : 'Add a logo'}</b> — drop an image here or click to choose one</span>
+          <span class="muted">PNG, SVG, WebP, JPEG or GIF, up to 512 KB and 4096px a side. SVGs may only hold shapes, text, gradients and filters (no styles, scripts or embedded images). A transparent PNG or SVG, wider than it is tall, reads best; it's shown about 20px high.</span>
+        </label>
+        {#if shown}
+          <button class="btn btn-sm remove" onclick={removeLogo} disabled={logoBusy}>{picked ? 'Don’t use this file' : 'Remove logo'}</button>
+        {/if}
+      </div>
+      {#snippet footer()}
+        <button class="btn" onclick={close}>Cancel</button>
+        <button class="btn btn-primary" onclick={save} disabled={saving || logoBusy || !editing.label}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      {/snippet}
+    </Modal>
+  {/if}
+</div>
 
 <style>
   h3 { margin: 0 0 0.75rem; font-size: 0.95rem; }

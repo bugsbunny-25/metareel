@@ -320,6 +320,7 @@ type Venue struct {
 	Name              string   `json:"name"`
 	Chain             *string  `json:"chain,omitempty"`
 	Address           *string  `json:"address,omitempty"`
+	Postcode          *string  `json:"postcode,omitempty"` // ZIP / PIN / postcode
 	City              *string  `json:"city,omitempty"`
 	Region            *string  `json:"region,omitempty"`
 	Country           *string  `json:"country,omitempty"`
@@ -340,7 +341,7 @@ type Venue struct {
 // CreateVenue adds a cinema and returns its id.
 func (r *TrackingRepository) CreateVenue(ctx context.Context, v Venue, createdBy int64) (int64, error) {
 	id, err := r.q.CreateVenue(ctx, sqlc.CreateVenueParams{
-		Name: v.Name, Chain: toNullString(v.Chain), Address: toNullString(v.Address),
+		Name: v.Name, Chain: toNullString(v.Chain), Address: toNullString(v.Address), Postcode: toNullString(v.Postcode),
 		City: toNullString(v.City), Region: toNullString(v.Region), Country: toNullString(v.Country),
 		Latitude: floatPtrNull(v.Latitude), Longitude: floatPtrNull(v.Longitude),
 		Timezone: toNullString(v.Timezone), OpenedOn: toNullString(v.OpenedOn),
@@ -356,7 +357,7 @@ func (r *TrackingRepository) CreateVenue(ctx context.Context, v Venue, createdBy
 // UpdateVenue edits a cinema.
 func (r *TrackingRepository) UpdateVenue(ctx context.Context, v Venue) (bool, error) {
 	n, err := r.q.UpdateVenue(ctx, sqlc.UpdateVenueParams{
-		ID: v.ID, Name: v.Name, Chain: toNullString(v.Chain), Address: toNullString(v.Address),
+		ID: v.ID, Name: v.Name, Chain: toNullString(v.Chain), Address: toNullString(v.Address), Postcode: toNullString(v.Postcode),
 		City: toNullString(v.City), Region: toNullString(v.Region), Country: toNullString(v.Country),
 		Latitude: floatPtrNull(v.Latitude), Longitude: floatPtrNull(v.Longitude),
 		Timezone: toNullString(v.Timezone), OpenedOn: toNullString(v.OpenedOn),
@@ -376,7 +377,7 @@ func (r *TrackingRepository) Venue(ctx context.Context, id int64) (Venue, error)
 		return Venue{}, err
 	}
 	return Venue{
-		ID: row.ID, Name: row.Name, Chain: nullStringPtr(row.Chain), Address: nullStringPtr(row.Address),
+		ID: row.ID, Name: row.Name, Chain: nullStringPtr(row.Chain), Address: nullStringPtr(row.Address), Postcode: nullStringPtr(row.Postcode),
 		City: nullStringPtr(row.City), Region: nullStringPtr(row.Region), Country: nullStringPtr(row.Country),
 		Latitude: nullFloatPtr(row.Latitude), Longitude: nullFloatPtr(row.Longitude),
 		Timezone: nullStringPtr(row.Timezone), OpenedOn: nullStringPtr(row.OpenedOn),
@@ -395,7 +396,7 @@ type VenueFilter struct {
 	Offset        int64
 }
 
-// ListVenues searches cinemas: every word (up to four) in the name, chain, city or address.
+// ListVenues searches cinemas: every word (up to four) in the name, chain, city, address or postcode.
 func (r *TrackingRepository) ListVenues(ctx context.Context, f VenueFilter) ([]Venue, error) {
 	var w [4]string
 	words := strings.FieldsFunc(f.Query, func(r rune) bool { return unicode.IsSpace(r) || r == ',' })
@@ -410,7 +411,7 @@ func (r *TrackingRepository) ListVenues(ctx context.Context, f VenueFilter) ([]V
 	out := make([]Venue, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, Venue{
-			ID: row.ID, Name: row.Name, Chain: nullStringPtr(row.Chain), Address: nullStringPtr(row.Address),
+			ID: row.ID, Name: row.Name, Chain: nullStringPtr(row.Chain), Address: nullStringPtr(row.Address), Postcode: nullStringPtr(row.Postcode),
 			City: nullStringPtr(row.City), Region: nullStringPtr(row.Region), Country: nullStringPtr(row.Country),
 			Latitude: nullFloatPtr(row.Latitude), Longitude: nullFloatPtr(row.Longitude),
 			Timezone: nullStringPtr(row.Timezone), OpenedOn: nullStringPtr(row.OpenedOn),
@@ -418,6 +419,50 @@ func (r *TrackingRepository) ListVenues(ctx context.Context, f VenueFilter) ([]V
 			ReplacedByVenueID: nullInt64Ptr(row.ReplacedByVenueID), Note: nullStringPtr(row.Note),
 			CreatedBy: nullInt64Ptr(row.CreatedBy), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 			ScreenCount: row.ScreenCount,
+		})
+	}
+	return out, nil
+}
+
+// VenueBox is a latitude/longitude box to list cinemas in, with the user
+// whose watch counts come along.
+type VenueBox struct {
+	UserID                         int64
+	MinLat, MaxLat, MinLon, MaxLon float64
+	IncludeClosed                  bool
+	Limit                          int64
+}
+
+// BoxVenue is a cinema in a box with the user's watches there.
+type BoxVenue struct {
+	Venue
+	YourWatches   int64
+	YourLastWatch string // UTC instant of the latest watch there, "" if none
+}
+
+// ListVenuesInBox lists cinemas whose coordinates fall inside the box.
+func (r *TrackingRepository) ListVenuesInBox(ctx context.Context, b VenueBox) ([]BoxVenue, error) {
+	rows, err := r.q.ListVenuesInBox(ctx, sqlc.ListVenuesInBoxParams{
+		UserID: b.UserID, MinLat: b.MinLat, MaxLat: b.MaxLat, MinLon: b.MinLon, MaxLon: b.MaxLon,
+		IncludeClosed: boolInt(b.IncludeClosed), Limit: b.Limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list venues in box: %w", err)
+	}
+	out := make([]BoxVenue, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, BoxVenue{
+			Venue: Venue{
+				ID: row.ID, Name: row.Name, Chain: nullStringPtr(row.Chain), Address: nullStringPtr(row.Address), Postcode: nullStringPtr(row.Postcode),
+				City: nullStringPtr(row.City), Region: nullStringPtr(row.Region), Country: nullStringPtr(row.Country),
+				Latitude: nullFloatPtr(row.Latitude), Longitude: nullFloatPtr(row.Longitude),
+				Timezone: nullStringPtr(row.Timezone), OpenedOn: nullStringPtr(row.OpenedOn),
+				ClosedOn: nullStringPtr(row.ClosedOn), Status: row.Status,
+				ReplacedByVenueID: nullInt64Ptr(row.ReplacedByVenueID), Note: nullStringPtr(row.Note),
+				CreatedBy: nullInt64Ptr(row.CreatedBy), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+				ScreenCount: row.ScreenCount,
+			},
+			YourWatches: row.YourWatches, YourLastWatch: row.YourLastWatch,
 		})
 	}
 	return out, nil

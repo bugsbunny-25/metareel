@@ -573,17 +573,19 @@ FROM watch_entries w
 JOIN tmdb_credits cr ON cr.tmdb_kind = w.tmdb_kind AND cr.tmdb_id = w.tmdb_id
 JOIN tmdb_people p ON p.person_id = cr.person_id
 WHERE w.user_id = ?1
-  AND ((CAST(?2 AS TEXT) = '' AND cr.credit_type = 'cast')
-       OR (CAST(?2 AS TEXT) <> '' AND cr.job = CAST(?2 AS TEXT)))
-  AND (CAST(?3 AS TEXT) = '' OR w.watched_on >= CAST(?3 AS TEXT))
-  AND (CAST(?4 AS TEXT) = '' OR w.watched_on <= CAST(?4 AS TEXT))
+  AND (CAST(?2 AS TEXT) = '' OR w.tmdb_kind = CAST(?2 AS TEXT))
+  AND ((CAST(?3 AS TEXT) = '' AND cr.credit_type = 'cast')
+       OR (CAST(?3 AS TEXT) <> '' AND cr.job = CAST(?3 AS TEXT)))
+  AND (CAST(?4 AS TEXT) = '' OR w.watched_on >= CAST(?4 AS TEXT))
+  AND (CAST(?5 AS TEXT) = '' OR w.watched_on <= CAST(?5 AS TEXT))
 GROUP BY p.person_id, p.name, profile_path
 ORDER BY titles DESC, watches DESC, p.name COLLATE NOCASE
-LIMIT ?5
+LIMIT ?6
 `
 
 type StatsTopPeopleParams struct {
 	UserID  int64  `json:"user_id"`
+	Kind    string `json:"kind"`
 	Job     string `json:"job"`
 	FromDay string `json:"from_day"`
 	ToDay   string `json:"to_day"`
@@ -604,6 +606,7 @@ type StatsTopPeopleRow struct {
 func (q *Queries) StatsTopPeople(ctx context.Context, arg StatsTopPeopleParams) ([]StatsTopPeopleRow, error) {
 	rows, err := q.db.QueryContext(ctx, statsTopPeople,
 		arg.UserID,
+		arg.Kind,
 		arg.Job,
 		arg.FromDay,
 		arg.ToDay,
@@ -699,6 +702,86 @@ func (q *Queries) StatsTotals(ctx context.Context, arg StatsTotalsParams) (Stats
 		&i.Liked,
 	)
 	return i, err
+}
+
+const statsWatchRows = `-- name: StatsWatchRows :many
+SELECT
+    w.tmdb_kind, w.tmdb_id, w.subject_kind, w.watched_on,
+    CAST(COALESCE(w.season_number, -1) AS INTEGER) AS season_number,
+    CAST(COALESCE(w.episode_number, -1) AS INTEGER) AS episode_number,
+    CAST(COALESCE(w.runtime_minutes_used, e.runtime, t.runtime, c.runtime, 0) AS INTEGER) AS minutes,
+    w.is_rewatch,
+    CAST(COALESCE(w.rating, 0) AS INTEGER) AS rating,
+    CAST(COALESCE(NULLIF(t.title, ''), NULLIF(c.title, ''), '') AS TEXT) AS display_title,
+    CAST(COALESCE(NULLIF(t.poster_path, ''), NULLIF(c.poster_path, ''), '') AS TEXT) AS poster_path,
+    CAST(COALESCE(t.genres, '') AS TEXT) AS genres
+FROM watch_entries w
+LEFT JOIN tracked_episodes e ON w.subject_kind = 'episode' AND e.tmdb_id = w.tmdb_id
+     AND e.season_number = w.season_number AND e.episode_number = w.episode_number
+LEFT JOIN tmdb_titles t ON t.tmdb_kind = w.tmdb_kind AND t.tmdb_id = w.tmdb_id
+LEFT JOIN tracked_titles c ON c.tmdb_kind = w.tmdb_kind AND c.tmdb_id = w.tmdb_id
+WHERE w.user_id = ?1
+  AND (CAST(?2 AS TEXT) = '' OR w.tmdb_kind = CAST(?2 AS TEXT))
+ORDER BY w.watched_on, w.id
+`
+
+type StatsWatchRowsParams struct {
+	UserID int64  `json:"user_id"`
+	Kind   string `json:"kind"`
+}
+
+type StatsWatchRowsRow struct {
+	TmdbKind      string `json:"tmdb_kind"`
+	TmdbID        string `json:"tmdb_id"`
+	SubjectKind   string `json:"subject_kind"`
+	WatchedOn     string `json:"watched_on"`
+	SeasonNumber  int64  `json:"season_number"`
+	EpisodeNumber int64  `json:"episode_number"`
+	Minutes       int64  `json:"minutes"`
+	IsRewatch     int64  `json:"is_rewatch"`
+	Rating        int64  `json:"rating"`
+	DisplayTitle  string `json:"display_title"`
+	PosterPath    string `json:"poster_path"`
+	Genres        string `json:"genres"`
+}
+
+// StatsWatchRows lists every watch of a kind (” for both) with how long it
+// was, its title, poster and genres: the detailed stats (time per title,
+// trends, binges, genres) are grouped from these in Go.
+func (q *Queries) StatsWatchRows(ctx context.Context, arg StatsWatchRowsParams) ([]StatsWatchRowsRow, error) {
+	rows, err := q.db.QueryContext(ctx, statsWatchRows, arg.UserID, arg.Kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsWatchRowsRow{}
+	for rows.Next() {
+		var i StatsWatchRowsRow
+		if err := rows.Scan(
+			&i.TmdbKind,
+			&i.TmdbID,
+			&i.SubjectKind,
+			&i.WatchedOn,
+			&i.SeasonNumber,
+			&i.EpisodeNumber,
+			&i.Minutes,
+			&i.IsRewatch,
+			&i.Rating,
+			&i.DisplayTitle,
+			&i.PosterPath,
+			&i.Genres,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const statsWatchedTitles = `-- name: StatsWatchedTitles :many
@@ -937,7 +1020,9 @@ SELECT
     u.tmdb_kind, u.tmdb_id,
     CAST(COALESCE(NULLIF(t.title, ''), NULLIF(c.title, ''), '') AS TEXT) AS display_title,
     wp.provider_id, wp.provider_name, wp.monetization,
-    CAST(COALESCE(wp.link, '') AS TEXT) AS link
+    CAST(COALESCE(wp.link, '') AS TEXT) AS link,
+    CAST(COALESCE(wp.logo_path, '') AS TEXT) AS logo_path,
+    CAST(COALESCE(wp.url, '') AS TEXT) AS url
 FROM user_titles u
 JOIN tmdb_watch_providers wp ON wp.tmdb_kind = u.tmdb_kind AND wp.tmdb_id = u.tmdb_id
 LEFT JOIN tmdb_titles t ON t.tmdb_kind = u.tmdb_kind AND t.tmdb_id = u.tmdb_id
@@ -965,6 +1050,8 @@ type WatchlistStreamingNowRow struct {
 	ProviderName string `json:"provider_name"`
 	Monetization string `json:"monetization"`
 	Link         string `json:"link"`
+	LogoPath     string `json:"logo_path"`
+	Url          string `json:"url"`
 }
 
 // WatchlistStreamingNow finds watchlist titles available in a country.
@@ -990,6 +1077,8 @@ func (q *Queries) WatchlistStreamingNow(ctx context.Context, arg WatchlistStream
 			&i.ProviderName,
 			&i.Monetization,
 			&i.Link,
+			&i.LogoPath,
+			&i.Url,
 		); err != nil {
 			return nil, err
 		}

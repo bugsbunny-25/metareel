@@ -21,6 +21,16 @@
   --poster-hairline: rgba(255, 255, 255, 0.08);
   --focus-ring: #f5f5f7;
   --shadow-art: 0 20px 40px -18px rgb(0 0 0 / 0.6);
+  /* Row wash for your titles in chart tables (and its hover step). */
+  --wash-yours: color-mix(in srgb, var(--accent-yours) 15%, transparent);
+  --wash-yours-hover: color-mix(in srgb, var(--accent-yours) 20%, var(--bg-elevated));
+  /* Chart numerals: an outline lit from the top (Numeral.svelte); yours in orange. */
+  --numeral-top: #f4f4f6;
+  --numeral-mid: #9a9aa2;
+  --numeral-bottom: #4a4a50;
+  --numeral-yours-top: #ffc9a8;
+  --numeral-yours-mid: #ff8a4c;
+  --numeral-yours-bottom: #a8400f;
 
   --font-display: 'Source Serif 4', Georgia, serif;
   --font-sans: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -50,6 +60,14 @@
   --poster-hairline: rgba(0, 0, 0, 0.1);
   --focus-ring: #1d1d1f;
   --shadow-art: 0 20px 40px -18px rgb(0 0 0 / 0.35);
+  --wash-yours: color-mix(in srgb, var(--accent-yours) 10%, transparent);
+  --wash-yours-hover: color-mix(in srgb, var(--accent-yours) 14%, var(--bg-elevated));
+  --numeral-top: #3a3a40;
+  --numeral-mid: #77777f;
+  --numeral-bottom: #c4c4ca;
+  --numeral-yours-top: #7a2606;
+  --numeral-yours-mid: #b83c0a;
+  --numeral-yours-bottom: #eea07a;
   color-scheme: light;
 }
 

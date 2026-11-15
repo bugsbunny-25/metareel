@@ -133,6 +133,13 @@ func TestAccountEndpoints(t *testing.T) {
 	if rec := a.do(http.MethodPut, "/api/v1/me/preferences", `{"services":[0]}`, laptop); rec.Code != http.StatusBadRequest {
 		t.Errorf("services [0]: %d, want 400", rec.Code)
 	}
+	rec = a.do(http.MethodPut, "/api/v1/me/preferences", `{"countries":["gb"," US ","GB","in"]}`, laptop)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"countries":["GB","US","IN"]`) {
+		t.Errorf("countries (ordered, upper case, deduplicated): %d %s", rec.Code, rec.Body)
+	}
+	if rec := a.do(http.MethodPut, "/api/v1/me/preferences", `{"countries":["USA"]}`, laptop); rec.Code != http.StatusBadRequest {
+		t.Errorf("countries [USA]: %d, want 400", rec.Code)
+	}
 	rec = a.do(http.MethodPut, "/api/v1/me/preferences", `{"currency":"USD"}`, laptop)
 	if strings.Contains(rec.Body.String(), `"country"`) {
 		t.Errorf("a PUT keeps fields it didn't send: %s", rec.Body)

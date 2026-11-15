@@ -4,14 +4,23 @@
 <script>
   import Poster from '../components/Poster.svelte'
   import Icon from '../components/Icon.svelte'
+  import RatingLogo from '../components/RatingLogo.svelte'
+  import ProviderLogo from '../components/ProviderLogo.svelte'
+  import Top10Badge from '../components/Top10Badge.svelte'
+  import Top10Graph from '../components/Top10Graph.svelte'
+  import { top10Of } from '../lib/top10now.svelte.js'
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
   import { scope, countryName, providerName } from '../lib/scope.svelte.js'
+  import { prefs } from '../lib/prefs.svelte.js'
   import { sampleColor, seriesPath, compact, dayMonth } from '../lib/viz.js'
   import { stars } from '../lib/rows.js'
+  import { addDays, localDay } from '../lib/dates.js'
   import { toast } from '../lib/toast.svelte.js'
 
   let { kind, id, onlog } = $props()
+  // Netflix-style: the best place this title holds in a Top 10 in your country today.
+  const top = $derived(top10Of(kind, id))
 
   let loading = $state(true)
   let error = $state('')
@@ -41,14 +50,16 @@
     ])
     if (!ov && !mine?.title) throw Object.assign(new Error('not found'), { status: 404 })
     const charted = !!ov && (mine?.title?.charted ?? (ov.stats?.appearances ?? 0) > 0)
-    const [timeline, history, offerHistory, credits] = await Promise.all([
+    const [timeline, history, offerHistory, credits, rankings] = await Promise.all([
       charted ? api.timeline(k, tid, country, signal).catch((e) => ({ failed: e.message })) : null,
       charted ? api.history(k, tid, signal).catch((e) => ({ failed: e.message })) : null,
       ov ? api.availabilityHistory(k, tid, signal).catch(() => null) : null,
       // Stored for catalogued titles; fetched live from TMDB for the rest.
       api.credits(k, tid, signal).catch(() => null),
+      // The Top 10 graph covers the last 30 days at most.
+      charted ? api.rankings(k, tid, signal, addDays(localDay(), -29)).catch(() => null) : null,
     ])
-    return { ov: ov ?? {}, catalogued: !!ov, mine, charted, timeline, history, offerHistory, credits }
+    return { ov: ov ?? {}, catalogued: !!ov, mine, charted, timeline, history, offerHistory, credits, rankings: rankings?.rankings ?? [] }
   }
 
   const m = $derived(d?.ov.metadata ?? d?.mine?.title ?? {})
@@ -71,9 +82,20 @@
   const best = $derived(positions.length ? positions.reduce((a, b) => (b.rank < a.rank ? b : a)) : null)
   const r = $derived(d?.ov.ratings ?? null)
   const tmdbScore = $derived(r?.sources?.find((x) => x.source === 'tmdb')?.value ?? m.vote_average ?? null)
-  const here = $derived(d?.ov.availability?.countries?.[scope.country] ?? null)
-  const streaming = $derived([...new Set((here?.flatrate ?? []).map((p) => p.provider_name))])
-  const lastRemoved = $derived((d?.offerHistory?.events ?? []).filter((e) => e.country === scope.country && e.event === 'removed' && e.monetization === 'flatrate').at(-1) ?? null)
+  // Where to watch: the chart country, or any country in your order (Settings), picked here.
+  const whereOptions = $derived([...new Set([scope.country, ...(prefs.values.countries ?? [])])])
+  let wherePicked = $state(null)
+  const where = $derived(wherePicked && whereOptions.includes(wherePicked) ? wherePicked : scope.country)
+  const here = $derived(d?.ov.availability?.countries?.[where] ?? null)
+  // One logo per service: plan tiers ("Netflix Standard with Ads", "… Amazon Channel") collapse
+  // into the base service when it's there.
+  const streaming = $derived.by(() => {
+    const seen = new Map()
+    for (const p of here?.flatrate ?? []) if (!seen.has(p.provider_name)) seen.set(p.provider_name, p)
+    const all = [...seen.values()]
+    return all.filter((p) => !all.some((o) => o !== p && p.provider_name.startsWith(o.provider_name + ' ')))
+  })
+  const lastRemoved = $derived((d?.offerHistory?.events ?? []).filter((e) => e.country === where && e.event === 'removed' && e.monetization === 'flatrate').at(-1) ?? null)
   const nfViews = $derived(d?.ov.netflix?.total_views || 0)
 
   // Cast & crew (stored once the credits job has run, else live from TMDB). Crew are grouped
@@ -116,6 +138,9 @@
       <div class="art"><Poster path={m.poster_path} seed={id} title={m.title ?? ''} width={d.charted ? 150 : 124} radius={10} /></div>
       <div class="copy">
         <p class="kicker">{kind === 'tv' ? 'Series' : 'Film'}{#if m.genres?.length}{' · '}{m.genres.slice(0, 2).join(', ')}{/if}</p>
+        {#if top}
+          <p class="top10"><Top10Badge size={24} /><b>No. {top.rank} in {top.category === 'tv_shows' ? 'shows' : 'films'} today</b><span class="muted">on {providerName(top.provider)} in {countryName(scope.country)}</span></p>
+        {/if}
         <h1>{m.title}</h1>
         <p class="meta">
           {#if kind === 'tv'}{m.number_of_seasons || '?'} season{m.number_of_seasons === 1 ? '' : 's'}{#if m.number_of_episodes}{' · '}{m.number_of_episodes} episodes{/if}{:else if m.runtime}{Math.floor(m.runtime / 60)} h {m.runtime % 60} min{/if}{#if m.release_date}{' · '}{m.release_date.slice(0, 4)}{/if}
@@ -133,6 +158,8 @@
         </div>
       </div>
     </header>
+
+    <div class="t10"><Top10Graph rankings={d.rankings} /></div>
 
     <div class="grid">
       <div class="col">
@@ -200,9 +227,10 @@
             {#if errs.ratings}
               <dt>Ratings</dt><dd class="muted">didn’t load</dd>
             {:else}
-              {#if r?.imdb?.rating != null}<dt>IMDb</dt><dd class="num" class:stale={r.stale}>{r.imdb.rating.toFixed(1)}{#if r.imdb.votes}{' '}<span class="muted">· {compact(r.imdb.votes)} votes</span>{/if}</dd>{/if}
-              {#if r?.rotten_tomatoes?.critics_score != null}<dt>Tomatometer</dt><dd class="num" class:stale={r.stale}>{r.rotten_tomatoes.critics_score}%{#if r.rotten_tomatoes.audience_score != null}{' '}<span class="muted">· audience {r.rotten_tomatoes.audience_score}%</span>{/if}</dd>{/if}
-              {#if tmdbScore}<dt>TMDB</dt><dd class="num">{Number(tmdbScore).toFixed(1)}</dd>{/if}
+              {#if r?.imdb?.rating != null}<dt><RatingLogo source="imdb" height={17} /></dt><dd class="num" class:stale={r.stale}>{r.imdb.rating.toFixed(1)}{#if r.imdb.votes}{' '}<span class="muted">· {compact(r.imdb.votes)} votes</span>{/if}</dd>{/if}
+              {#if r?.rotten_tomatoes?.critics_score != null}<dt><RatingLogo source="rt" rotten={r.rotten_tomatoes.critics_score < 60} certified={!!r.rotten_tomatoes.certified_fresh} height={20} title="Tomatometer{r.rotten_tomatoes.certified_fresh ? ', Certified Fresh' : ''}" /></dt><dd class="num" class:stale={r.stale}>{r.rotten_tomatoes.critics_score}%</dd>{/if}
+              {#if r?.rotten_tomatoes?.audience_score != null}<dt><RatingLogo source="rt-audience" rotten={r.rotten_tomatoes.audience_score < 60} height={20} title="Popcornmeter (audience score)" /></dt><dd class="num" class:stale={r.stale}>{r.rotten_tomatoes.audience_score}%</dd>{/if}
+              {#if tmdbScore}<dt><RatingLogo source="tmdb" height={18} /></dt><dd class="num">{Number(tmdbScore).toFixed(1)}</dd>{/if}
               {#if r?.stale}<dt>Ratings</dt><dd class="stale">not refreshed, last known</dd>{/if}
             {/if}
             <dt>Your status</dt>
@@ -221,17 +249,26 @@
         {/if}
 
         <section class="panel pad">
-          <h2>Where to watch · {scope.country}</h2>
+          {#if whereOptions.length > 1}
+            <div class="wh">
+              <h2>Where to watch</h2>
+              <div class="seg" role="group" aria-label="Country">
+                {#each whereOptions as c (c)}<button aria-pressed={c === where} title={countryName(c)} onclick={() => (wherePicked = c)}>{c}</button>{/each}
+              </div>
+            </div>
+          {:else}
+            <h2>Where to watch · {where}</h2>
+          {/if}
           {#if !d.catalogued}
             <p class="note">metareel hasn’t looked up where this streams yet.</p>
           {:else if errs.availability}
             <p class="note">Availability didn’t load.</p>
           {:else if streaming.length}
-            <p class="watch">{#each streaming as w}<span class="pill strong">{w}</span>{/each}</p>
+            <p class="watch">{#each streaming as w (w.provider_name)}<ProviderLogo name={w.provider_name} logo={w.logo_path} link={w.url ?? w.link} size={40} />{/each}</p>
           {:else if lastRemoved}
             <p class="left">Left {lastRemoved.provider_name} on {dayMonth(lastRemoved.observed_at.slice(0, 10))}. Not on a subscription service here now.</p>
           {:else}
-            <p class="note">Not on a subscription service in {countryName(scope.country)} right now.</p>
+            <p class="note">Not on a subscription service in {countryName(where)} right now.</p>
           {/if}
           <p class="source">{d.ov.availability?.attribution ?? 'Watch provider data by JustWatch, via TMDB'}</p>
         </section>
@@ -273,6 +310,11 @@
   .head { display: flex; gap: 32px; align-items: flex-end; padding: 28px; border-radius: var(--radius-hero); background: linear-gradient(100deg, var(--tint) 0%, transparent 75%), var(--bg-surface); }
   .art { flex: none; box-shadow: var(--shadow-art); border-radius: 10px; }
   .copy { min-width: 0; }
+  .t10 { margin-top: 16px; }
+  .t10:empty { display: none; }
+  .top10 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 8px; font-size: 15px; }
+  .top10 b { font-weight: 700; }
+  .top10 .muted { color: var(--text-muted); }
   .kicker { margin: 0 0 6px; color: var(--accent-yours); font-size: 13px; font-weight: 700; letter-spacing: 0.02em; }
   h1 { margin: 0; font: 700 44px/1.05 var(--font-display); letter-spacing: -0.02em; }
   .meta { margin: 8px 0 0; color: var(--text-muted); font-size: 14.5px; }
@@ -286,6 +328,10 @@
   .chart { display: block; width: 100%; height: auto; padding: 0 12px 2px; }
   .ann { fill: var(--text-primary); font: italic 400 12px var(--font-display); }
   .source { margin: 0; padding: 0 12px; color: var(--text-muted); font-size: 12px; }
+  .wh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+  .seg { display: inline-flex; flex-wrap: wrap; padding: 2px; border-radius: 9px; background: var(--bg-elevated); }
+  .seg button { height: 28px; padding: 0 11px; border: 0; border-radius: 7px; background: none; color: var(--text-muted); font: 600 13px/1 var(--font-sans); cursor: pointer; }
+  .seg button[aria-pressed='true'] { background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); }
   .panel.pad .source { padding: 0; }
   .note { margin: 0; padding: 0 12px 6px; color: var(--text-muted); font: italic 400 15px/22px var(--font-display); }
   .panel.pad .note { padding: 0; }
@@ -301,11 +347,12 @@
   .numbers { box-shadow: inset 0 2px 0 var(--text-primary); border-radius: 4px 4px var(--radius-panel) var(--radius-panel); }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 9px 16px; margin: 6px 0 0; font-size: 15px; }
   dt { color: var(--text-muted); }
+  dt :global(.rating-logo) { vertical-align: -4px; }
   dd { margin: 0; font-weight: 700; text-align: right; }
   dd .muted { font-weight: 400; }
   dd.you { color: var(--accent-yours); }
   .stale { color: var(--status-stale); }
-  .watch { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+  .watch { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; }
   .left { margin: 0; color: var(--delta-down); font-weight: 600; }
 
   .credits { margin-top: 16px; gap: 14px; }
@@ -324,10 +371,14 @@
   .crew a:hover { text-decoration-color: currentColor; }
 
   @media (max-width: 960px) {
-    .grid { grid-template-columns: 1fr; }
+    .grid { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 640px) {
-    .head { flex-direction: column; align-items: flex-start; padding: 20px; gap: 18px; }
-    h1 { font-size: 34px; }
+    .head { flex-direction: column; align-items: flex-start; padding: 20px; gap: 16px; }
+    /* Phones: a smaller poster, so the title and actions show without scrolling. */
+    .art :global(.poster) { width: 104px !important; }
+    h1 { font-size: 32px; }
+    .overview { font-size: 16px; line-height: 24px; }
+    .cast { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 14px 10px; }
   }
 </style>

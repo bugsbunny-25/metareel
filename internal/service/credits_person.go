@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -197,6 +198,9 @@ func (s *CreditsService) tmdbPerson(ctx context.Context, id int64) (*client.TMDB
 		// Detached from the caller so one cancelled request doesn't fail the others waiting on it.
 		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), personFetchTimeout)
 		defer cancel()
+		if id <= 0 || id > math.MaxInt32 {
+			return nil, fmt.Errorf("tmdb person id %d out of range", id)
+		}
 		p, err := s.tmdb.Person(fctx, int(id))
 		if err != nil {
 			return nil, err

@@ -25,12 +25,16 @@ function historyBySlug(h) {
   return { dates, bySlug }
 }
 
+/** A ?date= query value, if it is a real YYYY-MM-DD day; else '' (the latest chart). */
+export const chartDateParam = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v ?? '') && !Number.isNaN(Date.parse(v)) ? v : '')
+
 export const tmdbKind = (k) => (k === 'tv_show' || k === 'tv' ? 'tv' : 'movie')
 
-export async function loadCharts(country, provider, signal) {
+/** day: a YYYY-MM-DD chart day, or empty for the latest. */
+export async function loadCharts(country, provider, signal, day = '') {
   const [tv, movies] = await Promise.all([
-    orEmpty(api.top10('tv_shows', country, provider, signal)),
-    orEmpty(api.top10('movies', country, provider, signal)),
+    orEmpty(api.top10('tv_shows', country, provider, signal, day || undefined)),
+    orEmpty(api.top10('movies', country, provider, signal, day || undefined)),
   ])
   const date = [tv?.date, movies?.date].filter(Boolean).sort().at(-1) ?? null
   if (!date) return { date: null, tv: null, movies: null }

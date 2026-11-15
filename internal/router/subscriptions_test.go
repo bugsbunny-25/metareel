@@ -84,6 +84,38 @@ func TestCinemaSubscriptions(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"ended_on":"2026-10-31"`) {
 		t.Fatalf("end plan: %d %s", rec.Code, rec.Body)
 	}
+	// Cancelled in October, back in December at a new price: two runs, two
+	// prices, stored and returned; the summary follows (still running, the
+	// price today is the new one once it applies).
+	rec = a.do(http.MethodPut, "/api/v1/me/subscriptions/"+id, `{"plan":"AMC Stubs A-List","chain":"AMC","currency":"USD",
+		"periods":[{"started_on":"2026-09-10","ended_on":"2026-10-31"},{"started_on":"2026-12-01"}],
+		"prices":[{"from":"2026-09-10","price_minor":2399},{"from":"2026-12-01","price_minor":2599}]}`, alice)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resubscribe: %d %s", rec.Code, rec.Body)
+	}
+	var hist struct {
+		EndedOn *string `json:"ended_on"`
+		Periods []struct {
+			StartedOn string  `json:"started_on"`
+			EndedOn   *string `json:"ended_on"`
+		} `json:"periods"`
+		Prices []struct {
+			From       string `json:"from"`
+			PriceMinor int64  `json:"price_minor"`
+		} `json:"prices"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &hist)
+	if hist.EndedOn != nil || len(hist.Periods) != 2 || hist.Periods[1].StartedOn != "2026-12-01" || len(hist.Prices) != 2 || hist.Prices[1].PriceMinor != 2599 {
+		t.Fatalf("history = %s", rec.Body)
+	}
+	if rec := a.do(http.MethodGet, "/api/v1/me/subscriptions", "", alice); !strings.Contains(rec.Body.String(), `"from":"2026-12-01","price_minor":2599`) {
+		t.Fatalf("list lacks prices: %s", rec.Body)
+	}
+	if rec := a.do(http.MethodPut, "/api/v1/me/subscriptions/"+id, `{"plan":"AMC","currency":"USD","price_minor":1,
+		"periods":[{"started_on":"2026-09-10"},{"started_on":"2026-12-01"}]}`, alice); rec.Code != http.StatusBadRequest {
+		t.Errorf("two open runs: %d", rec.Code)
+	}
+
 	// Deleting the plan keeps the watch, no longer covered.
 	if rec := a.do(http.MethodDelete, "/api/v1/me/subscriptions/"+id, "", alice); rec.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d", rec.Code)

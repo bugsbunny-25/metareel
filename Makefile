@@ -2,6 +2,9 @@ SHELL        := /usr/bin/env bash
 APP_NAME     := metareel
 BIN_DIR      := bin
 BIN          := $(BIN_DIR)/$(APP_NAME)
+# Stamped into the binary (GET /api/v1/version).
+VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+REVISION     ?= $(shell git rev-parse HEAD 2>/dev/null)
 TOOLS_DIR    := tools
 TOOLS_BIN_DIR := .tools/bin
 DLV_BIN      := $(TOOLS_BIN_DIR)/dlv
@@ -49,10 +52,15 @@ tidy: ## go mod tidy
 run: dev-prepare ## Run the API locally (reads .env if present)
 	$(GO) run ./cmd/server
 
+.PHONY: version
+version: ## Set the release version in every package: make version V=0.5.0 (then commit and release v0.5.0)
+	@test -n "$(V)" || (echo "usage: make version V=0.5.0" && exit 1)
+	node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON .github/scripts/version.mjs set $(V)
+
 .PHONY: build
 build: ## Build local binary
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w" -o $(BIN) ./cmd/server
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X main.revision=$(REVISION)" -o $(BIN) ./cmd/server
 
 .PHONY: test
 test: ## Run tests

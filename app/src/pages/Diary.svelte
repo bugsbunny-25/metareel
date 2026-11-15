@@ -1,11 +1,14 @@
 <!-- Diary. Every watch, newest local day first, grouped by month and day (watched_on, never
-     ended_at). Above it: this year's totals and a year heatmap; clicking a day filters to it.
+     ended_at). Above it (as on mobile): your last 4 films and 4 shows, your ratings, this year's
+     totals and a year heatmap; clicking a day filters to it. A watch opens its page (#/watch/:id).
      Filters live in the URL: ?kind=movie|tv&rated=1&day=YYYY-MM-DD. -->
 <script>
   import Poster from '../components/Poster.svelte'
   import Icon from '../components/Icon.svelte'
   import FormatBadge from '../components/FormatBadge.svelte'
   import YearHeatmap from '../components/YearHeatmap.svelte'
+  import Columns from '../components/Columns.svelte'
+  import { epCode } from '../lib/shows.js'
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
   import { route, setQuery } from '../lib/router.svelte.js'
@@ -32,6 +35,22 @@
       .catch(() => {}) // the diary still works without the overview
     return () => ctrl.abort()
   })
+
+  // Recent: the latest watch of 4 films and 4 shows (a rewatch doesn't repeat a poster), and
+  // your ratings, all time. Also independent of the filters.
+  let recent = $state(null)
+  let ratings = $state(null)
+  $effect(() => {
+    const ctrl = new AbortController()
+    const distinct = (ws) => ws.filter((w, i) => ws.findIndex((x) => x.tmdb_id === w.tmdb_id) === i).slice(0, 4)
+    Promise.all([api.diary({ kind: 'movie', limit: 20 }, ctrl.signal), api.diary({ kind: 'tv', limit: 40 }, ctrl.signal)])
+      .then(([f, s]) => (recent = { films: distinct(f.watches ?? []), shows: distinct(s.watches ?? []) }))
+      .catch(() => {})
+    api.statsRatings(undefined, undefined, ctrl.signal).then((r) => (ratings = r)).catch(() => {})
+    return () => ctrl.abort()
+  })
+  const dist = $derived((ratings?.distribution ?? []).map((b) => ({ label: `${Math.floor(b.stars) || ''}${b.rating % 2 ? '½' : ''}★`, value: b.watches, title: `${b.stars} ★: ${b.watches}` })))
+  const recentHref = (w) => (w.subject_kind === 'episode' ? `#/episode/${w.tmdb_id}/${w.season_number}/${w.episode_number}` : `#/title/movie/${w.tmdb_id}`)
 
   // Entries, cursor-paged.
   let entries = $state([])
@@ -122,6 +141,38 @@
     {#if day}<span class="chip">{dayLabel(day)} <button aria-label="Show every day" onclick={() => setQuery({ day: '' })}>×</button></span>{/if}
   </header>
 
+  {#if recent?.films.length || recent?.shows.length || ratings?.rated}
+    <div class="top">
+      {#if recent?.films.length || recent?.shows.length}
+        <section class="panel pad recent" aria-label="Recently watched">
+          {#each [['Films', recent.films], ['Shows', recent.shows]] as [label, list]}
+            {#if list.length}
+              <div class="rrow">
+                <h2>{label}</h2>
+                <ul>
+                  {#each list as w (w.id)}
+                    <li>
+                      <a href={recentHref(w)} title={w.title}>
+                        <Poster path={w.poster_path} seed={w.tmdb_id} title={w.title ?? ''} kind={w.tmdb_kind} tmdbId={w.tmdb_id} width={96} radius={8} size="w185" />
+                        <span class="cap">{w.subject_kind === 'episode' ? epCode(w.season_number, w.episode_number) : w.rating ? stars(w.rating) : dayLabel(w.watched_on)}</span>
+                      </a>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+          {/each}
+        </section>
+      {/if}
+      {#if ratings?.rated}
+        <section class="panel pad">
+          <div class="rh"><h2>Ratings</h2><span class="hint">{ratings.rated} rated · average <span class="stars">{stars(Math.round(ratings.average ?? 0))}</span></span></div>
+          <Columns items={dist} height={120} label="Your ratings, all time" />
+        </section>
+      {/if}
+    </div>
+  {/if}
+
   {#if totals}
     <section class="kpis" aria-label="This year">
       <div class="kpi"><span class="k-label">Watches in {today.slice(0, 4)}</span><b class="num">{totals.watches}</b><span class="k-sub">{totals.movie_watches} films · {totals.episode_watches} episodes</span></div>
@@ -158,13 +209,14 @@
             <ul class="watches" aria-label={dayLabel(d.day)}>
               {#each d.watches as w (w.id)}
                 <li class="watch">
-                  <a class="art" href={titleHref(w)} tabindex="-1" aria-hidden="true"><Poster path={w.poster_path} seed={w.tmdb_id} title={w.title ?? ''} width={44} radius={5} size="w185" /></a>
+                  <a class="art" href={titleHref(w)} tabindex="-1" aria-hidden="true"><Poster path={w.poster_path} seed={w.tmdb_id} title={w.title ?? ''} kind={w.tmdb_kind} tmdbId={w.tmdb_id} width={44} radius={5} size="w185" /></a>
                   <div class="body">
                     <a class="name" href={titleHref(w)}>{w.title}</a>
-                    <p class="meta">
+                    <a class="meta" href="#/watch/{w.id}" title="Everything about this watch">
                       {#if w.subject_kind === 'episode'}Season {w.season_number} · Episode {w.episode_number}{:else}Film{#if w.release_date}{' · '}{w.release_date.slice(0, 4)}{/if}{/if}
                       {#if w.time_precision === 'minute'}{' · '}<time datetime={w.ended_at}>{clock(w.ended_at)}</time>{/if}
-                    </p>
+                      <span class="details">Details ›</span>
+                    </a>
                     {#if w.is_rewatch || w.venue_kind || w.tags?.length || w.formats?.length}
                       <p class="pills">
                         {#if w.is_rewatch}<span class="pill rewatch"><Icon name="repeat" size={12} />Watch {w.watch_number}</span>{/if}
@@ -227,7 +279,25 @@
   .body { min-width: 0; display: grid; gap: 4px; }
   .name { font: 600 17px/1.2 var(--font-display); text-decoration: none; }
   .name:hover { text-decoration: underline; text-underline-offset: 3px; }
-  .meta { margin: 0; color: var(--text-muted); font-size: 13px; }
+  .meta { margin: 0; color: var(--text-muted); font-size: 13px; text-decoration: none; }
+  .meta .details { margin-left: 6px; color: var(--accent-yours); font-weight: 600; opacity: 0; transition: opacity 0.12s ease; }
+  .watch:hover .details, .meta:focus-visible .details { opacity: 1; }
+  .top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+  .recent { gap: 14px; }
+  .rrow { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px; }
+  .rrow h2 { font-size: 15px !important; color: var(--text-muted); }
+  .rrow ul { display: grid; grid-template-columns: repeat(4, minmax(0, 96px)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+  .rrow a { display: grid; gap: 4px; justify-items: center; color: inherit; text-decoration: none; }
+  .rrow a :global(.poster) { width: 100% !important; }
+  .rrow a:hover :global(.poster) { outline: 2px solid var(--accent-yours); outline-offset: 2px; }
+  .cap { color: var(--accent-yours); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  /* Wide screens: films and shows side by side, labels above, posters sized to their column. */
+  @media (min-width: 1100px) {
+    .recent { grid-template-columns: 1fr 1fr; column-gap: 28px; align-content: start; }
+    .rrow { grid-template-columns: 1fr; align-items: start; gap: 8px; }
+    .rrow ul { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+  .rh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
   .pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 0; }
   .pill { display: inline-flex; align-items: center; gap: 4px; }
   .pill.tag { color: var(--text-primary); }
@@ -245,8 +315,11 @@
   .empty p { color: var(--text-muted); max-width: 60ch; }
 
   @media (hover: none) { .icon { opacity: 1; } }
-  @media (max-width: 900px) { .kpis { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 900px) { .kpis { grid-template-columns: 1fr 1fr; } .top { grid-template-columns: 1fr; } }
+  @media (hover: none) { .meta .details { opacity: 1; } }
   @media (max-width: 560px) {
+    .rrow { grid-template-columns: 1fr; gap: 8px; }
+    .rrow ul { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
     .day { grid-template-columns: 44px 1fr; }
     .watch { grid-template-columns: auto 1fr; }
     .right { grid-column: 2; flex-wrap: wrap; }

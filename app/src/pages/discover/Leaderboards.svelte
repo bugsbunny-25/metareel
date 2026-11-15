@@ -1,6 +1,6 @@
 <!-- Leaderboards (#/discover?tab=leaderboard&period=day|week|month&where=service|country|world
      &cat=movies|tv_shows): titles ranked by Top 10 points (No. 1 = 10 … No. 10 = 1 per chart per
-     day) from /leaderboards, for the service in the top bar, every service in the country, or
+     day) from /leaderboards, for the service in the pickers at the top of Discover, every service in the country, or
      every chart metareel stores. -->
 <script>
   import Poster from '../../components/Poster.svelte'
