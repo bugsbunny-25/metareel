@@ -22,7 +22,8 @@ Consumed by the user's other project, "tides".
 - Public data routes go in `registerReadRoutes`; admin-only routes on the admin group.
   Per-user tracking routes are the exception: they go on the `/api/v1/me` group
   (`RequireUser` + `NoStore`, never `ETag`) because those responses must not be cached.
-- Update OpenAPI specs, README and `docs/architecture.md` with API/config changes.
+- Update OpenAPI specs, `docs/api.md` (endpoints), `docs/data.md` (jobs) and `docs/architecture.md`
+  with API/config changes; the README describes features only (change it when a feature does).
 - Verify for real before saying done: `go build ./... && go vet ./... && go test -race -count=1 ./internal/...`, `cd web && npm run build` (admin) and `cd app && npm run build` (user app), then the `local-verification` flow for user-facing changes. Say what was verified live vs. only in tests.
 - Never run tests or servers against `data/metareel.db`; use a copy.
 - Don't add bot-protection evasion; FlixPatrol goes through the user's FlareSolverr, and live solves are run by the user.

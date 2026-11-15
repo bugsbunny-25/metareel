@@ -45,7 +45,7 @@ new/upcoming releases over a public API plus an admin API + Svelte admin UI.
 2. Handler using existing error mappers (`writeTitleError`, `writeReleasesError`, …).
 3. Route: public data → `registerReadRoutes` (gets both public + admin copies); admin-only → `admin` group.
 4. OpenAPI: `internal/openapi/spec/public.yaml` or `admin.yaml` (validate YAML; quote descriptions containing `: `).
-5. README endpoint table; `docs/architecture.md` if a flow changed.
+5. `docs/api.md` endpoint table; `docs/architecture.md` if a flow changed; README only if it adds a feature.
 6. Verify live (see `local-verification`): auth (401 without key on public routes), happy path, error codes.
 
 ## Adding a background job (checklist)
@@ -53,7 +53,7 @@ new/upcoming releases over a public API plus an admin API + Svelte admin UI.
 1. Task type constant in `internal/tasks/definition.go` (+ `Types`, `Timeout`), description in `service/admin_jobs.go` (`taskTypeInfo`).
 2. Service with `Run(ctx, …, runLog)` returning a JSON-able summary; errors only for real failures.
 3. `handlers.JobFunc` in `tasks/handlers/jobs.go`, registered in `tasks/runtime/bootstrap.go`.
-4. Optional default schedule (migration insert); docs: README "Jobs", `docs/architecture.md` jobs table.
+4. Optional default schedule (migration insert); docs: `docs/data.md` "Jobs", `docs/architecture.md` jobs table.
 5. FlixPatrol fetches must use the shared `SerialFetcher` (bootstrap), never a new fetcher.
 
 ## Commands

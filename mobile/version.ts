@@ -1,5 +1,5 @@
 // The one version scheme for the server, the image, the web UIs and the apps
-// (root README, "Versions"): X.Y.Z, released as the tag vX.Y.Z. No -alpha or
+// (docs/development.md, "Versions"): X.Y.Z, released as the tag vX.Y.Z. No -alpha or
 // other suffixes. Plain TypeScript with no imports, so app.config.ts, the app,
 // jest and Node (.github/scripts/version.mjs) all use it as is.
 //

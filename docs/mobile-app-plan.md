@@ -390,7 +390,7 @@ EAS free tier: 15 Android + 15 iOS cloud builds a month, which is plenty;
   publish job downloads the finished APK from EAS and attaches it to the
   `v1.2.0` release, with its SHA-256 in the notes. Only `EXPO_TOKEN` is
   needed as a GitHub secret. Build numbers come from the version
-  (`mobile/version.ts`, root README "Versions").
+  (`mobile/version.ts`, `docs/development.md` "Versions").
 - Release assets are the intended public channel; `actions/upload-artifact`
   is still never used for signed builds.
 - **The APK is public**, so it must contain no secrets: no server URL, no

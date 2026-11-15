@@ -102,7 +102,7 @@ Then:
 - Every release (`release.yml`, tag `vX.Y.Z`) builds a signed APK on EAS and
   attaches it to the GitHub Release, and builds iOS for TestFlight
   (`.github/workflows/mobile-release.yml`). The app has the release's version:
-  set it first with `make version V=X.Y.Z` (root README, "Versions"); the
+  set it first with `make version V=X.Y.Z` (`docs/development.md`, "Versions"); the
   build numbers are computed from it (`version.ts`), so `eas.json` uses
   `appVersionSource: local`.
 - Merges to `main` publish the JS to the EAS Update `preview` channel.
