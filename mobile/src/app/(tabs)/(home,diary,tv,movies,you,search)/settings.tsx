@@ -2,15 +2,18 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { SvgXml } from 'react-native-svg';
 
 import { endpoint, setHomeURL, signOut, useSignedIn } from '@/auth/session';
 import { normalizeHomeURL, URLError } from '@/auth/urls';
 import { Button } from '@/components/Button';
 import { CountryOrder } from '@/components/CountryOrder';
 import { Field } from '@/components/Field';
+import { Icon } from '@/components/Icon';
 import { DetailScreen, Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
-import { useAccount, usePreferences } from '@/data/queries';
+import { tmdbLogo } from '@/components/tmdb-logo';
+import { useAccount, usePreferences, useServerVersion } from '@/data/queries';
 import { useAppUpdate } from '@/data/app-update';
 import { type ArrivalsResult, setWatchlistArrivals } from '@/notifications/push';
 import { setEpisodeReminders, useEpisodeReminders, useReminderStatus } from '@/notifications/reminders';
@@ -29,6 +32,7 @@ export default function Settings() {
   const [signingOut, setSigningOut] = useState(false);
   const queued = useOutbox().length;
   const update = useAppUpdate();
+  const server = useServerVersion();
 
   async function saveHome() {
     setHomeError(null);
@@ -98,14 +102,28 @@ export default function Settings() {
         )) ?? <Text variant="muted">{account.isError ? "Couldn't load sessions." : 'Loading…'}</Text>}
       </Panel>
 
-      <Panel title="App">
-        <Row label="Version" value={`${Constants.expoConfig?.version ?? '?'}${Platform.OS === 'android' ? ' (APK)' : ''}`} />
+      <Panel title="About">
+        <Row label="App version" value={`${Constants.expoConfig?.version ?? '?'}${Platform.OS === 'android' ? ' (APK)' : ''}`} />
+        <Row
+          label="Server version"
+          value={
+            server.data
+              ? `${server.data.version}${server.data.revision ? ` (${server.data.revision.slice(0, 7)})` : ''}`
+              : server.isError
+                ? 'Unknown'
+                : 'Checking…'
+          }
+        />
         {update.data ? (
           <>
             <Text style={{ color: colors.deltaDebut }}>Version {update.data.version} is available.</Text>
             <Button kind="quiet" title="Download the APK" onPress={() => void Linking.openURL(update.data!.url)} />
           </>
         ) : null}
+        <Pressable onPress={() => router.push('/licenses')} accessibilityRole="button" style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}>
+          <Text style={{ flex: 1 }}>Open source licenses</Text>
+          <Icon name="chevron" size={16} color={colors.textMuted} />
+        </Pressable>
       </Panel>
 
       {queued ? (
@@ -122,6 +140,14 @@ export default function Settings() {
           await signOut();
         }}
       />
+
+      {/* Required by TMDB's API terms for apps using its data, directly or through a server. */}
+      <View style={styles.tmdb} accessible accessibilityLabel="This product uses the TMDB API but is not endorsed or certified by TMDB.">
+        <SvgXml xml={tmdbLogo} width={48} height={21} />
+        <Text variant="caption" style={{ textAlign: 'center' }}>
+          This product uses the TMDB API but is not endorsed or certified by TMDB.
+        </Text>
+      </View>
     </DetailScreen>
   );
 }
@@ -267,6 +293,7 @@ function ThemePicker() {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 12, alignItems: 'center', minHeight: 28 },
+  tmdb: { alignItems: 'center', gap: 6, paddingTop: 16, paddingBottom: 8 },
   segment: { flexDirection: 'row', borderRadius: 20, padding: 3 },
   segmentItem: { flex: 1, minHeight: 36, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
 });

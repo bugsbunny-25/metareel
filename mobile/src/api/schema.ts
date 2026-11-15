@@ -916,6 +916,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The running server's version
+         * @description The version and git revision stamped into the build (Dockerfile build args VERSION and REVISION), and the Go release. A build without them reports version "dev".
+         */
+        get: operations["getVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/titles/trending": {
         parameters: {
             query?: never;
@@ -2391,6 +2411,17 @@ export interface components {
             catch_up_date?: string;
             /** @description Average over the last eight weeks */
             pace_minutes_per_week?: number;
+        };
+        VersionResponse: {
+            /** @example v0.4.0 */
+            version: string;
+            /**
+             * @description First 12 characters of the git commit
+             * @example 548cd59feac3
+             */
+            revision?: string;
+            /** @example go1.27.1 */
+            go: string;
         };
         TitleListResponse: {
             items: {
@@ -6519,6 +6550,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionResponse"];
                 };
             };
         };

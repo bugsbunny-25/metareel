@@ -43,6 +43,7 @@ COPY . .
 #   -trimpath    => reproducible, no local paths in binary.
 #   -ldflags     => strip symbol + DWARF tables (-s -w).
 ARG VERSION=dev
+ARG REVISION=
 ARG TARGETOS
 ARG TARGETARCH
 ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
@@ -51,7 +52,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go build \
         -trimpath \
-        -ldflags="-s -w -X main.version=${VERSION}" \
+        -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${REVISION}" \
         -o /out/metareel \
         ./cmd/server
 

@@ -212,6 +212,7 @@ make reports-open
 | GET    | `/api/v1/titles`, `/api/v1/titles/:id`      | Scraped titles (paged; `match_status` filter); a single mapped title carries its TMDB title's `ids` |
 | GET    | `/api/v1/search?q=&kind=movie\|tv&limit=` | Find titles by any name (TMDB title / original title, FlixPatrol and Netflix names); accent- and punctuation-insensitive, word prefixes ("strang thin"), best match then most recently charted first |
 | GET    | `/api/v1/titles/lookup?imdb=\|tmdb=\|slug=\|netflix=\|letterboxd=` | Find a title by any ID (`netflix` = the number in netflix.com/title/<id>; `letterboxd` = a boxd.it or letterboxd.com film link, resolved through the film page's TMDB id) |
+| GET    | `/api/v1/version` | The running server's version and git revision |
 | GET    | `/api/v1/titles/trending?kind=all\|movie\|tv` | What is trending on TMDB today (live, cached 30 minutes) |
 | GET    | `/api/v1/titles/in-cinemas/:country`        | Films in cinemas in a country, from TMDB's now playing (live, cached 30 minutes) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id`             | Everything about a title: TMDB metadata, chart stats, current positions, ratings, where to watch, Netflix numbers (`include=`), and `ids` — every known ID (IMDb, Wikidata, Rotten Tomatoes, Netflix, JustWatch, FlixPatrol slugs, Netflix Top 10 names) |

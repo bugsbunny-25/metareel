@@ -107,6 +107,9 @@ jobs:
           file: Dockerfile
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            VERSION=${{ inputs.version || 'main' }}
+            REVISION=${{ github.sha }}
           platforms: linux/amd64,linux/arm64
 
       - name: Trivy scan (PR image)

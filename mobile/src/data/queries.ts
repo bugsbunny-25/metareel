@@ -13,6 +13,15 @@ export function useUpNext(limit = 20) {
   });
 }
 
+/** The server's version (Settings > About). */
+export function useServerVersion() {
+  return useQuery({
+    queryKey: ['server-version'],
+    staleTime: 60 * 60_000,
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/version', { signal })),
+  });
+}
+
 /** The account and its sessions (Settings). */
 export function useAccount() {
   return useQuery({

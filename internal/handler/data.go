@@ -11,6 +11,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/bugsbunny-25/metareel/internal/buildinfo"
 	"github.com/bugsbunny-25/metareel/internal/service"
 )
 
@@ -724,6 +725,11 @@ func (h *Handler) RematchTitle(c *echo.Context) error {
 func (h *Handler) GetDataQuality(c *echo.Context) error {
 	out, err := h.DataQuality.Report(c.Request().Context())
 	return writeData(c, out, err)
+}
+
+// GetVersion reports the running server's version: GET /api/v1/version
+func (h *Handler) GetVersion(c *echo.Context) error {
+	return c.JSON(http.StatusOK, buildinfo.Get())
 }
 
 // GetTrending lists what is trending on TMDB today (live, cached for half an

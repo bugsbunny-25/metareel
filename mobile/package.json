@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "main": "index.js",
   "dependencies": {
+    "@expo-google-fonts/barlow-condensed": "^0.4.1",
     "@expo-google-fonts/source-sans-3": "^0.4.2",
     "@expo-google-fonts/source-serif-4": "^0.4.2",
     "@expo/ui": "~58.0.28",
@@ -64,6 +65,7 @@
     "test": "jest",
     "gen:api": "openapi-typescript ../internal/openapi/spec/public.yaml -o src/api/schema.ts",
     "gen:theme": "node tools/gen-theme.mjs",
+    "gen:licenses": "node tools/gen-licenses.mjs",
     "check:generated": "node tools/check-generated.mjs"
   },
   "private": true,

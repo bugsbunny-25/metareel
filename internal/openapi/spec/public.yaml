@@ -1650,6 +1650,21 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /api/v1/version:
+    get:
+      operationId: getVersion
+      summary: The running server's version
+      description: >-
+        The version and git revision stamped into the build (Dockerfile build
+        args VERSION and REVISION), and the Go release. A build without them
+        reports version "dev".
+      responses:
+        "200":
+          description: Version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionResponse" }
+
   /api/v1/titles/trending:
     get:
       operationId: getTrendingTitles
@@ -4158,6 +4173,13 @@ components:
         upcoming_by_month: { type: array, items: { $ref: "#/components/schemas/PeriodStat" }, description: "tv only: episodes still to air and their runtime, by month" }
         catch_up_date: { type: string, format: date, description: "tv only: when minutes_left runs out at pace_minutes_per_week; absent with no recent watching" }
         pace_minutes_per_week: { type: integer, description: Average over the last eight weeks }
+    VersionResponse:
+      type: object
+      required: [version, go]
+      properties:
+        version: { type: string, example: v0.4.0 }
+        revision: { type: string, description: First 12 characters of the git commit, example: 548cd59feac3 }
+        go: { type: string, example: go1.27.1 }
     TitleListResponse:
       type: object
       required: [items, fetched_at]
