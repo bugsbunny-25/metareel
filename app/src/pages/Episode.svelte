@@ -7,6 +7,9 @@
   import Icon from '../components/Icon.svelte'
   import Poster from '../components/Poster.svelte'
   import RatingLogo from '../components/RatingLogo.svelte'
+  import Top10Badge from '../components/Top10Badge.svelte'
+  import { top10Of } from '../lib/top10now.svelte.js'
+  import { scope, providerName, countryName } from '../lib/scope.svelte.js'
   import { api } from '../lib/api.js'
   import { posterSrc, stars, starsLabel } from '../lib/rows.js'
   import { localDay, dayLabel, clock } from '../lib/dates.js'
@@ -14,6 +17,8 @@
   import { toast } from '../lib/toast.svelte.js'
 
   let { show, season, episode, onlog } = $props()
+  // The show's best place in a Top 10 in your country today, said once in the meta.
+  const top = $derived(top10Of('tv', show))
 
   let data = $state(null)
   let list = $state(null)
@@ -95,6 +100,7 @@
           <span class="hint num">{meta}</span>
           {#if e.vote_count}<span class="score num" title="TMDB {e.vote_average?.toFixed(1)} from {e.vote_count} votes"><RatingLogo source="tmdb" height={15} />{e.vote_average?.toFixed(1)}</span>{/if}
         </div>
+        {#if top}<p class="top10"><Top10Badge size={22} /><b>No. {top.rank} in shows today</b><span class="hint">on {providerName(top.provider)} in {countryName(scope.country)}</span></p>{/if}
         {#if !data.live}<p class="hint">Showing what’s saved; TMDB couldn’t be reached for the rest.</p>{/if}
         <div class="actions">
           {#if aired}
@@ -180,6 +186,7 @@
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .badge { padding: 2px 9px; border-radius: 10px; background: var(--bg-elevated); font-size: 12px; font-weight: 700; }
   .meta .hint { font-size: 14.5px; }
+  .top10 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; font-size: 14.5px; }
   .score { display: inline-flex; align-items: center; gap: 5px; font-size: 14.5px; font-weight: 600; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .actions a, .actions button { gap: 6px; text-decoration: none; }

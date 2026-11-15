@@ -5,6 +5,9 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import { Button } from '@/components/Button';
 import { Badge } from '@/components/Media';
 import { RatingLogo } from '@/components/RatingLogo';
+import { Top10Badge } from '@/components/Top10Badge';
+import { providerName } from '@/data/scope';
+import { useTop10Of } from '@/data/top10now';
 import { Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { episodeBadge } from '@/data/collections';
@@ -41,6 +44,7 @@ export function EpisodeView({
   const detail = useDetailScroll(embedded);
   const wide = useWindowClass() !== 'compact';
   const q = useEpisode(show, season, episode);
+  const top = useTop10Of('tv', show); // the show's place in a Top 10 today
   const pending = useOutbox().some(
     (i) => i.kind === 'episodes' && i.status === 'pending' && i.meta?.show === show && i.meta?.season === season && i.meta?.episode === episode,
   );
@@ -113,6 +117,13 @@ export function EpisodeView({
                 </View>
               ) : null}
             </View>
+            {top ? (
+              <View style={styles.top10} accessible accessibilityLabel={`Number ${top.rank} in shows today on ${providerName(top.provider)}`}>
+                <Top10Badge size={22} />
+                <Text variant="label">No. {top.rank} in shows today</Text>
+                <Text variant="muted">on {providerName(top.provider)}</Text>
+              </View>
+            ) : null}
             {!d.live ? <Text variant="caption">Showing what&apos;s saved; TMDB couldn&apos;t be reached for the rest.</Text> : null}
             <View style={styles.actions}>
               {aired ? (
@@ -213,6 +224,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   still: { aspectRatio: 16 / 9, overflow: 'hidden', justifyContent: 'flex-end' },
   stillText: { padding: 16, gap: 2 },
+  top10: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   score: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
