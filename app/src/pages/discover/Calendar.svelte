@@ -125,7 +125,7 @@
                 {@const st = status(it)}
                 {@const t = library.get('tv', it.tmdb_id)}
                 <li class:mine={!!st}>
-                  <a class="pic" href="#/title/tv/{it.tmdb_id}" tabindex="-1" aria-hidden="true"><Poster path={it.poster_path} seed={it.tmdb_id} title={it.title} width={46} radius={6} size="w92" /></a>
+                  <a class="pic" href="#/title/tv/{it.tmdb_id}" tabindex="-1" aria-hidden="true"><Poster path={it.poster_path} seed={it.tmdb_id} title={it.title} kind="tv" tmdbId={it.tmdb_id} width={46} radius={6} size="w92" /></a>
                   <div class="txt">
                     <a class="name" href="#/title/tv/{it.tmdb_id}">{it.title}</a>
                     <span class="ep">

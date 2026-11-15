@@ -668,6 +668,13 @@ selection (`keepCredits`) live from TMDB, cached in memory with the people
 (`tmdbCache`: 12 hours, misses an hour, 1,000 entries each), `source: tmdb`.
 `GET /api/v1/me/people/search` is TMDB's person search, for the user app's
 search palette.
+`GET /api/v1/titles/trending` and `GET /api/v1/titles/in-cinemas/{country}`
+(`service/title_lists.go`) are TMDB's `/trending/{kind}/day` and
+`/movie/now_playing?region=`, asked live for the home screens' Trending and In
+cinemas rows and kept in memory for 30 minutes per list and country (a failed
+refresh serves the last list). Nothing is stored. The apps' Top 10 badge needs
+no endpoint of its own: one `/top10/{country}` per country (every service's
+latest charts, ~12 KB gzipped) is cached and matched locally.
 `GET /api/v1/people/{id}` lists a person's credited titles with each title's
 FlixPatrol record (`ListPersonChartStats`, all stored charts), and adds their
 TMDB profile and filmography (`service/credits_person.go`): one

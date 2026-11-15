@@ -196,7 +196,7 @@
               <li>
                 <span class="rk num">{i + 1}</span>
                 <a class="mt" href="#/title/{t.tmdb_kind}/{t.tmdb_id}">
-                  <Poster path={poster(t)} seed={t.tmdb_id} title={t.title} width={36} radius={4} size="w92" />
+                  <Poster path={poster(t)} seed={t.tmdb_id} title={t.title} kind={t.tmdb_kind} tmdbId={t.tmdb_id} width={36} radius={4} size="w92" />
                   <span class="mtx"><span class="nm">{t.title}</span><span class="hint">{t.watches} watch{t.watches === 1 ? '' : 'es'} · {hours(t.minutes)} h{#if t.genres?.length}{' · '}{t.genres.slice(0, 2).join(', ')}{/if}</span></span>
                 </a>
               </li>

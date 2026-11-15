@@ -62,6 +62,11 @@ export const api = {
 
   // Charts and movement
   /** date: YYYY-MM-DD for a past chart; omitted for the latest. */
+  /** Every service's latest movie and TV charts in a country (for the Top 10 badge). */
+  top10Country: (country, signal) => request('GET', `/top10/${country}`, { signal }),
+  // Live lists from TMDB, cached by the server for half an hour.
+  trending: (kind, signal) => request('GET', `/titles/trending${qs({ kind })}`, { signal }),
+  inCinemas: (country, signal) => request('GET', `/titles/in-cinemas/${country}`, { signal }),
   top10: (category, country, provider, signal, date) => request('GET', `/top10/${seg(category)}/${country}/${provider}${qs({ date })}`, { signal }),
   /** Dates a scope has charts for, newest first: { items: [{ date, category, entries }] }. */
   chartDates: (country, provider, signal) => request('GET', `/charts/${country}/${provider}/dates${qs({ limit: 366 })}`, { signal }),

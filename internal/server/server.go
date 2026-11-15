@@ -228,6 +228,7 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Timeline:       service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),
 		Search:         service.NewSearchService(repository.NewSearchRepository(readDB)),
 		Tracking:       tracking,
+		Lists:          service.NewTitleListsService(client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
 		Push:           taskruntime.NewPushService(log, db, cfg),
 		Webhooks:       webhooks,
 		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,

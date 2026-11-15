@@ -4,6 +4,8 @@
      the page keeps what metareel knows: the titles it has credits for. -->
 <script>
   import Poster from '../components/Poster.svelte'
+  import RatingLogo from '../components/RatingLogo.svelte'
+  import tmdbWordmark from '../assets/ratings/tmdb-wordmark.svg'
   import Icon from '../components/Icon.svelte'
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
@@ -147,8 +149,9 @@
             {#if longBio}<button class="link" onclick={() => (bioOpen = !bioOpen)} aria-expanded={bioOpen}>{bioOpen ? 'Show less' : 'Read more'}</button>{/if}
           {/if}
           <p class="links">
-            {#if det.imdb_id}<a href="https://www.imdb.com/name/{det.imdb_id}/" target="_blank" rel="noopener noreferrer">IMDb</a>{/if}
-            <a href="https://www.themoviedb.org/person/{p.person_id}" target="_blank" rel="noopener noreferrer">TMDB</a>
+            <!-- The sites by their logos, each opening the person's page there. -->
+            {#if det.imdb_id}<a class="logo" href="https://www.imdb.com/name/{det.imdb_id}/" target="_blank" rel="noopener noreferrer" aria-label="{p.name} on IMDb" title="{p.name} on IMDb"><RatingLogo source="imdb" height={22} title="IMDb" /></a>{/if}
+            <a class="logo" href="https://www.themoviedb.org/person/{p.person_id}" target="_blank" rel="noopener noreferrer" aria-label="{p.name} on TMDB" title="{p.name} on TMDB"><img src={tmdbWordmark} alt="TMDB" height="18" /></a>
             {#if det.homepage && /^https?:\/\//.test(det.homepage)}<a href={det.homepage} target="_blank" rel="noopener noreferrer">Website</a>{/if}
           </p>
         {:else}
@@ -254,7 +257,7 @@
             {@const c = chartOf.get(`${f.kind}:${f.tmdb_id}`)}
             <li class="tile">
               <a class="art" href="#/title/{f.kind}/{f.tmdb_id}">
-                <Poster path={f.poster_path ?? null} seed={f.tmdb_id} title={f.title} width={160} radius={10} size="w342" />
+                <Poster path={f.poster_path ?? null} seed={f.tmdb_id} title={f.title} kind={f.kind} tmdbId={f.tmdb_id} width={160} radius={10} size="w342" />
                 {#if upcoming(f)}<span class="badge soon">{f.date ? shortDate(f.date) : 'Announced'}</span>
                 {:else if c?.days}<span class="badge chart" title="{c.days} days in Top 10s, best No. {c.best_rank}">Top 10 · No. {c.best_rank}</span>{/if}
               </a>
@@ -264,7 +267,7 @@
                   <Icon name={t?.status === 'watchlist' ? 'bookmark-fill' : 'bookmark'} size={15} />
                 </button>
               </div>
-              <p class="meta">{f.year ?? 'TBA'} · {f.kind === 'tv' ? 'Series' : 'Film'}{#if rated(f)}{' · '}<span title="TMDB {f.vote_average.toFixed(1)} from {f.vote_count.toLocaleString()} votes">⭐ {f.vote_average.toFixed(1)}</span>{/if}</p>
+              <p class="meta">{f.year ?? 'TBA'} · {f.kind === 'tv' ? 'Series' : 'Film'}{#if rated(f)}{' · '}<span title="TMDB {f.vote_average.toFixed(1)} from {f.vote_count.toLocaleString()} votes" class="tmdb"><RatingLogo source="tmdb" height={12} />{f.vote_average.toFixed(1)}</span>{/if}</p>
               {#if roleLine(f)}<p class="role">{roleLine(f)}</p>{/if}
               {#if seenIt(f)}<p class="seen"><Icon name="check" size={12} />Seen{#if t?.rating}{' · '}{stars(t.rating)}{/if}</p>{/if}
             </li>
@@ -282,6 +285,9 @@
 {/if}
 
 <style>
+  .links .logo { display: inline-flex; align-items: center; height: 34px; padding: 0 10px; border-radius: 10px; background: var(--bg-elevated); text-decoration: none; transition: transform 0.12s ease; }
+  .links .logo:hover { transform: translateY(-1px); background: color-mix(in srgb, var(--text-primary) 10%, var(--bg-elevated)); }
+  .links .logo img { display: block; height: 18px; width: auto; }
   .page { display: grid; gap: 18px; padding: 20px var(--gutter) 40px; }
   .head { display: flex; gap: 32px; align-items: flex-start; padding: 28px; border-radius: var(--radius-hero); background: linear-gradient(100deg, color-mix(in srgb, var(--accent-yours) 16%, transparent) 0%, transparent 70%), var(--bg-surface); }
   .face { flex: none; width: 168px; border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-art); }

@@ -6,6 +6,8 @@
   import Icon from '../components/Icon.svelte'
   import RatingLogo from '../components/RatingLogo.svelte'
   import ProviderLogo from '../components/ProviderLogo.svelte'
+  import Top10Badge from '../components/Top10Badge.svelte'
+  import { top10Of } from '../lib/top10now.svelte.js'
   import { api } from '../lib/api.js'
   import { library } from '../lib/library.svelte.js'
   import { scope, countryName, providerName } from '../lib/scope.svelte.js'
@@ -14,6 +16,8 @@
   import { toast } from '../lib/toast.svelte.js'
 
   let { kind, id, onlog } = $props()
+  // Netflix-style: the best place this title holds in a Top 10 in your country today.
+  const top = $derived(top10Of(kind, id))
 
   let loading = $state(true)
   let error = $state('')
@@ -122,9 +126,12 @@
 {:else}
   <article class="page" style:--tint={tint ? `rgb(${tint.join(' ')} / 0.4)` : 'transparent'}>
     <header class="head">
-      <div class="art"><Poster path={m.poster_path} seed={id} title={m.title ?? ''} width={d.charted ? 150 : 124} radius={10} /></div>
+      <div class="art"><Poster path={m.poster_path} seed={id} title={m.title ?? ''} {kind} tmdbId={id} width={d.charted ? 150 : 124} radius={10} /></div>
       <div class="copy">
         <p class="kicker">{kind === 'tv' ? 'Series' : 'Film'}{#if m.genres?.length}{' · '}{m.genres.slice(0, 2).join(', ')}{/if}</p>
+        {#if top}
+          <p class="top10"><Top10Badge size={24} /><b>No. {top.rank} in {top.category === 'tv_shows' ? 'shows' : 'films'} today</b><span class="muted">on {providerName(top.provider)} in {countryName(scope.country)}</span></p>
+        {/if}
         <h1>{m.title}</h1>
         <p class="meta">
           {#if kind === 'tv'}{m.number_of_seasons || '?'} season{m.number_of_seasons === 1 ? '' : 's'}{#if m.number_of_episodes}{' · '}{m.number_of_episodes} episodes{/if}{:else if m.runtime}{Math.floor(m.runtime / 60)} h {m.runtime % 60} min{/if}{#if m.release_date}{' · '}{m.release_date.slice(0, 4)}{/if}
@@ -282,6 +289,9 @@
   .head { display: flex; gap: 32px; align-items: flex-end; padding: 28px; border-radius: var(--radius-hero); background: linear-gradient(100deg, var(--tint) 0%, transparent 75%), var(--bg-surface); }
   .art { flex: none; box-shadow: var(--shadow-art); border-radius: 10px; }
   .copy { min-width: 0; }
+  .top10 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 8px; font-size: 15px; }
+  .top10 b { font-weight: 700; }
+  .top10 .muted { color: var(--text-muted); }
   .kicker { margin: 0 0 6px; color: var(--accent-yours); font-size: 13px; font-weight: 700; letter-spacing: 0.02em; }
   h1 { margin: 0; font: 700 44px/1.05 var(--font-display); letter-spacing: -0.02em; }
   .meta { margin: 8px 0 0; color: var(--text-muted); font-size: 14.5px; }

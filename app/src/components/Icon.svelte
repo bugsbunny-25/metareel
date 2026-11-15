@@ -16,20 +16,23 @@
     more: 'M5 10h.01M10 10h.01M15 10h.01',
     grid: 'M3.5 3.5h5v5h-5zM11.5 3.5h5v5h-5zM3.5 11.5h5v5h-5zM11.5 11.5h5v5h-5z',
     list: 'M7 5h10M7 10h10M7 15h10M3.5 5h.01M3.5 10h.01M3.5 15h.01',
-    gear: 'M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4',
+    // A cog (Lucide's gear, ISC licence), on a 24-unit grid: see GRID24.
+    gear: 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
     chevron: 'M8 5l5 5-5 5',
     'chevron-left': 'M12 5l-5 5 5 5',
     flame: 'M10 17.5c3 0 5-2.2 5-5 0-3.5-3-5-3.5-9-2 1.5-3.5 4-3 6.5-1-.5-1.8-1.6-2-2.8C5.300 8.600 5 10.300 5 12.500c0 2.800 2 5 5 5z',
     play: 'M7 4.5l8 5.5-8 5.5z',
   };
+  /** Icons drawn on a 24-unit grid instead of 20. */
+  const GRID24 = new Set(['gear']);
 </script>
 
-<svg width={size} height={size} viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+<svg width={size} height={size} viewBox={GRID24.has(name) ? '0 0 24 24' : '0 0 20 20'} aria-hidden="true" focusable="false">
   <path
     d={PATHS[name]}
     fill={name.endsWith('-fill') ? 'currentColor' : 'none'}
     stroke="currentColor"
-    stroke-width={name === 'more' ? 3 : 1.6}
+    stroke-width={name === 'more' ? 3 : GRID24.has(name) ? 1.9 : 1.6}
     stroke-linejoin="round"
     stroke-linecap="round"
   />

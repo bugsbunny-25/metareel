@@ -110,7 +110,7 @@
             {#each s.top_titles as t, i (t.tmdb_kind + t.tmdb_id)}
               <li>
                 <span class="no num">{i + 1}</span>
-                <Poster path={t.poster_path ?? null} seed={t.tmdb_id} title={t.title} width={36} radius={4} size="w92" />
+                <Poster path={t.poster_path ?? null} seed={t.tmdb_id} title={t.title} kind={t.tmdb_kind} tmdbId={t.tmdb_id} width={36} radius={4} size="w92" />
                 <span class="rb"><a href={titleHref(t)}>{t.title}</a><span class="hint">{tv ? plural(t.watches, 'episode') : t.watches > 1 ? `${t.watches} times` : 'Once'}</span></span>
                 <span class="val num">{hoursText(t.minutes)}</span>
               </li>
@@ -231,7 +231,7 @@
             {#each s.binges as b, i (b.tmdb_id + b.day)}
               <li>
                 <span class="no num">{i + 1}</span>
-                <Poster path={b.poster_path ?? null} seed={b.tmdb_id} title={b.title} width={36} radius={4} size="w92" />
+                <Poster path={b.poster_path ?? null} seed={b.tmdb_id} title={b.title} kind="tv" tmdbId={b.tmdb_id} width={36} radius={4} size="w92" />
                 <span class="rb"><a href="#/show/{b.tmdb_id}">{b.title}</a><span class="hint">{new Date(`${b.day}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} · {hoursText(b.minutes)}</span></span>
                 <span class="val num">{b.episodes} ep.</span>
               </li>

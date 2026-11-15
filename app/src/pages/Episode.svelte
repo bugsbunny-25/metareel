@@ -6,6 +6,7 @@
 <script>
   import Icon from '../components/Icon.svelte'
   import Poster from '../components/Poster.svelte'
+  import RatingLogo from '../components/RatingLogo.svelte'
   import { api } from '../lib/api.js'
   import { posterSrc, stars, starsLabel } from '../lib/rows.js'
   import { localDay, dayLabel, clock } from '../lib/dates.js'
@@ -46,7 +47,6 @@
   const meta = $derived(e ? [
     e.air_date ? `${new Date(`${e.air_date}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}` : 'Air date TBA',
     e.runtime ? `${e.runtime} min` : '',
-    e.vote_count ? `⭐ ${e.vote_average?.toFixed(1)}` : '',
   ].filter(Boolean).join(' · ') : '')
 
   const flat = $derived((list?.seasons ?? []).flatMap((s) => s.episodes))
@@ -80,7 +80,7 @@
   {:else if e}
     <!-- Without a still (often the case before an episode airs) the header is compact, with the show's poster. -->
     <header class="hero" class:bare={!still} style:background-image={still ? `url(${still})` : undefined}>
-      {#if still}<div class="scrim"></div>{:else}<a href="#/show/{show}" tabindex="-1" aria-hidden="true"><Poster path={data.show?.poster_path ?? null} seed={show} {title} width={96} radius={8} size="w185" /></a>{/if}
+      {#if still}<div class="scrim"></div>{:else}<a href="#/show/{show}" tabindex="-1" aria-hidden="true"><Poster path={data.show?.poster_path ?? null} seed={show} {title} kind="tv" tmdbId={show} width={96} radius={8} size="w185" /></a>{/if}
       <div class="htext">
         <a class="show" href="#/show/{show}">{title} ›</a>
         <p class="code num">{epCode(season, episode)}</p>
@@ -93,6 +93,7 @@
         <div class="meta">
           {#if badge}<span class="badge">{badge}</span>{/if}
           <span class="hint num">{meta}</span>
+          {#if e.vote_count}<span class="score num" title="TMDB {e.vote_average?.toFixed(1)} from {e.vote_count} votes"><RatingLogo source="tmdb" height={15} />{e.vote_average?.toFixed(1)}</span>{/if}
         </div>
         {#if !data.live}<p class="hint">Showing what’s saved; TMDB couldn’t be reached for the rest.</p>{/if}
         <div class="actions">
@@ -179,6 +180,7 @@
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .badge { padding: 2px 9px; border-radius: 10px; background: var(--bg-elevated); font-size: 12px; font-weight: 700; }
   .meta .hint { font-size: 14.5px; }
+  .score { display: inline-flex; align-items: center; gap: 5px; font-size: 14.5px; font-weight: 600; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .actions a, .actions button { gap: 6px; text-decoration: none; }
   .overview { margin: 0; max-width: 72ch; font: 400 18px/1.55 var(--font-display); }

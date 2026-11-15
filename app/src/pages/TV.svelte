@@ -214,7 +214,7 @@
             {@const ep = s.next_episode}
             <a class="ptile" href={nextHref(s)} class:stalled={s.stage === 'stalled'}>
               <span class="pwrap">
-                <Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} width={150} radius={10} size="w342" />
+                <Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={150} radius={10} size="w342" />
                 <span class="corner num">{epCode(ep.season_number, ep.episode_number)}</span>
               </span>
               <span class="bar" aria-hidden="true"><i style:width="{s.percent}%"></i></span>
@@ -235,7 +235,7 @@
                   {@const ep = s.next_episode}
                   {@const t = library.get('tv', s.tmdb_id)}
                   <article class="card" class:stalled={key === 'stalled'}>
-                    <a class="art" href={nextHref(s)} tabindex="-1" aria-hidden="true"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} width={84} radius={8} size="w185" /></a>
+                    <a class="art" href={nextHref(s)} tabindex="-1" aria-hidden="true"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={84} radius={8} size="w185" /></a>
                     <div class="body">
                       <div class="top">
                         <a class="name" href="#/show/{s.tmdb_id}">{s.title}</a>
@@ -270,7 +270,7 @@
                 {#each list as s (s.tmdb_id)}
                   {@const t = library.get('tv', s.tmdb_id)}
                   <article class="tile">
-                    <a class="art" href="#/show/{s.tmdb_id}"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} width={150} radius={10} size="w342" /></a>
+                    <a class="art" href="#/show/{s.tmdb_id}"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={150} radius={10} size="w342" /></a>
                     <div class="top">
                       <a class="name" href="#/show/{s.tmdb_id}">{s.title}</a>
                       {#if t}<TitleMenu {t} {onlog} />{/if}
@@ -298,7 +298,7 @@
                 {#each list as s (s.tmdb_id)}
                   {@const t = library.get('tv', s.tmdb_id)}
                   <li>
-                    <a class="art" href="#/show/{s.tmdb_id}" tabindex="-1" aria-hidden="true"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} width={44} radius={5} size="w92" /></a>
+                    <a class="art" href="#/show/{s.tmdb_id}" tabindex="-1" aria-hidden="true"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={44} radius={5} size="w92" /></a>
                     <div class="rbody">
                       <a class="name" href="#/show/{s.tmdb_id}">{s.title}</a>
                       <span class="hint">
@@ -340,7 +340,7 @@
             {#each nextPerShow as e (e.tmdb_id)}
               <a class="ptile" href={epHref(e.tmdb_id, e.season_number, e.episode_number)}>
                 <span class="pwrap">
-                  <Poster path={e.poster_path || null} seed={e.tmdb_id} title={e.show_title} width={150} radius={10} size="w342" />
+                  <Poster path={e.poster_path || null} seed={e.tmdb_id} title={e.show_title} kind="tv" tmdbId={e.tmdb_id} width={150} radius={10} size="w342" />
                   <span class="corner right">{countdown(e.air_date)}</span>
                 </span>
                 <span class="name">{e.show_title}</span>
@@ -359,7 +359,7 @@
               <ul class="eps">
                 {#each day.items as e (e.tmdb_id + ':' + e.season_number + ':' + e.from)}
                   <li>
-                    <a class="art" href={epHref(e.tmdb_id, e.season_number, e.from)} tabindex="-1" aria-hidden="true"><Poster path={e.poster_path || null} seed={e.tmdb_id} title={e.show_title} width={36} radius={4} size="w92" /></a>
+                    <a class="art" href={epHref(e.tmdb_id, e.season_number, e.from)} tabindex="-1" aria-hidden="true"><Poster path={e.poster_path || null} seed={e.tmdb_id} title={e.show_title} kind="tv" tmdbId={e.tmdb_id} width={36} radius={4} size="w92" /></a>
                     <div class="rbody">
                       <a class="name" href={epHref(e.tmdb_id, e.season_number, e.from)}>{e.show_title}</a>
                       <span class="hint">
@@ -397,7 +397,7 @@
   .ptile:hover .pwrap { transform: translateY(-2px); }
   .pwrap :global(.poster) { width: 100% !important; }
   .corner { position: absolute; left: 8px; top: 8px; padding: 3px 8px; border-radius: 8px; background: rgb(11 11 12 / 0.82); color: #f5f5f7; font-size: 12.5px; font-weight: 700; }
-  .corner.right { left: auto; right: 8px; color: var(--accent-yours); }
+  .corner.right { left: auto; top: auto; right: 8px; bottom: 8px; color: var(--accent-yours); }
   .ptile.stalled .bar i { background: var(--status-stale); }
   .ptile .name { font: 700 15.5px/1.25 var(--font-display); }
   .ptile .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

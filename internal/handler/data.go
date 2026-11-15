@@ -35,7 +35,7 @@ func writeData(c *echo.Context, out any, err error) error {
 		return c.JSON(http.StatusNotFound, map[string]any{"error": err.Error()})
 	case errors.Is(err, sql.ErrNoRows):
 		return c.JSON(http.StatusNotFound, map[string]any{"error": "not found"})
-	case errors.Is(err, service.ErrRatingsUnavailable), errors.Is(err, service.ErrUpstream), errors.Is(err, service.ErrPersonUnavailable), errors.Is(err, service.ErrCreditsUnavailable):
+	case errors.Is(err, service.ErrRatingsUnavailable), errors.Is(err, service.ErrUpstream), errors.Is(err, service.ErrPersonUnavailable), errors.Is(err, service.ErrCreditsUnavailable), errors.Is(err, service.ErrListsUnavailable):
 		return c.JSON(http.StatusBadGateway, map[string]any{"error": err.Error()})
 	default:
 		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
@@ -723,5 +723,19 @@ func (h *Handler) RematchTitle(c *echo.Context) error {
 // GetDataQuality: GET /api/v1/admin/data-quality
 func (h *Handler) GetDataQuality(c *echo.Context) error {
 	out, err := h.DataQuality.Report(c.Request().Context())
+	return writeData(c, out, err)
+}
+
+// GetTrending lists what is trending on TMDB today (live, cached for half an
+// hour): GET /api/v1/titles/trending[?kind=all|movie|tv]
+func (h *Handler) GetTrending(c *echo.Context) error {
+	out, err := h.Lists.Trending(c.Request().Context(), c.QueryParam("kind"))
+	return writeData(c, out, err)
+}
+
+// GetInCinemas lists the films in cinemas in a country, from TMDB's now
+// playing (live, cached for half an hour): GET /api/v1/titles/in-cinemas/{country}
+func (h *Handler) GetInCinemas(c *echo.Context) error {
+	out, err := h.Lists.InCinemas(c.Request().Context(), c.Param("country"))
 	return writeData(c, out, err)
 }

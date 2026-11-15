@@ -153,7 +153,7 @@
                   {#each list as w (w.id)}
                     <li>
                       <a href={recentHref(w)} title={w.title}>
-                        <Poster path={w.poster_path} seed={w.tmdb_id} title={w.title ?? ''} width={96} radius={8} size="w185" />
+                        <Poster path={w.poster_path} seed={w.tmdb_id} title={w.title ?? ''} kind={w.tmdb_kind} tmdbId={w.tmdb_id} width={96} radius={8} size="w185" />
                         <span class="cap">{w.subject_kind === 'episode' ? epCode(w.season_number, w.episode_number) : w.rating ? stars(w.rating) : dayLabel(w.watched_on)}</span>
                       </a>
                     </li>
@@ -209,7 +209,7 @@
             <ul class="watches" aria-label={dayLabel(d.day)}>
               {#each d.watches as w (w.id)}
                 <li class="watch">
-                  <a class="art" href={titleHref(w)} tabindex="-1" aria-hidden="true"><Poster path={w.poster_path} seed={w.tmdb_id} title={w.title ?? ''} width={44} radius={5} size="w185" /></a>
+                  <a class="art" href={titleHref(w)} tabindex="-1" aria-hidden="true"><Poster path={w.poster_path} seed={w.tmdb_id} title={w.title ?? ''} kind={w.tmdb_kind} tmdbId={w.tmdb_id} width={44} radius={5} size="w185" /></a>
                   <div class="body">
                     <a class="name" href={titleHref(w)}>{w.title}</a>
                     <a class="meta" href="#/watch/{w.id}" title="Everything about this watch">

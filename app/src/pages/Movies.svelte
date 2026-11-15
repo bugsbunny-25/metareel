@@ -82,7 +82,7 @@
       <div class="tiles">
         {#each movies.toWatch as t (t.tmdb_id)}
           <a class="ptile" href="#/title/movie/{t.tmdb_id}">
-            <span class="pwrap"><Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} width={150} radius={10} size="w342" /></span>
+            <span class="pwrap"><Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} kind="movie" tmdbId={t.tmdb_id} width={150} radius={10} size="w342" /></span>
             <span class="name">{t.title}</span>
             <span class="meta">{meta(t)}</span>
           </a>
@@ -92,7 +92,7 @@
       <ul class="rows">
         {#each movies.toWatch as t (t.tmdb_id)}
           <li>
-            <a class="art" href="#/title/movie/{t.tmdb_id}" tabindex="-1" aria-hidden="true"><Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} width={56} radius={6} size="w185" /></a>
+            <a class="art" href="#/title/movie/{t.tmdb_id}" tabindex="-1" aria-hidden="true"><Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} kind="movie" tmdbId={t.tmdb_id} width={56} radius={6} size="w185" /></a>
             <div class="rbody">
               <a class="name" href="#/title/movie/{t.tmdb_id}">{t.title}</a>
               <span class="hint">{meta(t)}{#if t.watchlist_note}{' · '}<i>{t.watchlist_note}</i>{/if}</span>
@@ -114,7 +114,7 @@
             {#each m.items as t (t.tmdb_id)}
               <a class="ptile" href="#/title/movie/{t.tmdb_id}">
                 <span class="pwrap">
-                  <Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} width={150} radius={10} size="w342" />
+                  <Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} kind="movie" tmdbId={t.tmdb_id} width={150} radius={10} size="w342" />
                   <span class="corner">{countdown(t.release_date)}</span>
                 </span>
                 <span class="name">{t.title}</span>
@@ -126,7 +126,7 @@
           <ul class="rows">
             {#each m.items as t (t.tmdb_id)}
               <li>
-                <a class="art" href="#/title/movie/{t.tmdb_id}" tabindex="-1" aria-hidden="true"><Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} width={56} radius={6} size="w185" /></a>
+                <a class="art" href="#/title/movie/{t.tmdb_id}" tabindex="-1" aria-hidden="true"><Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} kind="movie" tmdbId={t.tmdb_id} width={56} radius={6} size="w185" /></a>
                 <div class="rbody">
                   <a class="name" href="#/title/movie/{t.tmdb_id}">{t.title}</a>
                   <span class="hint">{dayLabel(t.release_date)} {year(t.release_date)}</span>
@@ -161,7 +161,7 @@
   .pwrap { position: relative; display: block; transition: transform 0.15s ease; }
   .ptile:hover .pwrap { transform: translateY(-2px); }
   .pwrap :global(.poster) { width: 100% !important; }
-  .corner { position: absolute; right: 8px; top: 8px; padding: 3px 8px; border-radius: 8px; background: rgb(11 11 12 / 0.82); color: var(--accent-yours); font-size: 12.5px; font-weight: 700; }
+  .corner { position: absolute; right: 8px; bottom: 8px; padding: 3px 8px; border-radius: 8px; background: rgb(11 11 12 / 0.82); color: var(--accent-yours); font-size: 12.5px; font-weight: 700; }
   .ptile .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 15.5px/1.25 var(--font-display); }
   .meta { color: var(--text-muted); font-size: 13px; }
 

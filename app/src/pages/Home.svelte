@@ -15,8 +15,25 @@
   import { shortDate, UP, DOWN, isYours } from '../lib/rows.js'
   import { toast } from '../lib/toast.svelte.js'
   import { markWatched, epCode } from '../lib/shows.js'
+  import TitleRail from '../components/TitleRail.svelte'
 
   let { onlog } = $props()
+
+  // Trending today (TMDB, worldwide) and what is in cinemas in the scope's country.
+  let trending = $state(null)
+  let cinemas = $state(null)
+  $effect(() => {
+    const ctrl = new AbortController()
+    api.trending('', ctrl.signal).then((r) => (trending = r.items ?? [])).catch(() => (trending = []))
+    return () => ctrl.abort()
+  })
+  $effect(() => {
+    const country = scope.country
+    const ctrl = new AbortController()
+    cinemas = null
+    api.inCinemas(country, ctrl.signal).then((r) => (cinemas = r.items ?? [])).catch(() => (cinemas = []))
+    return () => ctrl.abort()
+  })
 
   // Up next: the next episode of each show you're watching, most recently watched first.
   let queue = $state(null)
@@ -195,7 +212,7 @@
   <div class="home" aria-busy={loading}>
     {#if data.hero}
       <section class="hero" style:--tint={tint ? `rgb(${tint.join(' ')} / 0.42)` : 'transparent'}>
-        <a class="hero-art" href={titleHref(data.hero.kind, data.hero.id)} aria-hidden="true" tabindex="-1"><Poster path={data.hero.poster} seed={data.hero.id} title={data.hero.name} width={128} radius={10} /></a>
+        <a class="hero-art" href={titleHref(data.hero.kind, data.hero.id)} aria-hidden="true" tabindex="-1"><Poster path={data.hero.poster} seed={data.hero.id} title={data.hero.name} kind={data.hero.kind} tmdbId={data.hero.id} width={128} radius={10} /></a>
         <div class="hero-copy">
           <p class="eyebrow">{heroBreak ? 'Breaking out' : `No. ${heroEntry?.item.rank ?? 1} in ${inCountry(data.country)} ${when}`}</p>
           <h1><a href={titleHref(data.hero.kind, data.hero.id)}>{data.hero.name}</a></h1>
@@ -230,7 +247,7 @@
           {#each upNext as s (s.tmdb_id)}
             {@const ep = s.next_episode}
             <li>
-              <a class="un-art" href="#/episode/{s.tmdb_id}/{ep.season_number}/{ep.episode_number}" tabindex="-1" aria-hidden="true"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} width={52} radius={6} size="w185" /></a>
+              <a class="un-art" href="#/episode/{s.tmdb_id}/{ep.season_number}/{ep.episode_number}" tabindex="-1" aria-hidden="true"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={52} radius={6} size="w185" /></a>
               <a class="un-body" href="#/episode/{s.tmdb_id}/{ep.season_number}/{ep.episode_number}">
                 <b>{s.title}</b>
                 <span><span class="code num">{epCode(ep.season_number, ep.episode_number)}</span>{' '}{ep.name || 'Untitled episode'}</span>
@@ -272,6 +289,19 @@
         <span class="k-sub">From your list, recently</span>
       </div>
     </section>
+
+    {#if trending?.length}
+      <section class="block" aria-labelledby="tr-h">
+        <div class="block-head"><h2 id="tr-h">Trending</h2><span class="hint">Today on TMDB, worldwide</span></div>
+        <TitleRail items={trending} label="Trending today" />
+      </section>
+    {/if}
+    {#if cinemas?.length}
+      <section class="block" aria-labelledby="ic-h">
+        <div class="block-head"><h2 id="ic-h">In cinemas</h2><span class="hint">Now playing in {countryName(scope.country)}</span></div>
+        <TitleRail items={cinemas} label="In cinemas" />
+      </section>
+    {/if}
 
     <section class="block">
       <div class="block-head">
@@ -331,7 +361,7 @@
             <tbody>
               {#each myList as t}
                 <tr>
-                  <td><a class="cell" href={titleHref(t.tmdb_kind, t.tmdb_id)}><Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} width={26} radius={4} size="w92" /><span class="ell">{t.title}</span></a></td>
+                  <td><a class="cell" href={titleHref(t.tmdb_kind, t.tmdb_id)}><Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} kind={t.tmdb_kind} tmdbId={t.tmdb_id} width={26} radius={4} size="w92" /><span class="ell">{t.title}</span></a></td>
                   <td class="opt"><span class="pill">{t.status === 'watchlist' ? 'Watchlist' : 'Watching'}</span></td>
                   <td class:bad={t.note.type === 'left'} class:muted={t.note.type === 'quiet'}>{t.note.text}</td>
                 </tr>

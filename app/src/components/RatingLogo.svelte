@@ -36,14 +36,16 @@
 {:else if source === 'rt' || source === 'rt-audience'}
   <img class="rating-logo" src={rtSrc} alt={label} title={label} height={height} width={height} />
 {:else if source === 'tmdb'}
-  <!-- TMDB's score is marked with a star, not its wordmark. -->
-  <span class="rating-logo star" role="img" aria-label={label} title={label} style:font-size="{Math.round(height * 0.95)}px">⭐</span>
+  <!-- TMDB's score: a star in TMDB's green-to-blue, drawn (an emoji looks different on every system). -->
+  <svg class="rating-logo" role="img" aria-label={label} width={height} height={height} viewBox="0 0 24 24"><title>{label}</title>
+    <defs><linearGradient id="tmdb-star" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#90cea1" /><stop offset="0.56" stop-color="#3cbec9" /><stop offset="1" stop-color="#00b3e5" /></linearGradient></defs>
+    <path fill="url(#tmdb-star)" d="M12 1.8l3.1 6.6 7.2.9-5.3 5 1.4 7.1L12 17.9l-6.4 3.5L7 14.3l-5.3-5 7.2-.9z" />
+  </svg>
 {/if}
 
 <style>
   .rating-logo { display: inline-block; flex: none; vertical-align: -0.2em; object-fit: contain; }
   .imdb { line-height: 0; }
-  .star { line-height: 1; vertical-align: -0.1em; }
   .imdb img { display: block; height: 100%; width: auto; }
   .on-light { display: none !important; }
   :global(:root[data-theme='light']) .imdb:not(.dark) .on-light { display: block !important; }

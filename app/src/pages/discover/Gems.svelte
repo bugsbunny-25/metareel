@@ -109,7 +109,7 @@
             {@const t = library.get(it.kind, it.tmdb_id)}
             <li class="tile" class:mine={!!t}>
               <a class="art" href="#/title/{it.kind}/{it.tmdb_id}">
-                <Poster path={it.poster_path ?? null} seed={it.tmdb_id} title={it.title} width={170} radius={10} size="w342" />
+                <Poster path={it.poster_path ?? null} seed={it.tmdb_id} title={it.title} kind={it.kind} tmdbId={it.tmdb_id} width={170} radius={10} size="w342" />
                 <span class="score num" title="IMDb {it.imdb_rating} from {it.imdb_votes?.toLocaleString()} votes"><RatingLogo source="imdb" dark height={13} />{it.imdb_rating?.toFixed(1)}</span>
               </a>
               <div class="tt">

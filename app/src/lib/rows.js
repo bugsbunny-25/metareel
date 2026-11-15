@@ -38,10 +38,10 @@ export function moveLabel(m, prev) {
 
 // Arrow emoji with the text-presentation selector (U+FE0E), so they draw as glyphs that take the
 // movement colour (green up, red down) instead of the platform's blue emoji tiles.
-export const UP = '\u2B06\uFE0E';
-export const DOWN = '\u2B07\uFE0E';
+export const UP = '\u25B2';
+export const DOWN = '\u25BC';
 
-/** What a chart row shows for its change: ⬆︎ 2, ⬇︎ 1, New, Back, or a dash for no change. */
+/** What a chart row shows for its change: ▲ 2, ▼ 1, New, Back, or a dash for no change. */
 export function changeText(m) {
   switch (m.type) {
     case 'up': return `${UP} ${m.by}`;

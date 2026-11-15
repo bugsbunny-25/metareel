@@ -41,7 +41,7 @@
       .filter((x) => x.watched_episodes > 0)
       .sort((a, b) => (b.last_watched_at ?? '').localeCompare(a.last_watched_at ?? ''))
       .slice(0, 16)
-      .map((x) => ({ key: x.tmdb_id, href: `#/show/${x.tmdb_id}`, poster: x.poster_path, seed: x.tmdb_id, title: x.title ?? '', percent: x.percent ?? 0, caption: `${x.watched_episodes}/${x.aired_episodes}` })),
+      .map((x) => ({ key: x.tmdb_id, kind: 'tv', href: `#/show/${x.tmdb_id}`, poster: x.poster_path, seed: x.tmdb_id, title: x.title ?? '', percent: x.percent ?? 0, caption: `${x.watched_episodes}/${x.aired_episodes}` })),
   )
   // The latest watch of each film; a rewatch doesn't repeat a poster.
   const myFilms = $derived.by(() => {
@@ -50,7 +50,7 @@
     for (const w of films) {
       if (seen.has(w.tmdb_id)) continue
       seen.add(w.tmdb_id)
-      out.push({ key: w.tmdb_id, href: `#/title/movie/${w.tmdb_id}`, poster: w.poster_path, seed: w.tmdb_id, title: w.title ?? '', caption: stars(w.rating) || null })
+      out.push({ key: w.tmdb_id, kind: 'movie', href: `#/title/movie/${w.tmdb_id}`, poster: w.poster_path, seed: w.tmdb_id, title: w.title ?? '', caption: stars(w.rating) || null })
       if (out.length === 16) break
     }
     return out

@@ -125,7 +125,7 @@
         {#each rows as t (t.tmdb_kind + t.tmdb_id)}
           <li class="card">
             <a class="art" href="#/title/{t.tmdb_kind}/{t.tmdb_id}" aria-label={t.title}>
-              <Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} width={168} radius={10} size="w342" />
+              <Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} kind={t.tmdb_kind} tmdbId={t.tmdb_id} width={168} radius={10} size="w342" />
               {#if t.favorite}<span class="fav" aria-hidden="true"><Icon name="heart-fill" size={13} /></span>{/if}
             </a>
             <div class="info">
@@ -150,7 +150,7 @@
               <tr>
                 <td class="t">
                   <a class="cell" href="#/title/{t.tmdb_kind}/{t.tmdb_id}">
-                    <Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} width={34} radius={4} size="w92" />
+                    <Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} kind={t.tmdb_kind} tmdbId={t.tmdb_id} width={34} radius={4} size="w92" />
                     <span class="text"><span class="nm">{t.title}{#if t.favorite}{' '}<span class="heart" aria-label="Favourite"><Icon name="heart-fill" size={12} /></span>{/if}</span>
                       <span class="meta">{t.tmdb_kind === 'tv' ? 'Series' : 'Film'}{#if year(t.release_date)}{' · '}{year(t.release_date)}{/if}{#if t.tmdb_kind === 'tv' && t.episodes_watched}{' · '}{t.episodes_watched} episode{t.episodes_watched === 1 ? '' : 's'} seen{/if}</span></span>
                   </a>

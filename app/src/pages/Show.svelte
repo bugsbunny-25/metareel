@@ -129,7 +129,7 @@
     <div class="skeleton" style="height:520px" aria-busy="true" aria-label="Loading"></div>
   {:else}
     <header class="hero">
-      <Poster path={title.poster_path} seed={id} title={title.title} width={150} radius={12} size="w342" />
+      <Poster path={title.poster_path} seed={id} title={title.title} kind="tv" tmdbId={id} width={150} radius={12} size="w342" />
       <div class="hbody">
         <p class="crumb"><a href="#/tv">TV</a> / Episodes</p>
         <h1>{title.title}</h1>

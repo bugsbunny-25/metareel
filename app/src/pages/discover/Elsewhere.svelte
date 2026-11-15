@@ -90,7 +90,7 @@
         {@const t = library.get(it.kind, it.tmdb_id)}
         <li>
           <span class="rk num">{i + 1}</span>
-          <a class="art" href="#/title/{it.kind}/{it.tmdb_id}" tabindex="-1" aria-hidden="true"><Poster path={it.poster_path ?? null} seed={it.tmdb_id} title={it.title} width={52} radius={6} size="w185" /></a>
+          <a class="art" href="#/title/{it.kind}/{it.tmdb_id}" tabindex="-1" aria-hidden="true"><Poster path={it.poster_path ?? null} seed={it.tmdb_id} title={it.title} kind={it.kind} tmdbId={it.tmdb_id} width={52} radius={6} size="w185" /></a>
           <div class="body">
             <a class="name" href="#/title/{it.kind}/{it.tmdb_id}">{it.title}</a>
             <span class="hint">{it.year ?? ''}{it.year ? ' · ' : ''}{it.kind === 'tv' ? 'Series' : 'Film'}{#if it.imdb_rating}{' · '}<RatingLogo source="imdb" height={13} /> {it.imdb_rating.toFixed(1)}{/if}</span>

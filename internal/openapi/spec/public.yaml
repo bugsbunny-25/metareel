@@ -1650,6 +1650,57 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /api/v1/titles/trending:
+    get:
+      operationId: getTrendingTitles
+      summary: What is trending on TMDB today
+      description: >-
+        TMDB's trending list for the day, live (nothing is stored) and cached in
+        memory for 30 minutes; when TMDB fails after that the last list is
+        served. People are left out of `kind=all`. 502 without a TMDB key or
+        when TMDB fails with nothing cached.
+      parameters:
+        - name: kind
+          in: query
+          schema: { type: string, enum: [all, movie, tv], default: all }
+      responses:
+        "200":
+          description: Trending titles, most trending first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TitleListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502":
+          description: TMDB unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/titles/in-cinemas/{country}:
+    get:
+      operationId: getInCinemas
+      summary: Films in cinemas in a country
+      description: >-
+        TMDB's now playing for the country (ISO 3166-1 region), first page, live
+        and cached in memory for 30 minutes like trending.
+      parameters:
+        - name: country
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[A-Za-z]{2}$" }
+      responses:
+        "200":
+          description: Films now playing
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TitleListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502":
+          description: TMDB unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /api/v1/titles/tmdb/{kind}/{id}/releases:
     get:
       operationId: getTitleReleases
@@ -4107,6 +4158,25 @@ components:
         upcoming_by_month: { type: array, items: { $ref: "#/components/schemas/PeriodStat" }, description: "tv only: episodes still to air and their runtime, by month" }
         catch_up_date: { type: string, format: date, description: "tv only: when minutes_left runs out at pace_minutes_per_week; absent with no recent watching" }
         pace_minutes_per_week: { type: integer, description: Average over the last eight weeks }
+    TitleListResponse:
+      type: object
+      required: [items, fetched_at]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [tmdb_kind, tmdb_id, title, vote_average, vote_count]
+            properties:
+              tmdb_kind: { type: string, enum: [movie, tv] }
+              tmdb_id: { type: string }
+              title: { type: string }
+              poster_path: { type: string }
+              backdrop_path: { type: string }
+              release_date: { type: string, description: "YYYY-MM-DD; first air date for TV" }
+              vote_average: { type: number }
+              vote_count: { type: integer }
+        fetched_at: { type: string, format: date-time }
     PersonStat:
       type: object
       properties:

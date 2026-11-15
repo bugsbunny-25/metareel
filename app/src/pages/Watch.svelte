@@ -131,7 +131,7 @@
   {:else}
     <p class="crumb"><a href="#/diary">Diary</a> / Watch</p>
     <header class="head">
-      <a href={titleHref} tabindex="-1" aria-hidden="true"><Poster path={poster} seed={w.tmdb_id} {title} width={110} radius={10} size="w342" /></a>
+      <a href={titleHref} tabindex="-1" aria-hidden="true"><Poster path={poster} seed={w.tmdb_id} {title} kind={w.tmdb_kind} tmdbId={w.tmdb_id} width={110} radius={10} size="w342" /></a>
       <div class="hb">
         <h1><a href={titleHref}>{title || 'Untitled'}</a></h1>
         <p class="hint">{#if episode}{epCode(w.season_number, w.episode_number)}{:else}Film{#if meta?.release}{' · '}{meta.release.slice(0, 4)}{/if}{/if}</p>

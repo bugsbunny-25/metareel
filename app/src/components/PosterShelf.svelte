@@ -11,7 +11,7 @@
   {#each items as it (it.key)}
     <li>
       <a href={it.href} title={it.title}>
-        <Poster path={it.poster} seed={it.seed} title={it.title} {width} radius={10} size="w342" />
+        <Poster path={it.poster} seed={it.seed} title={it.title} {width} kind={it.kind} tmdbId={it.key} radius={10} size="w342" />
         {#if it.percent != null}<span class="bar" aria-hidden="true"><i style:width="{Math.min(100, it.percent)}%"></i></span>{/if}
         <span class="name">{it.title}</span>
         {#if it.caption}<span class="cap">{it.caption}</span>{/if}

@@ -158,7 +158,7 @@
             <tr>
               <td class="title">
                 <a class="cell" href="#/title/{t.tmdb_kind}/{t.tmdb_id}">
-                  <Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} width={44} radius={5} size="w185" />
+                  <Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} kind={t.tmdb_kind} tmdbId={t.tmdb_id} width={44} radius={5} size="w185" />
                   <span class="text">
                     <span class="name">{t.title}</span>
                     <span class="meta">{t.tmdb_kind === 'tv' ? 'Series' : 'Film'}{#if year(t.release_date)}{' · '}{year(t.release_date)}{/if}{#if length(t)}{' · '}{length(t)}{/if}{#if t.watch_count}{' · '}watched {t.watch_count}×{/if}</span>
