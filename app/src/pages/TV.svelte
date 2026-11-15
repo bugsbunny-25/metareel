@@ -384,7 +384,7 @@
 
 <style>
   .page { padding: 20px var(--gutter) 48px; display: grid; gap: 22px; }
-  .head { display: flex; align-items: center; gap: 18px; }
+  .head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
   h1 { margin: 0; font: 700 32px/1.1 var(--font-display); letter-spacing: -0.02em; }
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-subtle); }
   .tabs button { height: 38px; padding: 0 18px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--text-muted); font: 700 14px/1 var(--font-sans); letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; }
@@ -410,6 +410,7 @@
   .k-label { color: var(--text-muted); font-size: 13px; font-weight: 600; }
   .kpi b { font: 700 32px/1.05 var(--font-sans); letter-spacing: -0.03em; }
   .k-sub { color: var(--text-muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 600px) { .k-sub { white-space: normal; } .kpi b { font-size: 28px; } }
 
   .stage { display: grid; gap: 12px; }
   .sh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
@@ -469,6 +470,11 @@
   .empty p { color: var(--text-muted); max-width: 60ch; }
   kbd { padding: 1px 6px; border-radius: 5px; background: var(--bg-elevated); font: 600 12px/1.4 var(--font-sans); }
 
+  /* Phones: the segment tabs get a row of their own, each half of it. */
+  @media (max-width: 600px) {
+    .tabs { order: 5; flex-basis: 100%; }
+    .tabs button { flex: 1; white-space: nowrap; padding: 0 8px; }
+  }
   @media (max-width: 960px) {
     .kpis { grid-template-columns: 1fr 1fr; }
   }

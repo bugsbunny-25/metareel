@@ -84,6 +84,16 @@
     const NAMES = { charts: 'Top 10', title: 'Title', tv: 'TV', movies: 'Movies', show: 'Episodes', episode: 'Episode', watch: 'Watch', person: 'Person', discover: 'Discover', watchlist: 'Watchlist', library: 'Library', diary: 'Diary', you: 'You', statsDetailed: 'Detailed stats', stats: 'Year in review', settings: 'Settings', missing: 'Not found' }
     document.title = NAMES[page] ? `${NAMES[page]} · metareel` : 'metareel'
   })
+  // A new page starts at the top (the hash router would otherwise keep the last page's scroll).
+  // Only the path counts: filters and tabs in the query keep your place.
+  let lastPath = route.path
+  $effect(() => {
+    const p = route.path
+    if (p !== lastPath) {
+      lastPath = p
+      window.scrollTo(0, 0)
+    }
+  })
   // On a phone the nav scrolls sideways; keep the current page's link in view.
   let nav = $state(null)
   $effect(() => {
@@ -221,10 +231,16 @@
     .search .label { display: none; }
   }
   @media (max-width: 1023px) {
-    .bar { gap: 14px; height: auto; min-height: 56px; flex-wrap: wrap; padding-block: 8px; }
-    .tools { margin-left: 0; width: 100%; }
+    /* Brand and tools share the first row; the nav gets a full row of its own. */
+    .bar { gap: 8px 14px; height: auto; min-height: 56px; flex-wrap: wrap; padding-block: 10px 6px; }
+    .tools { margin-left: auto; order: 2; }
+    .primary { order: 3; flex-basis: 100%; }
     .search .label, .search kbd { display: none; }
     .primary { max-width: 100%; gap: 14px; overflow-x: auto; white-space: nowrap; scrollbar-width: none; padding-right: 20px; mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
     .search { width: 32px; padding: 0; justify-content: center; }
+  }
+  @media (max-width: 440px) {
+    .primary { gap: 11px; font-size: 14px; padding-right: 0; mask-image: none; }
+    .primary .sep { display: none; }
   }
 </style>

@@ -167,8 +167,8 @@
   a.sh :global(svg) { color: var(--accent-yours); }
   a.sh:hover h2 { text-decoration: underline; text-underline-offset: 4px; }
 
-  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
-  .tiles.three { grid-template-columns: repeat(3, minmax(0, 220px)); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+  .tiles.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .tile { display: grid; gap: 4px; justify-items: center; padding: 16px; border-radius: 16px; background: var(--bg-surface); color: inherit; text-decoration: none; text-align: center; }
   a.tile:hover { background: var(--bg-elevated); }
   .tile b { display: inline-flex; align-items: center; gap: 4px; font: 700 30px/1.1 var(--font-sans); letter-spacing: -0.03em; }
@@ -189,6 +189,7 @@
 
   @media (max-width: 600px) {
     .tiles { grid-template-columns: 1fr 1fr; }
+    .tiles:not(.three) > :last-child:nth-child(odd) { grid-column: 1 / -1; }
     .tiles.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .tile b { font-size: 24px; }
     .two { grid-template-columns: 1fr; }

@@ -334,10 +334,14 @@
   .crew a:hover { text-decoration-color: currentColor; }
 
   @media (max-width: 960px) {
-    .grid { grid-template-columns: 1fr; }
+    .grid { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 640px) {
-    .head { flex-direction: column; align-items: flex-start; padding: 20px; gap: 18px; }
-    h1 { font-size: 34px; }
+    .head { flex-direction: column; align-items: flex-start; padding: 20px; gap: 16px; }
+    /* Phones: a smaller poster, so the title and actions show without scrolling. */
+    .art :global(.poster) { width: 104px !important; }
+    h1 { font-size: 32px; }
+    .overview { font-size: 16px; line-height: 24px; }
+    .cast { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 14px 10px; }
   }
 </style>

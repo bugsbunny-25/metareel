@@ -78,6 +78,10 @@
   summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .pop { position: absolute; right: 0; top: 38px; z-index: 20; display: grid; gap: 1px; min-width: 220px; padding: 8px; border-radius: 14px; background: var(--bg-surface); box-shadow: 0 18px 50px -12px rgb(0 0 0 / 0.55), 0 0 0 1px var(--border-subtle); }
   .pop.left { right: auto; left: 0; }
+  /* Phones: a sheet along the bottom of the screen, so it never runs off either edge. */
+  @media (max-width: 600px) {
+    .pop, .pop.left { position: fixed; left: 12px; right: 12px; top: auto; bottom: 12px; z-index: 60; }
+  }
   .h { margin: 2px 8px 4px; color: var(--text-muted); font: 700 11px/1 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; }
   button { display: flex; align-items: center; gap: 10px; padding: 8px; border: 0; border-radius: 8px; background: none; color: var(--text-primary); text-align: left; font: 500 14px/1.2 var(--font-sans); cursor: pointer; }
   button:hover, button:focus-visible { background: var(--bg-elevated); outline: none; }

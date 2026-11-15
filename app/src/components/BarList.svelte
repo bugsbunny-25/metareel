@@ -18,7 +18,7 @@
 
 <style>
   .bars { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-  li { display: grid; grid-template-columns: minmax(80px, 34%) 1fr auto; align-items: center; gap: 12px; }
+  li { display: grid; grid-template-columns: minmax(90px, 40%) 1fr auto; align-items: center; gap: 12px; }
   .lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
   .plate { display: inline-flex; align-items: center; height: 18px; margin-right: 6px; padding: 0 5px; border-radius: 4px; background: #161618; vertical-align: middle; }
   .plate img { display: block; height: 11px; max-width: 56px; object-fit: contain; }

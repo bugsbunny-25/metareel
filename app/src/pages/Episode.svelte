@@ -175,6 +175,7 @@
 
   .cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; }
   .main { display: grid; gap: 16px; min-width: 0; }
+  .main > * { min-width: 0; }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .badge { padding: 2px 9px; border-radius: 10px; background: var(--bg-elevated); font-size: 12px; font-weight: 700; }
   .meta .hint { font-size: 14.5px; }
@@ -212,7 +213,7 @@
     .cast li { flex: none; width: 100px; }
   }
   @media (max-width: 960px) {
-    .cols { grid-template-columns: 1fr; }
+    .cols { grid-template-columns: minmax(0, 1fr); }
     h1 { font-size: 30px; }
   }
 </style>

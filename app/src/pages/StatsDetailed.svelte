@@ -287,9 +287,13 @@
   @media (max-width: 1100px) {
     .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .half, .tall { grid-column: 1 / -1; grid-row: auto; }
-    .trio { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 600px) {
+    .tabs { flex-basis: 100%; }
+    .tabs button { flex: 1; }
   }
   @media (max-width: 520px) {
+    .trio { grid-template-columns: 1fr; }
     .big { font-size: 30px; }
   }
 </style>

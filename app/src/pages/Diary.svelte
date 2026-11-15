@@ -282,14 +282,21 @@
   .meta { margin: 0; color: var(--text-muted); font-size: 13px; text-decoration: none; }
   .meta .details { margin-left: 6px; color: var(--accent-yours); font-weight: 600; opacity: 0; transition: opacity 0.12s ease; }
   .watch:hover .details, .meta:focus-visible .details { opacity: 1; }
-  .top { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+  .top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
   .recent { gap: 14px; }
   .rrow { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px; }
   .rrow h2 { font-size: 15px !important; color: var(--text-muted); }
-  .rrow ul { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 0; list-style: none; }
+  .rrow ul { display: grid; grid-template-columns: repeat(4, minmax(0, 96px)); gap: 12px; margin: 0; padding: 0; list-style: none; }
   .rrow a { display: grid; gap: 4px; justify-items: center; color: inherit; text-decoration: none; }
+  .rrow a :global(.poster) { width: 100% !important; }
   .rrow a:hover :global(.poster) { outline: 2px solid var(--accent-yours); outline-offset: 2px; }
   .cap { color: var(--accent-yours); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  /* Wide screens: films and shows side by side, labels above, posters sized to their column. */
+  @media (min-width: 1100px) {
+    .recent { grid-template-columns: 1fr 1fr; column-gap: 28px; align-content: start; }
+    .rrow { grid-template-columns: 1fr; align-items: start; gap: 8px; }
+    .rrow ul { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
   .rh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
   .pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 0; }
   .pill { display: inline-flex; align-items: center; gap: 4px; }
@@ -311,6 +318,8 @@
   @media (max-width: 900px) { .kpis { grid-template-columns: 1fr 1fr; } .top { grid-template-columns: 1fr; } }
   @media (hover: none) { .meta .details { opacity: 1; } }
   @media (max-width: 560px) {
+    .rrow { grid-template-columns: 1fr; gap: 8px; }
+    .rrow ul { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
     .day { grid-template-columns: 44px 1fr; }
     .watch { grid-template-columns: auto 1fr; }
     .right { grid-column: 2; flex-wrap: wrap; }

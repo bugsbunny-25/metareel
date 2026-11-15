@@ -98,7 +98,8 @@
 
 <div class="page">
   <header class="head">
-    <h1>Stats</h1>
+    <p class="crumb"><a href="#/you">You</a> /</p>
+    <h1>Year in review</h1>
     <div class="years" role="group" aria-label="Year">
       <button aria-label="Previous year" onclick={() => setQuery({ year: year - 1 })}>‹</button>
       <span class="yr num" aria-live="polite">{year}</span>
@@ -257,7 +258,9 @@
 
 <style>
   .page { padding: 20px var(--gutter) 48px; }
-  .head { display: flex; align-items: center; gap: 18px; margin-bottom: 16px; }
+  .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-bottom: 16px; }
+  .crumb { margin: 0 -10px 0 0; color: var(--text-muted); font-size: 14px; }
+  .crumb a { color: inherit; }
   h1 { margin: 0; font: 700 32px/1.1 var(--font-display); letter-spacing: -0.02em; }
   .years { display: inline-flex; align-items: center; gap: 4px; padding: 2px; border-radius: 18px; background: var(--bg-elevated); }
   .years button { width: 30px; height: 30px; border: 0; border-radius: 50%; background: none; color: var(--text-primary); font-size: 18px; cursor: pointer; }

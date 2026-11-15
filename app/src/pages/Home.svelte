@@ -306,13 +306,13 @@
         <div class="panel-h"><h2>Movement</h2><span class="hint">Shows and films{prevDate ? ` · vs ${dayMonth(prevDate)}` : ''}</span></div>
         {#if moves.length}
           <table class="tbl">
-            <thead><tr><th scope="col">Title</th><th scope="col" class="right">Now</th><th scope="col" class="right">Was</th><th scope="col" class="right">Change</th></tr></thead>
+            <thead><tr><th scope="col">Title</th><th scope="col" class="right">Now</th><th scope="col" class="right opt">Was</th><th scope="col" class="right">Change</th></tr></thead>
             <tbody>
               {#each moves as m}
                 <tr>
                   <td><a class="cell" href={titleHref(m.kind, m.tmdb_id)}><Poster path={m.poster_path} seed={m.tmdb_id ?? m.slug} title={m.name} width={26} radius={4} size="w92" /><span class="ell">{m.name}</span></a></td>
                   <td class="right num">{m.rank}</td>
-                  <td class="right num muted">{m.previous_rank ?? '–'}</td>
+                  <td class="right num muted opt">{m.previous_rank ?? '–'}</td>
                   <td class="right"><span class="chg {m.type}" aria-hidden="true">{m.type === 'debut' ? 'New' : `${m.type === 'up' ? UP : DOWN} ${size(m)}`}</span><span class="sr">{m.type === 'debut' ? 'New' : `${m.type === 'up' ? 'Up' : 'Down'} ${size(m)}`}</span></td>
                 </tr>
               {/each}
@@ -327,12 +327,12 @@
         <div class="panel-h"><h2>Your list today</h2><span class="hint">Joined with today’s charts and availability</span><a class="see-all" href="#/watchlist">Watchlist</a></div>
         {#if myList.length}
           <table class="tbl">
-            <thead><tr><th scope="col">Title</th><th scope="col">Status</th><th scope="col">Today</th></tr></thead>
+            <thead><tr><th scope="col">Title</th><th scope="col" class="opt">Status</th><th scope="col">Today</th></tr></thead>
             <tbody>
               {#each myList as t}
                 <tr>
                   <td><a class="cell" href={titleHref(t.tmdb_kind, t.tmdb_id)}><Poster path={t.poster_path} seed={t.tmdb_id} title={t.title ?? ''} width={26} radius={4} size="w92" /><span class="ell">{t.title}</span></a></td>
-                  <td><span class="pill">{t.status === 'watchlist' ? 'Watchlist' : 'Watching'}</span></td>
+                  <td class="opt"><span class="pill">{t.status === 'watchlist' ? 'Watchlist' : 'Watching'}</span></td>
                   <td class:bad={t.note.type === 'left'} class:muted={t.note.type === 'quiet'}>{t.note.text}</td>
                 </tr>
               {/each}
@@ -348,14 +348,14 @@
       <section class="panel wide">
         <div class="panel-h"><h2>Rising in several countries</h2><span class="hint">Entered or climbed 3+ places in 2+ countries over 3 days</span></div>
         <table class="tbl">
-          <thead><tr><th scope="col">Title</th><th scope="col">Service</th><th scope="col" class="right">Countries</th><th scope="col" class="right">Score</th><th scope="col">Where</th></tr></thead>
+          <thead><tr><th scope="col">Title</th><th scope="col" class="opt">Service</th><th scope="col" class="right opt">Countries</th><th scope="col" class="right opt">Score</th><th scope="col">Where</th></tr></thead>
           <tbody>
             {#each data.breakouts.slice(0, 8) as b}
               <tr>
                 <td><a class="cell" href={titleHref(b.kind, b.tmdb_id)}><Poster path={b.poster_path} seed={b.tmdb_id ?? b.slug} title={b.name} width={26} radius={4} size="w92" /><span class="ell">{b.name}</span></a></td>
-                <td class="muted">{providerName(b.countries[0]?.provider ?? '')}</td>
-                <td class="right num">{b.rising_countries}</td>
-                <td class="right num">{b.score}</td>
+                <td class="muted opt">{providerName(b.countries[0]?.provider ?? '')}</td>
+                <td class="right num opt">{b.rising_countries}</td>
+                <td class="right num opt">{b.score}</td>
                 <td><span class="codes">{#each b.countries as c}<span class="code"><b>{c.country}</b> <span class="num">#{c.rank}</span>{#if c.movement === 'entered'}{' '}<span class="new">New</span>{/if}</span>{/each}</span></td>
               </tr>
             {/each}
@@ -436,7 +436,8 @@
   .cell:hover .ell { text-decoration: underline; text-underline-offset: 3px; }
   .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 15px/1.2 var(--font-display); }
   .tbl td { white-space: nowrap; }
-  .codes { display: flex; gap: 14px; color: var(--text-muted); }
+  .codes { display: flex; flex-wrap: wrap; gap: 2px 14px; color: var(--text-muted); }
+  .tbl td:has(.codes) { white-space: normal; }
   .code b { color: var(--text-primary); font-weight: 700; }
   .new { color: var(--delta-debut); font-weight: 700; font-size: 12px; }
   .empty-note { margin: 4px 12px 10px; color: var(--text-muted); }
@@ -447,7 +448,8 @@
     .hero { grid-template-columns: auto 1fr; }
     .hero-stats { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
     .kpis { grid-template-columns: repeat(2, 1fr); }
-    .two { grid-template-columns: 1fr; }
+    .two { grid-template-columns: minmax(0, 1fr); }
+    .panel, .panel.wide { overflow-x: auto; }
   }
   @media (max-width: 640px) {
     .hero { grid-template-columns: 1fr; padding: 20px; }
@@ -458,5 +460,9 @@
     .k-row svg { display: none; }
     .big { font-size: 76px; }
     .panel, .panel.wide { overflow-x: auto; }
+    /* Phones: the columns that matter most stay; the title gets what's left. */
+    .tbl .opt { display: none; }
+    .cell { max-width: 52vw; }
+    .tbl td:has(.cell) { white-space: normal; }
   }
 </style>
