@@ -9,8 +9,8 @@ import { providerName, useChartReference, useScope } from '@/data/scope';
 import { useTheme } from '@/theme';
 
 const COLORS = ['#e58a4a', '#8eb4f0', '#30d158', '#bf5af2', '#ffd60a', '#ff6482'];
-const H = 170;
-const PAD = { l: 26, r: 10, t: 10, b: 24 };
+const H = 110; // compact: a sparkline-like strip, not a full chart
+const PAD = { l: 24, r: 8, t: 8, b: 22 };
 
 const dayMonth = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
@@ -56,6 +56,7 @@ export function Top10Graph({ kind, id }: { kind: 'movie' | 'tv'; id: string }) {
 
   return (
     <Panel title={`Top 10 in ${name}`}>
+      <Text variant="caption">Last 30 days{order.length > 1 ? ' · first country in your order it charted in' : ''}</Text>
       <View
         onLayout={(e) => setWidth(Math.round(e.nativeEvent.layout.width))}
         accessible
@@ -87,7 +88,7 @@ export function Top10Graph({ kind, id }: { kind: 'movie' | 'tv'; id: string }) {
             {lines.map((l) => (
               <Path key={l.provider} d={l.d} fill="none" stroke={l.color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
             ))}
-            {lines.flatMap((l) => l.pts.map((p) => <Circle key={`${l.provider}${p.date}`} cx={x(p.date!)} cy={y(p.rank!)} r={days.length === 1 ? 5 : 2.6} fill={l.color} />))}
+            {lines.flatMap((l) => l.pts.map((p) => <Circle key={`${l.provider}${p.date}`} cx={x(p.date!)} cy={y(p.rank!)} r={days.length === 1 ? 4 : 2.2} fill={l.color} />))}
           </Svg>
         ) : (
           <View style={{ height: H }} />

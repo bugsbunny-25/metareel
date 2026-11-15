@@ -104,7 +104,7 @@ export const api = {
   overview: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}`, { signal }),
   timeline: (kind, id, country, signal) => request('GET', `/titles/tmdb/${kind}/${id}/timeline${qs({ country })}`, { signal }),
   /** Every day the title was in a Top 10 (country, service, rank) and a summary per chart. */
-  rankings: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/rankings`, { signal }),
+  rankings: (kind, id, signal, from) => request('GET', `/titles/tmdb/${kind}/${id}/rankings${qs({ from })}`, { signal }),
   history: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/history`, { signal }),
   availabilityHistory: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/availability/history`, { signal }),
   credits: (kind, id, signal) => request('GET', `/titles/tmdb/${kind}/${id}/credits`, { signal }),

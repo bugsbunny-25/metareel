@@ -26,7 +26,8 @@ export function usePreferences(enabled = true) {
   return useQuery({
     queryKey: ['preferences'],
     enabled,
-    staleTime: 10 * 60_000,
+    // Short: a change made on another device (the country order) shows up here soon.
+    staleTime: 30_000,
     queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/preferences', { signal })),
     select: (d) => d.preferences ?? {},
   });
@@ -260,9 +261,19 @@ export function useDetailedStats(kind: '' | 'tv' | 'movie') {
 /** Every day a title was in a Top 10 (country, service, rank), for its Top 10 graph. */
 export function useTitleRankings(kind: 'movie' | 'tv', id: string, enabled = true) {
   return useQuery({
-    queryKey: ['title-rankings', kind, id],
+    queryKey: ['title-rankings', kind, id, 30],
     enabled: enabled && !!id,
     staleTime: 30 * 60_000,
-    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/titles/tmdb/{kind}/{id}/rankings', { params: { path: { kind, id } }, signal })),
+    // The Top 10 graph covers the last 30 days at most.
+    queryFn: async ({ signal }) =>
+      unwrap(await api.GET('/api/v1/titles/tmdb/{kind}/{id}/rankings', { params: { path: { kind, id }, query: { from: localDayDaysAgo(29) } }, signal })),
   });
+}
+
+/** YYYY-MM-DD n days before today, in the device's zone. */
+function localDayDaysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const p = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }

@@ -14,6 +14,7 @@
   import { scope, countryName, providerName } from '../lib/scope.svelte.js'
   import { sampleColor, seriesPath, compact, dayMonth } from '../lib/viz.js'
   import { stars } from '../lib/rows.js'
+  import { addDays, localDay } from '../lib/dates.js'
   import { toast } from '../lib/toast.svelte.js'
 
   let { kind, id, onlog } = $props()
@@ -54,7 +55,8 @@
       ov ? api.availabilityHistory(k, tid, signal).catch(() => null) : null,
       // Stored for catalogued titles; fetched live from TMDB for the rest.
       api.credits(k, tid, signal).catch(() => null),
-      charted ? api.rankings(k, tid, signal).catch(() => null) : null,
+      // The Top 10 graph covers the last 30 days at most.
+      charted ? api.rankings(k, tid, signal, addDays(localDay(), -29)).catch(() => null) : null,
     ])
     return { ov: ov ?? {}, catalogued: !!ov, mine, charted, timeline, history, offerHistory, credits, rankings: rankings?.rankings ?? [] }
   }
