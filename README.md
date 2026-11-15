@@ -112,8 +112,10 @@ make down
 
 ### Workflows
 
-Each workflow runs only when files it covers change (`paths` filters); a change to
-`docs/` or a README runs nothing. Releases run every check regardless.
+Each workflow's jobs run only when files they cover change: a first `changes` job
+(`dorny/paths-filter`) lists the changed files and the other jobs skip themselves otherwise,
+so a change to `docs/` or a README runs only those small jobs. Releases run every check
+regardless, and if `changes` fails everything runs.
 
 - `ci.yml` (Go: `cmd/`, `internal/`, `db/`, `tools/`, `go.mod`, `Makefile`, …)
   - `go-quality`: `go mod tidy` check, `make vet`, `make build`, race tests with coverage, coverage artifact
@@ -192,17 +194,20 @@ make reports-local
 make reports-open
 ```
 
-### Required branch protection checks (recommended)
+### Required checks (ruleset `main-pr`)
 
-A workflow skipped by its `paths` filter reports nothing, so a check required by a branch
-protection rule stays pending on PRs that don't touch its files and blocks the merge. Require
-only checks that always apply, or add the same `paths` to the rule (rulesets can).
+The workflows start on every PR, and a job skipped by its `if` counts as passed, so these
+can be required without blocking PRs that don't touch their files. (Workflow-level `paths`
+filters would leave them pending forever, and a ruleset can't scope a required check by path.)
+The ruleset also requires a PR and an up-to-date branch. Edit it in Settings → Rules →
+Rulesets → `main-pr` → "Require status checks to pass".
 
 - `go-quality`
 - `integration`
 - `govulncheck`
 - `analyze` (CodeQL)
 - `build-scan-publish` (container + Trivy)
+- `checks` (mobile), optional: it skips itself the same way
 
 ### Operational notes
 
