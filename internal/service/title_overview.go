@@ -5,10 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/bugsbunny-25/metareel/internal/client"
 	"github.com/bugsbunny-25/metareel/internal/repository"
@@ -29,7 +33,26 @@ type TitleOverviewService struct {
 	// letterboxd: optional, resolves Letterboxd links in Lookup
 	letterboxd letterboxdResolver
 	now        func() time.Time
+
+	// details: optional, fetches and stores TMDB details for a title metareel
+	// has never seen (Trending, search), so its page has metadata and where
+	// to watch. One attempt per title per detailsRetry, missing or not.
+	details      detailsFetcher
+	detailsMu    sync.Mutex
+	detailsTried map[string]time.Time
+	detailsGroup singleflight.Group
 }
+
+// detailsFetcher fetches and stores one title's TMDB details
+// (TitleMetadataService.RefreshDetails); nil, nil when TMDB has no such title.
+type detailsFetcher interface {
+	RefreshDetails(ctx context.Context, ref repository.TmdbRef) (*client.TMDBFullDetails, error)
+}
+
+const (
+	detailsRetry    = 6 * time.Hour
+	detailsTriedMax = 5000
+)
 
 func NewTitleOverviewService(analytics *repository.AnalyticsRepository, flix *repository.FlixPatrolRepository, metadata *repository.MetadataRepository, ratings *RatingsService) *TitleOverviewService {
 	return &TitleOverviewService{analytics: analytics, flix: flix, metadata: metadata, ratings: ratings, now: time.Now}
@@ -39,6 +62,48 @@ func NewTitleOverviewService(analytics *repository.AnalyticsRepository, flix *re
 func (s *TitleOverviewService) WithEngagement(repo *repository.EngagementRepository) *TitleOverviewService {
 	s.engagement = repo
 	return s
+}
+
+// WithDetailsFetcher fetches TMDB details on demand for titles that have none
+// stored (never charted, not on a watchlist).
+func (s *TitleOverviewService) WithDetailsFetcher(f detailsFetcher) *TitleOverviewService {
+	s.details = f
+	s.detailsTried = map[string]time.Time{}
+	return s
+}
+
+// fetchDetails stores ref's TMDB details once per detailsRetry and reports
+// whether it ran a fetch. Concurrent requests for one title share the fetch.
+func (s *TitleOverviewService) fetchDetails(ctx context.Context, ref TmdbRef) bool {
+	if s.details == nil {
+		return false
+	}
+	key := ref.String()
+	now := s.now()
+	s.detailsMu.Lock()
+	if at, ok := s.detailsTried[key]; ok && now.Sub(at) < detailsRetry {
+		s.detailsMu.Unlock()
+		return false
+	}
+	if len(s.detailsTried) >= detailsTriedMax {
+		for k, at := range s.detailsTried {
+			if now.Sub(at) >= detailsRetry {
+				delete(s.detailsTried, k)
+			}
+		}
+	}
+	s.detailsMu.Unlock()
+	_, err, _ := s.detailsGroup.Do(key, func() (any, error) {
+		_, err := s.details.RefreshDetails(context.WithoutCancel(ctx), ref)
+		s.detailsMu.Lock()
+		s.detailsTried[key] = s.now()
+		s.detailsMu.Unlock()
+		return nil, err
+	})
+	if err != nil {
+		slog.Warn("on-demand tmdb details failed", slog.String("ref", key), slog.Any("err", err))
+	}
+	return err == nil
 }
 
 // WithMapping adds every known external ID to overviews.
@@ -609,6 +674,12 @@ func (s *TitleOverviewService) Overview(ctx context.Context, ref TmdbRef, q Over
 	meta, err := s.metadata.Get(ctx, ref)
 	if err != nil {
 		return nil, err
+	}
+	// No details yet (a ratings lookup may have stored only IDs): fetch them.
+	if (meta == nil || meta.DetailsFetchedAt == nil) && s.fetchDetails(ctx, ref) {
+		if meta, err = s.metadata.Get(ctx, ref); err != nil {
+			return nil, err
+		}
 	}
 	if meta != nil {
 		known = true
