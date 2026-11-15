@@ -65,9 +65,11 @@ export function DateTimeField({ value, onChange, withTime = true, max }: { value
 /** The system calendar (date) or time wheel, inline, tinted like the app. */
 function IOSPicker({ part, value, max, onChange }: { part: 'date' | 'time'; value: Date; max?: Date; onChange: (d: Date) => void }) {
   const { colors, scheme, radius } = useTheme();
-  // Loaded here so Android never requires the SwiftUI views.
+  // Loaded here, not imported, so Android never loads the SwiftUI views.
+  /* eslint-disable @typescript-eslint/no-require-imports -- platform-only native module, loaded on that platform */
   const { DatePicker, Host } = require('@expo/ui/swift-ui') as typeof import('@expo/ui/swift-ui');
   const { datePickerStyle, tint, labelsHidden } = require('@expo/ui/swift-ui/modifiers') as typeof import('@expo/ui/swift-ui/modifiers');
+  /* eslint-enable @typescript-eslint/no-require-imports */
   return (
     <View style={[styles.panel, { backgroundColor: colors.bgElevated, borderRadius: radius.panel }]}>
       <Host matchContents={{ vertical: true }} colorScheme={scheme} style={{ width: '100%' }}>
@@ -98,6 +100,8 @@ function AndroidDialog({
   onClose: () => void;
   onChange: (d: Date) => void;
 }) {
+  // Loaded here, not imported, so iOS never loads the Compose views.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- platform-only native module, loaded on that platform
   const { DatePickerDialog, TimePickerDialog, Host } = require('@expo/ui/jetpack-compose') as typeof import('@expo/ui/jetpack-compose');
   return (
     <Host matchContents>

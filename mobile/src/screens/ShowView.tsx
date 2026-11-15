@@ -36,7 +36,7 @@ export function ShowView({
   /** Beside a list: show an episode in the same pane instead of pushing it. */
   onOpenEpisode?: (season: number, episode: number) => void;
 }) {
-  const { colors, radius, gutter } = useTheme();
+  const { colors, gutter } = useTheme();
   const detail = useDetailScroll(embedded);
   const show = useShow(id);
   const queued = useOutbox().filter((i) => i.kind === 'episodes' && i.meta?.show === id && i.status === 'pending');

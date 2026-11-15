@@ -60,8 +60,9 @@ export default function TV() {
     twoPane && episodeSel?.show === ep.tmdb_id && episodeSel?.season === ep.season_number && episodeSel?.episode === ep.episode_number;
   const isShowSel = (id?: string) => twoPane && !!id && (selected === id || episodeSel?.show === id);
 
-  const shows = queue.data?.shows ?? [];
-  const eps = upcoming.data?.episodes ?? [];
+  // Memoised so the lists below only recompute when the data changes.
+  const shows = useMemo(() => queue.data?.shows ?? [], [queue.data]);
+  const eps = useMemo(() => upcoming.data?.episodes ?? [], [upcoming.data]);
   const groups: Group<Item>[] = useMemo(() => {
     if (segment === 'towatch') return tvToWatch(shows).map((g) => ({ ...g, data: g.data.map((show) => ({ type: 'show' as const, show })) }));
     // The grid shows one poster per show; the list every episode by day.
