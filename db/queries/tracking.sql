@@ -173,14 +173,14 @@ INSERT INTO watch_entries (
     season_number, episode_number, tmdb_episode_id,
     ended_at, started_at, runtime_minutes_used, runtime_source,
     tz, utc_offset_minutes, watched_on, time_precision,
-    rating, liked, is_rewatch, watch_number, notes, venue_kind, source
+    rating, liked, is_rewatch, watch_number, notes, venue_kind, source, import_id
 ) VALUES (
     sqlc.arg(user_id), sqlc.narg(client_key), sqlc.arg(subject_kind), sqlc.arg(tmdb_kind), sqlc.arg(tmdb_id),
     sqlc.narg(season_number), sqlc.narg(episode_number), sqlc.narg(tmdb_episode_id),
     sqlc.arg(ended_at), sqlc.narg(started_at), sqlc.narg(runtime_minutes_used), sqlc.narg(runtime_source),
     sqlc.narg(tz), sqlc.narg(utc_offset_minutes), sqlc.arg(watched_on), sqlc.arg(time_precision),
     sqlc.narg(rating), sqlc.arg(liked), sqlc.arg(is_rewatch), sqlc.arg(watch_number),
-    sqlc.narg(notes), sqlc.narg(venue_kind), sqlc.arg(source)
+    sqlc.narg(notes), sqlc.narg(venue_kind), sqlc.arg(source), sqlc.narg(import_id)
 )
 RETURNING id;
 

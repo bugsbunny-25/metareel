@@ -232,95 +232,66 @@
           {/if}
         {/each}
       {:else}
+      <!-- The list: one row per show in every stage, with that stage's actions. -->
       {#each STAGES as [key, name, hint]}
         {@const list = byStage[key]}
         {#if list.length}
           <section class="stage" aria-labelledby="st-{key}">
             <div class="sh"><h2 id="st-{key}">{name}</h2><span class="n num">{list.length}</span><span class="hint">{typeof hint === 'function' ? hint(queue.stale_days ?? 30) : hint}</span></div>
-            {#if key === 'watching' || key === 'stalled'}
-              <div class="cards">
-                {#each list as s (s.tmdb_id)}
-                  {@const ep = s.next_episode}
-                  {@const t = library.get('tv', s.tmdb_id)}
-                  <article class="card" class:stalled={key === 'stalled'}>
-                    <a class="art" href={nextHref(s)} tabindex="-1" aria-hidden="true"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={84} radius={8} size="w185" /></a>
-                    <div class="body">
-                      <div class="top">
-                        <a class="name" href="#/show/{s.tmdb_id}">{s.title}</a>
-                        {#if t}<TitleMenu {t} {onlog} />{/if}
-                      </div>
-                      <a class="ep" href={nextHref(s)}><span class="code num">{epCode(ep.season_number, ep.episode_number)}</span>{' '}{ep.name || 'Untitled episode'}</a>
-                      <p class="meta">
-                        {#if ep.runtime}{ep.runtime} min · {/if}aired {ep.air_date ? ago(ep.air_date) : 'on an unknown date'}
-                        {#if EPISODE_TYPE[ep.episode_type]}{' '}<span class="badge">{EPISODE_TYPE[ep.episode_type]}</span>{/if}
-                      </p>
-                      <div class="prog" title="{s.watched_episodes} of {s.aired_episodes} aired episodes watched">
-                        <span class="bar" aria-hidden="true"><i style:width="{s.percent}%"></i></span>
-                        <span class="num">{s.watched_episodes}/{s.aired_episodes}</span>
-                      </div>
-                      <p class="foot">
-                        {s.remaining_episodes} left{#if s.minutes_left} · {hm(s.minutes_left)}{/if}
-                        {#if s.last_watched_at}{' · '}<span class:stale={key === 'stalled'}>last watched {sinceDay(s.last_watched_at)}</span>{/if}
-                      </p>
-                      <div class="actions">
-                        <button class="btn-primary sm" disabled={busy.has(s.tmdb_id)} onclick={() => watched(s)} title="Mark {epCode(ep.season_number, ep.episode_number)} watched, just now">
-                          <Icon name="check" size={15} />Watched
-                        </button>
-                        <button class="btn-secondary sm" onclick={() => logIt(s)}>Log…</button>
-                        <a class="more-link" href="#/show/{s.tmdb_id}">View whole series</a>
-                      </div>
-                    </div>
-                  </article>
-                {/each}
-              </div>
-            {:else if key === 'not_started'}
-              <div class="tiles">
-                {#each list as s (s.tmdb_id)}
-                  {@const t = library.get('tv', s.tmdb_id)}
-                  <article class="tile">
-                    <a class="art" href="#/show/{s.tmdb_id}"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={150} radius={10} size="w342" /></a>
-                    <div class="top">
-                      <a class="name" href="#/show/{s.tmdb_id}">{s.title}</a>
-                      {#if t}<TitleMenu {t} {onlog} />{/if}
-                    </div>
-                    <p class="meta">
-                      {#if s.aired_episodes}
-                        {s.aired_episodes} episode{s.aired_episodes === 1 ? '' : 's'} out{#if s.minutes_left} · {hm(s.minutes_left)}{/if}
-                      {:else if s.next_air_date}
-                        <span class="new">Premieres {dayLabel(s.next_air_date)}</span>
-                      {:else}
-                        No air dates yet
-                      {/if}
-                    </p>
-                    {#if s.aired_episodes && s.next_air_date}<p class="meta"><span class="new">New episode {dayLabel(s.next_air_date)}</span></p>{/if}
-                    {#if s.next_episode}
-                      <button class="btn-secondary sm" disabled={busy.has(s.tmdb_id)} onclick={() => watched(s)}>
-                        <Icon name="check" size={14} />Watched {epCode(s.next_episode.season_number, s.next_episode.episode_number)}
-                      </button>
-                    {/if}
-                  </article>
-                {/each}
-              </div>
-            {:else}
-              <ul class="rows">
-                {#each list as s (s.tmdb_id)}
-                  {@const t = library.get('tv', s.tmdb_id)}
-                  <li>
-                    <a class="art" href="#/show/{s.tmdb_id}" tabindex="-1" aria-hidden="true"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={44} radius={5} size="w92" /></a>
-                    <div class="rbody">
-                      <a class="name" href="#/show/{s.tmdb_id}">{s.title}</a>
+            <ul class="rows">
+              {#each list as s (s.tmdb_id)}
+                {@const ep = s.next_episode}
+                {@const t = library.get('tv', s.tmdb_id)}
+                {@const going = (key === 'watching' || key === 'stalled') && ep}
+                <li class:stalled={key === 'stalled'}>
+                  <a class="art" href={going ? nextHref(s) : `#/show/${s.tmdb_id}`} tabindex="-1" aria-hidden="true"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={44} radius={5} size="w92" /></a>
+                  <div class="rbody">
+                    <a class="name" href="#/show/{s.tmdb_id}">{s.title}</a>
+                    {#if going}
+                      <a class="ep" href={nextHref(s)}><span class="code num">{epCode(ep.season_number, ep.episode_number)}</span>{' '}{ep.name || 'Untitled episode'}{#if EPISODE_TYPE[ep.episode_type]}{' '}<span class="badge">{EPISODE_TYPE[ep.episode_type]}</span>{/if}</a>
                       <span class="hint">
-                        {#if s.watched_episodes}{s.watched_episodes} of {s.aired_episodes} watched{#if s.next_episode}{' · '}next {epCode(s.next_episode.season_number, s.next_episode.episode_number)}{/if}{:else}Not started{/if}
+                        {s.remaining_episodes} left{#if s.minutes_left}{' · '}<span class="nb">{hm(s.minutes_left)}</span>{/if}{#if s.last_watched_at}{' · '}<span class:stale={key === 'stalled'}>last watched {sinceDay(s.last_watched_at)}</span>{/if}
+                      </span>
+                    {:else if key === 'not_started'}
+                      <span class="hint">
+                        {#if s.aired_episodes}
+                          {s.aired_episodes} episode{s.aired_episodes === 1 ? '' : 's'} out{#if s.minutes_left}{' · '}<span class="nb">{hm(s.minutes_left)}</span>{/if}{#if s.next_air_date}{' · '}<span class="new">new episode {dayLabel(s.next_air_date)}</span>{/if}
+                        {:else if s.next_air_date}
+                          <span class="new">Premieres {dayLabel(s.next_air_date)}</span>
+                        {:else}
+                          No air dates yet
+                        {/if}
+                      </span>
+                    {:else}
+                      <span class="hint">
+                        {#if s.watched_episodes}{s.watched_episodes} of {s.aired_episodes} watched{#if ep}{' · '}next {epCode(ep.season_number, ep.episode_number)}{/if}{:else}Not started{/if}
                         {#if s.last_watched_at}{' · '}last watched {sinceDay(s.last_watched_at)}{/if}
                       </span>
-                    </div>
-                    <span class="bar slim" aria-hidden="true"><i style:width="{s.percent}%"></i></span>
-                    <button class="btn-secondary sm" onclick={() => resume(s)}>Resume</button>
-                    {#if t}<TitleMenu {t} {onlog} />{/if}
-                  </li>
-                {/each}
-              </ul>
-            {/if}
+                    {/if}
+                  </div>
+                  <span class="prog" title="{s.watched_episodes} of {s.aired_episodes} aired episodes watched">
+                    {#if s.aired_episodes && s.watched_episodes}<span class="bar" aria-hidden="true"><i style:width="{s.percent}%"></i></span><span class="num">{s.watched_episodes}/{s.aired_episodes}</span>{/if}
+                  </span>
+                  <div class="racts">
+                    {#if going}
+                      <button class="btn-primary sm" disabled={busy.has(s.tmdb_id)} onclick={() => watched(s)} title="Mark {epCode(ep.season_number, ep.episode_number)} watched, just now">
+                        <Icon name="check" size={15} />Watched
+                      </button>
+                      <button class="btn-secondary sm" onclick={() => logIt(s)}>Log…</button>
+                    {:else if key === 'not_started'}
+                      {#if ep}
+                        <button class="btn-secondary sm" disabled={busy.has(s.tmdb_id)} onclick={() => watched(s)}>
+                          <Icon name="check" size={14} />Watched {epCode(ep.season_number, ep.episode_number)}
+                        </button>
+                      {/if}
+                    {:else}
+                      <button class="btn-secondary sm" onclick={() => resume(s)}>Resume</button>
+                    {/if}
+                  </div>
+                  {#if t}<TitleMenu {t} {onlog} />{:else}<span></span>{/if}
+                </li>
+              {/each}
+            </ul>
           </section>
         {/if}
       {/each}
@@ -425,15 +396,11 @@
   .sh h2 { margin: 0; font: 700 22px/1.2 var(--font-display); }
   .n { color: var(--text-muted); font-weight: 700; }
 
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
-  .card { display: grid; grid-template-columns: 84px 1fr; gap: 16px; padding: 14px; border-radius: 16px; background: var(--bg-surface); }
-  .body { display: grid; gap: 5px; align-content: start; min-width: 0; }
-  .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-width: 0; }
   .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 17px/1.25 var(--font-display); color: inherit; text-decoration: none; }
   .name:hover { text-decoration: underline; text-underline-offset: 3px; }
   .ep { margin: 0; color: inherit; text-decoration: none; font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .code { color: var(--accent-yours); font-weight: 700; }
-  .meta, .foot { margin: 0; color: var(--text-muted); font-size: 13px; }
+  .meta { margin: 0; color: var(--text-muted); font-size: 13px; }
   .stale { color: var(--status-stale); font-weight: 600; }
   .new { color: var(--delta-debut); font-weight: 600; }
   .badge { display: inline-block; padding: 1px 7px; border-radius: 9px; background: var(--bg-elevated); color: var(--text-primary); font-size: 11.5px; font-weight: 700; }
@@ -441,26 +408,22 @@
   .prog { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--text-muted); }
   .bar { flex: 1; height: 6px; border-radius: 3px; background: var(--bg-elevated); overflow: hidden; }
   .bar i { display: block; height: 100%; border-radius: 3px; background: var(--accent-yours); }
-  .card.stalled .bar i { background: var(--status-stale); }
-  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
   .sm { height: 32px; padding: 0 14px; font-size: 13.5px; gap: 6px; }
-  .more-link { color: var(--text-muted); font-size: 13.5px; font-weight: 600; text-decoration: none; padding: 0 4px; }
-  .more-link:hover { color: var(--text-primary); }
 
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 14px; }
-  .tile { display: grid; gap: 6px; align-content: start; min-width: 0; }
-  .tile .art { display: block; transition: transform 0.15s ease; }
-  .tile .art:hover { transform: translateY(-2px); }
-  .tile .name { font-size: 15.5px; }
-  .tile .btn-secondary { justify-self: start; }
+  .nb { white-space: nowrap; }
 
   .rows { display: grid; gap: 2px; margin: 0; padding: 6px; list-style: none; border-radius: 16px; background: var(--bg-surface); }
-  .rows li { display: grid; grid-template-columns: 44px minmax(0, 1fr) 120px auto auto; align-items: center; gap: 14px; padding: 8px; border-radius: 10px; }
+  /* poster | name, next episode, what's left | progress | the stage's actions | menu */
+  .rows li { display: grid; grid-template-columns: 44px minmax(0, 1fr) 150px auto 36px; align-items: center; gap: 14px; padding: 8px; border-radius: 10px; }
   .rows li:hover { background: var(--bg-elevated); }
+  .rows li.stalled .bar i { background: var(--status-stale); }
   .rbody { display: grid; gap: 2px; min-width: 0; }
   .rbody .name { font-size: 15.5px; }
+  .rbody .ep { font-size: 13.5px; }
   .rbody .hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bar.slim { height: 4px; }
+  .rows .prog .bar { height: 4px; }
+  .racts { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 
   .upcoming { gap: 14px; }
   .uh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
@@ -487,10 +450,11 @@
     .kpis { grid-template-columns: 1fr 1fr; }
   }
   @media (max-width: 600px) {
-    .cards { grid-template-columns: 1fr; }
-    .card { grid-template-columns: 64px 1fr; gap: 12px; }
-    .rows li { grid-template-columns: 44px minmax(0, 1fr) auto auto; }
-    .rows .bar.slim { display: none; }
+    /* Phones: the actions get a line of their own under the title; no progress bar. */
+    .rows li { grid-template-columns: 44px minmax(0, 1fr) 36px; row-gap: 8px; }
+    .rows li .art { grid-row: span 2; align-self: start; }
+    .rows .prog { display: none; }
+    .racts { grid-column: 2 / -1; grid-row: 2; justify-content: flex-start; }
     .day { grid-template-columns: 1fr; gap: 8px; }
     .uh .seg { margin-left: 0; }
   }

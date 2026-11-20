@@ -192,6 +192,29 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	tracking := service.NewTrackingService(log, trackingWrite, trackingRead, trackedTitles).
 		WithPosterColors(service.NewPosterColorService(log, trackingWrite, tmdbClient))
 
+	// Imports from TV Time and Suite: matched and written in the background,
+	// resumed after a restart (stopped before the database closes).
+	imports := service.NewImportService(log, trackingWrite, tracking, tmdbClient)
+	importCtx, stopImports := context.WithCancel(ctx)
+	importsDone := make(chan struct{})
+	go func() {
+		imports.Run(importCtx)
+		close(importsDone)
+	}()
+	defer func() {
+		stopImports()
+		<-importsDone
+	}()
+
+	// Physical media: releases are shared, copies are per user; barcode
+	// lookups go to UPCitemdb unless turned off.
+	var barcodes *client.UPCItemDB
+	if cfg.Discs.BarcodeLookup {
+		barcodes = client.NewUPCItemDB(httpClient, cfg.Discs.UPCItemDBKey)
+	}
+	discs := service.NewDiscService(log, repository.NewDiscsRepository(db), repository.NewDiscsRepository(readDB),
+		trackedTitles, tmdbClient, barcodeLookup(barcodes), cfg.Discs.MediaDir, cfg.HTTP.UserAgent)
+
 	h := &handler.Handler{
 		Top10:      top10Read,
 		AdminTasks: taskScheduleAdmin,
@@ -228,6 +251,8 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Timeline:       service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),
 		Search:         service.NewSearchService(repository.NewSearchRepository(readDB)),
 		Tracking:       tracking,
+		Imports:        imports,
+		Discs:          discs,
 		Lists:          service.NewTitleListsService(client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
 		Push:           taskruntime.NewPushService(log, db, cfg),
 		Webhooks:       webhooks,
@@ -360,4 +385,13 @@ func bootstrapAdmin(ctx context.Context, log *slog.Logger, users *service.UserSe
 		log.Info("admin user created from AUTH_ADMIN_USERNAME", slog.String("username", cfg.AdminUsername))
 	}
 	return nil
+}
+
+// barcodeLookup keeps a nil client a nil interface, so the disc service can
+// tell that lookups are off.
+func barcodeLookup(c *client.UPCItemDB) service.BarcodeSource {
+	if c == nil {
+		return nil
+	}
+	return c
 }

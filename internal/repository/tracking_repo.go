@@ -333,6 +333,8 @@ type NewWatch struct {
 	Tags               []string
 	Context            *WatchContext
 	FormatIDs          []int64
+	// ImportID is the import that wrote this watch (nil when logged by hand).
+	ImportID *int64
 }
 
 // CreateWatch records a watch, attaches its tags and refreshes the title's

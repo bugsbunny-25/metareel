@@ -26,6 +26,7 @@ type Config struct {
 	TMDB         TMDB
 	Ratings      Ratings
 	MDBList      MDBList
+	Discs        Discs
 	Imports      Imports
 	Alerts       Alerts
 	Webhooks     Webhooks
@@ -164,6 +165,19 @@ type Ratings struct {
 type MDBList struct {
 	// APIKey enables MDBList ratings (https://mdblist.com/preferences/).
 	APIKey string `env:"MDBLIST_API_KEY" envDefault:""`
+}
+
+// Discs configures physical media (the shelf).
+type Discs struct {
+	// MediaDir holds the disc pictures users upload or import, named by
+	// content hash under discs/. Keep it on the same volume as the database
+	// and back both up together.
+	MediaDir string `env:"MEDIA_DIR" envDefault:"./data/media"`
+	// BarcodeLookup turns UPCitemdb barcode lookups on. Without a key it uses
+	// the free trial endpoint (about 100 lookups a day per IP); every answer
+	// is cached, so a barcode is looked up once.
+	BarcodeLookup bool   `env:"BARCODE_LOOKUP_ENABLED" envDefault:"true"`
+	UPCItemDBKey  string `env:"UPCITEMDB_API_KEY" envDefault:""`
 }
 
 // Imports configures the Netflix Top 10 and IMDb dataset imports.

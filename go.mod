@@ -14,6 +14,7 @@ require (
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/ringsaturn/tzf/v2 v2.3.0
 	golang.org/x/crypto v0.59.0
+	golang.org/x/image v0.48.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/term v0.48.0
 	golang.org/x/text v0.44.0

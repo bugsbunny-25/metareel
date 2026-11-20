@@ -77,6 +77,76 @@ type DataImport struct {
 	ImportedAt   time.Time      `json:"imported_at"`
 }
 
+type DiscBarcodeLookup struct {
+	Barcode   string `json:"barcode"`
+	Provider  string `json:"provider"`
+	Found     int64  `json:"found"`
+	Payload   string `json:"payload"`
+	FetchedAt string `json:"fetched_at"`
+}
+
+type DiscCopy struct {
+	ID          int64          `json:"id"`
+	UserID      int64          `json:"user_id"`
+	ReleaseID   int64          `json:"release_id"`
+	PurchasedOn sql.NullString `json:"purchased_on"`
+	PriceMinor  sql.NullInt64  `json:"price_minor"`
+	Currency    sql.NullString `json:"currency"`
+	Retailer    string         `json:"retailer"`
+	Condition   string         `json:"condition"`
+	Notes       sql.NullString `json:"notes"`
+	CreatedAt   string         `json:"created_at"`
+	UpdatedAt   string         `json:"updated_at"`
+}
+
+type DiscRelease struct {
+	ID              int64          `json:"id"`
+	ParentID        sql.NullInt64  `json:"parent_id"`
+	Position        int64          `json:"position"`
+	Barcode         sql.NullString `json:"barcode"`
+	Title           string         `json:"title"`
+	Edition         string         `json:"edition"`
+	MediaFormat     string         `json:"media_format"`
+	Packaging       string         `json:"packaging"`
+	HasSlipcover    int64          `json:"has_slipcover"`
+	Region          string         `json:"region"`
+	Country         sql.NullString `json:"country"`
+	Studio          string         `json:"studio"`
+	Label           sql.NullString `json:"label"`
+	ReleaseDate     sql.NullString `json:"release_date"`
+	Discs           string         `json:"discs"`
+	SpecialFeatures string         `json:"special_features"`
+	Notes           sql.NullString `json:"notes"`
+	Source          string         `json:"source"`
+	CreatedBy       sql.NullInt64  `json:"created_by"`
+	CreatedAt       string         `json:"created_at"`
+	UpdatedAt       string         `json:"updated_at"`
+}
+
+type DiscReleaseImage struct {
+	ID          int64          `json:"id"`
+	ReleaseID   int64          `json:"release_id"`
+	Kind        string         `json:"kind"`
+	Position    int64          `json:"position"`
+	Sha256      string         `json:"sha256"`
+	ContentType string         `json:"content_type"`
+	Width       int64          `json:"width"`
+	Height      int64          `json:"height"`
+	Bytes       int64          `json:"bytes"`
+	Source      string         `json:"source"`
+	SourceUrl   sql.NullString `json:"source_url"`
+	UploadedBy  sql.NullInt64  `json:"uploaded_by"`
+	CreatedAt   string         `json:"created_at"`
+}
+
+type DiscReleaseTitle struct {
+	ReleaseID    int64         `json:"release_id"`
+	Position     int64         `json:"position"`
+	TmdbKind     string        `json:"tmdb_kind"`
+	TmdbID       string        `json:"tmdb_id"`
+	SeasonNumber sql.NullInt64 `json:"season_number"`
+}
+
 type ImdbRating struct {
 	ImdbID        string    `json:"imdb_id"`
 	AverageRating float64   `json:"average_rating"`
@@ -554,6 +624,41 @@ type UserDevice struct {
 	DisabledAt   sql.NullString `json:"disabled_at"`
 }
 
+type UserImport struct {
+	ID          int64          `json:"id"`
+	UserID      int64          `json:"user_id"`
+	Source      string         `json:"source"`
+	FileName    string         `json:"file_name"`
+	Tz          sql.NullString `json:"tz"`
+	Status      string         `json:"status"`
+	Error       sql.NullString `json:"error"`
+	Summary     string         `json:"summary"`
+	CreatedAt   string         `json:"created_at"`
+	UpdatedAt   string         `json:"updated_at"`
+	CommittedAt sql.NullString `json:"committed_at"`
+	UndoneAt    sql.NullString `json:"undone_at"`
+}
+
+type UserImportItem struct {
+	ID             int64          `json:"id"`
+	ImportID       int64          `json:"import_id"`
+	Kind           string         `json:"kind"`
+	SourceRef      string         `json:"source_ref"`
+	Title          string         `json:"title"`
+	Year           sql.NullInt64  `json:"year"`
+	ReleaseDate    sql.NullString `json:"release_date"`
+	Data           string         `json:"data"`
+	MatchStatus    string         `json:"match_status"`
+	MatchMethod    sql.NullString `json:"match_method"`
+	TmdbID         sql.NullString `json:"tmdb_id"`
+	Candidates     sql.NullString `json:"candidates"`
+	EpisodesTotal  int64          `json:"episodes_total"`
+	EpisodesMapped int64          `json:"episodes_mapped"`
+	Result         sql.NullString `json:"result"`
+	PrevState      sql.NullString `json:"prev_state"`
+	CommittedAt    sql.NullString `json:"committed_at"`
+}
+
 type UserPreference struct {
 	UserID    int64  `json:"user_id"`
 	Data      string `json:"data"`
@@ -704,6 +809,7 @@ type WatchEntry struct {
 	ScreenHeightM          sql.NullFloat64 `json:"screen_height_m"`
 	SubscriptionID         sql.NullInt64   `json:"subscription_id"`
 	FaceValueMinor         sql.NullInt64   `json:"face_value_minor"`
+	ImportID               sql.NullInt64   `json:"import_id"`
 }
 
 type WatchEntryFormat struct {

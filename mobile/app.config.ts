@@ -104,6 +104,24 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
     'expo-background-task',
+    // Barcode scanning (adding discs) and photos of your discs; no audio.
+    [
+      'expo-camera',
+      {
+        cameraPermission: 'metareel uses the camera to scan the barcodes of your discs and photograph their covers.',
+        microphonePermission: false,
+        recordAudioAndroid: false,
+        barcodeScannerEnabled: true,
+      },
+    ],
+    [
+      'expo-image-picker',
+      {
+        photosPermission: 'metareel lets you pick photos of your discs’ covers to add to your collection.',
+        cameraPermission: 'metareel uses the camera to photograph the covers of your discs.',
+        microphonePermission: false,
+      },
+    ],
     [
       'expo-sharing',
       {

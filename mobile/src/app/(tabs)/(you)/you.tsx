@@ -8,6 +8,8 @@ import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { recentDistinct } from '@/data/collections';
 import { useAccount, useDetailedStats, useRecentWatches, useSavings, useShowQueue } from '@/data/queries';
+import { useDiscs } from '@/discs/data';
+import { DiscSpine } from '@/discs/parts';
 import { searchAction } from '@/layout/root-header';
 import { openTitle } from '@/lib/actions';
 import { formatMoney } from '@/lib/format';
@@ -27,6 +29,7 @@ export default function You() {
   const savings = useSavings();
   const queue = useShowQueue();
   const films = useRecentWatches('movie', 60);
+  const discs = useDiscs();
   const [width, setWidth] = useState(0);
   const s = stats.data;
   const name = account.data?.user?.username ?? session.user.username;
@@ -44,7 +47,7 @@ export default function You() {
     <Screen
       title="You"
       refreshing={stats.isRefetching}
-      onRefresh={() => void Promise.all([stats.refetch(), savings.refetch(), queue.refetch(), films.refetch(), account.refetch()])}
+      onRefresh={() => void Promise.all([stats.refetch(), savings.refetch(), queue.refetch(), films.refetch(), account.refetch(), discs.refetch()])}
       actions={[{ label: 'Settings', sf: 'gearshape', icon: 'settings', onPress: () => router.push('/settings') }, searchAction]}
     >
       <View style={styles.profile} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
@@ -91,6 +94,22 @@ export default function You() {
           </View>
         </>
       ) : null}
+
+      <SectionHead title="Collection" onMore={() => router.push('/collection')} extra={discs.data?.totals.copies ? `${discs.data.totals.copies}` : undefined} />
+      <Pressable onPress={() => router.push('/collection')} accessibilityRole="button" accessibilityLabel="Open your disc collection">
+        {discs.data?.items.length ? (
+          <View style={[styles.shelf, { backgroundColor: colors.bgSurface }]}>
+            <View style={styles.spines}>
+              {discs.data.items.slice(0, 24).map((c) => (c.release ? <DiscSpine key={c.id} release={c.release} height={120} /> : null))}
+            </View>
+            <View style={[styles.plank, { backgroundColor: colors.bgElevated }]} />
+          </View>
+        ) : (
+          <Card title="Your discs">
+            <Text variant="muted">Scan the barcodes of your DVDs, Blu-rays and 4K discs to keep them on a shelf here.</Text>
+          </Card>
+        )}
+      </Pressable>
 
       {plans.length ? (
         <>
@@ -194,4 +213,8 @@ const styles = StyleSheet.create({
   profile: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 4 },
   avatar: { width: 72, height: 72, borderRadius: 36, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  // A short shelf of your discs' spines; the whole cabinet is in Collection.
+  shelf: { borderRadius: 18, paddingTop: 14, paddingHorizontal: 12, paddingBottom: 12, overflow: 'hidden' },
+  spines: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, overflow: 'hidden' },
+  plank: { height: 8, borderRadius: 3, marginHorizontal: -6 },
 });
