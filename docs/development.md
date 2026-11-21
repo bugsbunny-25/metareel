@@ -114,14 +114,16 @@ so a change to `docs/` or a README runs only those small jobs. Releases run ever
 regardless, and if `changes` fails everything runs.
 
 - `ci.yml` (Go: `cmd/`, `internal/`, `db/`, `tools/`, `go.mod`, `Makefile`, …)
-  - `go-quality`: `go mod tidy` check, `make vet`, `make build`, race tests with coverage, coverage artifact
-  - `integration`: Redis service container + DB env wiring + test suite
-  - `govulncheck`: vulnerability scan with `govulncheck ./...`
+  - `go-quality`: `go mod tidy` check, `make vet`, race tests with coverage, coverage artifact (no
+    separate build: vet type-checks every package and `container.yml` builds the server for every
+    Go change). Releases run the race tests once under gotestsum for the JUnit/JSON/HTML bundle
+  - `govulncheck`: vulnerability scan with `govulncheck ./...` (releases keep its verbose report)
 - `codeql.yml` (Go sources)
   - CodeQL analysis for Go on PRs and `main` (a release is a commit `main` already analysed)
 - `container.yml` (everything in the image: Go, `db/`, `web/`, `app/`, `Dockerfile`)
   - The image's frontend stages build both web UIs, so this is also their build check
-  - PR: Docker build + Trivy scan + SBOM artifact
+  - PR: Docker build + Trivy scan, plus an arm64 build (not kept) so a PR that
+    breaks the arm64 image fails before it reaches `main`
   - `main`: Docker build + push to GHCR as `main` and `sha-<commit>` + Trivy scan + SBOM artifact,
     then `cleanup-main-images` deletes every older main image (only once the whole build passed),
     so GHCR holds a single main image. Release images are never touched.
@@ -173,11 +175,8 @@ For F-Droid, the metadata can read both from the tag's source:
 ### Run CI checks locally
 
 ```bash
-# Mirrors the go-quality job (tidy check, vet, build, race tests + coverage)
+# Mirrors the go-quality job (tidy check, vet, race tests + coverage)
 make ci-local
-
-# Mirrors the integration job (expects Redis reachable at REDIS_ADDR, default 127.0.0.1:6379)
-make integration-local
 
 # Mirrors the govulncheck job
 make security-local
@@ -199,7 +198,6 @@ The ruleset also requires a PR and an up-to-date branch. Edit it in Settings →
 Rulesets → `main-pr` → "Require status checks to pass".
 
 - `go-quality`
-- `integration`
 - `govulncheck`
 - `analyze` (CodeQL)
 - `build-scan-publish` (container + Trivy)
@@ -207,7 +205,13 @@ Rulesets → `main-pr` → "Require status checks to pass".
 
 ### Operational notes
 
-- Container images are built from `Dockerfile` and use `linux/amd64`.
+- Container images are built from `Dockerfile`; `main` and release images are multi-arch
+  (`linux/amd64`, `linux/arm64`). The build stages (both UIs and the Go build) run on the runner's
+  platform and Go cross-compiles, so nothing builds under QEMU; only the final `scratch` stage is
+  per-arch. The builder copies only `cmd/`, `internal/` and `db/`, so UI-only changes keep the Go
+  layers cached.
+- Image layers are cached in the Actions cache (`type=gha`, scope `image`): every build reads it,
+  only `main` pushes write it, so a PR can never put layers into a published image.
 - Main images are tagged `main` + `sha-<commit>` and only the latest survives; release images are
   tagged with their version (`v*`) and kept. Cleanup uses the workflow's `GITHUB_TOKEN`, so the
   package's *Manage Actions access* must give this repository the Admin role.
@@ -228,6 +232,12 @@ make migrate-status
 
 The server also runs pending migrations automatically at startup via
 `repository.Migrate`.
+
+Tests that need a database (`newTestDB` in `internal/service`, the router's test envs) get it from
+`internal/repository/repotest`: each test binary migrates one template database the first time
+and every test gets its own copy of that file. Running all migrations costs about 1.5 s per
+database under `-race`; the copy is under a millisecond, which keeps the service tests to under a
+minute. Tests of the migrations themselves (`internal/repository`) still run `repository.Migrate`.
 
 ## sqlc
 

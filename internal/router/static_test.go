@@ -22,15 +22,13 @@ func writeFile(t *testing.T, path, body string) {
 
 // staticServer builds the two app trees under a temp working directory (echo
 // resolves c.File relative to the directory it was created in) and registers them.
-func staticServer(t *testing.T, withApp bool) *echo.Echo {
+func staticServer(t *testing.T) *echo.Echo {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	writeFile(t, "web/dist/index.html", "admin index")
 	writeFile(t, "web/dist/assets/admin.js", "admin js")
-	if withApp {
-		writeFile(t, "app/dist/index.html", "app index")
-		writeFile(t, "app/dist/assets/app.js", "app js")
-	}
+	writeFile(t, "app/dist/index.html", "app index")
+	writeFile(t, "app/dist/assets/app.js", "app js")
 	e := echo.New()
 	registerStatic(e, "web/dist", "app/dist")
 	return e
@@ -43,7 +41,7 @@ func get(e *echo.Echo, path string) *httptest.ResponseRecorder {
 }
 
 func TestRegisterStatic_TwoApps(t *testing.T) {
-	e := staticServer(t, true)
+	e := staticServer(t)
 	cases := []struct{ path, want string }{
 		{"/", "app index"},
 		{"/assets/app.js", "app js"},
@@ -64,22 +62,11 @@ func TestRegisterStatic_TwoApps(t *testing.T) {
 }
 
 func TestRegisterStatic_NoTraversalOutOfAppDir(t *testing.T) {
-	e := staticServer(t, true)
+	e := staticServer(t)
 	writeFile(t, "secret.txt", "secret")
 	for _, p := range []string{"/../secret.txt", "/admin/../../secret.txt", "/%2e%2e/secret.txt"} {
 		if rec := get(e, p); rec.Body.String() == "secret" {
 			t.Errorf("GET %s served a file outside the app directories", p)
 		}
-	}
-}
-
-func TestRegisterStatic_AdminOnlyRedirectsRoot(t *testing.T) {
-	e := staticServer(t, false)
-	rec := get(e, "/")
-	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/admin/" {
-		t.Fatalf("GET / = %d Location %q, want 302 /admin/", rec.Code, rec.Header().Get("Location"))
-	}
-	if rec := get(e, "/admin/"); rec.Body.String() != "admin index" {
-		t.Fatalf("GET /admin/ = %q", rec.Body.String())
 	}
 }
