@@ -121,7 +121,8 @@ regardless, and if `changes` fails everything runs.
   - CodeQL analysis for Go on PRs and `main` (a release is a commit `main` already analysed)
 - `container.yml` (everything in the image: Go, `db/`, `web/`, `app/`, `Dockerfile`)
   - The image's frontend stages build both web UIs, so this is also their build check
-  - PR: Docker build + Trivy scan + SBOM artifact
+  - PR: Docker build + Trivy scan + SBOM artifact, plus an arm64 build (not kept) so a PR that
+    breaks the arm64 image fails before it reaches `main`
   - `main`: Docker build + push to GHCR as `main` and `sha-<commit>` + Trivy scan + SBOM artifact,
     then `cleanup-main-images` deletes every older main image (only once the whole build passed),
     so GHCR holds a single main image. Release images are never touched.
@@ -207,7 +208,13 @@ Rulesets → `main-pr` → "Require status checks to pass".
 
 ### Operational notes
 
-- Container images are built from `Dockerfile` and use `linux/amd64`.
+- Container images are built from `Dockerfile`; `main` and release images are multi-arch
+  (`linux/amd64`, `linux/arm64`). The build stages (both UIs and the Go build) run on the runner's
+  platform and Go cross-compiles, so nothing builds under QEMU; only the final `scratch` stage is
+  per-arch. The builder copies only `cmd/`, `internal/` and `db/`, so UI-only changes keep the Go
+  layers cached.
+- Image layers are cached in the Actions cache (`type=gha`, scope `image`): every build reads it,
+  only `main` pushes write it, so a PR can never put layers into a published image.
 - Main images are tagged `main` + `sha-<commit>` and only the latest survives; release images are
   tagged with their version (`v*`) and kept. Cleanup uses the workflow's `GITHUB_TOKEN`, so the
   package's *Manage Actions access* must give this repository the Admin role.

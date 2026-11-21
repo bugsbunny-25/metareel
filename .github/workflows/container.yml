@@ -126,6 +126,9 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
+      # Layer cache in the Actions cache: every build reads it, only main
+      # writes it (PRs and releases can't write a cache main would read, and
+      # a cache written from a PR must never reach a published image).
       - name: Build image for PR
         if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v7
@@ -136,6 +139,21 @@ jobs:
           load: true
           tags: metareel:ci-${{ github.sha }}
           platforms: linux/amd64
+          cache-from: type=gha,scope=image
+
+      # main and releases publish linux/arm64 too. The build stages run on the
+      # runner's platform, so this reuses them and only cross-compiles the
+      # server: a PR that breaks the arm64 image fails here, not on main.
+      - name: Build arm64 image for PR (not kept)
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          outputs: type=cacheonly
+          platforms: linux/arm64
+          cache-from: type=gha,scope=image
 
       - name: Build and push image
         if: github.event_name != 'pull_request'
@@ -150,6 +168,8 @@ jobs:
             VERSION=${{ inputs.version || 'main' }}
             REVISION=${{ github.sha }}
           platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=image
+          cache-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'type=gha,scope=image,mode=max' || '' }}
 
       - name: Trivy scan (PR image)
         if: github.event_name == 'pull_request'

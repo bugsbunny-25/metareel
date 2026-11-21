@@ -4,7 +4,10 @@
 # Stage 0: frontends
 # -----------------------------------------------------------------------------
 # The admin console (web/, served at /admin) and the user app (app/, served at /).
-FROM node:26-alpine AS frontend
+# Every build stage runs on the runner's own platform ($BUILDPLATFORM): the UIs'
+# output is plain JS/CSS and Go cross-compiles, so a multi-arch build never runs
+# npm, Vite or the Go compiler under QEMU. Only the scratch stage is per-arch.
+FROM --platform=$BUILDPLATFORM node:26-alpine AS frontend
 
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
@@ -12,7 +15,7 @@ RUN npm ci --prefer-offline
 COPY web/ ./
 RUN npm run build
 
-FROM node:26-alpine AS appfrontend
+FROM --platform=$BUILDPLATFORM node:26-alpine AS appfrontend
 
 WORKDIR /userapp
 COPY app/package.json app/package-lock.json ./
@@ -25,8 +28,8 @@ RUN npm run build
 # -----------------------------------------------------------------------------
 # Alpine-based Go image keeps the builder small. modernc/sqlite is pure Go so
 # we do NOT need cgo; this lets us emit a fully-static binary that runs on
-# `scratch`.
-FROM golang:1.27.4-alpine AS builder
+# `scratch`. It runs on $BUILDPLATFORM and cross-compiles for $TARGETARCH.
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS builder
 
 WORKDIR /src
 
@@ -35,8 +38,12 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
-# Copy the rest of the source tree.
-COPY . .
+# Only what the server build and the image need (the OpenAPI specs are
+# embedded from internal/), so a change to web/, app/ or docs keeps this
+# stage's cached layers.
+COPY cmd ./cmd
+COPY internal ./internal
+COPY db ./db
 
 # Build a small, static, stripped binary.
 #   CGO_DISABLED => pure-Go; modernc/sqlite does not need C.
