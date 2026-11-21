@@ -18,6 +18,7 @@ import (
 	"github.com/bugsbunny-25/metareel/internal/config"
 	"github.com/bugsbunny-25/metareel/internal/handler"
 	"github.com/bugsbunny-25/metareel/internal/repository"
+	"github.com/bugsbunny-25/metareel/internal/repository/repotest"
 	"github.com/bugsbunny-25/metareel/internal/service"
 )
 
@@ -33,14 +34,7 @@ func newAuthEnv(t *testing.T) authEnv {
 func newAuthEnvWith(t *testing.T, requireAdminLogin bool) authEnv {
 	t.Helper()
 	ctx := context.Background()
-	db, err := repository.Open("file:" + filepath.Join(tempDBDir(t), "test.db") + "?_pragma=foreign_keys(1)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := repository.Migrate(db, "../../db/migrations"); err != nil {
-		t.Fatal(err)
-	}
+	db := repotest.Open(t, "../../db/migrations", filepath.Join(tempDBDir(t), "test.db"))
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	keys := service.NewAPIKeyService(log, repository.NewAPIKeyRepository(db))
 	if err := keys.Load(ctx); err != nil {

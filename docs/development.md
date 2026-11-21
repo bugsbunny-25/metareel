@@ -229,6 +229,12 @@ make migrate-status
 The server also runs pending migrations automatically at startup via
 `repository.Migrate`.
 
+Tests that need a database (`newTestDB` in `internal/service`, the router's test envs) get it from
+`internal/repository/repotest`: each test binary migrates one template database the first time
+and every test gets its own copy of that file. Running all migrations costs about 1.5 s per
+database under `-race`; the copy is under a millisecond, which keeps the service tests to under a
+minute. Tests of the migrations themselves (`internal/repository`) still run `repository.Migrate`.
+
 ## sqlc
 
 Queries live in `db/queries/*.sql`. Regenerate typed Go code after any

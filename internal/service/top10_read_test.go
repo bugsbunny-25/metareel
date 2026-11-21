@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bugsbunny-25/metareel/internal/repository"
+	"github.com/bugsbunny-25/metareel/internal/repository/repotest"
 )
 
 // newTestTop10Service returns a Top10ReadService backed by a migrated,
@@ -42,19 +43,11 @@ func testWriter(db *sql.DB) *MappingWriter {
 	return w
 }
 
-// newTestDB returns a migrated, file-based SQLite database.
+// newTestDB returns a migrated, file-based SQLite database (a copy of one
+// migrated once per test binary, see repotest).
 func newTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dsn := "file:" + filepath.Join(t.TempDir(), "test.db") + "?_pragma=foreign_keys(1)"
-	db, err := repository.Open(dsn)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := repository.Migrate(db, "../../db/migrations"); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return db
+	return repotest.Open(t, "../../db/migrations", filepath.Join(t.TempDir(), "test.db"))
 }
 
 func day(s string) time.Time {
