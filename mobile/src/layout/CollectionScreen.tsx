@@ -9,7 +9,7 @@ import type { Group } from '@/data/collections';
 import { useTheme } from '@/theme';
 
 import { ListDetail } from './ListDetail';
-import { accountAction, nativeRootHeader, type RootAction, RootActions, RootTitle, searchAction } from './root-header';
+import { nativeRootHeader, type RootAction, RootActions, RootTitle, searchAction } from './root-header';
 
 export { searchAction };
 
@@ -95,7 +95,6 @@ export function CollectionScreen<T, S extends string>({
       ? { label: 'List', sf: 'list.bullet', icon: 'list', onPress: () => onView('list') }
       : { label: 'Grid', sf: 'square.grid.2x2', icon: 'grid', onPress: () => onView('grid') },
     searchAction,
-    accountAction,
   ];
 
   const list = (
@@ -185,7 +184,8 @@ export function CollectionScreen<T, S extends string>({
   return <ListDetail list={list} detail={detail} placeholder={<Placeholder text={placeholder} />} />;
 }
 
-function Segmented<S extends string>({ segments, value, onChange }: { segments: Segment<S>[]; value: S; onChange: (s: S) => void }) {
+/** Tabs pinned under a root's title (TV and Movies' To watch / Upcoming, You's You / Diary / Library). */
+export function Segmented<S extends string>({ segments, value, onChange }: { segments: Segment<S>[]; value: S; onChange: (s: S) => void }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.segments, { borderBottomColor: colors.borderSubtle }]} accessibilityRole="tablist">

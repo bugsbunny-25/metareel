@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, SectionList, View } from 'react-native';
 
 import type { components } from '@/api/schema';
 import { OutboxBanner } from '@/components/OutboxBanner';
@@ -11,7 +11,7 @@ import { diaryMonths, recentDistinct } from '@/data/collections';
 import { useDiary, useRatingStats, useRecentWatches, useStatsSummary } from '@/data/queries';
 import { usePullToRefresh } from '@/lib/refresh';
 import { ListDetail, useTwoPane } from '@/layout/ListDetail';
-import { accountAction, RootActions, RootTitle, searchAction, useRootScroll } from '@/layout/root-header';
+import { tabBodyScroll } from '@/layout/TabbedRoot';
 import { useOutbox } from '@/offline';
 import { MonthBand, RatingsChart, RecentRow, TimelineRow, TotalRow } from '@/screens/diary-parts';
 import { WatchView } from '@/screens/WatchView';
@@ -20,13 +20,13 @@ import { useTheme } from '@/theme';
 type Entry = components['schemas']['WatchEntry'];
 
 /**
- * Your diary: the latest films and shows as posters, how you rate, your
- * totals, then every watch by month with its day, newest first. Logs still
- * waiting to sync sit on top.
+ * You's Diary page: the latest films and shows as posters, how you rate,
+ * your totals, then every watch by month with its day, newest first. Logs
+ * still waiting to sync sit on top.
  */
-export default function Diary() {
+export function DiaryView() {
   const { colors, gutter } = useTheme();
-  const scroll = useRootScroll();
+  const scroll = tabBodyScroll;
   const diary = useDiary();
   const films = useRecentWatches('movie', 20);
   const shows = useRecentWatches('tv', 40);
@@ -56,10 +56,6 @@ export default function Diary() {
       onEndReached={() => diary.hasNextPage && !diary.isFetchingNextPage && void diary.fetchNextPage()}
       ListHeaderComponent={
         <View style={{ gap: 18, marginBottom: 12 }} onLayout={(e) => setWidth(Math.round(e.nativeEvent.layout.width))}>
-          <View style={styles.head}>
-            <RootTitle>Diary</RootTitle>
-            <RootActions actions={[searchAction, accountAction]} />
-          </View>
           <OutboxBanner kinds={['watch']} />
           {pending.map((p) => (
             <TitleRow key={`p${p.id}`} poster={p.meta?.poster as string} title={p.label} subtitle="Waiting to sync" />
@@ -103,4 +99,3 @@ export default function Diary() {
   );
 }
 
-const styles = StyleSheet.create({ head: { flexDirection: 'row', alignItems: 'center', gap: 12 } });

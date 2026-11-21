@@ -10,17 +10,20 @@ import { useDiscs } from '@/discs/data';
 import { DiscCase, DiscSpine } from '@/discs/parts';
 import { CASE, type DiscCopy, HIGHLIGHT, isBoxSet, label, MEDIA_FORMATS, type MediaFormat } from '@/discs/vocab';
 import { formatMoney } from '@/lib/format';
+import { tabBodyScroll } from '@/layout/TabbedRoot';
 import { usePullToRefresh } from '@/lib/refresh';
 import { StatTile } from '@/screens/stats-parts';
 import { useTheme } from '@/theme';
 
 /**
- * Your collection as it stands in a cabinet: one shelf per format, spines in
+ * Your library as it stands in a cabinet: one shelf per format, spines in
  * title order. Tap a spine to pull it out (its cover, edition, picture and
- * sound, what you paid); tap again or Open for everything about it. Cases
- * shows the fronts instead. Scan adds a disc from its barcode.
+ * sound, what you paid); tap again or Open for everything about it: a box
+ * set lists its discs, each disc its film or show. Cases shows the fronts
+ * instead. Scan adds a disc from its barcode. You's Library page, and
+ * /collection on its own (standalone, with its own title).
  */
-export default function Collection() {
+export function LibraryView({ standalone }: { standalone?: boolean }) {
   const { colors, gutter, radius } = useTheme();
   const discs = useDiscs();
   const pull = usePullToRefresh(() => discs.refetch());
@@ -50,15 +53,16 @@ export default function Collection() {
   return (
     <ScrollView
       style={{ backgroundColor: colors.bgCanvas }}
-      contentInsetAdjustmentBehavior="automatic"
+      contentInsetAdjustmentBehavior={standalone ? 'automatic' : tabBodyScroll.contentInsetAdjustmentBehavior}
       contentContainerStyle={{
         padding: gutter.compact,
+        paddingTop: standalone ? gutter.compact : tabBodyScroll.paddingTop,
         gap: 16,
         paddingBottom: 40,
       }}
       refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.textMuted} />}
     >
-      <Stack.Screen options={{ headerTitle: 'Collection' }} />
+      {standalone ? <Stack.Screen options={{ headerTitle: 'Library' }} /> : null}
       <View style={styles.column}>
         <Button title="Scan a barcode" onPress={() => router.push('/scan-disc')} />
 

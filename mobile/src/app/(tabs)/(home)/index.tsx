@@ -21,7 +21,7 @@ import { useWindowClass } from '@/layout/window-class';
 import { markEpisode, openEpisode, openLog, openTitle } from '@/lib/actions';
 import { episodeCode, starText, tmdbKind } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/refresh';
-import { accountAction, searchAction } from '@/layout/root-header';
+import { searchAction } from '@/layout/root-header';
 import { useTheme } from '@/theme';
 import { nowShowingProps, stopNowShowing, useNowShowing } from '@/nowshowing';
 
@@ -51,7 +51,7 @@ export default function Tonight() {
       title="Tonight"
       refreshing={pull.refreshing}
       onRefresh={pull.onRefresh}
-      actions={[searchAction, accountAction]}
+      actions={[searchAction]}
     >
       <ConnectionNote />
       <NowShowingCard />

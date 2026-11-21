@@ -9,7 +9,6 @@ import { useTheme } from '@/theme';
 // each group's root screen.
 export const unstable_settings = {
   anchor: 'index',
-  diary: { anchor: 'diary' },
   tv: { anchor: 'tv' },
   movies: { anchor: 'movies' },
   you: { anchor: 'you' },
@@ -18,18 +17,15 @@ export const unstable_settings = {
 
 const ROOT_TITLES: Record<string, string> = {
   index: 'Tonight',
-  diary: 'Diary',
   tv: 'TV',
   movies: 'Movies',
   you: 'You',
   find: 'Search',
 };
 
-const PINNED = new Set(['tv', 'movies']);
-
-// You pushed from a tab root's account button (iPhone; see youInHeader):
-// shown like a root, with its large title, under a Back button.
-const PUSHED_ROOTS: Record<string, string> = { profile: 'You' };
+// Roots with tabs pinned under a standard (opaque) bar: TV and Movies' To
+// watch / Upcoming, You's You / Diary / Library.
+const PINNED = new Set(['tv', 'movies', 'you']);
 
 export default function TabStack() {
   const { colors } = useTheme();
@@ -37,7 +33,7 @@ export default function TabStack() {
   return (
     <Stack
       screenOptions={({ route }) => {
-        const root = ROOT_TITLES[route.name] ?? PUSHED_ROOTS[route.name];
+        const root = ROOT_TITLES[route.name];
         // On iOS a root's title and actions live in the system bar with a
         // large title (see layout/root-header); Android roots draw their own.
         // TV and Movies pin a To watch / Upcoming switch under a standard
@@ -72,7 +68,6 @@ export default function TabStack() {
               fontFamily: 'SourceSerif4_700Bold',
               color: colors.textPrimary,
             },
-            headerBackButtonDisplayMode: 'minimal',
             contentStyle: { backgroundColor: colors.bgCanvas },
           };
         }
