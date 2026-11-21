@@ -224,7 +224,11 @@ type OfferEvent struct {
 	Monetization string `json:"monetization"`
 	ProviderID   int64  `json:"provider_id"`
 	ProviderName string `json:"provider_name"`
-	Event        string `json:"event"`
+	// ChartProvider: the FlixPatrol chart provider the TMDB provider belongs
+	// to; LogoPath: TMDB's provider logo (both set by the service).
+	ChartProvider string  `json:"chart_provider,omitempty"`
+	LogoPath      *string `json:"logo_path,omitempty"`
+	Event         string  `json:"event"`
 	// The change happened after PreviousCheckAt and by ObservedAt (UTC,
 	// "YYYY-MM-DD HH:MM:SS").
 	PreviousCheckAt string `json:"previous_check_at,omitempty"`

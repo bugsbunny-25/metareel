@@ -16,11 +16,18 @@ import (
 type HistoryService struct {
 	history  *repository.HistoryRepository
 	metadata *repository.MetadataRepository
+	logos    *ProviderLogos // optional: offer events' provider logos
 	now      func() time.Time
 }
 
 func NewHistoryService(history *repository.HistoryRepository, metadata *repository.MetadataRepository) *HistoryService {
 	return &HistoryService{history: history, metadata: metadata, now: time.Now}
+}
+
+// WithProviderLogos adds TMDB provider logos to availability changes.
+func (s *HistoryService) WithProviderLogos(p *ProviderLogos) *HistoryService {
+	s.logos = p
+	return s
 }
 
 const (
@@ -233,6 +240,14 @@ func (s *HistoryService) AvailabilityChanges(ctx context.Context, q Availability
 	events, err := s.history.OfferEvents(ctx, f)
 	if err != nil {
 		return nil, err
+	}
+	logos, err := s.logos.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range events {
+		events[i].ChartProvider = ChartProviderOf(events[i].ProviderID)
+		events[i].LogoPath = logoPtr(logos, events[i].ProviderID)
 	}
 	return &AvailabilityChangesResponse{Since: since.Format(time.RFC3339), Events: events}, nil
 }

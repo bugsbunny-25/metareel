@@ -24,6 +24,11 @@ export function openTitle(t: Target) {
   else router.push({ pathname: '/title/[kind]/[id]', params: { kind: t.kind, id: t.id } });
 }
 
+/** Opens a person (cast or crew) in the current tab. */
+export function openPerson(id: number) {
+  router.push({ pathname: '/person/[id]', params: { id: String(id) } });
+}
+
 /** Opens one episode's details. */
 export function openEpisode(show: string, season: number, episode: number) {
   router.push({ pathname: '/episode/[show]/[season]/[episode]', params: { show, season: String(season), episode: String(episode) } });

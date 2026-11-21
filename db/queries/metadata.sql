@@ -7,14 +7,14 @@ INSERT INTO tmdb_titles (
     release_date, last_air_date, runtime, number_of_seasons, number_of_episodes,
     genres, origin_countries, production_companies, networks, poster_path, backdrop_path,
     popularity, vote_average, vote_count, digital_release_dates, seasons,
-    details_fetched_at
+    certifications, logo_path, details_fetched_at
 ) VALUES (
     sqlc.arg(tmdb_kind), sqlc.arg(tmdb_id), sqlc.narg(title), sqlc.narg(original_title), sqlc.narg(original_language),
     sqlc.narg(overview), sqlc.narg(status), sqlc.narg(release_date), sqlc.narg(last_air_date), sqlc.narg(runtime),
     sqlc.narg(number_of_seasons), sqlc.narg(number_of_episodes), sqlc.narg(genres), sqlc.narg(origin_countries),
     sqlc.narg(production_companies), sqlc.narg(networks), sqlc.narg(poster_path), sqlc.narg(backdrop_path),
     sqlc.narg(popularity), sqlc.narg(vote_average), sqlc.narg(vote_count), sqlc.narg(digital_release_dates),
-    sqlc.narg(seasons), CURRENT_TIMESTAMP
+    sqlc.narg(seasons), sqlc.narg(certifications), sqlc.narg(logo_path), CURRENT_TIMESTAMP
 )
 ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
     title = excluded.title, original_title = excluded.original_title, original_language = excluded.original_language,
@@ -25,6 +25,7 @@ ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
     poster_path = excluded.poster_path, backdrop_path = excluded.backdrop_path, popularity = excluded.popularity,
     vote_average = excluded.vote_average, vote_count = excluded.vote_count,
     digital_release_dates = excluded.digital_release_dates, seasons = excluded.seasons,
+    certifications = excluded.certifications, logo_path = excluded.logo_path,
     details_fetched_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP;
 
 -- name: DeleteTmdbWatchProviders :exec
@@ -281,3 +282,10 @@ LIMIT sqlc.arg(limit);
 -- name: SaveTmdbEnwiki :exec
 UPDATE tmdb_titles SET enwiki_title = sqlc.narg(enwiki_title), enwiki_fetched_at = CURRENT_TIMESTAMP
 WHERE tmdb_kind = sqlc.arg(tmdb_kind) AND tmdb_id = sqlc.arg(tmdb_id);
+
+-- name: ListProviderLogos :many
+-- One logo per TMDB watch provider, from stored watch providers.
+SELECT provider_id, CAST(MAX(logo_path) AS TEXT) AS logo_path
+FROM tmdb_watch_providers
+WHERE logo_path IS NOT NULL AND logo_path <> ''
+GROUP BY provider_id;

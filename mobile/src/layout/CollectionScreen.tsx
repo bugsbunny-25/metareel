@@ -184,7 +184,8 @@ export function CollectionScreen<T, S extends string>({
   return <ListDetail list={list} detail={detail} placeholder={<Placeholder text={placeholder} />} />;
 }
 
-function Segmented<S extends string>({ segments, value, onChange }: { segments: Segment<S>[]; value: S; onChange: (s: S) => void }) {
+/** Tabs pinned under a root's title (TV and Movies' To watch / Upcoming, You's You / Diary / Library). */
+export function Segmented<S extends string>({ segments, value, onChange }: { segments: Segment<S>[]; value: S; onChange: (s: S) => void }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.segments, { borderBottomColor: colors.borderSubtle }]} accessibilityRole="tablist">

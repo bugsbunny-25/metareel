@@ -46,6 +46,10 @@ func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFull
 	if len(d.DigitalReleaseDates) > 0 {
 		digital = jsonString(d.DigitalReleaseDates)
 	}
+	var certifications sql.NullString
+	if len(d.Certifications) > 0 {
+		certifications = jsonString(d.Certifications)
+	}
 	var seasons sql.NullString
 	if d.Seasons != nil {
 		seasons = jsonString(d.Seasons) // "[]" for a show without seasons: fetched, nothing to map
@@ -67,7 +71,7 @@ func (r *MetadataRepository) SaveDetails(ctx context.Context, d *client.TMDBFull
 		PosterPath: nullIfEmpty(d.PosterPath), BackdropPath: nullIfEmpty(d.BackdropPath),
 		Popularity: sql.NullFloat64{Float64: d.Popularity, Valid: true}, VoteAverage: sql.NullFloat64{Float64: d.VoteAverage, Valid: true},
 		VoteCount: sql.NullInt64{Int64: int64(d.VoteCount), Valid: true}, DigitalReleaseDates: digital,
-		Seasons: seasons,
+		Seasons: seasons, Certifications: certifications, LogoPath: nullIfEmpty(d.LogoPath),
 	}); err != nil {
 		return fmt.Errorf("upsert tmdb title: %w", err)
 	}
@@ -333,6 +337,11 @@ type TmdbMetadata struct {
 	VoteAverage         *float64          `json:"vote_average"`
 	VoteCount           *int64            `json:"vote_count"`
 	DigitalReleaseDates map[string]string `json:"digital_release_dates,omitempty"`
+	// Certifications: country → age certification (TMDB release dates or
+	// content ratings); LogoPath: the title's logo image (English, else the
+	// original language).
+	Certifications map[string]string `json:"certifications,omitempty"`
+	LogoPath       *string           `json:"logo_path,omitempty"`
 	Seasons             []TmdbSeason      `json:"seasons,omitempty"` // TV only
 	IMDbID              *string           `json:"imdb_id"`
 	WikidataID          *string           `json:"wikidata_id"`
@@ -377,6 +386,10 @@ func toTmdbMetadata(t sqlc.TmdbTitle) *TmdbMetadata {
 	if t.DigitalReleaseDates.Valid {
 		_ = json.Unmarshal([]byte(t.DigitalReleaseDates.String), &m.DigitalReleaseDates)
 	}
+	if t.Certifications.Valid {
+		_ = json.Unmarshal([]byte(t.Certifications.String), &m.Certifications)
+	}
+	m.LogoPath = nullStringPtr(t.LogoPath)
 	m.Seasons = DecodeTmdbSeasons(t.Seasons)
 	if t.DetailsFetchedAt.Valid {
 		v := t.DetailsFetchedAt.Time.UTC()
@@ -433,6 +446,9 @@ type WatchProvider struct {
 	Link            *string   `json:"link"` // TMDB's watch page for the country
 	URL             *string   `json:"url"`  // the service's page for the title (JustWatch)
 	FetchedAt       time.Time `json:"fetched_at"`
+	// ChartProvider: the FlixPatrol chart provider this TMDB provider
+	// belongs to (set by the service; omitted for other services).
+	ChartProvider string `json:"chart_provider,omitempty"`
 }
 
 // WatchProviders lists where a title can be watched (country "" = all).
@@ -543,4 +559,17 @@ func nullFloatPtr(v sql.NullFloat64) *float64 {
 		return nil
 	}
 	return &v.Float64
+}
+
+// ProviderLogos maps TMDB watch provider IDs to a stored logo path.
+func (r *MetadataRepository) ProviderLogos(ctx context.Context) (map[int64]string, error) {
+	rows, err := r.q.ListProviderLogos(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list provider logos: %w", err)
+	}
+	out := make(map[int64]string, len(rows))
+	for _, row := range rows {
+		out[row.ProviderID] = row.LogoPath
+	}
+	return out, nil
 }

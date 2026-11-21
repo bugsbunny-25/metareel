@@ -186,7 +186,7 @@ func (q *Queries) FindTmdbRefsByNetflixID(ctx context.Context, arg FindTmdbRefsB
 }
 
 const getTmdbTitle = `-- name: GetTmdbTitle :one
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at, enwiki_title, enwiki_fetched_at, netflix_premiere, netflix_premiere_source, episodes_fetched_at, credits_fetched_at FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at, enwiki_title, enwiki_fetched_at, netflix_premiere, netflix_premiere_source, episodes_fetched_at, credits_fetched_at, certifications, logo_path FROM tmdb_titles WHERE tmdb_kind = ? AND tmdb_id = ?
 `
 
 type GetTmdbTitleParams struct {
@@ -250,6 +250,8 @@ func (q *Queries) GetTmdbTitle(ctx context.Context, arg GetTmdbTitleParams) (Tmd
 		&i.NetflixPremiereSource,
 		&i.EpisodesFetchedAt,
 		&i.CreditsFetchedAt,
+		&i.Certifications,
+		&i.LogoPath,
 	)
 	return i, err
 }
@@ -287,6 +289,42 @@ func (q *Queries) InsertTmdbWatchProvider(ctx context.Context, arg InsertTmdbWat
 		arg.Url,
 	)
 	return err
+}
+
+const listProviderLogos = `-- name: ListProviderLogos :many
+SELECT provider_id, CAST(MAX(logo_path) AS TEXT) AS logo_path
+FROM tmdb_watch_providers
+WHERE logo_path IS NOT NULL AND logo_path <> ''
+GROUP BY provider_id
+`
+
+type ListProviderLogosRow struct {
+	ProviderID int64  `json:"provider_id"`
+	LogoPath   string `json:"logo_path"`
+}
+
+// One logo per TMDB watch provider, from stored watch providers.
+func (q *Queries) ListProviderLogos(ctx context.Context) ([]ListProviderLogosRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProviderLogos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProviderLogosRow{}
+	for rows.Next() {
+		var i ListProviderLogosRow
+		if err := rows.Scan(&i.ProviderID, &i.LogoPath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTmdbMoviesDueForDistributors = `-- name: ListTmdbMoviesDueForDistributors :many
@@ -526,7 +564,7 @@ func (q *Queries) ListTmdbRefsDueForWikidata(ctx context.Context, arg ListTmdbRe
 }
 
 const listTmdbTitlesByIDs = `-- name: ListTmdbTitlesByIDs :many
-SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at, enwiki_title, enwiki_fetched_at, netflix_premiere, netflix_premiere_source, episodes_fetched_at, credits_fetched_at FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
+SELECT tmdb_kind, tmdb_id, title, original_title, original_language, overview, status, release_date, last_air_date, runtime, number_of_seasons, number_of_episodes, genres, origin_countries, production_companies, networks, poster_path, backdrop_path, popularity, vote_average, vote_count, digital_release_dates, imdb_id, wikidata_id, rt_id, metacritic_id, letterboxd_id, details_fetched_at, wikidata_fetched_at, created_at, updated_at, seasons, netflix_id, justwatch_id, imdb_source, wikidata_source, rt_source, metacritic_source, letterboxd_source, netflix_source, justwatch_source, rt_attempts, next_rt_at, offers_fetched_at, distributors, distributors_fetched_at, enwiki_title, enwiki_fetched_at, netflix_premiere, netflix_premiere_source, episodes_fetched_at, credits_fetched_at, certifications, logo_path FROM tmdb_titles WHERE tmdb_id IN (/*SLICE:ids*/?)
 `
 
 // Callers filter by kind (TMDB movie and TV IDs overlap).
@@ -602,6 +640,8 @@ func (q *Queries) ListTmdbTitlesByIDs(ctx context.Context, ids []string) ([]Tmdb
 			&i.NetflixPremiereSource,
 			&i.EpisodesFetchedAt,
 			&i.CreditsFetchedAt,
+			&i.Certifications,
+			&i.LogoPath,
 		); err != nil {
 			return nil, err
 		}
@@ -800,14 +840,14 @@ INSERT INTO tmdb_titles (
     release_date, last_air_date, runtime, number_of_seasons, number_of_episodes,
     genres, origin_countries, production_companies, networks, poster_path, backdrop_path,
     popularity, vote_average, vote_count, digital_release_dates, seasons,
-    details_fetched_at
+    certifications, logo_path, details_fetched_at
 ) VALUES (
     ?1, ?2, ?3, ?4, ?5,
     ?6, ?7, ?8, ?9, ?10,
     ?11, ?12, ?13, ?14,
     ?15, ?16, ?17, ?18,
     ?19, ?20, ?21, ?22,
-    ?23, CURRENT_TIMESTAMP
+    ?23, ?24, ?25, CURRENT_TIMESTAMP
 )
 ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
     title = excluded.title, original_title = excluded.original_title, original_language = excluded.original_language,
@@ -818,6 +858,7 @@ ON CONFLICT(tmdb_kind, tmdb_id) DO UPDATE SET
     poster_path = excluded.poster_path, backdrop_path = excluded.backdrop_path, popularity = excluded.popularity,
     vote_average = excluded.vote_average, vote_count = excluded.vote_count,
     digital_release_dates = excluded.digital_release_dates, seasons = excluded.seasons,
+    certifications = excluded.certifications, logo_path = excluded.logo_path,
     details_fetched_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 `
 
@@ -845,6 +886,8 @@ type UpsertTmdbTitleDetailsParams struct {
 	VoteCount           sql.NullInt64   `json:"vote_count"`
 	DigitalReleaseDates sql.NullString  `json:"digital_release_dates"`
 	Seasons             sql.NullString  `json:"seasons"`
+	Certifications      sql.NullString  `json:"certifications"`
+	LogoPath            sql.NullString  `json:"logo_path"`
 }
 
 // TMDB metadata, watch providers and Wikidata IDs per TMDB title.
@@ -874,6 +917,8 @@ func (q *Queries) UpsertTmdbTitleDetails(ctx context.Context, arg UpsertTmdbTitl
 		arg.VoteCount,
 		arg.DigitalReleaseDates,
 		arg.Seasons,
+		arg.Certifications,
+		arg.LogoPath,
 	)
 	return err
 }

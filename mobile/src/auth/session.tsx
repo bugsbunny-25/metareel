@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import * as Device from 'expo-device';
 import * as SecureStore from 'expo-secure-store';
 import { createContext, type PropsWithChildren, useContext, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { AppState, type NativeEventSubscription } from 'react-native';
 
 import { makeApi, makeApiFetch } from '@/api/client';
 import { Endpoint } from '@/net/endpoint';
@@ -69,24 +70,71 @@ export function subscribeSession(l: () => void) {
   };
 }
 
+// Readable once the phone has been unlocked after a restart, so the
+// background task (outbox, reminders, widgets) can use the session while the
+// phone is locked; never copied to another phone from a backup. The default
+// (only while unlocked) made a background start on a locked phone look
+// signed out.
+const KEYCHAIN: SecureStore.SecureStoreOptions = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY };
+
 async function persist(s: StoredSession | null) {
-  if (s) await SecureStore.setItemAsync(STORE_KEY, JSON.stringify(s));
-  else await SecureStore.deleteItemAsync(STORE_KEY);
+  if (s) await SecureStore.setItemAsync(STORE_KEY, JSON.stringify(s), KEYCHAIN);
+  else await SecureStore.deleteItemAsync(STORE_KEY, KEYCHAIN);
 }
 
-export async function restoreSession() {
+let restoring: Promise<void> | null = null;
+let waitingForActive: NativeEventSubscription | null = null;
+
+/**
+ * Reads the saved session (once at a time). Signed out only when there is no
+ * session or it has expired: a Keychain that can't be read while the app runs
+ * in the background (a locked phone) leaves the app loading, and it reads
+ * again when the app comes to the front.
+ */
+export function restoreSession(): Promise<void> {
+  restoring ??= readSession().finally(() => {
+    restoring = null;
+  });
+  return restoring;
+}
+
+async function readSession() {
+  let raw: string | null;
   try {
-    const raw = await SecureStore.getItemAsync(STORE_KEY);
-    const s = raw ? (JSON.parse(raw) as StoredSession) : null;
-    if (s && new Date(s.expiresAt).getTime() > Date.now()) {
-      setState({ status: 'signedIn', session: s });
-      endpoint.configure(s.server, s.home);
+    raw = await SecureStore.getItemAsync(STORE_KEY, KEYCHAIN);
+  } catch {
+    if (AppState.currentState !== 'active') {
+      retryWhenActive();
       return;
     }
+    raw = null; // unreadable with the app in front: the same as none
+  }
+  if (state.status !== 'loading') return; // signed in meanwhile
+  let s: StoredSession | null = null;
+  try {
+    s = raw ? (JSON.parse(raw) as StoredSession) : null;
   } catch {
-    // An unreadable session is the same as none.
+    // A damaged session is the same as none.
+  }
+  if (s && new Date(s.expiresAt).getTime() > Date.now()) {
+    setState({ status: 'signedIn', session: s });
+    endpoint.configure(s.server, s.home);
+    // Saves it again so sessions from older versions get the new Keychain
+    // access too.
+    void persist(s).catch(() => undefined);
+    return;
   }
   setState({ status: 'signedOut' });
+}
+
+function retryWhenActive() {
+  if (waitingForActive) return;
+  waitingForActive = AppState.addEventListener('change', (next) => {
+    if (next !== 'active') return;
+    waitingForActive?.remove();
+    waitingForActive = null;
+    if (state.status === 'loading') void restoreSession();
+  });
 }
 
 export class SignInError extends Error {}

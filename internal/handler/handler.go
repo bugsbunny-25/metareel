@@ -17,6 +17,7 @@ import (
 
 type Handler struct {
 	Top10      *service.Top10ReadService
+	Facts      *service.TitleFactsService // stored TMDB facts on chart rows
 	AdminTasks *service.TaskScheduleAdminService
 	Titles     *service.TitleAdminService
 	Ratings    *service.RatingsService
@@ -493,7 +494,7 @@ func (h *Handler) handleTop10ByProvider(c *echo.Context, getter func(ctx context
 		CountryCode: c.Param("country"),
 		Provider:    c.Param("provider"),
 	})
-	return writeTop10Response(c, out, err)
+	return h.writeTop10Response(c, out, err)
 }
 
 func (h *Handler) handleTop10AllProviders(c *echo.Context, getter func(ctx context.Context, q service.Top10Query) (*service.Top10Response, error)) error {
@@ -506,10 +507,16 @@ func (h *Handler) handleTop10AllProviders(c *echo.Context, getter func(ctx conte
 		Date:        date,
 		CountryCode: c.Param("country"),
 	})
-	return writeTop10Response(c, out, err)
+	return h.writeTop10Response(c, out, err)
 }
 
-func writeTop10Response(c *echo.Context, out *service.Top10Response, err error) error {
+func (h *Handler) writeTop10Response(c *echo.Context, out *service.Top10Response, err error) error {
+	if err == nil {
+		var withRatings bool
+		if withRatings, err = service.ParseFactsInclude(c.QueryParam("include")); err == nil {
+			err = h.Facts.Fill(c.Request().Context(), out, withRatings)
+		}
+	}
 	if err == nil {
 		return c.JSON(http.StatusOK, out)
 	}

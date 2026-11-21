@@ -467,6 +467,8 @@ type Querier interface {
 	ListPersonChartStats(ctx context.Context, personID int64) ([]ListPersonChartStatsRow, error)
 	// A person's credits on the titles metareel knows, with the titles.
 	ListPersonCredits(ctx context.Context, personID int64) ([]ListPersonCreditsRow, error)
+	// One logo per TMDB watch provider, from stored watch providers.
+	ListProviderLogos(ctx context.Context) ([]ListProviderLogosRow, error)
 	// The slice must stay last: sqlc numbers the named params ?1..?3 and SQLite
 	// numbers the expanded "?" list after them.
 	ListRankingsByTitleIDs(ctx context.Context, arg ListRankingsByTitleIDsParams) ([]ListRankingsByTitleIDsRow, error)

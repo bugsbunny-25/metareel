@@ -558,6 +558,8 @@ type TmdbTitle struct {
 	NetflixPremiereSource sql.NullString  `json:"netflix_premiere_source"`
 	EpisodesFetchedAt     sql.NullTime    `json:"episodes_fetched_at"`
 	CreditsFetchedAt      sql.NullTime    `json:"credits_fetched_at"`
+	Certifications        sql.NullString  `json:"certifications"`
+	LogoPath              sql.NullString  `json:"logo_path"`
 }
 
 type TmdbWatchProvider struct {

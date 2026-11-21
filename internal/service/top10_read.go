@@ -72,6 +72,8 @@ type Top10Result struct {
 	// Origin: the title is the provider's original, from its parent
 	// company (in_house), licensed, or unknown (no TMDB metadata yet).
 	Origin *OriginInfo `json:"origin,omitempty"`
+
+	TitleFacts
 }
 
 func (s *Top10ReadService) GetMoviesByProvider(ctx context.Context, q Top10Query) (*Top10Response, error) {
