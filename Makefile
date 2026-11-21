@@ -91,17 +91,6 @@ coverage-total: ## Print total coverage percentage from $(COVERAGE_FILE)
 ci-local: tidy-check vet test-cover ## Run the same core checks as CI go-quality job
 	@echo "ci-local completed. coverage file: $(COVERAGE_FILE)"
 
-.PHONY: integration-local
-integration-local: ## Run integration-oriented tests with local Redis + SQLite env
-	@mkdir -p tmp data
-	REDIS_ADDR="$(REDIS_ADDR)" \
-	REDIS_PASSWORD="" \
-	REDIS_DB="0" \
-	DATABASE_URL="file:./tmp/integration.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)" \
-	DATABASE_MIGRATIONS_DIR="db/migrations" \
-	APP_ENV="test" \
-	$(GO) test ./... -count=1
-
 .PHONY: security-local
 security-local: ## Run govulncheck without requiring a preinstalled binary
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...

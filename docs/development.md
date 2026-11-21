@@ -117,7 +117,6 @@ regardless, and if `changes` fails everything runs.
   - `go-quality`: `go mod tidy` check, `make vet`, race tests with coverage, coverage artifact (no
     separate build: vet type-checks every package and `container.yml` builds the server for every
     Go change). Releases run the race tests once under gotestsum for the JUnit/JSON/HTML bundle
-  - `integration`: Redis service container + DB env wiring + test suite
   - `govulncheck`: vulnerability scan with `govulncheck ./...` (releases keep its verbose report)
 - `codeql.yml` (Go sources)
   - CodeQL analysis for Go on PRs and `main` (a release is a commit `main` already analysed)
@@ -179,9 +178,6 @@ For F-Droid, the metadata can read both from the tag's source:
 # Mirrors the go-quality job (tidy check, vet, race tests + coverage)
 make ci-local
 
-# Mirrors the integration job (expects Redis reachable at REDIS_ADDR, default 127.0.0.1:6379)
-make integration-local
-
 # Mirrors the govulncheck job
 make security-local
 
@@ -202,7 +198,6 @@ The ruleset also requires a PR and an up-to-date branch. Edit it in Settings →
 Rulesets → `main-pr` → "Require status checks to pass".
 
 - `go-quality`
-- `integration`
 - `govulncheck`
 - `analyze` (CodeQL)
 - `build-scan-publish` (container + Trivy)
