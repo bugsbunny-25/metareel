@@ -106,7 +106,7 @@ func TestCreditsRefreshAndPeople(t *testing.T) {
 		[]seedRanking{{"heist", d(3), "US", "netflix", "movies", 1}, {"heist", d(4), "US", "netflix", "movies", 1}, {"heist", d(5), "GB", "netflix", "movies", 1},
 			{"show", d(3), "US", "netflix", "tv_shows", 5}, {"sequel", d(2), "US", "netflix", "movies", 2}})
 
-	ana, err := svc.Person(ctx, 10)
+	ana, err := svc.Person(ctx, 10, PersonQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,10 +114,10 @@ func TestCreditsRefreshAndPeople(t *testing.T) {
 		ana.Titles[0].Roles[0] != "as Lead" || ana.Titles[0].Days != 3 || *ana.Titles[0].BestRank != 1 || ana.Titles[0].Countries != 2 {
 		t.Fatalf("ana = %+v", ana)
 	}
-	if eli, _ := svc.Person(ctx, 21); len(eli.Titles) != 2 || len(eli.Titles[0].Roles) != 2 {
+	if eli, _ := svc.Person(ctx, 21, PersonQuery{}); len(eli.Titles) != 2 || len(eli.Titles[0].Roles) != 2 {
 		t.Fatalf("eli (two writing credits on Heist) = %+v", eli)
 	}
-	if _, err := svc.Person(ctx, 404); !errors.Is(err, ErrPersonNotFound) {
+	if _, err := svc.Person(ctx, 404, PersonQuery{}); !errors.Is(err, ErrPersonNotFound) {
 		t.Fatalf("unknown person: %v", err)
 	}
 
@@ -158,7 +158,7 @@ func TestCreditsRefreshAndPeople(t *testing.T) {
 	if err != nil || mr.PeopleDeleted != 1 {
 		t.Fatalf("maintenance = %+v, %v", mr, err)
 	}
-	if _, err := svc.Person(ctx, 12); !errors.Is(err, ErrPersonNotFound) {
+	if _, err := svc.Person(ctx, 12, PersonQuery{}); !errors.Is(err, ErrPersonNotFound) {
 		t.Fatalf("Cy still there: %v", err)
 	}
 

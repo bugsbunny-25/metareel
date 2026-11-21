@@ -785,7 +785,7 @@ export interface paths {
         };
         /**
          * Everything about a title in one call
-         * @description TMDB metadata, chart stats, current chart positions, ratings, where to watch and Netflix's official numbers. `include` picks sections (default: all). Ratings may be refreshed from the providers if expired. Sections that fail are named in `errors`; the rest are still returned.
+         * @description TMDB metadata, chart stats, current chart positions, ratings, where to watch and Netflix's official numbers. `include` picks sections (default: metadata, stats, current, ratings, availability, netflix). `rankings` (every chart entry), `timeline` (one per country) and `releases` (movies only) are returned only when asked for, so Details can be one request; they follow `countries`. Ratings may be refreshed from the providers if expired. Sections that fail are named in `errors`; the rest are still returned.
          */
         get: operations["getTitleOverview"];
         put?: never;
@@ -905,7 +905,7 @@ export interface paths {
         };
         /**
          * A person's TMDB profile and filmography, and their titles metareel knows with each title's chart record
-         * @description `titles` are the person's credits on the titles metareel knows (`roles`: "as <character>" for cast, else the job) with each title's FlixPatrol record over every stored chart (points, days, best rank, countries, first and last day), most charted first. `details` (birth, death, biography, IMDb ID, ...) and `filmography` (every movie and TV credit, one entry per title, newest first with titles not dated yet leading) come live from TMDB and are cached in memory for 12 hours; `details_status` says why they are missing (`not_configured`: no TMDB key, `unavailable`: TMDB failed, `not_found`). A person metareel has no credits for is still returned when TMDB knows them (`titles` empty). 502 when TMDB fails for such a person.
+         * @description `titles` are the person's credits on the titles metareel knows (`roles`: "as <character>" for cast, else the job) with each title's FlixPatrol record over every stored chart (points, days, best rank, countries, first and last day), most charted first. `details` (birth, death, biography, IMDb ID, ...) and `filmography` (every movie and TV credit, one entry per title, newest first with titles not dated yet leading) come live from TMDB and are cached in memory for 12 hours; `details_status` says why they are missing (`not_configured`: no TMDB key, `unavailable`: TMDB failed, `not_found`). A person metareel has no credits for is still returned when TMDB knows them (`titles` empty). 502 when TMDB fails for such a person. With `seasons=true`, `filmography_seasons` lists every TV credit once per season (from each show's per-season aggregate credits, guest roles included; one TMDB request per show, cached 12 hours and shared across people) and `seasons_status` says whether every show was looked up (at most 40 per request, most episodes first).
          */
         get: operations["getPerson"];
         put?: never;
@@ -925,7 +925,7 @@ export interface paths {
         };
         /**
          * The running server's version
-         * @description The version and git revision stamped into the build (Dockerfile build args VERSION and REVISION), and the Go release. A build without them reports version "dev".
+         * @description The version and git revision stamped into the build (Dockerfile build args VERSION and REVISION), the Go release, and the optional API features the server supports. A build without them reports version "dev".
          */
         get: operations["getVersion"];
         put?: never;
@@ -2780,6 +2780,20 @@ export interface components {
             revision?: string;
             /** @example go1.27.1 */
             go: string;
+            /**
+             * @description Optional public API capabilities this server has (append only): chart_title_facts (TitleFacts on chart rows), chart_ratings (include=ratings on chart endpoints), overview_sections (include=rankings,timeline,releases and countries= on the title overview), list_overview (overview and season_count on Trending and In cinemas), title_logos (logo_path on titles), certifications (certification on chart rows and In cinemas, certifications in metadata), provider_ids (tmdb_provider_id, chart_provider and logo_path on services, providers, offers and offer events), person_seasons (seasons=true on /people/{id}).
+             * @example [
+             *       "chart_title_facts",
+             *       "chart_ratings",
+             *       "overview_sections",
+             *       "list_overview",
+             *       "title_logos",
+             *       "certifications",
+             *       "provider_ids",
+             *       "person_seasons"
+             *     ]
+             */
+            features: string[];
         };
         TitleListResponse: {
             items: {
@@ -2791,6 +2805,13 @@ export interface components {
                 backdrop_path?: string;
                 /** @description YYYY-MM-DD; first air date for TV */
                 release_date?: string;
+                overview?: string;
+                /** @description TV: from metareel's stored TMDB details, so only for shows metareel knows */
+                season_count?: number;
+                /** @description The title's logo image, from stored details (titles metareel knows) */
+                logo_path?: string;
+                /** @description In cinemas only: the age certification in the country, from stored details */
+                certification?: string;
                 vote_average: number;
                 vote_count: number;
             }[];
@@ -3754,6 +3775,45 @@ export interface components {
             watch_count?: number;
             created_at?: string;
         };
+        /** @description Stored TMDB facts sent on every chart row (Top 10s, chart history, movers, leaderboards, breakouts, Netflix's weekly Top 10), so clients need no TMDB lookup per title. Each field is omitted when unknown; everything but tmdb_kind is omitted until the title has TMDB details. ratings only with include=ratings. */
+        TitleFacts: {
+            /**
+             * @description The TMDB namespace of tmdb_id as TMDB-keyed URLs spell it (kind says tv_show)
+             * @enum {string}
+             */
+            tmdb_kind?: "movie" | "tv";
+            /** @description TMDB image path (https://image.tmdb.org/t/p/{size}{backdrop_path}) */
+            backdrop_path?: string;
+            overview?: string;
+            /**
+             * Format: date
+             * @description First air date for TV
+             */
+            release_date?: string;
+            year?: number;
+            /** @description Minutes; TV: episode runtime */
+            runtime?: number;
+            /** @description TV only */
+            season_count?: number;
+            genres?: string[];
+            /** @description The title's logo image (TMDB path; English, else the original language) */
+            logo_path?: string;
+            /**
+             * @description Age certification in the chart's country; omitted on lists spanning countries (breakouts, global, unfiltered leaderboards)
+             * @example TV-MA
+             */
+            certification?: string;
+            ratings?: components["schemas"]["InlineRatings"];
+        };
+        /** @description A title's stored headline ratings (never fetched for the request; the ratings.prewarm job keeps charting titles fresh). Omitted when none are stored. */
+        InlineRatings: {
+            imdb?: components["schemas"]["IMDbRating"];
+            rotten_tomatoes?: components["schemas"]["RottenTomatoesRating"];
+            /** Format: date-time */
+            refreshed_at?: string;
+            /** @description Older than the ratings TTL */
+            stale?: boolean;
+        };
         ChartTitle: {
             /** Format: int64 */
             title_id?: number;
@@ -3768,7 +3828,7 @@ export interface components {
              * @example /x9a8tZ3cAqkR1sQpQWz6Vt1mJcE.jpg
              */
             poster_path?: string | null;
-        };
+        } & components["schemas"]["TitleFacts"];
         Top10Combined: {
             country?: string;
             movies?: components["schemas"]["Top10Result"][];
@@ -3994,6 +4054,13 @@ export interface components {
                 provider_name?: string;
                 /** @description Every TMDB provider (plans */
                 provider_ids?: number[];
+                /**
+                 * @description The FlixPatrol chart provider (slug, as in /providers) this service is; omitted for services without charts
+                 * @example netflix
+                 */
+                chart_provider?: string;
+                /** @description TMDB provider logo path (https://image.tmdb.org/t/p/w92{logo_path}); omitted when unknown */
+                logo_path?: string;
                 titles?: number;
                 chart_points?: number;
                 charting?: number;
@@ -4083,6 +4150,11 @@ export interface components {
             link?: string | null;
             /** Format: date-time */
             fetched_at?: string;
+            /**
+             * @description The FlixPatrol chart provider (slug, as in /providers) this service is; omitted for services without charts
+             * @example netflix
+             */
+            chart_provider?: string;
         };
         /** @description Where a title on this provider's chart comes from (see /api/v1/analytics/origins). `owner` is the media group the title belongs to (netflix, amazon, apple, disney, wbd, nbcu, paramount, sony, lionsgate, a24; absent = independent or not recognised); `reason` is the brand that decided it. */
         OriginInfo: {
@@ -4338,6 +4410,35 @@ export interface components {
                 vote_average?: number;
                 vote_count?: number;
             }[];
+            /** @description With seasons=true: each TV credit once per season, newest season first (not dated yet first). Shows TMDB lists no per-season credits for (e.g. a creator credited on no episode) are left out. */
+            filmography_seasons?: {
+                /** @description The show */
+                tmdb_id?: string;
+                title?: string;
+                /** @description 0 = specials */
+                season_number?: number;
+                season_name?: string | null;
+                /**
+                 * Format: date
+                 * @description The season's first air date
+                 */
+                air_date?: string | null;
+                year?: number | null;
+                /** @description Episodes of the season the person is credited in (most of any role) */
+                episode_count?: number;
+                /** @description Episodes the season has */
+                season_episode_count?: number | null;
+                /** @description The season's poster, else the show's */
+                poster_path?: string | null;
+                /** @description "as <character>" for cast, else the job */
+                roles?: string[];
+                departments?: string[];
+            }[];
+            /**
+             * @description With seasons=true: complete, partial (shows skipped over the cap of 40 or failed) or unavailable (TMDB failed or not configured)
+             * @enum {string}
+             */
+            seasons_status?: "complete" | "partial" | "unavailable";
         };
         PeopleResponse: {
             /** Format: date */
@@ -4531,6 +4632,13 @@ export interface components {
             monetization?: "flatrate" | "free" | "ads" | "rent" | "buy";
             provider_id?: number;
             provider_name?: string;
+            /**
+             * @description The FlixPatrol chart provider (slug, as in /providers) this service is; omitted for services without charts
+             * @example netflix
+             */
+            chart_provider?: string;
+            /** @description TMDB provider logo path (https://image.tmdb.org/t/p/w92{logo_path}); omitted when unknown */
+            logo_path?: string;
             /** @enum {string} */
             event?: "added" | "removed";
             /** @description UTC YYYY-MM-DD HH:MM:SS; the change happened after this */
@@ -4732,6 +4840,18 @@ export interface components {
             digital_release_dates?: {
                 [key: string]: string;
             };
+            /**
+             * @description Age certification per country (movies from TMDB release dates, theatrical first; TV from content ratings). Omitted until the next details refresh.
+             * @example {
+             *       "US": "PG-13",
+             *       "GB": "12A"
+             *     }
+             */
+            certifications?: {
+                [key: string]: string;
+            };
+            /** @description The title's logo image (TMDB path; English, else the original language). Omitted when TMDB has none. */
+            logo_path?: string;
             imdb_id?: string | null;
             wikidata_id?: string | null;
             rotten_tomatoes_id?: string | null;
@@ -4762,6 +4882,12 @@ export interface components {
             current_positions?: components["schemas"]["ChartMoment"][];
             ratings?: components["schemas"]["RatingsResponse"];
             availability?: components["schemas"]["AvailabilityResponse"];
+            /** @description Every chart entry in the countries asked (include=rankings) */
+            rankings?: components["schemas"]["RankingSnapshot"][];
+            /** @description One timeline per country asked, or one across countries (include=timeline) */
+            timeline?: components["schemas"]["TitleTimelineResponse"][];
+            /** @description A movie's releases in the countries asked (include=releases) */
+            releases?: components["schemas"]["TitleReleasesResponse"];
             netflix?: {
                 weeks_in_global_top10?: number;
                 best_global_rank?: number | null;
@@ -4831,7 +4957,7 @@ export interface components {
             poster_path?: string | null;
             /** Format: int64 */
             netflix_title_id?: number;
-        };
+        } & components["schemas"]["TitleFacts"];
         /**
          * @description How season_number was found. parsed - the season title says it ("Season 2", "S3", "Limited Series"); tmdb_name - it names a TMDB season; number - "Part 2", "Volume 4", "Stranger Things 5"; tmdb_air_date - the TMDB season that aired just before it charted; tmdb_single - the show has one season; manual - set by an admin.
          * @enum {string|null}
@@ -5066,7 +5192,7 @@ export interface components {
             season_number?: number;
             season_source?: components["schemas"]["RankingSeasonSource"];
             origin?: components["schemas"]["OriginInfo"];
-        };
+        } & components["schemas"]["TitleFacts"];
         Top10Response: {
             /**
              * Format: date
@@ -5198,6 +5324,18 @@ export interface components {
             justwatch_package: string;
             /** @example Netflix */
             name: string;
+            /**
+             * @description The service's TMDB watch provider ID (JustWatch's package ID, which TMDB's provider data uses)
+             * @example 8
+             */
+            tmdb_provider_id?: number;
+            /**
+             * @description The FlixPatrol chart provider (slug, as in /providers) this service is; omitted for services without charts
+             * @example netflix
+             */
+            chart_provider?: string;
+            /** @description TMDB provider logo path (https://image.tmdb.org/t/p/w92{logo_path}); omitted when unknown */
+            logo_path?: string;
         };
         ServicesResponse: {
             country: string;
@@ -5570,6 +5708,8 @@ export interface components {
         LimitQuery: number;
         AnalyticsFrom: string;
         AnalyticsTo: string;
+        /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+        ChartIncludeParam: "ratings";
         CountryParam: string;
         ProviderParam: string;
         DateParam: string;
@@ -6233,6 +6373,8 @@ export interface operations {
         parameters: {
             query?: {
                 date?: components["parameters"]["DateParam"];
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path: {
@@ -6284,6 +6426,8 @@ export interface operations {
         parameters: {
             query?: {
                 date?: components["parameters"]["DateParam"];
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path: {
@@ -6336,6 +6480,8 @@ export interface operations {
         parameters: {
             query?: {
                 date?: components["parameters"]["DateParam"];
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path: {
@@ -6387,6 +6533,8 @@ export interface operations {
         parameters: {
             query?: {
                 date?: components["parameters"]["DateParam"];
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path: {
@@ -6439,6 +6587,8 @@ export interface operations {
         parameters: {
             query?: {
                 date?: components["parameters"]["DateParam"];
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path: {
@@ -6468,6 +6618,8 @@ export interface operations {
                 category?: components["parameters"]["CategoryQuery"];
                 kind?: components["parameters"]["KindQuery"];
                 limit?: components["parameters"]["LimitQuery"];
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path: {
@@ -6494,6 +6646,8 @@ export interface operations {
             query?: {
                 from?: components["parameters"]["FromParam"];
                 to?: components["parameters"]["ToParam"];
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path: {
@@ -6521,6 +6675,8 @@ export interface operations {
             query?: {
                 from?: components["parameters"]["FromParam"];
                 to?: components["parameters"]["ToParam"];
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path: {
@@ -6670,6 +6826,8 @@ export interface operations {
                 provider: string;
                 category?: components["parameters"]["CategoryQuery"];
                 date?: components["parameters"]["DateParam"];
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path?: never;
@@ -6704,6 +6862,8 @@ export interface operations {
                 provider?: components["parameters"]["ProviderQuery"];
                 kind?: components["parameters"]["KindQuery"];
                 limit?: number;
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path?: never;
@@ -6823,6 +6983,8 @@ export interface operations {
                 category?: components["parameters"]["CategoryQuery"];
                 kind?: components["parameters"]["KindQuery"];
                 limit?: components["parameters"]["LimitQuery"];
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path?: never;
@@ -6916,6 +7078,22 @@ export interface operations {
                         /** @example netflix */
                         slug?: string;
                         countries?: string[];
+                        /**
+                         * @description The service's main TMDB watch provider ID
+                         * @example 8
+                         */
+                        tmdb_provider_id?: number;
+                        /**
+                         * @description Every TMDB watch provider ID that counts as this service (main first, then ad / premium / regional tiers)
+                         * @example [
+                         *       8,
+                         *       1796,
+                         *       175
+                         *     ]
+                         */
+                        tmdb_provider_ids?: number[];
+                        /** @description TMDB provider logo path (https://image.tmdb.org/t/p/w92{logo_path}); omitted when unknown */
+                        logo_path?: string;
                     }[];
                 };
             };
@@ -7029,6 +7207,8 @@ export interface operations {
             query?: {
                 include?: string;
                 country?: string;
+                /** @description Comma-separated ISO codes (at most 5) for the rankings, timeline and releases sections; default `country`, else every country (one timeline across countries). */
+                countries?: string;
             };
             header?: never;
             path: {
@@ -7228,7 +7408,10 @@ export interface operations {
     };
     getPerson: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Add filmography_seasons (TV credits per season) */
+                seasons?: boolean;
+            };
             header?: never;
             path: {
                 /** @description TMDB person ID */
@@ -7539,6 +7722,8 @@ export interface operations {
             query?: {
                 week?: string;
                 category?: "Films (English)" | "Films (Non-English)" | "TV (English)" | "TV (Non-English)";
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path?: never;
@@ -7564,6 +7749,8 @@ export interface operations {
             query?: {
                 week?: string;
                 category?: "Films" | "TV";
+                /** @description Optional sections of each row: `ratings` adds the stored IMDb and Rotten Tomatoes ratings (TitleFacts.ratings). */
+                include?: components["parameters"]["ChartIncludeParam"];
             };
             header?: never;
             path: {

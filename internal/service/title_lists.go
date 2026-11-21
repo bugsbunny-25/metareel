@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bugsbunny-25/metareel/internal/client"
+	"github.com/bugsbunny-25/metareel/internal/repository"
 )
 
 // Title lists for the home screens: what is trending on TMDB today and what
@@ -34,14 +35,58 @@ type TitleListResponse struct {
 }
 
 type TitleListsService struct {
-	tmdb  tmdbLister
-	now   func() time.Time
-	mu    sync.Mutex
-	cache map[string]TitleListResponse
+	tmdb     tmdbLister
+	metadata *repository.MetadataRepository // optional: season counts of known shows
+	now      func() time.Time
+	mu       sync.Mutex
+	cache    map[string]TitleListResponse
 }
 
 func NewTitleListsService(tmdb tmdbLister) *TitleListsService {
 	return &TitleListsService{tmdb: tmdb, now: time.Now, cache: map[string]TitleListResponse{}}
+}
+
+// WithMetadata adds stored facts (season count, logo, certification) of
+// titles with stored TMDB details.
+func (s *TitleListsService) WithMetadata(metadata *repository.MetadataRepository) *TitleListsService {
+	s.metadata = metadata
+	return s
+}
+
+// withStoredFacts returns a copy of list with each known title's season
+// count (TV), logo and certification in country ("" = none); the cached list
+// itself is never changed.
+func (s *TitleListsService) withStoredFacts(ctx context.Context, list *TitleListResponse, country string) (*TitleListResponse, error) {
+	if s.metadata == nil || list == nil {
+		return list, nil
+	}
+	var refs []repository.TmdbRef
+	for _, it := range list.Items {
+		refs = append(refs, repository.TmdbRef{Kind: it.Kind, ID: it.ID})
+	}
+	if len(refs) == 0 {
+		return list, nil
+	}
+	meta, err := s.metadata.GetMany(ctx, refs)
+	if err != nil {
+		return nil, err
+	}
+	out := &TitleListResponse{Items: append([]client.TMDBListItem(nil), list.Items...), FetchedAt: list.FetchedAt}
+	for i := range out.Items {
+		it := &out.Items[i]
+		m := meta[repository.TmdbRef{Kind: it.Kind, ID: it.ID}.String()]
+		if m == nil {
+			continue
+		}
+		if it.Kind == "tv" && m.NumberOfSeasons != nil && *m.NumberOfSeasons > 0 {
+			it.SeasonCount = m.NumberOfSeasons
+		}
+		it.LogoPath = nonEmpty(m.LogoPath)
+		if c := m.Certifications[country]; country != "" && c != "" {
+			it.Certification = &c
+		}
+	}
+	return out, nil
 }
 
 var countryCodeRe = regexp.MustCompile(`^[A-Z]{2}$`)
@@ -54,9 +99,13 @@ func (s *TitleListsService) Trending(ctx context.Context, kind string) (*TitleLi
 	if kind != "all" && kind != "movie" && kind != "tv" {
 		return nil, &ValidationError{Message: "kind must be all, movie or tv"}
 	}
-	return s.cached(ctx, "trending:"+kind, func() ([]client.TMDBListItem, error) {
+	list, err := s.cached(ctx, "trending:"+kind, func() ([]client.TMDBListItem, error) {
 		return s.tmdb.Trending(ctx, kind, "day")
 	})
+	if err != nil {
+		return nil, err
+	}
+	return s.withStoredFacts(ctx, list, "")
 }
 
 // InCinemas: the films TMDB lists as now playing in a country.
@@ -65,9 +114,13 @@ func (s *TitleListsService) InCinemas(ctx context.Context, country string) (*Tit
 	if !countryCodeRe.MatchString(country) {
 		return nil, &ValidationError{Message: "country must be a two-letter code"}
 	}
-	return s.cached(ctx, "cinemas:"+country, func() ([]client.TMDBListItem, error) {
+	list, err := s.cached(ctx, "cinemas:"+country, func() ([]client.TMDBListItem, error) {
 		return s.tmdb.NowPlaying(ctx, country)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return s.withStoredFacts(ctx, list, country)
 }
 
 func (s *TitleListsService) cached(ctx context.Context, key string, fetch func() ([]client.TMDBListItem, error)) (*TitleListResponse, error) {

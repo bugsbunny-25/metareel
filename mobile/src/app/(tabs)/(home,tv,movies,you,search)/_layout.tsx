@@ -9,7 +9,6 @@ import { useTheme } from '@/theme';
 // each group's root screen.
 export const unstable_settings = {
   anchor: 'index',
-  diary: { anchor: 'diary' },
   tv: { anchor: 'tv' },
   movies: { anchor: 'movies' },
   you: { anchor: 'you' },
@@ -18,14 +17,15 @@ export const unstable_settings = {
 
 const ROOT_TITLES: Record<string, string> = {
   index: 'Tonight',
-  diary: 'Diary',
   tv: 'TV',
   movies: 'Movies',
   you: 'You',
   find: 'Search',
 };
 
-const PINNED = new Set(['tv', 'movies']);
+// Roots with tabs pinned under a standard (opaque) bar: TV and Movies' To
+// watch / Upcoming, You's You / Diary / Library.
+const PINNED = new Set(['tv', 'movies', 'you']);
 
 export default function TabStack() {
   const { colors } = useTheme();

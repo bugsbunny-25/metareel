@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,12 @@ import (
 )
 
 func newChartsFixture(t *testing.T) (*ChartsService, *TitleOverviewService) {
+	t.Helper()
+	_, charts, overview := newChartsFixtureDB(t)
+	return charts, overview
+}
+
+func newChartsFixtureDB(t *testing.T) (*sql.DB, *ChartsService, *TitleOverviewService) {
 	t.Helper()
 	db := newTestDB(t)
 	flix := repository.NewFlixPatrolRepository(db)
@@ -37,7 +44,7 @@ func newChartsFixture(t *testing.T) (*ChartsService, *TitleOverviewService) {
 	charts := NewChartsService(analytics)
 	charts.now = func() time.Time { return time.Date(2026, 10, 3, 13, 0, 0, 0, time.UTC) }
 	overview := NewTitleOverviewService(analytics, flix, repository.NewMetadataRepository(db), nil)
-	return charts, overview
+	return db, charts, overview
 }
 
 func TestMovers(t *testing.T) {

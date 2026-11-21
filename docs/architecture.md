@@ -152,7 +152,7 @@ last attempt fails (`ALERT_WEBHOOK_URL`). Ad-hoc runs have no `schedule_id`.
 |---|---|---|
 | `flixpatrol.top10.scrape` | `FlixPatrolJob` | Charts only; tags the new TV rankings with seasons, enqueues `titles.enrich` for new titles and hourly re-checks for unpublished charts |
 | `titles.enrich` | `TitleEnricher` (+ `TitleMatcher`) | Mapping sync (linked Netflix titles' mappings first), matching with backoff, RT via Wikidata then search (per TMDB title, backoff in `tmdb_titles.next_rt_at`), mapping sync; then seasons |
-| `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists) + watch providers with each offer's URL from JustWatch (`title_offers.go`), Wikidata IDs, films' Wikidata distributors (P750, `tmdb_titles.distributors`, monthly); then seasons |
+| `titles.metadata` | `TitleMetadataService` | TMDB details (incl. TV season lists, age certifications from `release_dates` / `content_ratings` and the logo from `images`) + watch providers with each offer's URL from JustWatch (`title_offers.go`), Wikidata IDs, films' Wikidata distributors (P750, `tmdb_titles.distributors`, monthly); then seasons |
 
 A title the job never covers (never charted, not watchlisted, e.g. one opened
 from Trending or search) gets its TMDB details on demand: the title overview
@@ -679,7 +679,9 @@ search palette.
 (`service/title_lists.go`) are TMDB's `/trending/{kind}/day` and
 `/movie/now_playing?region=`, asked live for the home screens' Trending and In
 cinemas rows and kept in memory for 30 minutes per list and country (a failed
-refresh serves the last list). Nothing is stored. The apps' Top 10 badge needs
+refresh serves the last list). Nothing is stored. Each response adds the
+`season_count` of shows with stored TMDB details (one batch read of
+`tmdb_titles`, on a copy so the cached list is never changed). The apps' Top 10 badge needs
 no endpoint of its own: one `/top10/{country}` per country (every service's
 latest charts, ~12 KB gzipped) is cached and matched locally.
 `GET /api/v1/people/{id}` lists a person's credited titles with each title's
@@ -691,6 +693,15 @@ hour; at most 1,000 people; concurrent requests for one person share a fetch).
 Nothing of it is stored. A TMDB failure leaves `details` null with
 `details_status: unavailable` for a person metareel has credits for, and is a
 502 for one it doesn't; a person known only to TMDB is still returned.
+With `seasons=true` (`service/credits_person_seasons.go`) each TV show of the
+filmography is fetched as `/tv/{id}?append_to_response=season/0/aggregate_credits,...,season/19/aggregate_credits`
+(one request per 20 seasons, up to 60; aggregate credits include guest stars),
+and the person's roles and episode counts per season become
+`filmography_seasons`. Shows are cached for 12 hours (at most 300) and shared
+by everyone credited on them; a request looks up at most 40 shows (most
+episodes first), 6 at a time within 25 seconds, and says `partial` when it
+skipped or failed some. TMDB's `/credit/{id}` is not used: its season list
+is incomplete for regular cast.
 `GET /api/v1/analytics/people` sums each title's chart points in the range
 (`ChartEntries` with the usual filters) and credits them in full to every
 person credited in the role (actors: billing order under 10), once per
@@ -1296,6 +1307,7 @@ sequenceDiagram
     participant Echo
     participant Handler
     participant Top10Svc as Top10ReadService
+    participant FactsSvc as TitleFactsService
     participant FlixRepo as FlixPatrolRepository
     participant SQLite
 
@@ -1310,8 +1322,28 @@ sequenceDiagram
     FlixRepo-->>Top10Svc: []Top10Item
     Top10Svc->>Top10Svc: withTitleMetadata — one batch read of tmdb_titles\nfor origin + poster_path
     Top10Svc-->>Handler: *Top10Response{items: [{date, rank, previous_rank, days_in_top10, provider, slug, name, kind, tmdb_id, imdb_id, poster_path, origin}]}
+    Handler->>FactsSvc: Fill(ctx, response, include=ratings?)
+    FactsSvc->>SQLite: one batch read of tmdb_titles (+ stored title_ratings with include=ratings)
+    FactsSvc-->>Handler: rows + tmdb_kind, backdrop_path, overview, release_date, year, runtime, season_count, genres[, ratings]
     Handler-->>Client: 200 JSON
 ```
+
+Service identity (`service/provider_ids.go`): `chartProviderTMDB` maps each
+FlixPatrol chart provider to its TMDB watch provider IDs (main first, then the
+ad / premium / regional tiers that count as it; store channels are separate
+services). Responses that name a service add `chart_provider` from that map
+and TMDB's `logo_path` from `ProviderLogos` (one stored logo per provider ID
+from `tmdb_watch_providers`, kept in memory for 6 hours): `/services` (whose
+JustWatch package ID is the TMDB provider ID), `/providers`, title
+availability, `/availability/changes` and the rotation's services. Clients
+match services by ID, never by name.
+
+Every chart-shaped response (Top 10s, chart history, movers, breakouts,
+leaderboards, Netflix's weekly Top 10) goes through `TitleFactsService.Fill`
+in its handler: the response lists its rows (`FactsHolder`) and the service
+fills their stored TMDB facts in one query, plus stored ratings (never a
+refresh) with `include=ratings`. Webhooks and analytics reuse the same
+services without it.
 
 `kind` on a chart entry is what the title is (and so the TMDB namespace of
 `tmdb_id`), which can differ from the chart's category: a stand-up special
@@ -1415,7 +1447,7 @@ Added since the diagram below:
 |---|---|
 | `chart_snapshots` | One row per stored chart (date × country × provider × category): entry count, content `signature`, `scraped_at`, `changed_at` |
 | `titles` (new columns) | `match_status` (pending / matched / unmatched / manual), `match_source`, `matched_name/year`, `match_attempts`, `next_match_at`, `fp_*` (FlixPatrol title page); `legacy_*` = its former ID / RT backoff columns (unread, dropped next release) |
-| `tmdb_titles` | TMDB metadata per TMDB title + every external ID (IMDb, Wikidata, RT, Metacritic, Letterboxd, `netflix_id`, `justwatch_id`), each with a `*_source` (manual / tmdb / wikidata / match / netflix); RT search backoff (`rt_attempts`, `next_rt_at`) |
+| `tmdb_titles` | TMDB metadata per TMDB title + every external ID (IMDb, Wikidata, RT, Metacritic, Letterboxd, `netflix_id`, `justwatch_id`), each with a `*_source` (manual / tmdb / wikidata / match / netflix); RT search backoff (`rt_attempts`, `next_rt_at`); `certifications` (JSON country to rating: movies' theatrical certification first, TV content ratings) and `logo_path` (English logo, else the original language's), migration 44, filled by the next details refresh |
 | `mapping_refs` (view) | The mapping reference: one row per chart title (a FlixPatrol title paired with its linked Netflix title when both map to the same TMDB title, or a Netflix title on its own; unmapped ones too) with TMDB kind / ID / title, IMDb, Wikidata, RT slug, Metacritic and Letterboxd slugs, JustWatch ID, Netflix ID, FlixPatrol slug / kind and Netflix title / kind. Derived, never written (`GET /admin/mapping-refs`, "Export reference" in the UI) |
 | `title_links` | Netflix title ↔ FlixPatrol title that are the same title; linked titles share one TMDB mapping |
 | `mapping_events` | History of every mapping change (subject, action, TMDB title before / after, source, actor), written with the change |

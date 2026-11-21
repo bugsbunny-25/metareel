@@ -210,6 +210,7 @@ type CreditsService struct {
 	tmdb        tmdbSource
 	people      *tmdbCache[int64, *client.TMDBPersonDetails]
 	liveCredits *tmdbCache[string, *client.TMDBCredits]
+	shows       *tmdbCache[int64, *client.TMDBShowSeasons] // per-season credits by show
 	fetches     singleflight.Group
 	now         func() time.Time
 }
@@ -341,18 +342,44 @@ type PersonResponse struct {
 	DetailsStatus string             `json:"details_status"`
 	Details       *PersonDetails     `json:"details"`
 	Filmography   []FilmographyTitle `json:"filmography"`
+	// FilmographySeasons (seasons=true): each TV credit once per season,
+	// newest first; SeasonsStatus says whether every show was looked up
+	// (complete), some were skipped or failed (partial) or none could be
+	// (unavailable).
+	FilmographySeasons []FilmographySeason `json:"filmography_seasons,omitempty"`
+	SeasonsStatus      string              `json:"seasons_status,omitempty"`
+}
+
+// PersonQuery selects optional parts of a person.
+type PersonQuery struct {
+	Seasons bool // add FilmographySeasons (TMDB per-season credits)
 }
 
 // Person returns a person, their titles metareel knows with their chart
 // record, and their TMDB profile and filmography. A person metareel has no
 // credits for is still found when TMDB knows them.
-func (s *CreditsService) Person(ctx context.Context, id int64) (*PersonResponse, error) {
+func (s *CreditsService) Person(ctx context.Context, id int64, q PersonQuery) (*PersonResponse, error) {
+	out, tp, err := s.person(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if q.Seasons {
+		if tp == nil {
+			out.FilmographySeasons, out.SeasonsStatus = []FilmographySeason{}, SeasonsUnavailable
+		} else {
+			out.FilmographySeasons, out.SeasonsStatus = s.personSeasons(ctx, id, tp.Credits)
+		}
+	}
+	return out, nil
+}
+
+func (s *CreditsService) person(ctx context.Context, id int64) (*PersonResponse, *client.TMDBPersonDetails, error) {
 	if id <= 0 {
-		return nil, &ValidationError{Message: "invalid person id"}
+		return nil, nil, &ValidationError{Message: "invalid person id"}
 	}
 	p, err := s.repo.GetPerson(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	tp, status, tmdbErr := s.tmdbPerson(ctx, id)
 	if p == nil {
@@ -360,21 +387,21 @@ func (s *CreditsService) Person(ctx context.Context, id int64) (*PersonResponse,
 		case tp != nil:
 			out := &PersonResponse{PersonID: id, Titles: []PersonTitle{}, DetailsStatus: status}
 			addTMDB(out, tp)
-			return out, nil
+			return out, tp, nil
 		case tmdbErr != nil:
-			return nil, personUnavailable(tmdbErr)
+			return nil, nil, personUnavailable(tmdbErr)
 		}
-		return nil, ErrPersonNotFound
+		return nil, nil, ErrPersonNotFound
 	}
 	out, err := s.chartedPerson(ctx, p)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out.DetailsStatus, out.Filmography = status, []FilmographyTitle{}
 	if tp != nil {
 		addTMDB(out, tp)
 	}
-	return out, nil
+	return out, tp, nil
 }
 
 // chartedPerson returns a person with their titles metareel knows.

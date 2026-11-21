@@ -69,7 +69,37 @@ func parseIntParam(c *echo.Context, name string, def int) (int, error) {
 	return v, nil
 }
 
+// parseBoolParam reads an optional true/false query parameter.
+func parseBoolParam(c *echo.Context, name string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(c.QueryParam(name))) {
+	case "", "false", "0":
+		return false, nil
+	case "true", "1":
+		return true, nil
+	}
+	return false, errors.New("invalid " + name + ", expected true or false")
+}
+
 // --- charts ---------------------------------------------------------------------
+
+// writeChart writes a chart response with its rows' stored TMDB facts (and
+// stored ratings with include=ratings).
+func (h *Handler) writeChart(c *echo.Context, out service.FactsHolder) error {
+	withRatings, err := service.ParseFactsInclude(c.QueryParam("include"))
+	if err == nil {
+		err = h.Facts.Fill(c.Request().Context(), out, withRatings)
+	}
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// chartInclude rejects an invalid include= before any work is done.
+func chartInclude(c *echo.Context) error {
+	_, err := service.ParseFactsInclude(c.QueryParam("include"))
+	return err
+}
 
 // GetCountryTop10 returns every provider's movie and TV charts of a country:
 // GET /api/v1/top10/{country}[?date=]
@@ -78,8 +108,14 @@ func (h *Handler) GetCountryTop10(c *echo.Context) error {
 	if err != nil {
 		return badRequest(c, err)
 	}
+	if err := chartInclude(c); err != nil {
+		return badRequest(c, err)
+	}
 	out, err := h.Top10.GetCountryTop10(c.Request().Context(), service.Top10Query{Date: date, CountryCode: c.Param("country")})
-	return writeData(c, out, err)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	return h.writeChart(c, out)
 }
 
 // GetChartHistory returns one chart over a date range:
@@ -90,10 +126,16 @@ func (h *Handler) GetChartHistory(category string) echo.HandlerFunc {
 		if err != nil {
 			return badRequest(c, err)
 		}
+		if err := chartInclude(c); err != nil {
+			return badRequest(c, err)
+		}
 		out, err := h.Charts.History(c.Request().Context(), service.HistoryQuery{
 			Country: c.Param("country"), Provider: c.Param("provider"), Category: category, From: from, To: to,
 		})
-		return writeData(c, out, err)
+		if err != nil {
+			return writeData(c, nil, err)
+		}
+		return h.writeChart(c, out)
 	}
 }
 
@@ -111,10 +153,16 @@ func (h *Handler) GetGlobalTop10(c *echo.Context) error {
 	if c.Param("provider") == "" {
 		return badRequest(c, errors.New("provider is required"))
 	}
+	if err := chartInclude(c); err != nil {
+		return badRequest(c, err)
+	}
 	out, err := h.Charts.Leaderboard(c.Request().Context(), service.LeaderboardQuery{
 		Period: "day", Date: date, Provider: c.Param("provider"), Category: c.QueryParam("category"), Kind: c.QueryParam("kind"), Limit: limit,
 	})
-	return writeData(c, out, err)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	return h.writeChart(c, out)
 }
 
 // GetCharts lists stored charts: GET /api/v1/charts[?country=&provider=]
@@ -160,10 +208,16 @@ func (h *Handler) GetMovers(c *echo.Context) error {
 	if err != nil {
 		return badRequest(c, err)
 	}
+	if err := chartInclude(c); err != nil {
+		return badRequest(c, err)
+	}
 	out, err := h.Charts.Movers(c.Request().Context(), service.MoversQuery{
 		Country: c.QueryParam("country"), Provider: c.QueryParam("provider"), Category: c.QueryParam("category"), Date: date,
 	})
-	return writeData(c, out, err)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	return h.writeChart(c, out)
 }
 
 // GetLeaderboard ranks titles by chart points:
@@ -181,11 +235,17 @@ func (h *Handler) GetLeaderboard(c *echo.Context) error {
 	if err != nil {
 		return badRequest(c, err)
 	}
+	if err := chartInclude(c); err != nil {
+		return badRequest(c, err)
+	}
 	out, err := h.Charts.Leaderboard(c.Request().Context(), service.LeaderboardQuery{
 		Period: c.QueryParam("period"), Date: date, From: from, To: to, Country: c.QueryParam("country"),
 		Provider: c.QueryParam("provider"), Category: c.QueryParam("category"), Kind: c.QueryParam("kind"), Limit: limit,
 	})
-	return writeData(c, out, err)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	return h.writeChart(c, out)
 }
 
 // ExportRankings streams chart entries as CSV or NDJSON:
@@ -246,7 +306,11 @@ func (h *Handler) GetTitleOverview(c *echo.Context) error {
 	if err != nil {
 		return writeData(c, nil, err)
 	}
-	out, err := h.Overview.Overview(c.Request().Context(), ref, service.OverviewQuery{Country: c.QueryParam("country"), Include: include})
+	var countries []string
+	if raw := strings.TrimSpace(c.QueryParam("countries")); raw != "" {
+		countries = strings.Split(raw, ",")
+	}
+	out, err := h.Overview.Overview(c.Request().Context(), ref, service.OverviewQuery{Country: c.QueryParam("country"), Countries: countries, Include: include})
 	return writeData(c, out, err)
 }
 
@@ -447,8 +511,14 @@ func (h *Handler) GetBreakouts(c *echo.Context) error {
 		}
 		*p.dst = v
 	}
+	if err := chartInclude(c); err != nil {
+		return badRequest(c, err)
+	}
 	out, err := h.Breakouts.Breakouts(c.Request().Context(), q)
-	return writeData(c, out, err)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	return h.writeChart(c, out)
 }
 
 // --- discovery --------------------------------------------------------------------
@@ -543,8 +613,14 @@ func (h *Handler) GetRotation(c *echo.Context) error {
 // GetNetflixTop10 returns Netflix's official weekly Top 10, globally or for a
 // country: GET /api/v1/netflix/top10[/{country}][?week=&category=]
 func (h *Handler) GetNetflixTop10(c *echo.Context) error {
+	if err := chartInclude(c); err != nil {
+		return badRequest(c, err)
+	}
 	out, err := h.Analytics.NetflixWeek(c.Request().Context(), c.Param("country"), c.QueryParam("week"), c.QueryParam("category"))
-	return writeData(c, out, err)
+	if err != nil {
+		return writeData(c, nil, err)
+	}
+	return h.writeChart(c, out)
 }
 
 // GetNetflixMostPopular: GET /api/v1/netflix/most-popular[?category=]
@@ -649,7 +725,11 @@ func (h *Handler) GetPerson(c *echo.Context) error {
 	if err != nil {
 		return badRequest(c, err)
 	}
-	out, err := h.Credits.Person(c.Request().Context(), id)
+	seasons, err := parseBoolParam(c, "seasons")
+	if err != nil {
+		return badRequest(c, err)
+	}
+	out, err := h.Credits.Person(c.Request().Context(), id, service.PersonQuery{Seasons: seasons})
 	return writeData(c, out, err)
 }
 

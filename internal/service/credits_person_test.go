@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -107,7 +109,7 @@ func TestPersonWithTMDB(t *testing.T) {
 	svc := NewCreditsService(repo, meta).WithTMDB(src)
 	svc.now = func() time.Time { return now }
 
-	ana, err := svc.Person(ctx, 10)
+	ana, err := svc.Person(ctx, 10, PersonQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,16 +120,16 @@ func TestPersonWithTMDB(t *testing.T) {
 	}
 
 	// Cached: no second TMDB call until the TTL passes.
-	if _, err := svc.Person(ctx, 10); err != nil || src.calls.Load() != 1 {
+	if _, err := svc.Person(ctx, 10, PersonQuery{}); err != nil || src.calls.Load() != 1 {
 		t.Fatalf("calls = %d, err %v", src.calls.Load(), err)
 	}
 	now = now.Add(personCacheTTL + time.Minute)
-	if _, err := svc.Person(ctx, 10); err != nil || src.calls.Load() != 2 {
+	if _, err := svc.Person(ctx, 10, PersonQuery{}); err != nil || src.calls.Load() != 2 {
 		t.Fatalf("after ttl calls = %d, err %v", src.calls.Load(), err)
 	}
 
 	// Known only to TMDB.
-	only, err := svc.Person(ctx, 50)
+	only, err := svc.Person(ctx, 50, PersonQuery{})
 	if err != nil || only.Name != "Only On TMDB" || len(only.Titles) != 0 || only.Titles == nil || len(only.Filmography) != 1 || *only.KnownFor != "Directing" {
 		t.Fatalf("tmdb only = %+v, %v", only, err)
 	}
@@ -135,7 +137,7 @@ func TestPersonWithTMDB(t *testing.T) {
 	// Unknown everywhere; the miss is cached for an hour.
 	calls := src.calls.Load()
 	for range 2 {
-		if _, err := svc.Person(ctx, 404); !errors.Is(err, ErrPersonNotFound) {
+		if _, err := svc.Person(ctx, 404, PersonQuery{}); !errors.Is(err, ErrPersonNotFound) {
 			t.Fatalf("unknown: %v", err)
 		}
 	}
@@ -146,20 +148,20 @@ func TestPersonWithTMDB(t *testing.T) {
 	// TMDB failing: a charted person still answers; an unknown one is a 502.
 	src.fail = true
 	now = now.Add(personCacheTTL + time.Minute)
-	ana, err = svc.Person(ctx, 10)
+	ana, err = svc.Person(ctx, 10, PersonQuery{})
 	if err != nil || ana.DetailsStatus != PersonDetailsUnavailable || ana.Details != nil || ana.Filmography == nil || len(ana.Titles) != 1 {
 		t.Fatalf("tmdb down = %+v, %v", ana, err)
 	}
-	if _, err := svc.Person(ctx, 77); !errors.Is(err, ErrPersonUnavailable) {
+	if _, err := svc.Person(ctx, 77, PersonQuery{}); !errors.Is(err, ErrPersonUnavailable) {
 		t.Fatalf("unknown while tmdb down: %v", err)
 	}
 
 	// No TMDB key.
 	plain := NewCreditsService(repo, meta).WithTMDB(&fakePeople{})
-	if ana, err := plain.Person(ctx, 10); err != nil || ana.DetailsStatus != PersonDetailsNotConfigured || ana.Name != "Ana" {
+	if ana, err := plain.Person(ctx, 10, PersonQuery{}); err != nil || ana.DetailsStatus != PersonDetailsNotConfigured || ana.Name != "Ana" {
 		t.Fatalf("not configured = %+v, %v", ana, err)
 	}
-	if _, err := plain.Person(ctx, 50); !errors.Is(err, ErrPersonNotFound) {
+	if _, err := plain.Person(ctx, 50, PersonQuery{}); !errors.Is(err, ErrPersonNotFound) {
 		t.Fatalf("not configured, unknown: %v", err)
 	}
 }
@@ -257,5 +259,120 @@ func TestTitleCreditsLive(t *testing.T) {
 	}
 	if _, err := plain.TitleCredits(ctx, TmdbRef{Kind: "tv", ID: "7"}); !errors.Is(err, ErrTitleNotFound) {
 		t.Fatalf("no tmdb, unknown: %v", err)
+	}
+}
+
+// fakeSeasons adds per-season credits to fakePeople.
+type fakeSeasons struct {
+	*fakePeople
+	shows    map[int]*client.TMDBShowSeasons // every season's credits; the fake slices what was asked
+	failShow int
+	mu       sync.Mutex
+	asked    map[int][][]int
+}
+
+func (f *fakeSeasons) requests(id int) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.asked[id])
+}
+
+func (f *fakeSeasons) ShowSeasonCredits(_ context.Context, id int, seasons []int) (*client.TMDBShowSeasons, error) {
+	f.mu.Lock()
+	if f.asked == nil {
+		f.asked = map[int][][]int{}
+	}
+	f.asked[id] = append(f.asked[id], seasons)
+	f.mu.Unlock()
+	if id == f.failShow {
+		return nil, errors.New("tmdb show season credits status 503")
+	}
+	full := f.shows[id]
+	if full == nil {
+		return nil, nil
+	}
+	want := map[int]bool{}
+	for _, n := range seasons {
+		want[n] = true
+	}
+	out := &client.TMDBShowSeasons{ID: id, Name: full.Name, PosterPath: full.PosterPath, Seasons: full.Seasons,
+		People: map[int][]client.TMDBSeasonCredit{}, Fetched: seasons}
+	for pid, cs := range full.People {
+		for _, c := range cs {
+			if want[c.Season] {
+				out.People[pid] = append(out.People[pid], c)
+			}
+		}
+	}
+	return out, nil
+}
+
+func TestPersonSeasons(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	long := &client.TMDBShowSeasons{Name: "Long", People: map[int][]client.TMDBSeasonCredit{}}
+	for n := 1; n <= 25; n++ {
+		long.Seasons = append(long.Seasons, client.TMDBShowSeason{Number: n, AirDate: fmt.Sprintf("%d-01-01", 1990+n), EpisodeCount: 20})
+	}
+	long.People[10] = []client.TMDBSeasonCredit{{Season: 3, Department: "Acting", Character: "Guest", EpisodeCount: 1},
+		{Season: 24, Department: "Acting", Character: "Guest", EpisodeCount: 2}}
+	src := &fakeSeasons{fakePeople: &fakePeople{enabled: true, people: map[int]*client.TMDBPersonDetails{
+		10: {ID: 10, Name: "Ana", Credits: []client.TMDBPersonCredit{
+			{Kind: "tv", ID: 100, Title: "Hawkins", Department: "Acting", Character: "Eleven", EpisodeCount: 17},
+			{Kind: "tv", ID: 100, Title: "Hawkins", Department: "Production", Job: "Producer", EpisodeCount: 9},
+			{Kind: "tv", ID: 200, Title: "Long", Department: "Acting", Character: "Guest", EpisodeCount: 3},
+			{Kind: "tv", ID: 300, Title: "Broken", Department: "Acting", EpisodeCount: 1},
+			{Kind: "movie", ID: 1, Title: "Film", Department: "Acting"},
+		}},
+	}}, failShow: 300, shows: map[int]*client.TMDBShowSeasons{
+		100: {Name: "Hawkins", PosterPath: "/show.jpg", Seasons: []client.TMDBShowSeason{
+			{Number: 1, Name: "Season 1", AirDate: "2016-07-15", EpisodeCount: 8, PosterPath: "/s1.jpg"},
+			{Number: 2, Name: "Season 2", AirDate: "2017-10-27", EpisodeCount: 9}},
+			People: map[int][]client.TMDBSeasonCredit{
+				10: {{Season: 1, Department: "Acting", Character: "Eleven", EpisodeCount: 8},
+					{Season: 2, Department: "Acting", Character: "Eleven", EpisodeCount: 9},
+					{Season: 2, Department: "Production", Job: "Producer", EpisodeCount: 9}},
+				11: {{Season: 1, Department: "Acting", Character: "Someone else", EpisodeCount: 8}}}},
+		200: long,
+	}}
+	svc := NewCreditsService(repository.NewCreditsRepository(db), repository.NewMetadataRepository(db)).WithTMDB(src)
+
+	plain, err := svc.Person(ctx, 10, PersonQuery{})
+	if err != nil || plain.FilmographySeasons != nil || plain.SeasonsStatus != "" {
+		t.Fatalf("seasons must be opt-in: %v %+v", err, plain)
+	}
+	out, err := svc.Person(ctx, 10, PersonQuery{Seasons: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.SeasonsStatus != SeasonsPartial {
+		t.Errorf("status = %q, want partial (show 300 failed)", out.SeasonsStatus)
+	}
+	var got []string
+	for _, s := range out.FilmographySeasons {
+		got = append(got, fmt.Sprintf("%s/%d", s.TmdbID, s.SeasonNumber))
+	}
+	// Newest season first; show 200's season 24 (2014) needed the second request.
+	if strings.Join(got, ",") != "100/2,100/1,200/24,200/3" {
+		t.Fatalf("seasons = %v", got)
+	}
+	s2 := out.FilmographySeasons[0]
+	if s2.EpisodeCount != 9 || s2.SeasonEpisodes == nil || *s2.SeasonEpisodes != 9 || len(s2.Roles) != 2 || s2.Roles[0] != "as Eleven" ||
+		derefStr(s2.PosterPath) != "/show.jpg" || derefStr(s2.SeasonName) != "Season 2" || s2.Year == nil || *s2.Year != 2017 {
+		t.Errorf("season 2 = %+v", s2)
+	}
+	if s1 := out.FilmographySeasons[1]; derefStr(s1.PosterPath) != "/s1.jpg" || len(s1.Roles) != 1 {
+		t.Errorf("season 1 = %+v", s1)
+	}
+	if n := src.requests(200); n != 2 {
+		t.Errorf("show 200 requests = %d, want 2 (seasons 0-19, 20-39)", n)
+	}
+	// Cached per show: a second person request asks TMDB again only for the failed show.
+	before := src.requests(100)
+	if _, err := svc.Person(ctx, 10, PersonQuery{Seasons: true}); err != nil {
+		t.Fatal(err)
+	}
+	if src.requests(100) != before {
+		t.Errorf("show 100 refetched: %d -> %d", before, src.requests(100))
 	}
 }

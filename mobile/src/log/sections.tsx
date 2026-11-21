@@ -12,6 +12,7 @@ import { DateTimeField } from '@/components/DateTimeField';
 import { Field } from '@/components/Field';
 import { FormatLogo } from '@/components/FormatLogo';
 import { Icon } from '@/components/Icon';
+import { ServiceLogo } from '@/components/ServiceLogo';
 import { Stars } from '@/components/Stars';
 import { Text } from '@/components/Text';
 import { findNearby, type NearbyResult } from '@/data/nearby';
@@ -95,19 +96,22 @@ function Suggest({
   onChange,
   options,
   placeholder,
+  leading,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: string[];
   placeholder?: string;
+  /** An icon before an option's label (a service's logo). */
+  leading?: (option: string) => ReactNode;
 }) {
   return (
     <View style={{ gap: 8 }}>
       <Field label={label} value={value} onChangeText={onChange} placeholder={placeholder} autoCorrect={false} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 8 }}>
         {options.map((o) => (
-          <Chip key={o} label={o} selected={value === o} onPress={() => onChange(value === o ? '' : o)} />
+          <Chip key={o} label={o} selected={value === o} onPress={() => onChange(value === o ? '' : o)} leading={leading?.(o)} />
         ))}
       </ScrollView>
     </View>
@@ -494,9 +498,17 @@ function VenueRow({ v, onPress }: { v: Venue; onPress: () => void }) {
 function StreamingFields({ f, set, country }: { f: LogForm; set: Set; country?: string }) {
   const services = useServices(country);
   const names = [...new Set((services.data?.services ?? []).map((s) => s.name).filter(Boolean))].slice(0, 16);
+  const logos = new Map((services.data?.services ?? []).filter((s) => s.logo_path).map((s) => [s.name, s.logo_path] as const));
   return (
     <>
-      <Suggest label="Service" value={f.provider} onChange={(provider) => set({ provider })} options={names} placeholder="Netflix" />
+      <Suggest
+        label="Service"
+        value={f.provider}
+        onChange={(provider) => set({ provider })}
+        options={names}
+        placeholder="Netflix"
+        leading={(o) => (logos.get(o) ? <ServiceLogo path={logos.get(o)} /> : undefined)}
+      />
       <Section title="Plan">
         <Choice options={PLANS} value={f.monetization} clearable={false} onChange={(monetization) => set({ monetization })} />
       </Section>

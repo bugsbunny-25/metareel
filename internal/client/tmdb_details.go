@@ -46,6 +46,12 @@ type TMDBFullDetails struct {
 	// one means none); without it stored release dates are kept.
 	ReleaseDatesFetched bool
 	WatchProviders      []TMDBWatchProvider
+	// Certifications maps country → age certification (movies: from
+	// release_dates, theatrical first; TV: content_ratings).
+	Certifications map[string]string
+	// LogoPath is the title's logo image: English first, else the original
+	// language; "" when TMDB has neither.
+	LogoPath string
 	// Seasons of a TV show (season 0 = specials); nil for movies.
 	Seasons []TMDBSeason
 }
@@ -146,12 +152,27 @@ type tmdbFullResp struct {
 		Results []struct {
 			ISO          string `json:"iso_3166_1"`
 			ReleaseDates []struct {
-				ReleaseDate string `json:"release_date"`
-				Type        int    `json:"type"`
-				Note        string `json:"note"`
+				ReleaseDate   string `json:"release_date"`
+				Type          int    `json:"type"`
+				Note          string `json:"note"`
+				Certification string `json:"certification"`
 			} `json:"release_dates"`
 		} `json:"results"`
 	} `json:"release_dates"`
+	ContentRatings struct {
+		Results []struct {
+			ISO    string `json:"iso_3166_1"`
+			Rating string `json:"rating"`
+		} `json:"results"`
+	} `json:"content_ratings"`
+	Images struct {
+		Logos []struct {
+			FilePath    string  `json:"file_path"`
+			Language    *string `json:"iso_639_1"`
+			VoteAverage float64 `json:"vote_average"`
+			VoteCount   int     `json:"vote_count"`
+		} `json:"logos"`
+	} `json:"images"`
 }
 
 // FullDetails fetches a title with external IDs and watch providers (and
@@ -164,9 +185,11 @@ func (c *TMDBClient) FullDetails(ctx context.Context, kind string, tmdbID string
 	if kind != "movie" && kind != "tv" {
 		return nil, fmt.Errorf("invalid tmdb kind %q", kind)
 	}
-	appends := "external_ids,watch/providers"
+	appends := "external_ids,watch/providers,images"
 	if kind == "movie" {
 		appends += ",release_dates"
+	} else {
+		appends += ",content_ratings"
 	}
 	var out tmdbFullResp
 	resp, err := c.http.R().
@@ -238,6 +261,8 @@ func (r *tmdbFullResp) toDetails(kind, id string) *TMDBFullDetails {
 			}
 		}
 	}
+	d.Certifications = r.certifications()
+	d.LogoPath = r.logo()
 	d.ReleaseDatesFetched = r.ReleaseDates.Results != nil
 	type releaseKey struct {
 		country string
@@ -378,4 +403,77 @@ func cleanNote(s string) string {
 		}
 	}
 	return strings.TrimSpace(s)
+}
+
+// certificationTypePreference orders release types for a movie's
+// certification: theatrical first, then digital, limited, premiere, physical, TV.
+var certificationTypePreference = []int{ReleaseTheatrical, ReleaseDigital, ReleaseTheatricalLimited, ReleasePremiere, ReleasePhysical, ReleaseTV}
+
+func validCountryCode(c string) bool {
+	return len(c) == 2 && c[0] >= 'A' && c[0] <= 'Z' && c[1] >= 'A' && c[1] <= 'Z'
+}
+
+// certifications returns country → certification (nil when TMDB has none).
+func (r *tmdbFullResp) certifications() map[string]string {
+	out := map[string]string{}
+	for _, cr := range r.ContentRatings.Results {
+		country, rating := strings.ToUpper(strings.TrimSpace(cr.ISO)), strings.TrimSpace(cr.Rating)
+		if validCountryCode(country) && rating != "" {
+			out[country] = rating
+		}
+	}
+	for _, rd := range r.ReleaseDates.Results {
+		country := strings.ToUpper(strings.TrimSpace(rd.ISO))
+		if !validCountryCode(country) {
+			continue
+		}
+		best, bestRank := "", len(certificationTypePreference)
+		for _, x := range rd.ReleaseDates {
+			cert := strings.TrimSpace(x.Certification)
+			if cert == "" {
+				continue
+			}
+			rank := len(certificationTypePreference) - 1
+			for i, t := range certificationTypePreference {
+				if t == x.Type {
+					rank = i
+					break
+				}
+			}
+			if best == "" || rank < bestRank {
+				best, bestRank = cert, rank
+			}
+		}
+		if best != "" {
+			out[country] = best
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// logo picks the best-voted English logo, else the best-voted logo in the
+// original language.
+func (r *tmdbFullResp) logo() string {
+	pick := func(lang string) string {
+		best, bestVotes, bestCount := "", -1.0, -1
+		for _, l := range r.Images.Logos {
+			if l.FilePath == "" || l.Language == nil || *l.Language != lang {
+				continue
+			}
+			if l.VoteAverage > bestVotes || (l.VoteAverage == bestVotes && l.VoteCount > bestCount) {
+				best, bestVotes, bestCount = l.FilePath, l.VoteAverage, l.VoteCount
+			}
+		}
+		return best
+	}
+	if p := pick("en"); p != "" {
+		return p
+	}
+	if r.OriginalLanguage != "" && r.OriginalLanguage != "en" {
+		return pick(r.OriginalLanguage)
+	}
+	return ""
 }

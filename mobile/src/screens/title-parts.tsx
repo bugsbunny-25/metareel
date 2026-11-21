@@ -31,9 +31,15 @@ export function Hero({
   children,
   kind,
   tmdbId,
+  logo,
+  certification,
 }: {
   poster?: string | null;
   title: string;
+  /** The title's logo (TMDB path): shown for the name on dark themes. */
+  logo?: string | null;
+  /** The age rating in your country, as a badge before the meta line. */
+  certification?: string | null;
   tint?: string | null;
   meta: string;
   children?: ReactNode;
@@ -41,9 +47,12 @@ export function Hero({
   kind?: string;
   tmdbId?: string;
 }) {
-  const { colors, radius } = useTheme();
+  const { colors, radius, scheme } = useTheme();
   const top = useTop10Of(kind, tmdbId);
   const wide = useWindowClass() !== 'compact';
+  // TMDB's logos are mostly light artwork made for dark backdrops, so a light
+  // theme keeps the typeset name.
+  const logoUri = scheme === 'dark' ? tmdbImage(logo, 'w500') : null;
   return (
     <View style={[styles.hero, wide && styles.heroWide, { backgroundColor: colors.bgSurface, borderRadius: radius.hero }]}>
       {tint ? <View style={[StyleSheet.absoluteFill, { backgroundColor: tint, opacity: 0.4, borderRadius: radius.hero }]} /> : null}
@@ -56,13 +65,30 @@ export function Hero({
             <Text variant="muted">on {providerName(top.provider)}</Text>
           </View>
         ) : null}
-        <Text variant="display" accessibilityRole="header">
-          {title || ' '}
-        </Text>
-        {meta ? (
-          <Text variant="muted" num>
-            {meta}
+        {logoUri ? (
+          <View accessible accessibilityRole="header" accessibilityLabel={title} style={styles.logoBox}>
+            <Image source={{ uri: logoUri }} style={StyleSheet.absoluteFill} contentFit="contain" contentPosition="left" transition={150} />
+          </View>
+        ) : (
+          <Text variant="display" accessibilityRole="header">
+            {title || ' '}
           </Text>
+        )}
+        {meta || certification ? (
+          <View style={styles.metaRow}>
+            {certification ? (
+              <View style={[styles.cert, { borderColor: colors.textMuted }]} accessible accessibilityLabel={`Rated ${certification}`}>
+                <Text variant="caption" num style={{ color: colors.textPrimary }}>
+                  {certification}
+                </Text>
+              </View>
+            ) : null}
+            {meta ? (
+              <Text variant="muted" num style={{ flexShrink: 1 }}>
+                {meta}
+              </Text>
+            ) : null}
+          </View>
         ) : null}
         {children}
       </View>
@@ -70,18 +96,26 @@ export function Hero({
   );
 }
 
+/**
+ * The scores, each opening its source: IMDb's and Rotten Tomatoes' title
+ * pages (their apps take the link when installed) and TMDB's.
+ */
 export function Scores({ overview }: { overview?: Overview }) {
   const r = overview?.ratings;
   const m = overview?.metadata;
   if (!r || !(r.imdb || r.rotten_tomatoes || m?.vote_average)) return null;
+  const imdbUrl = r.imdb?.url ?? (r.imdb_id ? `https://www.imdb.com/title/${r.imdb_id}/` : null);
+  const rtUrl = r.rotten_tomatoes?.url ?? null;
+  const tmdbUrl = overview?.kind && overview.tmdb_id ? `https://www.themoviedb.org/${overview.kind}/${overview.tmdb_id}` : null;
   return (
     <View style={styles.scores}>
-      {r.imdb ? <Score label="IMDb" value={r.imdb.rating.toFixed(1)} logo={<RatingLogo source="imdb" />} /> : null}
+      {r.imdb ? <Score label="IMDb" value={r.imdb.rating.toFixed(1)} logo={<RatingLogo source="imdb" />} url={imdbUrl} /> : null}
       {r.rotten_tomatoes?.critics_score != null ? (
         <Score
           label={r.rotten_tomatoes.certified_fresh ? 'Tomatometer, Certified Fresh' : 'Tomatometer'}
           value={`${r.rotten_tomatoes.critics_score}%`}
           logo={<RatingLogo source="rt" rotten={r.rotten_tomatoes.critics_score < 60} certified={!!r.rotten_tomatoes.certified_fresh} />}
+          url={rtUrl}
         />
       ) : null}
       {r.rotten_tomatoes?.audience_score != null ? (
@@ -89,22 +123,30 @@ export function Scores({ overview }: { overview?: Overview }) {
           label="Popcornmeter"
           value={`${r.rotten_tomatoes.audience_score}%`}
           logo={<RatingLogo source="rt-audience" rotten={r.rotten_tomatoes.audience_score < 60} />}
+          url={rtUrl}
         />
       ) : null}
-      {m?.vote_average ? <Score label="TMDB" value={m.vote_average.toFixed(1)} logo={<RatingLogo source="tmdb" />} /> : null}
+      {m?.vote_average ? <Score label="TMDB" value={m.vote_average.toFixed(1)} logo={<RatingLogo source="tmdb" />} url={tmdbUrl} /> : null}
     </View>
   );
 }
 
-function Score({ label, value, logo }: { label: string; value: string; logo: ReactNode }) {
+function Score({ label, value, logo, url }: { label: string; value: string; logo: ReactNode; url?: string | null }) {
   const { colors, radius } = useTheme();
   return (
-    <View style={[styles.score, { backgroundColor: colors.bgSurface, borderRadius: radius.panel }]} accessible accessibilityLabel={`${label} ${value}`}>
+    <Pressable
+      disabled={!url}
+      onPress={() => url && void Linking.openURL(url)}
+      accessibilityRole={url ? 'link' : undefined}
+      accessibilityLabel={`${label} ${value}`}
+      accessibilityHint={url ? `Opens ${label === 'TMDB' ? 'TMDB' : label.startsWith('IMDb') ? 'IMDb' : 'Rotten Tomatoes'}` : undefined}
+      style={({ pressed }) => [styles.score, { backgroundColor: colors.bgSurface, borderRadius: radius.panel, opacity: pressed ? 0.7 : 1 }]}
+    >
       {logo}
       <Text variant="title" num numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -256,6 +298,9 @@ const styles = StyleSheet.create({
   hero: { flexDirection: 'row', gap: 16, padding: 16, alignItems: 'flex-end', overflow: 'hidden' },
   heroWide: { padding: 24, gap: 24 },
   heroText: { flex: 1, gap: 6 },
+  logoBox: { width: '100%', height: 64 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  cert: { borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
   // One row of equal boxes, however many sources there are (up to four).
   scores: { flexDirection: 'row', gap: 8 },
   score: { flex: 1, minWidth: 0, paddingVertical: 12, paddingHorizontal: 12, gap: 6, alignItems: 'flex-start' },

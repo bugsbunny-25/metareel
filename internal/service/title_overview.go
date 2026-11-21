@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -32,7 +33,10 @@ type TitleOverviewService struct {
 	engagement *repository.EngagementRepository
 	// letterboxd: optional, resolves Letterboxd links in Lookup
 	letterboxd letterboxdResolver
-	now        func() time.Time
+	// timeline, releases: optional, the timeline and releases sections
+	timeline *TimelineService
+	releases *ReleaseWindowsService
+	now      func() time.Time
 
 	// details: optional, fetches and stores TMDB details for a title metareel
 	// has never seen (Trending, search), so its page has metadata and where
@@ -56,6 +60,12 @@ const (
 
 func NewTitleOverviewService(analytics *repository.AnalyticsRepository, flix *repository.FlixPatrolRepository, metadata *repository.MetadataRepository, ratings *RatingsService) *TitleOverviewService {
 	return &TitleOverviewService{analytics: analytics, flix: flix, metadata: metadata, ratings: ratings, now: time.Now}
+}
+
+// WithSections enables the timeline and releases overview sections.
+func (s *TitleOverviewService) WithSections(timeline *TimelineService, releases *ReleaseWindowsService) *TitleOverviewService {
+	s.timeline, s.releases = timeline, releases
+	return s
 }
 
 // WithEngagement adds Netflix engagement report rows to Netflix numbers.
@@ -296,6 +306,7 @@ func (s *TitleOverviewService) Availability(ctx context.Context, ref TmdbRef, co
 			out.Countries[p.Country] = c
 		}
 		p.Link = nil // per country, above
+		p.ChartProvider = ChartProviderOf(p.ProviderID)
 		switch p.Monetization {
 		case "flatrate":
 			c.Flatrate = append(c.Flatrate, p)
@@ -601,14 +612,24 @@ func (s *TitleOverviewService) Lookup(ctx context.Context, imdbID, tmdb, slug, n
 
 // OverviewQuery selects the sections of a title overview.
 type OverviewQuery struct {
-	Country string          // filters availability and current positions
-	Include map[string]bool // metadata, stats, current, ratings, availability, netflix ("" = all but netflix weeks)
+	Country string // filters availability and current positions
+	// Countries: the rankings, timeline and releases sections' countries
+	// (default: Country, else every country).
+	Countries []string
+	Include   map[string]bool // see OverviewIncludes
 }
 
-// OverviewIncludes are the sections GET /titles/tmdb/{kind}/{id} can return.
-var OverviewIncludes = []string{"metadata", "stats", "current", "ratings", "availability", "netflix"}
+// OverviewIncludes are the sections GET /titles/tmdb/{kind}/{id} returns
+// by default; OverviewExtraIncludes only when asked for.
+var (
+	OverviewIncludes      = []string{"metadata", "stats", "current", "ratings", "availability", "netflix"}
+	OverviewExtraIncludes = []string{"rankings", "timeline", "releases"}
+)
 
-// ParseIncludes parses include=a,b ("" = every section).
+// maxOverviewCountries caps countries= (one timeline per country).
+const maxOverviewCountries = 5
+
+// ParseIncludes parses include=a,b ("" = the default sections).
 func ParseIncludes(raw string) (map[string]bool, error) {
 	out := map[string]bool{}
 	if strings.TrimSpace(raw) == "" {
@@ -618,7 +639,7 @@ func ParseIncludes(raw string) (map[string]bool, error) {
 		return out, nil
 	}
 	valid := map[string]bool{}
-	for _, k := range OverviewIncludes {
+	for _, k := range append(append([]string{}, OverviewIncludes...), OverviewExtraIncludes...) {
 		valid[k] = true
 	}
 	for _, p := range strings.Split(raw, ",") {
@@ -627,7 +648,7 @@ func ParseIncludes(raw string) (map[string]bool, error) {
 			continue
 		}
 		if !valid[p] {
-			return nil, &ValidationError{Message: fmt.Sprintf("invalid include %q, expected any of %s", p, strings.Join(OverviewIncludes, ","))}
+			return nil, &ValidationError{Message: fmt.Sprintf("invalid include %q, expected any of %s,%s", p, strings.Join(OverviewIncludes, ","), strings.Join(OverviewExtraIncludes, ","))}
 		}
 		out[p] = true
 	}
@@ -645,8 +666,14 @@ type TitleOverview struct {
 	Ratings      *RatingsResponse         `json:"ratings,omitempty"`
 	Availability *AvailabilityResponse    `json:"availability,omitempty"`
 	Netflix      *NetflixSummary          `json:"netflix,omitempty"`
-	IDs          *TitleExternalIDs        `json:"ids,omitempty"`    // every known external ID
-	Errors       map[string]string        `json:"errors,omitempty"` // sections that could not be loaded
+	// Rankings: every chart entry (include=rankings), in the countries asked.
+	Rankings []RankingSnapshot `json:"rankings,omitempty"`
+	// Timeline: one per country asked, or one across countries (include=timeline).
+	Timeline []*TimelineResponse `json:"timeline,omitempty"`
+	// Releases: a movie's releases in the countries asked (include=releases).
+	Releases *TitleReleasesResponse `json:"releases,omitempty"`
+	IDs      *TitleExternalIDs      `json:"ids,omitempty"`    // every known external ID
+	Errors   map[string]string      `json:"errors,omitempty"` // sections that could not be loaded
 }
 
 // NetflixSummary is the overview's Netflix section (weeks via /netflix).
@@ -665,6 +692,10 @@ type NetflixSummary struct {
 // ErrTitleNotFound when nothing at all is known about the title.
 func (s *TitleOverviewService) Overview(ctx context.Context, ref TmdbRef, q OverviewQuery) (*TitleOverview, error) {
 	country, err := validCountry(q.Country, false)
+	if err != nil {
+		return nil, err
+	}
+	countries, err := overviewCountries(q.Countries, country)
 	if err != nil {
 		return nil, err
 	}
@@ -702,6 +733,9 @@ func (s *TitleOverviewService) Overview(ctx context.Context, ref TmdbRef, q Over
 		}
 		if q.Include["current"] {
 			out.Current = s.currentPositions(ctx, rankings.Rankings, country)
+		}
+		if q.Include["rankings"] {
+			out.Rankings = rankingsIn(rankings.Rankings, countries)
 		}
 	}
 
@@ -742,10 +776,90 @@ func (s *TitleOverviewService) Overview(ctx context.Context, ref TmdbRef, q Over
 			out.Ratings = r
 		}
 	}
+	if q.Include["timeline"] && s.timeline != nil {
+		s.addTimelines(ctx, out, ref, countries)
+	}
+	if q.Include["releases"] && s.releases != nil && ref.Kind == "movie" {
+		rel, err := s.releases.TitleReleases(ctx, ref, "")
+		switch {
+		case errors.Is(err, ErrTitleNotFound):
+		case err != nil:
+			out.Errors["releases"] = "unavailable"
+		default:
+			out.Releases = releasesIn(rel, countries)
+		}
+	}
 	if len(out.Errors) == 0 {
 		out.Errors = nil
 	}
 	return out, nil
+}
+
+// overviewCountries validates countries= (deduplicated, at most
+// maxOverviewCountries); empty falls back to country (nil = every country).
+func overviewCountries(raw []string, country string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, r := range raw {
+		c, err := validCountry(r, false)
+		if err != nil {
+			return nil, err
+		}
+		if c != "" && !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	if len(out) > maxOverviewCountries {
+		return nil, &ValidationError{Message: fmt.Sprintf("too many countries: at most %d", maxOverviewCountries)}
+	}
+	if len(out) == 0 && country != "" {
+		out = []string{country}
+	}
+	return out, nil
+}
+
+// rankingsIn keeps the rankings in countries (nil = all).
+func rankingsIn(rankings []RankingSnapshot, countries []string) []RankingSnapshot {
+	out := []RankingSnapshot{}
+	for _, r := range rankings {
+		if len(countries) == 0 || slices.Contains(countries, r.Country) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// releasesIn keeps a movie's releases in countries (nil = all).
+func releasesIn(rel *TitleReleasesResponse, countries []string) *TitleReleasesResponse {
+	if len(countries) == 0 {
+		return rel
+	}
+	cp := *rel
+	cp.Countries = []CountryReleases{}
+	for _, c := range rel.Countries {
+		if slices.Contains(countries, c.Country) {
+			cp.Countries = append(cp.Countries, c)
+		}
+	}
+	return &cp
+}
+
+// addTimelines adds one timeline per country (or one across countries).
+func (s *TitleOverviewService) addTimelines(ctx context.Context, out *TitleOverview, ref TmdbRef, countries []string) {
+	if len(countries) == 0 {
+		countries = []string{""}
+	}
+	for _, c := range countries {
+		tl, err := s.timeline.Timeline(ctx, ref, TimelineQuery{Country: c})
+		if err != nil {
+			if !errors.Is(err, ErrTitleNotFound) {
+				out.Errors["timeline"] = "unavailable"
+			}
+			continue
+		}
+		out.Timeline = append(out.Timeline, tl)
+	}
 }
 
 // currentPositions returns the title's entries on each chart's latest stored

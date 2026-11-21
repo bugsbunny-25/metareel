@@ -18,8 +18,16 @@ type TMDBListItem struct {
 	PosterPath   string  `json:"poster_path,omitempty"`
 	BackdropPath string  `json:"backdrop_path,omitempty"`
 	ReleaseDate  string  `json:"release_date,omitempty"` // first air date for TV
+	Overview     string  `json:"overview,omitempty"`
 	VoteAverage  float64 `json:"vote_average"`
 	VoteCount    int     `json:"vote_count"`
+	// SeasonCount (TV) comes from metareel's stored TMDB details, so it is
+	// set only for shows metareel knows; the list itself has no seasons.
+	SeasonCount *int64 `json:"season_count,omitempty"`
+	// LogoPath and Certification (In cinemas: the country's) also come from
+	// stored details, for titles metareel knows.
+	LogoPath      *string `json:"logo_path,omitempty"`
+	Certification *string `json:"certification,omitempty"`
 }
 
 type tmdbListResp struct {
@@ -30,6 +38,7 @@ type tmdbListResp struct {
 		Name         string  `json:"name"`
 		PosterPath   string  `json:"poster_path"`
 		BackdropPath string  `json:"backdrop_path"`
+		Overview     string  `json:"overview"`
 		ReleaseDate  string  `json:"release_date"`
 		FirstAirDate string  `json:"first_air_date"`
 		VoteAverage  float64 `json:"vote_average"`
@@ -93,7 +102,7 @@ func (c *TMDBClient) list(ctx context.Context, what, url, kind string, params ma
 		if (k != "movie" && k != "tv") || r.Adult || r.ID == 0 {
 			continue
 		}
-		it := TMDBListItem{Kind: k, ID: strconv.Itoa(r.ID), PosterPath: r.PosterPath, BackdropPath: r.BackdropPath, VoteAverage: r.VoteAverage, VoteCount: r.VoteCount}
+		it := TMDBListItem{Kind: k, ID: strconv.Itoa(r.ID), PosterPath: r.PosterPath, BackdropPath: r.BackdropPath, Overview: strings.TrimSpace(r.Overview), VoteAverage: r.VoteAverage, VoteCount: r.VoteCount}
 		if k == "movie" {
 			it.Title, it.ReleaseDate = strings.TrimSpace(r.Title), r.ReleaseDate
 		} else {

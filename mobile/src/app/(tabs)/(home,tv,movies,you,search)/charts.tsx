@@ -144,6 +144,15 @@ function ChartRow({ entry: e }: { entry: Entry }) {
   const { colors } = useTheme();
   const m = movement(e);
   const change = changeText(m);
+  // The chart carries the title's stored facts, so no lookup per row.
+  const facts = [
+    e.year ? String(e.year) : '',
+    e.certification ?? '',
+    e.season_count ? `${e.season_count} ${e.season_count === 1 ? 'season' : 'seasons'}` : '',
+    e.genres?.[0] ?? '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const tone = change.startsWith('▲') ? colors.deltaUp : change.startsWith('▼') ? colors.deltaDown : change === 'New' ? colors.deltaDebut : colors.textMuted;
   return (
     <Pressable
@@ -165,6 +174,16 @@ function ChartRow({ entry: e }: { entry: Entry }) {
         <Text variant="label" numberOfLines={2}>
           {e.name}
         </Text>
+        {facts ? (
+          <Text variant="caption" num numberOfLines={1}>
+            {facts}
+          </Text>
+        ) : null}
+        {e.overview ? (
+          <Text variant="muted" numberOfLines={2}>
+            {e.overview}
+          </Text>
+        ) : null}
         <Text variant="caption" num>
           {e.days_in_top10} {e.days_in_top10 === 1 ? 'day' : 'days'} in the Top 10
         </Text>

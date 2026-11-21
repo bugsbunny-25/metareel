@@ -215,12 +215,15 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	discs := service.NewDiscService(log, repository.NewDiscsRepository(db), repository.NewDiscsRepository(readDB),
 		trackedTitles, tmdbClient, barcodeLookup(barcodes), cfg.Discs.MediaDir, cfg.HTTP.UserAgent)
 
+	providerLogos := service.NewProviderLogos(readMetadataRepo)
+	releaseWindows := service.NewReleaseWindowsService(repository.NewReleaseDatesRepository(readDB), readMetadataRepo, analyticsRepo)
+	timeline := service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo)
 	h := &handler.Handler{
 		Top10:      top10Read,
 		AdminTasks: taskScheduleAdmin,
 		Titles:     titlesAdmin,
 		Ratings:    ratings,
-		Releases:   service.NewReleasesService(log, justWatch),
+		Releases:   service.NewReleasesService(log, justWatch).WithProviderLogos(providerLogos),
 		Candidates: candidates,
 		ReviewFix: service.NewReviewFixService(log, repository.NewMappingRepository(db), candidates,
 			client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
@@ -236,24 +239,25 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Log:                log,
 		Health:             service.NewHealthService(db, asynqClient.Ping, taskBootstrap.Fetcher),
 
-		Charts: service.NewChartsService(analyticsRepo),
+		Charts: service.NewChartsService(analyticsRepo).WithProviderLogos(providerLogos),
+		Facts:  service.NewTitleFactsService(readMetadataRepo, ratings),
 		Overview: service.NewTitleOverviewService(analyticsRepo, readFlixRepo, readMetadataRepo, ratings).WithMapping(taskBootstrap.Mapping).
 			WithLetterboxd(client.NewLetterboxd(cfg.HTTP.Timeout, cfg.HTTP.UserAgent)).
-			WithEngagement(engagementRepo).WithDetailsFetcher(taskBootstrap.Metadata),
+			WithEngagement(engagementRepo).WithDetailsFetcher(taskBootstrap.Metadata).WithSections(timeline, releaseWindows),
 		Analytics: service.NewAnalyticsService(analyticsRepo, readMetadataRepo, repository.NewImportsRepository(readDB), repository.NewRatingsRepository(readDB)).
 			WithEpisodes(episodesRepo).WithCredits(creditsRepo),
-		History:        service.NewHistoryService(historyRepo, readMetadataRepo),
+		History:        service.NewHistoryService(historyRepo, readMetadataRepo).WithProviderLogos(providerLogos),
 		Calendar:       service.NewCalendarService(episodesRepo),
 		Breakouts:      breakouts,
 		Credits:        service.NewCreditsService(creditsRepo, readMetadataRepo).WithTMDB(client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
-		Discover:       service.NewDiscoverService(repository.NewDiscoverRepository(readDB), analyticsRepo, episodesRepo, readMetadataRepo),
-		ReleaseWindows: service.NewReleaseWindowsService(repository.NewReleaseDatesRepository(readDB), readMetadataRepo, analyticsRepo),
-		Timeline:       service.NewTimelineService(top10Read, readMetadataRepo, historyRepo, analyticsRepo, engagementRepo),
+		Discover:       service.NewDiscoverService(repository.NewDiscoverRepository(readDB), analyticsRepo, episodesRepo, readMetadataRepo).WithProviderLogos(providerLogos),
+		ReleaseWindows: releaseWindows,
+		Timeline:       timeline,
 		Search:         service.NewSearchService(repository.NewSearchRepository(readDB)),
 		Tracking:       tracking,
 		Imports:        imports,
 		Discs:          discs,
-		Lists:          service.NewTitleListsService(client.NewTMDB(httpClient, cfg.TMDB.APIKey)),
+		Lists:          service.NewTitleListsService(client.NewTMDB(httpClient, cfg.TMDB.APIKey)).WithMetadata(readMetadataRepo),
 		Push:           taskruntime.NewPushService(log, db, cfg),
 		Webhooks:       webhooks,
 		DataQuality: service.NewDataQualityService(flixRepo, repository.NewOpsRepository(db), importsRepo, metadataRepo,

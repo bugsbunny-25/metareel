@@ -12,6 +12,7 @@ import { useTwoPane } from '@/layout/ListDetail';
 import { markEpisode, openEpisode, openTitle } from '@/lib/actions';
 import { episodeCode, runtimeText } from '@/lib/format';
 import { usePersisted } from '@/lib/persisted';
+import { usePullToRefresh } from '@/lib/refresh';
 import { useOutbox } from '@/offline';
 import { EpisodeView } from '@/screens/EpisodeView';
 import { ShowView } from '@/screens/ShowView';
@@ -34,6 +35,7 @@ export default function TV() {
   const [segment, setSegment] = usePersisted('tabs.tv.segment', 'towatch', ['towatch', 'upcoming']);
   const queue = useShowQueue();
   const upcoming = useUpcoming();
+  const pull = usePullToRefresh(() => Promise.all([queue.refetch(), upcoming.refetch()]));
   const twoPane = useTwoPane();
   // What's shown beside the list: an episode (picked from either list), or
   // its whole show after "View whole series".
@@ -141,8 +143,8 @@ export default function TV() {
           ? 'Nothing to catch up on. Open a show and tick an episode to start.'
           : 'No episodes of your shows are scheduled in the next six months.'
       }
-      refreshing={q.isRefetching}
-      onRefresh={() => void Promise.all([queue.refetch(), upcoming.refetch()])}
+      refreshing={pull.refreshing}
+      onRefresh={pull.onRefresh}
       banner={<OutboxBanner kinds={['episodes']} />}
       detail={
         episodeSel ? (

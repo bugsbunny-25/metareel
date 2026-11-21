@@ -20,6 +20,7 @@ import { changeText, type LibraryState, libraryMark, movement, providerName, use
 import { useWindowClass } from '@/layout/window-class';
 import { markEpisode, openEpisode, openLog, openTitle } from '@/lib/actions';
 import { episodeCode, starText, tmdbKind } from '@/lib/format';
+import { usePullToRefresh } from '@/lib/refresh';
 import { searchAction } from '@/layout/root-header';
 import { useTheme } from '@/theme';
 import { nowShowingProps, stopNowShowing, useNowShowing } from '@/nowshowing';
@@ -39,14 +40,17 @@ export default function Tonight() {
   const [picking, setPicking] = useState(false);
   const queue = useShowQueue();
   const diary = useDiary(5);
+  const pull = usePullToRefresh(() =>
+    Promise.all([queue.refetch(), top10.refetch(), top10tv.refetch(), diary.refetch(), trending.refetch(), cinemas.refetch()]),
+  );
   const recent = diary.data?.pages[0]?.watches?.slice(0, 5) ?? [];
   const watching = (queue.data?.shows ?? []).filter((s) => s.stage === 'watching' && s.next_episode).slice(0, 4);
 
   return (
     <Screen
       title="Tonight"
-      refreshing={queue.isRefetching}
-      onRefresh={() => void Promise.all([queue.refetch(), top10.refetch(), top10tv.refetch(), diary.refetch(), trending.refetch(), cinemas.refetch()])}
+      refreshing={pull.refreshing}
+      onRefresh={pull.onRefresh}
       actions={[searchAction]}
     >
       <ConnectionNote />
@@ -170,7 +174,14 @@ function ListRail({ title, hint, items, loading }: { title: string; hint: string
               />
               <View style={styles.railMeta}>
                 <Text variant="caption" num>
-                  {[item.tmdb_kind === 'tv' ? 'Series' : 'Film', (item.release_date ?? '').slice(0, 4)].filter(Boolean).join(' · ')}
+                  {/* Shows say how many seasons and In cinemas the rating there, when metareel knows the title. */}
+                  {[
+                    item.tmdb_kind === 'tv' ? (item.season_count ? `${item.season_count} ${item.season_count === 1 ? 'season' : 'seasons'}` : 'Series') : 'Film',
+                    (item.release_date ?? '').slice(0, 4),
+                    item.certification ?? '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </Text>
                 {item.vote_count >= 20 ? (
                   <>
