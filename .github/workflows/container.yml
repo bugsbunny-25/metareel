@@ -193,16 +193,6 @@ jobs:
           format: table
           exit-code: "1"
 
-      - name: Generate SBOM (PR image)
-        if: github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: image
-          image-ref: metareel:ci-${{ github.sha }}
-          format: cyclonedx
-          output: sbom.cdx.json
-          exit-code: "0"
-
       - name: Generate SBOM (published image)
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@v0.36.0
@@ -213,7 +203,10 @@ jobs:
           output: sbom.cdx.json
           exit-code: "0"
 
+      # Only published images get an SBOM (release.yml attaches it to the
+      # release); a PR image is thrown away, so nothing would read one.
       - name: Upload SBOM artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: sbom-cyclonedx

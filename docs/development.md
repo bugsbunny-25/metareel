@@ -114,14 +114,16 @@ so a change to `docs/` or a README runs only those small jobs. Releases run ever
 regardless, and if `changes` fails everything runs.
 
 - `ci.yml` (Go: `cmd/`, `internal/`, `db/`, `tools/`, `go.mod`, `Makefile`, …)
-  - `go-quality`: `go mod tidy` check, `make vet`, `make build`, race tests with coverage, coverage artifact
+  - `go-quality`: `go mod tidy` check, `make vet`, race tests with coverage, coverage artifact (no
+    separate build: vet type-checks every package and `container.yml` builds the server for every
+    Go change). Releases run the race tests once under gotestsum for the JUnit/JSON/HTML bundle
   - `integration`: Redis service container + DB env wiring + test suite
-  - `govulncheck`: vulnerability scan with `govulncheck ./...`
+  - `govulncheck`: vulnerability scan with `govulncheck ./...` (releases keep its verbose report)
 - `codeql.yml` (Go sources)
   - CodeQL analysis for Go on PRs and `main` (a release is a commit `main` already analysed)
 - `container.yml` (everything in the image: Go, `db/`, `web/`, `app/`, `Dockerfile`)
   - The image's frontend stages build both web UIs, so this is also their build check
-  - PR: Docker build + Trivy scan + SBOM artifact, plus an arm64 build (not kept) so a PR that
+  - PR: Docker build + Trivy scan, plus an arm64 build (not kept) so a PR that
     breaks the arm64 image fails before it reaches `main`
   - `main`: Docker build + push to GHCR as `main` and `sha-<commit>` + Trivy scan + SBOM artifact,
     then `cleanup-main-images` deletes every older main image (only once the whole build passed),
@@ -174,7 +176,7 @@ For F-Droid, the metadata can read both from the tag's source:
 ### Run CI checks locally
 
 ```bash
-# Mirrors the go-quality job (tidy check, vet, build, race tests + coverage)
+# Mirrors the go-quality job (tidy check, vet, race tests + coverage)
 make ci-local
 
 # Mirrors the integration job (expects Redis reachable at REDIS_ADDR, default 127.0.0.1:6379)

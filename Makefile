@@ -86,7 +86,9 @@ coverage-total: ## Print total coverage percentage from $(COVERAGE_FILE)
 	@$(GO) tool cover -func=$(COVERAGE_FILE) | awk '/^total:/{print $$3}'
 
 .PHONY: ci-local
-ci-local: tidy-check vet build test-cover ## Run the same core checks as CI go-quality job
+# No separate `build`: vet type-checks every package, and container.yml builds
+# the server (CGO_ENABLED=0, as `make build`) for every Go change.
+ci-local: tidy-check vet test-cover ## Run the same core checks as CI go-quality job
 	@echo "ci-local completed. coverage file: $(COVERAGE_FILE)"
 
 .PHONY: integration-local
@@ -182,7 +184,7 @@ reports-open: ## Open $(REPORT_DIR)/index.html in your browser
 	 { echo "open this file in a browser: $(REPORT_DIR)/index.html"; }
 
 .PHONY: ci-artifacts
-ci-artifacts: tidy-check vet build ## ci-local plus HTML/JUnit/JSON/govulncheck reports under tmp/ci-artifacts (the race tests run once)
+ci-artifacts: tidy-check vet ## ci-local plus HTML/JUnit/JSON reports under tmp/ci-artifacts (the race tests run once)
 	@mkdir -p tmp/ci-artifacts
 	@set -euo pipefail; \
 	$(GO) run gotest.tools/gotestsum@latest \
@@ -191,7 +193,12 @@ ci-artifacts: tidy-check vet build ## ci-local plus HTML/JUnit/JSON/govulncheck 
 		--jsonfile tmp/ci-artifacts/test.json \
 		-- \
 		./... -race -covermode=atomic -coverprofile="$(COVERAGE_FILE)" -count=1; \
-	$(GO) tool cover -html="$(COVERAGE_FILE)" -o tmp/ci-artifacts/coverage.html; \
+	$(GO) tool cover -html="$(COVERAGE_FILE)" -o tmp/ci-artifacts/coverage.html
+
+.PHONY: govulncheck-report
+govulncheck-report: ## govulncheck with the verbose report in tmp/ci-artifacts/govulncheck.txt (fails on findings)
+	@mkdir -p tmp/ci-artifacts
+	@set -euo pipefail; \
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@latest -show verbose ./... 2>&1 | tee tmp/ci-artifacts/govulncheck.txt
 
 ## ------- Local Dev Services -------

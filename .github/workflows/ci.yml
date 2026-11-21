@@ -86,6 +86,7 @@ jobs:
 
       # Releases: the same checks, with the race tests run once under
       # gotestsum so the coverage, JUnit and JSON reports come from one run.
+      # (govulncheck runs once, in its own job, which keeps its report.)
       - name: Run local CI parity checks with the report bundle (HTML/JUnit/JSON)
         if: inputs.artifacts
         run: make ci-artifacts
@@ -170,4 +171,18 @@ jobs:
           cache: true
 
       - name: Run govulncheck
+        if: ${{ !inputs.artifacts }}
         run: make security-local
+
+      # Releases: the same scan, once, with its verbose report kept.
+      - name: Run govulncheck with the verbose report
+        if: inputs.artifacts
+        run: make govulncheck-report
+
+      - name: Upload govulncheck report
+        if: ${{ !cancelled() && inputs.artifacts }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: govulncheck
+          path: tmp/ci-artifacts/govulncheck.txt
+          if-no-files-found: error
