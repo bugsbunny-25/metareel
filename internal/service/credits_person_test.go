@@ -296,7 +296,7 @@ func (f *fakeSeasons) ShowSeasonCredits(_ context.Context, id int, seasons []int
 		want[n] = true
 	}
 	out := &client.TMDBShowSeasons{ID: id, Name: full.Name, PosterPath: full.PosterPath, Seasons: full.Seasons,
-		People: map[int][]client.TMDBSeasonCredit{}, Fetched: seasons}
+		People: map[int64][]client.TMDBSeasonCredit{}, Fetched: seasons}
 	for pid, cs := range full.People {
 		for _, c := range cs {
 			if want[c.Season] {
@@ -310,7 +310,7 @@ func (f *fakeSeasons) ShowSeasonCredits(_ context.Context, id int, seasons []int
 func TestPersonSeasons(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
-	long := &client.TMDBShowSeasons{Name: "Long", People: map[int][]client.TMDBSeasonCredit{}}
+	long := &client.TMDBShowSeasons{Name: "Long", People: map[int64][]client.TMDBSeasonCredit{}}
 	for n := 1; n <= 25; n++ {
 		long.Seasons = append(long.Seasons, client.TMDBShowSeason{Number: n, AirDate: fmt.Sprintf("%d-01-01", 1990+n), EpisodeCount: 20})
 	}
@@ -328,7 +328,7 @@ func TestPersonSeasons(t *testing.T) {
 		100: {Name: "Hawkins", PosterPath: "/show.jpg", Seasons: []client.TMDBShowSeason{
 			{Number: 1, Name: "Season 1", AirDate: "2016-07-15", EpisodeCount: 8, PosterPath: "/s1.jpg"},
 			{Number: 2, Name: "Season 2", AirDate: "2017-10-27", EpisodeCount: 9}},
-			People: map[int][]client.TMDBSeasonCredit{
+			People: map[int64][]client.TMDBSeasonCredit{
 				10: {{Season: 1, Department: "Acting", Character: "Eleven", EpisodeCount: 8},
 					{Season: 2, Department: "Acting", Character: "Eleven", EpisodeCount: 9},
 					{Season: 2, Department: "Production", Job: "Producer", EpisodeCount: 9}},

@@ -133,7 +133,7 @@ func (s *CreditsService) personSeasons(ctx context.Context, personID int64, cred
 		if show == nil {
 			continue
 		}
-		out = append(out, seasonsOf(show, shows[i].title, int(personID))...)
+		out = append(out, seasonsOf(show, shows[i].title, personID)...)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i].AirDate, out[j].AirDate
@@ -152,7 +152,7 @@ func (s *CreditsService) personSeasons(ctx context.Context, personID int64, cred
 }
 
 // seasonsOf lists the seasons of show the person is credited in.
-func seasonsOf(show *client.TMDBShowSeasons, title string, personID int) []FilmographySeason {
+func seasonsOf(show *client.TMDBShowSeasons, title string, personID int64) []FilmographySeason {
 	if title == "" {
 		title = show.Name
 	}

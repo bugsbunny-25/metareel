@@ -18,7 +18,7 @@ type TMDBShowSeasons struct {
 	Seasons    []TMDBShowSeason // every season TMDB lists, by number
 	// People maps a person ID to their credits per season (seasons fetched
 	// only; see Fetched).
-	People map[int][]TMDBSeasonCredit
+	People map[int64][]TMDBSeasonCredit
 	// Fetched are the season numbers whose credits were asked for.
 	Fetched []int
 }
@@ -117,7 +117,7 @@ func parseShowSeasonCredits(tvID int, body []byte, seasons []int) (*TMDBShowSeas
 		return nil, fmt.Errorf("tmdb show season credits: decode: %w", err)
 	}
 	out := &TMDBShowSeasons{ID: tvID, Name: strings.TrimSpace(base.Name), PosterPath: base.PosterPath,
-		People: map[int][]TMDBSeasonCredit{}, Fetched: append([]int(nil), seasons...)}
+		People: map[int64][]TMDBSeasonCredit{}, Fetched: append([]int(nil), seasons...)}
 	for _, s := range base.Seasons {
 		out.Seasons = append(out.Seasons, TMDBShowSeason{Number: s.Number, Name: strings.TrimSpace(s.Name), AirDate: s.AirDate,
 			EpisodeCount: s.EpisodeCount, PosterPath: s.PosterPath})
@@ -134,13 +134,13 @@ func parseShowSeasonCredits(tvID int, body []byte, seasons []int) (*TMDBShowSeas
 		}
 		for _, p := range agg.Cast {
 			for _, r := range p.Roles {
-				out.People[p.ID] = append(out.People[p.ID], TMDBSeasonCredit{Season: n, Character: strings.TrimSpace(r.Character),
+				out.People[int64(p.ID)] = append(out.People[int64(p.ID)], TMDBSeasonCredit{Season: n, Character: strings.TrimSpace(r.Character),
 					Department: "Acting", EpisodeCount: r.EpisodeCount})
 			}
 		}
 		for _, p := range agg.Crew {
 			for _, j := range p.Jobs {
-				out.People[p.ID] = append(out.People[p.ID], TMDBSeasonCredit{Season: n, Job: strings.TrimSpace(j.Job),
+				out.People[int64(p.ID)] = append(out.People[int64(p.ID)], TMDBSeasonCredit{Season: n, Job: strings.TrimSpace(j.Job),
 					Department: p.Department, EpisodeCount: j.EpisodeCount})
 			}
 		}
