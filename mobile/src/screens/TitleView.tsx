@@ -12,6 +12,7 @@ import { useTheme } from '@/theme';
 
 import { Top10Graph } from '@/components/Top10Graph';
 
+import { CastAndCrew } from './cast-parts';
 import { About, Charting, Hero, Scores, WhereToWatch } from './title-parts';
 
 /**
@@ -47,6 +48,8 @@ export function TitleView({ kind: k, id, embedded }: { kind: string; id: string;
         poster={poster}
         title={title}
         tint={snap?.poster_color}
+        logo={m?.logo_path}
+        certification={country ? m?.certifications?.[country] : undefined}
         meta={[year(m?.release_date ?? snap?.release_date), runtimeText(m?.runtime ?? snap?.runtime), (m?.genres ?? []).slice(0, 2).join(', ')]
           .filter(Boolean)
           .join(' · ')}
@@ -72,6 +75,7 @@ export function TitleView({ kind: k, id, embedded }: { kind: string; id: string;
       ) : null}
 
       <WhereToWatch overview={overview.data} country={country} kind={kind} id={id} />
+      <CastAndCrew kind={kind} id={id} />
       <Charting overview={overview.data} />
       <About metadata={m} kind={kind} />
     </ScrollView>

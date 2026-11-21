@@ -45,6 +45,13 @@ type ReleasesService struct {
 
 	mu       sync.Mutex
 	packages map[string]packagesCacheEntry // by country
+	logos    *ProviderLogos                // optional: services' logos
+}
+
+// WithProviderLogos adds TMDB logos to the services list.
+func (s *ReleasesService) WithProviderLogos(p *ProviderLogos) *ReleasesService {
+	s.logos = p
+	return s
 }
 
 type packagesCacheEntry struct {
@@ -80,6 +87,12 @@ type ReleaseService struct {
 	Requested        string `json:"requested"`
 	JustWatchPackage string `json:"justwatch_package"` // e.g. "nfx"
 	Name             string `json:"name"`              // e.g. "Netflix"
+	// TMDBProviderID is the service's TMDB watch provider ID (JustWatch's
+	// package ID, which TMDB's provider data uses); ChartProvider the
+	// FlixPatrol chart provider it belongs to; LogoPath TMDB's logo for it.
+	TMDBProviderID int64   `json:"tmdb_provider_id,omitempty"`
+	ChartProvider  string  `json:"chart_provider,omitempty"`
+	LogoPath       *string `json:"logo_path,omitempty"`
 }
 
 type ReleaseItem struct {
@@ -129,9 +142,15 @@ func (s *ReleasesService) ListServices(ctx context.Context, countryCode string) 
 	if err != nil {
 		return nil, err
 	}
+	logos, err := s.logos.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := &ServicesResponse{Country: country, Services: make([]ReleaseService, 0, len(pkgs))}
 	for _, p := range pkgs {
-		out.Services = append(out.Services, ReleaseService{Requested: p.TechnicalName, JustWatchPackage: p.ShortName, Name: p.ClearName})
+		id := int64(p.PackageID)
+		out.Services = append(out.Services, ReleaseService{Requested: p.TechnicalName, JustWatchPackage: p.ShortName, Name: p.ClearName,
+			TMDBProviderID: id, ChartProvider: ChartProviderOf(id), LogoPath: logoPtr(logos, id)})
 	}
 	return out, nil
 }

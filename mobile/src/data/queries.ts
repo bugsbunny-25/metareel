@@ -297,3 +297,24 @@ function localDayDaysAgo(n: number): string {
   const p = (x: number) => String(x).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
+
+/** A title's cast and key crew (stored by the credits job, else live from TMDB). */
+export function useTitleCredits(kind: Kind, id: string) {
+  return useQuery({
+    queryKey: ['credits', kind, id],
+    staleTime: 24 * 60 * 60_000,
+    retry: (n, err) => !(err instanceof ApiError && err.status === 404) && n < 2,
+    queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/titles/tmdb/{kind}/{id}/credits', { params: { path: { kind, id } }, signal })),
+  });
+}
+
+/** A person: TMDB profile, filmography with TV credits per season, and their charted titles. */
+export function usePerson(id: number) {
+  return useQuery({
+    queryKey: ['person', id],
+    staleTime: 60 * 60_000,
+    retry: (n, err) => !(err instanceof ApiError && err.status === 404) && n < 2,
+    queryFn: async ({ signal }) =>
+      unwrap(await api.GET('/api/v1/people/{id}', { params: { path: { id }, query: { seasons: true } }, signal })),
+  });
+}

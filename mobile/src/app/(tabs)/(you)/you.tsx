@@ -13,6 +13,7 @@ import { DiscSpine } from '@/discs/parts';
 import { searchAction } from '@/layout/root-header';
 import { openTitle } from '@/lib/actions';
 import { formatMoney } from '@/lib/format';
+import { usePullToRefresh } from '@/lib/refresh';
 import { BarList, Card, SectionHead, shortDuration, StatTile } from '@/screens/stats-parts';
 import { useTheme } from '@/theme';
 
@@ -30,6 +31,9 @@ export default function You() {
   const queue = useShowQueue();
   const films = useRecentWatches('movie', 60);
   const discs = useDiscs();
+  const pull = usePullToRefresh(() =>
+    Promise.all([stats.refetch(), savings.refetch(), queue.refetch(), films.refetch(), account.refetch(), discs.refetch()]),
+  );
   const [width, setWidth] = useState(0);
   const s = stats.data;
   const name = account.data?.user?.username ?? session.user.username;
@@ -46,8 +50,8 @@ export default function You() {
   return (
     <Screen
       title="You"
-      refreshing={stats.isRefetching}
-      onRefresh={() => void Promise.all([stats.refetch(), savings.refetch(), queue.refetch(), films.refetch(), account.refetch(), discs.refetch()])}
+      refreshing={pull.refreshing}
+      onRefresh={pull.onRefresh}
       actions={[{ label: 'Settings', sf: 'gearshape', icon: 'settings', onPress: () => router.push('/settings') }, searchAction]}
     >
       <View style={styles.profile} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>

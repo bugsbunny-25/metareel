@@ -10,6 +10,7 @@ import { useDiscs } from '@/discs/data';
 import { DiscCase, DiscSpine } from '@/discs/parts';
 import { CASE, type DiscCopy, HIGHLIGHT, isBoxSet, label, MEDIA_FORMATS, type MediaFormat } from '@/discs/vocab';
 import { formatMoney } from '@/lib/format';
+import { usePullToRefresh } from '@/lib/refresh';
 import { StatTile } from '@/screens/stats-parts';
 import { useTheme } from '@/theme';
 
@@ -22,6 +23,7 @@ import { useTheme } from '@/theme';
 export default function Collection() {
   const { colors, gutter, radius } = useTheme();
   const discs = useDiscs();
+  const pull = usePullToRefresh(() => discs.refetch());
   const { width } = useWindowDimensions();
   const [view, setView] = useState<'shelf' | 'cases'>('shelf');
   const [format, setFormat] = useState<MediaFormat | ''>('');
@@ -54,7 +56,7 @@ export default function Collection() {
         gap: 16,
         paddingBottom: 40,
       }}
-      refreshControl={<RefreshControl refreshing={discs.isRefetching} onRefresh={() => void discs.refetch()} tintColor={colors.textMuted} />}
+      refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.textMuted} />}
     >
       <Stack.Screen options={{ headerTitle: 'Collection' }} />
       <View style={styles.column}>

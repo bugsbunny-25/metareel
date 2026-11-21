@@ -9,8 +9,9 @@ import { Text } from '@/components/Text';
 import { TitleRow } from '@/components/TitleRow';
 import { diaryMonths, recentDistinct } from '@/data/collections';
 import { useDiary, useRatingStats, useRecentWatches, useStatsSummary } from '@/data/queries';
+import { usePullToRefresh } from '@/lib/refresh';
 import { ListDetail, useTwoPane } from '@/layout/ListDetail';
-import { RootActions, RootTitle, searchAction, useRootScroll } from '@/layout/root-header';
+import { accountAction, RootActions, RootTitle, searchAction, useRootScroll } from '@/layout/root-header';
 import { useOutbox } from '@/offline';
 import { MonthBand, RatingsChart, RecentRow, TimelineRow, TotalRow } from '@/screens/diary-parts';
 import { WatchView } from '@/screens/WatchView';
@@ -40,7 +41,7 @@ export default function Diary() {
 
   const sections = useMemo(() => diaryMonths((diary.data?.pages ?? []).flatMap((p) => p.watches ?? [])), [diary.data]);
   const open = (w: Entry) => (twoPane ? setSelected(w.id!) : router.push({ pathname: '/watch/[id]', params: { id: String(w.id) } }));
-  const refresh = () => void Promise.all([diary.refetch(), films.refetch(), shows.refetch(), ratings.refetch(), all.refetch(), year.refetch()]);
+  const pull = usePullToRefresh(() => Promise.all([diary.refetch(), films.refetch(), shows.refetch(), ratings.refetch(), all.refetch(), year.refetch()]));
   const pad = gutter.compact;
 
   const list = (
@@ -51,13 +52,13 @@ export default function Diary() {
       sections={sections}
       keyExtractor={(w) => String(w.id)}
       stickySectionHeadersEnabled={false}
-      refreshControl={<RefreshControl refreshing={diary.isRefetching && !diary.isFetchingNextPage} onRefresh={refresh} tintColor={colors.textMuted} />}
+      refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.textMuted} />}
       onEndReached={() => diary.hasNextPage && !diary.isFetchingNextPage && void diary.fetchNextPage()}
       ListHeaderComponent={
         <View style={{ gap: 18, marginBottom: 12 }} onLayout={(e) => setWidth(Math.round(e.nativeEvent.layout.width))}>
           <View style={styles.head}>
             <RootTitle>Diary</RootTitle>
-            <RootActions actions={[searchAction]} />
+            <RootActions actions={[searchAction, accountAction]} />
           </View>
           <OutboxBanner kinds={['watch']} />
           {pending.map((p) => (

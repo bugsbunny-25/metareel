@@ -696,6 +696,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/CountryParam"
         - $ref: "#/components/parameters/DateParam"
+        - $ref: "#/components/parameters/ChartIncludeParam"
       responses:
         "200":
           description: Top 10 response
@@ -730,6 +731,7 @@ paths:
         - $ref: "#/components/parameters/CountryParam"
         - $ref: "#/components/parameters/ProviderParam"
         - $ref: "#/components/parameters/DateParam"
+        - $ref: "#/components/parameters/ChartIncludeParam"
       responses:
         "200":
           description: Top 10 response
@@ -763,6 +765,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/CountryParam"
         - $ref: "#/components/parameters/DateParam"
+        - $ref: "#/components/parameters/ChartIncludeParam"
       responses:
         "200":
           description: Top 10 response
@@ -797,6 +800,7 @@ paths:
         - $ref: "#/components/parameters/CountryParam"
         - $ref: "#/components/parameters/ProviderParam"
         - $ref: "#/components/parameters/DateParam"
+        - $ref: "#/components/parameters/ChartIncludeParam"
       responses:
         "200":
           description: Top 10 response
@@ -830,6 +834,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/CountryParam"
         - $ref: "#/components/parameters/DateParam"
+        - $ref: "#/components/parameters/ChartIncludeParam"
       responses:
         "200":
           description: Charts (each provider's latest chart unless date is given)
@@ -854,6 +859,7 @@ paths:
         - $ref: "#/components/parameters/CategoryQuery"
         - $ref: "#/components/parameters/KindQuery"
         - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/ChartIncludeParam"
       responses:
         "200":
           description: Leaderboard of one day
@@ -872,6 +878,7 @@ paths:
         - $ref: "#/components/parameters/ProviderParam"
         - $ref: "#/components/parameters/FromParam"
         - $ref: "#/components/parameters/ToParam"
+        - $ref: "#/components/parameters/ChartIncludeParam"
       description: Defaults to the last 7 days; at most 92 days. Only stored dates are listed.
       responses:
         "200":
@@ -891,6 +898,7 @@ paths:
         - $ref: "#/components/parameters/ProviderParam"
         - $ref: "#/components/parameters/FromParam"
         - $ref: "#/components/parameters/ToParam"
+        - $ref: "#/components/parameters/ChartIncludeParam"
       description: Defaults to the last 7 days; at most 92 days. Only stored dates are listed.
       responses:
         "200":
@@ -1037,6 +1045,7 @@ paths:
           schema: { type: string }
         - $ref: "#/components/parameters/CategoryQuery"
         - $ref: "#/components/parameters/DateParam"
+        - $ref: "#/components/parameters/ChartIncludeParam"
       responses:
         "200":
           description: Movers per category
@@ -1083,6 +1092,7 @@ paths:
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - $ref: "#/components/parameters/ChartIncludeParam"
       responses:
         "200":
           description: Breakouts
@@ -1235,6 +1245,7 @@ paths:
         - $ref: "#/components/parameters/CategoryQuery"
         - $ref: "#/components/parameters/KindQuery"
         - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/ChartIncludeParam"
       responses:
         "200":
           description: Leaderboard
@@ -1305,6 +1316,13 @@ paths:
                   properties:
                     slug: { type: string, example: netflix }
                     countries: { type: array, items: { type: string } }
+                    tmdb_provider_id: { type: integer, example: 8, description: The service's main TMDB watch provider ID }
+                    tmdb_provider_ids:
+                      type: array
+                      items: { type: integer }
+                      example: [8, 1796, 175]
+                      description: Every TMDB watch provider ID that counts as this service (main first, then ad / premium / regional tiers)
+                    logo_path: { type: string, description: "TMDB provider logo path (https://image.tmdb.org/t/p/w92{logo_path}); omitted when unknown" }
 
   /api/v1/search:
     get:
@@ -1434,17 +1452,28 @@ paths:
       description: >
         TMDB metadata, chart stats, current chart positions, ratings, where to
         watch and Netflix's official numbers. `include` picks sections
-        (default: all). Ratings may be refreshed from the providers if expired.
-        Sections that fail are named in `errors`; the rest are still returned.
+        (default: metadata, stats, current, ratings, availability, netflix).
+        `rankings` (every chart entry), `timeline` (one per country) and
+        `releases` (movies only) are returned only when asked for, so Details
+        can be one request; they follow `countries`. Ratings may be refreshed
+        from the providers if expired. Sections that fail are named in
+        `errors`; the rest are still returned.
       parameters:
         - $ref: "#/components/parameters/TmdbKindParam"
         - $ref: "#/components/parameters/TmdbIDParam"
         - name: include
           in: query
-          schema: { type: string, example: "metadata,stats,current,ratings,availability,netflix" }
+          schema: { type: string, example: "metadata,stats,current,ratings,availability,netflix,rankings,timeline,releases" }
         - name: country
           in: query
           schema: { type: string, description: Limit availability and current positions to a country }
+        - name: countries
+          in: query
+          description: >
+            Comma-separated ISO codes (at most 5) for the rankings, timeline
+            and releases sections; default `country`, else every country
+            (one timeline across countries).
+          schema: { type: string, example: "IN,US" }
       responses:
         "200":
           description: Title overview
@@ -1629,13 +1658,22 @@ paths:
         `details_status` says why they are missing (`not_configured`: no TMDB
         key, `unavailable`: TMDB failed, `not_found`). A person metareel has no
         credits for is still returned when TMDB knows them (`titles` empty).
-        502 when TMDB fails for such a person.
+        502 when TMDB fails for such a person. With `seasons=true`,
+        `filmography_seasons` lists every TV credit once per season (from each
+        show's per-season aggregate credits, guest roles included; one TMDB
+        request per show, cached 12 hours and shared across people) and
+        `seasons_status` says whether every show was looked up (at most 40
+        per request, most episodes first).
       parameters:
         - name: id
           in: path
           required: true
           description: TMDB person ID
           schema: { type: integer, minimum: 1 }
+        - name: seasons
+          in: query
+          description: Add filmography_seasons (TV credits per season)
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: The person
@@ -1656,8 +1694,9 @@ paths:
       summary: The running server's version
       description: >-
         The version and git revision stamped into the build (Dockerfile build
-        args VERSION and REVISION), and the Go release. A build without them
-        reports version "dev".
+        args VERSION and REVISION), the Go release, and the optional API
+        features the server supports. A build without them reports version
+        "dev".
       responses:
         "200":
           description: Version
@@ -1941,6 +1980,7 @@ paths:
         - name: category
           in: query
           schema: { type: string, enum: ["Films (English)", "Films (Non-English)", "TV (English)", "TV (Non-English)"] }
+        - $ref: "#/components/parameters/ChartIncludeParam"
       responses:
         "200":
           description: Week
@@ -1964,6 +2004,7 @@ paths:
         - name: category
           in: query
           schema: { type: string, enum: [Films, TV] }
+        - $ref: "#/components/parameters/ChartIncludeParam"
       responses:
         "200":
           description: Week
@@ -4626,6 +4667,13 @@ components:
         type: string
         format: date
         description: Range end (YYYY-MM-DD); default the current chart date
+    ChartIncludeParam:
+      name: include
+      in: query
+      description: >
+        Optional sections of each row: `ratings` adds the stored IMDb and
+        Rotten Tomatoes ratings (TitleFacts.ratings).
+      schema: { type: string, enum: [ratings] }
     CountryParam:
       name: country
       in: path
@@ -4822,11 +4870,26 @@ components:
         pace_minutes_per_week: { type: integer, description: Average over the last eight weeks }
     VersionResponse:
       type: object
-      required: [version, go]
+      required: [version, go, features]
       properties:
         version: { type: string, example: v0.4.0 }
         revision: { type: string, description: First 12 characters of the git commit, example: 548cd59feac3 }
         go: { type: string, example: go1.27.1 }
+        features:
+          type: array
+          items: { type: string }
+          example: [chart_title_facts, chart_ratings, overview_sections, list_overview, title_logos, certifications, provider_ids, person_seasons]
+          description: >
+            Optional public API capabilities this server has (append only):
+            chart_title_facts (TitleFacts on chart rows), chart_ratings
+            (include=ratings on chart endpoints), overview_sections
+            (include=rankings,timeline,releases and countries= on the title
+            overview), list_overview (overview and season_count on Trending
+            and In cinemas), title_logos (logo_path on titles), certifications
+            (certification on chart rows and In cinemas, certifications in
+            metadata), provider_ids (tmdb_provider_id, chart_provider and
+            logo_path on services, providers, offers and offer events),
+            person_seasons (seasons=true on /people/{id}).
     TitleListResponse:
       type: object
       required: [items, fetched_at]
@@ -4843,6 +4906,10 @@ components:
               poster_path: { type: string }
               backdrop_path: { type: string }
               release_date: { type: string, description: "YYYY-MM-DD; first air date for TV" }
+              overview: { type: string }
+              season_count: { type: integer, description: "TV: from metareel's stored TMDB details, so only for shows metareel knows" }
+              logo_path: { type: string, description: "The title's logo image, from stored details (titles metareel knows)" }
+              certification: { type: string, description: "In cinemas only: the age certification in the country, from stored details" }
               vote_average: { type: number }
               vote_count: { type: integer }
         fetched_at: { type: string, format: date-time }
@@ -5862,23 +5929,56 @@ components:
         name: { type: string }
         watch_count: { type: integer }
         created_at: { type: string }
-    ChartTitle:
+    TitleFacts:
       type: object
+      description: >
+        Stored TMDB facts sent on every chart row (Top 10s, chart history,
+        movers, leaderboards, breakouts, Netflix's weekly Top 10), so clients
+        need no TMDB lookup per title. Each field is omitted when unknown;
+        everything but tmdb_kind is omitted until the title has TMDB details.
+        ratings only with include=ratings.
       properties:
-        title_id: { type: integer, format: int64 }
-        slug: { type: string }
-        name: { type: string }
-        kind: { type: string, enum: [movie, tv_show] }
-        tmdb_id: { type: string, nullable: true }
-        imdb_id: { type: string, nullable: true }
-        poster_path:
-          type: string
-          nullable: true
-          example: /x9a8tZ3cAqkR1sQpQWz6Vt1mJcE.jpg
-          description: >
-            TMDB poster path, not a URL; build one as
-            https://image.tmdb.org/t/p/{size}{poster_path} (e.g. w342). Null
-            until the title has TMDB metadata.
+        tmdb_kind: { type: string, enum: [movie, tv], description: "The TMDB namespace of tmdb_id as TMDB-keyed URLs spell it (kind says tv_show)" }
+        backdrop_path: { type: string, description: "TMDB image path (https://image.tmdb.org/t/p/{size}{backdrop_path})" }
+        overview: { type: string }
+        release_date: { type: string, format: date, description: First air date for TV }
+        year: { type: integer }
+        runtime: { type: integer, description: "Minutes; TV: episode runtime" }
+        season_count: { type: integer, description: TV only }
+        genres: { type: array, items: { type: string } }
+        logo_path: { type: string, description: "The title's logo image (TMDB path; English, else the original language)" }
+        certification: { type: string, example: TV-MA, description: "Age certification in the chart's country; omitted on lists spanning countries (breakouts, global, unfiltered leaderboards)" }
+        ratings: { $ref: "#/components/schemas/InlineRatings" }
+    InlineRatings:
+      type: object
+      description: >
+        A title's stored headline ratings (never fetched for the request; the
+        ratings.prewarm job keeps charting titles fresh). Omitted when none
+        are stored.
+      properties:
+        imdb: { $ref: "#/components/schemas/IMDbRating" }
+        rotten_tomatoes: { $ref: "#/components/schemas/RottenTomatoesRating" }
+        refreshed_at: { type: string, format: date-time }
+        stale: { type: boolean, description: Older than the ratings TTL }
+    ChartTitle:
+      allOf:
+        - type: object
+          properties:
+            title_id: { type: integer, format: int64 }
+            slug: { type: string }
+            name: { type: string }
+            kind: { type: string, enum: [movie, tv_show] }
+            tmdb_id: { type: string, nullable: true }
+            imdb_id: { type: string, nullable: true }
+            poster_path:
+              type: string
+              nullable: true
+              example: /x9a8tZ3cAqkR1sQpQWz6Vt1mJcE.jpg
+              description: >
+                TMDB poster path, not a URL; build one as
+                https://image.tmdb.org/t/p/{size}{poster_path} (e.g. w342). Null
+                until the title has TMDB metadata.
+        - $ref: "#/components/schemas/TitleFacts"
 
     Top10Combined:
       type: object
@@ -6112,6 +6212,8 @@ components:
               provider_id: { type: integer, description: "The service's main TMDB provider ID" }
               provider_name: { type: string }
               provider_ids: { type: array, items: { type: integer }, description: Every TMDB provider (plans, channels) counted in it }
+              chart_provider: { type: string, description: "The FlixPatrol chart provider (slug, as in /providers) this service is; omitted for services without charts", example: netflix }
+              logo_path: { type: string, description: "TMDB provider logo path (https://image.tmdb.org/t/p/w92{logo_path}); omitted when unknown" }
               titles: { type: integer }
               chart_points: { type: integer }
               charting: { type: integer }
@@ -6207,6 +6309,7 @@ components:
           example: https://www.netflix.com/title/81231974
         link: { type: string, nullable: true, description: "Always null here; see the country's link" }
         fetched_at: { type: string, format: date-time }
+        chart_provider: { type: string, description: "The FlixPatrol chart provider (slug, as in /providers) this service is; omitted for services without charts", example: netflix }
 
     OriginInfo:
       type: object
@@ -6460,6 +6563,30 @@ components:
               popularity: { type: number }
               vote_average: { type: number }
               vote_count: { type: integer }
+        filmography_seasons:
+          type: array
+          description: >
+            With seasons=true: each TV credit once per season, newest season
+            first (not dated yet first). Shows TMDB lists no per-season
+            credits for (e.g. a creator credited on no episode) are left out.
+          items:
+            type: object
+            properties:
+              tmdb_id: { type: string, description: The show }
+              title: { type: string }
+              season_number: { type: integer, description: 0 = specials }
+              season_name: { type: string, nullable: true }
+              air_date: { type: string, format: date, nullable: true, description: The season's first air date }
+              year: { type: integer, nullable: true }
+              episode_count: { type: integer, description: Episodes of the season the person is credited in (most of any role) }
+              season_episode_count: { type: integer, nullable: true, description: Episodes the season has }
+              poster_path: { type: string, nullable: true, description: "The season's poster, else the show's" }
+              roles: { type: array, items: { type: string }, description: '"as <character>" for cast, else the job' }
+              departments: { type: array, items: { type: string } }
+        seasons_status:
+          type: string
+          enum: [complete, partial, unavailable]
+          description: "With seasons=true: complete, partial (shows skipped over the cap of 40 or failed) or unavailable (TMDB failed or not configured)"
     PeopleResponse:
       type: object
       properties:
@@ -6648,6 +6775,8 @@ components:
         monetization: { type: string, enum: [flatrate, free, ads, rent, buy] }
         provider_id: { type: integer }
         provider_name: { type: string }
+        chart_provider: { type: string, description: "The FlixPatrol chart provider (slug, as in /providers) this service is; omitted for services without charts", example: netflix }
+        logo_path: { type: string, description: "TMDB provider logo path (https://image.tmdb.org/t/p/w92{logo_path}); omitted when unknown" }
         event: { type: string, enum: [added, removed] }
         previous_check_at: { type: string, description: "UTC YYYY-MM-DD HH:MM:SS; the change happened after this" }
         observed_at: { type: string, description: "UTC YYYY-MM-DD HH:MM:SS; the change was seen at this refresh" }
@@ -6845,6 +6974,12 @@ components:
         vote_average: { type: number, nullable: true }
         vote_count: { type: integer, nullable: true }
         digital_release_dates: { type: object, additionalProperties: { type: string } }
+        certifications:
+          type: object
+          additionalProperties: { type: string }
+          example: { US: PG-13, GB: "12A" }
+          description: Age certification per country (movies from TMDB release dates, theatrical first; TV from content ratings). Omitted until the next details refresh.
+        logo_path: { type: string, description: "The title's logo image (TMDB path; English, else the original language). Omitted when TMDB has none." }
         imdb_id: { type: string, nullable: true }
         wikidata_id: { type: string, nullable: true }
         rotten_tomatoes_id: { type: string, nullable: true }
@@ -6875,6 +7010,17 @@ components:
         current_positions: { type: array, items: { $ref: "#/components/schemas/ChartMoment" } }
         ratings: { $ref: "#/components/schemas/RatingsResponse" }
         availability: { $ref: "#/components/schemas/AvailabilityResponse" }
+        rankings:
+          type: array
+          description: Every chart entry in the countries asked (include=rankings)
+          items: { $ref: "#/components/schemas/RankingSnapshot" }
+        timeline:
+          type: array
+          description: One timeline per country asked, or one across countries (include=timeline)
+          items: { $ref: "#/components/schemas/TitleTimelineResponse" }
+        releases:
+          allOf: [{ $ref: "#/components/schemas/TitleReleasesResponse" }]
+          description: A movie's releases in the countries asked (include=releases)
         netflix:
           type: object
           properties:
@@ -6915,25 +7061,27 @@ components:
           example: { imdb: tmdb, wikidata: wikidata, netflix: wikidata }
 
     NetflixWeekRow:
-      type: object
-      properties:
-        week: { type: string, format: date, description: Sunday the Monday–Sunday week ends on }
-        country: { type: string }
-        category: { type: string }
-        rank: { type: integer }
-        show_title: { type: string }
-        season_title: { type: string, nullable: true }
-        season_number: { type: integer, nullable: true, description: TMDB season number of season_title (TV) }
-        season_source: { $ref: "#/components/schemas/NetflixSeasonSource" }
-        hours_viewed: { type: integer, nullable: true }
-        runtime_hours: { type: number, nullable: true }
-        views: { type: integer, nullable: true }
-        cumulative_weeks: { type: integer, nullable: true }
-        kind: { type: string, description: "movie | tv_show: the TMDB namespace of tmdb_id when mapped (a special in the TV list can be a movie), else Netflix's list" }
-        tmdb_id: { type: string, nullable: true }
-        imdb_id: { type: string, nullable: true }
-        poster_path: { type: string, nullable: true, description: "TMDB poster of the mapped title (absent when unmapped)" }
-        netflix_title_id: { type: integer, format: int64 }
+      allOf:
+        - type: object
+          properties:
+            week: { type: string, format: date, description: Sunday the Monday–Sunday week ends on }
+            country: { type: string }
+            category: { type: string }
+            rank: { type: integer }
+            show_title: { type: string }
+            season_title: { type: string, nullable: true }
+            season_number: { type: integer, nullable: true, description: TMDB season number of season_title (TV) }
+            season_source: { $ref: "#/components/schemas/NetflixSeasonSource" }
+            hours_viewed: { type: integer, nullable: true }
+            runtime_hours: { type: number, nullable: true }
+            views: { type: integer, nullable: true }
+            cumulative_weeks: { type: integer, nullable: true }
+            kind: { type: string, description: "movie | tv_show: the TMDB namespace of tmdb_id when mapped (a special in the TV list can be a movie), else Netflix's list" }
+            tmdb_id: { type: string, nullable: true }
+            imdb_id: { type: string, nullable: true }
+            poster_path: { type: string, nullable: true, description: "TMDB poster of the mapped title (absent when unmapped)" }
+            netflix_title_id: { type: integer, format: int64 }
+        - $ref: "#/components/schemas/TitleFacts"
 
     NetflixSeasonSource:
       type: string
@@ -7224,67 +7372,68 @@ components:
       required: [items, total, limit, offset]
 
     Top10Result:
-      type: object
-      additionalProperties: false
-      properties:
-        date:
-          type: string
-          format: date
-          description: Chart date of this entry
-        rank:
-          type: integer
-          format: int64
-        previous_rank:
-          type: integer
-          format: int64
-          nullable: true
-          description: >
-            Rank on this chart's previous scraped date (not necessarily the
-            previous calendar day); null if the title was not on that chart.
-        days_in_top10:
-          type: integer
-          format: int64
-          description: Number of dates the title has been on this chart, up to and including date
-        provider:
-          type: string
-        title_id:
-          type: integer
-          format: int64
-        slug:
-          type: string
-        name:
-          type: string
-        kind:
-          type: string
-          enum: [movie, tv_show]
-          description: >
-            What the title is (the TMDB namespace of tmdb_id). It can differ
-            from the chart category, e.g. a stand-up special in the TV chart
-            is a movie.
-        tmdb_id:
-          type: string
-          nullable: true
-        imdb_id:
-          type: string
-          nullable: true
-        rotten_tomatoes_url:
-          type: string
-          nullable: true
-        poster_path:
-          type: string
-          example: /x9a8tZ3cAqkR1sQpQWz6Vt1mJcE.jpg
-          description: >
-            TMDB poster path, not a URL; build one as
-            https://image.tmdb.org/t/p/{size}{poster_path} (e.g. w342).
-            Omitted until the title has TMDB metadata.
-        season_number:
-          type: integer
-          description: TV only, when known
-        season_source:
-          $ref: "#/components/schemas/RankingSeasonSource"
-        origin:
-          $ref: "#/components/schemas/OriginInfo"
-      required: [date, rank, previous_rank, days_in_top10, provider, slug, name, kind]
+      allOf:
+        - type: object
+          properties:
+            date:
+              type: string
+              format: date
+              description: Chart date of this entry
+            rank:
+              type: integer
+              format: int64
+            previous_rank:
+              type: integer
+              format: int64
+              nullable: true
+              description: >
+                Rank on this chart's previous scraped date (not necessarily the
+                previous calendar day); null if the title was not on that chart.
+            days_in_top10:
+              type: integer
+              format: int64
+              description: Number of dates the title has been on this chart, up to and including date
+            provider:
+              type: string
+            title_id:
+              type: integer
+              format: int64
+            slug:
+              type: string
+            name:
+              type: string
+            kind:
+              type: string
+              enum: [movie, tv_show]
+              description: >
+                What the title is (the TMDB namespace of tmdb_id). It can differ
+                from the chart category, e.g. a stand-up special in the TV chart
+                is a movie.
+            tmdb_id:
+              type: string
+              nullable: true
+            imdb_id:
+              type: string
+              nullable: true
+            rotten_tomatoes_url:
+              type: string
+              nullable: true
+            poster_path:
+              type: string
+              example: /x9a8tZ3cAqkR1sQpQWz6Vt1mJcE.jpg
+              description: >
+                TMDB poster path, not a URL; build one as
+                https://image.tmdb.org/t/p/{size}{poster_path} (e.g. w342).
+                Omitted until the title has TMDB metadata.
+            season_number:
+              type: integer
+              description: TV only, when known
+            season_source:
+              $ref: "#/components/schemas/RankingSeasonSource"
+            origin:
+              $ref: "#/components/schemas/OriginInfo"
+          required: [date, rank, previous_rank, days_in_top10, provider, slug, name, kind]
+        - $ref: "#/components/schemas/TitleFacts"
 
     Top10Response:
       type: object
@@ -7552,6 +7701,12 @@ components:
         name:
           type: string
           example: Netflix
+        tmdb_provider_id:
+          type: integer
+          example: 8
+          description: The service's TMDB watch provider ID (JustWatch's package ID, which TMDB's provider data uses)
+        chart_provider: { type: string, description: "The FlixPatrol chart provider (slug, as in /providers) this service is; omitted for services without charts", example: netflix }
+        logo_path: { type: string, description: "TMDB provider logo path (https://image.tmdb.org/t/p/w92{logo_path}); omitted when unknown" }
       required: [requested, justwatch_package, name]
 
     ServicesResponse:

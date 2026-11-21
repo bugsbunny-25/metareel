@@ -31,9 +31,15 @@ export function Hero({
   children,
   kind,
   tmdbId,
+  logo,
+  certification,
 }: {
   poster?: string | null;
   title: string;
+  /** The title's logo (TMDB path): shown for the name on dark themes. */
+  logo?: string | null;
+  /** The age rating in your country, as a badge before the meta line. */
+  certification?: string | null;
   tint?: string | null;
   meta: string;
   children?: ReactNode;
@@ -41,9 +47,12 @@ export function Hero({
   kind?: string;
   tmdbId?: string;
 }) {
-  const { colors, radius } = useTheme();
+  const { colors, radius, scheme } = useTheme();
   const top = useTop10Of(kind, tmdbId);
   const wide = useWindowClass() !== 'compact';
+  // TMDB's logos are mostly light artwork made for dark backdrops, so a light
+  // theme keeps the typeset name.
+  const logoUri = scheme === 'dark' ? tmdbImage(logo, 'w500') : null;
   return (
     <View style={[styles.hero, wide && styles.heroWide, { backgroundColor: colors.bgSurface, borderRadius: radius.hero }]}>
       {tint ? <View style={[StyleSheet.absoluteFill, { backgroundColor: tint, opacity: 0.4, borderRadius: radius.hero }]} /> : null}
@@ -56,13 +65,30 @@ export function Hero({
             <Text variant="muted">on {providerName(top.provider)}</Text>
           </View>
         ) : null}
-        <Text variant="display" accessibilityRole="header">
-          {title || ' '}
-        </Text>
-        {meta ? (
-          <Text variant="muted" num>
-            {meta}
+        {logoUri ? (
+          <View accessible accessibilityRole="header" accessibilityLabel={title} style={styles.logoBox}>
+            <Image source={{ uri: logoUri }} style={StyleSheet.absoluteFill} contentFit="contain" contentPosition="left" transition={150} />
+          </View>
+        ) : (
+          <Text variant="display" accessibilityRole="header">
+            {title || ' '}
           </Text>
+        )}
+        {meta || certification ? (
+          <View style={styles.metaRow}>
+            {certification ? (
+              <View style={[styles.cert, { borderColor: colors.textMuted }]} accessible accessibilityLabel={`Rated ${certification}`}>
+                <Text variant="caption" num style={{ color: colors.textPrimary }}>
+                  {certification}
+                </Text>
+              </View>
+            ) : null}
+            {meta ? (
+              <Text variant="muted" num style={{ flexShrink: 1 }}>
+                {meta}
+              </Text>
+            ) : null}
+          </View>
         ) : null}
         {children}
       </View>
@@ -256,6 +282,9 @@ const styles = StyleSheet.create({
   hero: { flexDirection: 'row', gap: 16, padding: 16, alignItems: 'flex-end', overflow: 'hidden' },
   heroWide: { padding: 24, gap: 24 },
   heroText: { flex: 1, gap: 6 },
+  logoBox: { width: '100%', height: 64 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  cert: { borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
   // One row of equal boxes, however many sources there are (up to four).
   scores: { flexDirection: 'row', gap: 8 },
   score: { flex: 1, minWidth: 0, paddingVertical: 12, paddingHorizontal: 12, gap: 6, alignItems: 'flex-start' },

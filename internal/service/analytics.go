@@ -723,10 +723,17 @@ func (s *AnalyticsService) NetflixCalibration(ctx context.Context, q AnalyticsQu
 // --- Netflix official reads -----------------------------------------------------
 
 type NetflixWeekResponse struct {
-	Week     string                      `json:"week"`
-	Country  *string                     `json:"country"` // null = global
-	Category *string                     `json:"category"`
-	Items    []repository.NetflixWeekRow `json:"items"`
+	Week     string            `json:"week"`
+	Country  *string           `json:"country"` // null = global
+	Category *string           `json:"category"`
+	Items    []NetflixWeekItem `json:"items"`
+}
+
+// NetflixWeekItem is one row of Netflix's weekly Top 10 with the mapped
+// title's stored TMDB facts.
+type NetflixWeekItem struct {
+	repository.NetflixWeekRow
+	TitleFacts
 }
 
 // NetflixWeek returns Netflix's official Top 10 for a week (default latest);
@@ -762,7 +769,11 @@ func (s *AnalyticsService) NetflixWeek(ctx context.Context, country, week, categ
 	if len(items) == 0 {
 		return nil, ErrTop10NotFound
 	}
-	return &NetflixWeekResponse{Week: week, Country: optStr(country), Category: optStr(category), Items: items}, nil
+	out := &NetflixWeekResponse{Week: week, Country: optStr(country), Category: optStr(category), Items: make([]NetflixWeekItem, 0, len(items))}
+	for _, it := range items {
+		out.Items = append(out.Items, NetflixWeekItem{NetflixWeekRow: it})
+	}
+	return out, nil
 }
 
 type NetflixPopularResponse struct {

@@ -1,5 +1,7 @@
 import { NativeTabs } from 'expo-router/native-tabs';
 
+import { youInHeader } from '@/layout/root-header';
+
 import { useTheme } from '@/theme';
 
 /**
@@ -8,7 +10,9 @@ import { useTheme } from '@/theme';
  * iPad, and in the vertical control strip beside the content on iPhone
  * Duo's outer display and on its inner display in landscape. Search is the
  * system search tab, so it goes wherever the tabs go. Android keeps
- * the custom bar / rail in _layout.tsx.
+ * the custom bar / rail in _layout.tsx. On iPhone the bar holds five tabs
+ * (a sixth would fold into "More"), so You is hidden there and opened from
+ * each tab root's account button instead (see youInHeader).
  */
 export default function TabsLayout() {
   const { colors } = useTheme();
@@ -30,7 +34,7 @@ export default function TabsLayout() {
         <NativeTabs.Trigger.Label>Diary</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'book.closed', selected: 'book.closed.fill' }} />
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="(you)">
+      <NativeTabs.Trigger name="(you)" hidden={youInHeader}>
         <NativeTabs.Trigger.Label>You</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'person.crop.circle', selected: 'person.crop.circle.fill' }} />
       </NativeTabs.Trigger>

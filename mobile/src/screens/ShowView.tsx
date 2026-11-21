@@ -20,6 +20,7 @@ import { useTheme } from '@/theme';
 
 import { Top10Graph } from '@/components/Top10Graph';
 
+import { CastAndCrew } from './cast-parts';
 import { About, Charting, Hero, Scores, WhereToWatch } from './title-parts';
 
 /**
@@ -88,7 +89,16 @@ export function ShowView({
       {show.isPending ? <ActivityIndicator color={colors.textMuted} /> : null}
       {show.data ? (
         <>
-          <Hero kind="tv" tmdbId={id} poster={poster} title={title} tint={mine.data?.title?.poster_color} meta={heroMeta}>
+          <Hero
+            kind="tv"
+            tmdbId={id}
+            poster={poster}
+            title={title}
+            tint={mine.data?.title?.poster_color}
+            meta={heroMeta}
+            logo={m?.logo_path}
+            certification={country ? m?.certifications?.[country] : undefined}
+          >
             <Text variant="muted" num>
               {show.data.progress?.watched_episodes ?? 0} of {show.data.progress?.aired_episodes ?? 0} aired episodes
             </Text>
@@ -172,6 +182,7 @@ export function ShowView({
             </Panel>
           ) : null}
           <WhereToWatch overview={overview.data} country={country} kind={'tv'} id={id} />
+          <CastAndCrew kind="tv" id={id} />
           <Charting overview={overview.data} />
           <About metadata={overview.data?.metadata} kind="tv" />
         </>

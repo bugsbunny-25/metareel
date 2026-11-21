@@ -183,6 +183,7 @@ func (s *CreditsService) WithTMDB(src tmdbSource) *CreditsService {
 	s.tmdb = src
 	s.people = newTMDBCache[int64, *client.TMDBPersonDetails](personCacheMax)
 	s.liveCredits = newTMDBCache[string, *client.TMDBCredits](personCacheMax)
+	s.shows = newTMDBCache[int64, *client.TMDBShowSeasons](showSeasonsCacheMax)
 	return s
 }
 

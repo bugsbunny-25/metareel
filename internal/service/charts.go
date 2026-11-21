@@ -19,8 +19,15 @@ import (
 // change feed and exports. Points are FlixPatrol-style: rank 1 = 10 points
 // … rank 10 = 1 point, per chart per day.
 type ChartsService struct {
-	repo *repository.AnalyticsRepository
-	now  func() time.Time
+	repo  *repository.AnalyticsRepository
+	now   func() time.Time
+	logos *ProviderLogos // optional: chart providers' logos
+}
+
+// WithProviderLogos adds TMDB logos to the provider list.
+func (s *ChartsService) WithProviderLogos(p *ProviderLogos) *ChartsService {
+	s.logos = p
+	return s
 }
 
 func NewChartsService(repo *repository.AnalyticsRepository) *ChartsService {
@@ -46,6 +53,9 @@ type ChartTitle struct {
 	// TMDB poster path (build https://image.tmdb.org/t/p/{size}{path});
 	// null until the title has TMDB metadata.
 	PosterPath *string `json:"poster_path"`
+	// Stored TMDB facts (and ratings with include=ratings), filled by
+	// TitleFactsService on the public chart endpoints.
+	TitleFacts
 }
 
 func chartTitle(e repository.ChartEntryRow) ChartTitle {
@@ -727,6 +737,12 @@ func (s *ChartsService) Countries() []flixpatrol.Country { return flixpatrol.Cou
 type ProviderInfo struct {
 	Slug      string   `json:"slug"`
 	Countries []string `json:"countries"` // with stored charts
+	// TMDBProviderID is the service's main TMDB watch provider ID and
+	// TMDBProviderIDs every ID that counts as it (ad / premium tiers), main
+	// first; LogoPath is TMDB's logo for the main one.
+	TMDBProviderID  int64   `json:"tmdb_provider_id,omitempty"`
+	TMDBProviderIDs []int64 `json:"tmdb_provider_ids,omitempty"`
+	LogoPath        *string `json:"logo_path,omitempty"`
 }
 
 // Providers lists known providers plus any others with stored charts.
@@ -745,9 +761,17 @@ func (s *ChartsService) Providers(ctx context.Context) ([]ProviderInfo, error) {
 		}
 		countries[r.Provider][r.Country] = true
 	}
+	logos, err := s.logos.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]ProviderInfo, 0, len(countries))
 	for p, cs := range countries {
-		out = append(out, ProviderInfo{Slug: p, Countries: sortedKeys(cs)})
+		info := ProviderInfo{Slug: p, Countries: sortedKeys(cs)}
+		if ids := chartProviderTMDB[p]; len(ids) > 0 {
+			info.TMDBProviderID, info.TMDBProviderIDs, info.LogoPath = ids[0], ids, logoPtr(logos, ids[0])
+		}
+		out = append(out, info)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Slug < out[j].Slug })
 	return out, nil

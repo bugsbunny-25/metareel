@@ -15,6 +15,7 @@ import { deleteDisc, deleteDiscImage, updateDisc, uploadDiscImage, useDisc } fro
 import { DiscCase, DiscImage } from '@/discs/parts';
 import { allImages, type Condition, CONDITIONS, type DiscRelease, HIGHLIGHT, IMAGE_KINDS, type ImageKind, isBoxSet, label, videoLine } from '@/discs/vocab';
 import { openTitle } from '@/lib/actions';
+import { usePullToRefresh } from '@/lib/refresh';
 import { formatMoney, fractionDigits, toMinor } from '@/lib/format';
 import { useTheme } from '@/theme';
 
@@ -32,6 +33,7 @@ export function DiscView({ id }: { id: number }) {
   // The pager pages by the content's width (a rail or side panel takes some of the window).
   const [boxW, setBoxW] = useState(0);
   const disc = useDisc(id);
+  const pull = usePullToRefresh(() => disc.refetch());
   const copy = disc.data;
   const r = copy?.release;
   const [kind, setKind] = useState<ImageKind>('front');
@@ -98,7 +100,7 @@ export function DiscView({ id }: { id: number }) {
   }
 
   return (
-    <DetailScreen title={r.title} refreshing={disc.isRefetching} onRefresh={() => void disc.refetch()}>
+    <DetailScreen title={r.title} refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
       <View onLayout={(e) => setBoxW(Math.round(e.nativeEvent.layout.width))} />
       {images.length ? (
         <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={{ width: pageW }}>

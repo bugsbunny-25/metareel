@@ -63,7 +63,26 @@ export function RootTitle({ children }: { children: string }) {
 
 type SFSymbol = NonNullable<ComponentProps<typeof Stack.Toolbar.Button>['icon']>;
 
-export type RootAction = { label: string; sf: SFSymbol; icon: IconName; onPress: () => void; search?: boolean };
+export type RootAction = { label: string; sf: SFSymbol; icon: IconName; onPress: () => void; search?: boolean; account?: boolean };
+
+/**
+ * On iPhone, You is not a tab: the system tab bar shows five tabs there and
+ * folds a sixth (with everything after it) into "More". Tonight, TV, Movies,
+ * Diary and the search tab fill the bar, and each tab root reaches You from
+ * an account button at the top right, as Apple's own apps do. iPad keeps You
+ * in its sidebar. Decided by the device, not the window size, so folding an
+ * iPhone Duo never changes the tabs (which would remount the navigator).
+ */
+export const youInHeader = Platform.OS === 'ios' && !Platform.isPad;
+
+/** The account button (iPhone only): opens You in the current tab. */
+export const accountAction: RootAction = {
+  label: 'You',
+  sf: 'person.crop.circle',
+  icon: 'user',
+  onPress: () => router.push('/profile'),
+  account: true,
+};
 
 /**
  * Search, beside every tab's title on Android. iOS leaves it out: its search
@@ -81,6 +100,7 @@ export function RootActions({ actions }: { actions: RootAction[] }) {
   // Search lives with the tabs where they can hold it: iOS's search tab, Android's rail.
   const rail = useWindowClass() !== 'compact';
   if (nativeRootHeader || rail) actions = actions.filter((a) => !a.search);
+  if (!youInHeader) actions = actions.filter((a) => !a.account);
   if (!actions.length) return null;
   if (nativeRootHeader) {
     return (

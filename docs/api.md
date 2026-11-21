@@ -21,37 +21,37 @@ The public API, the per-user tracking API and webhooks. The OpenAPI specs are th
 | POST   | `/api/v1/auth/probe`                        | Unauthenticated: proves to the mobile app that a server on its home-network URL is the one it signed in to ([users](#users)) |
 | GET    | `/api/v1/auth/me`                           | Who the request is authenticated as (user or API key) |
 | GET    | `/api/v1/auth/session`                      | For the console: whether admin sign-in is required and who is signed in |
-| GET    | `/api/v1/top10/{movies\|tv-shows}/:country[/:provider]` | Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`, the TMDB `poster_path` once the title has metadata, and for TV `season_number` + `season_source` when known) |
+| GET    | `/api/v1/top10/{movies\|tv-shows}/:country[/:provider]` | Top 10 charts (`date` optional = latest; entries carry `previous_rank`, `days_in_top10`, the TMDB `poster_path` once the title has metadata, for TV `season_number` + `season_source` when known, and the [title facts](#title-facts-on-chart-rows)) |
 | GET    | `/api/v1/top10/:country`                    | Every provider's movie + TV chart of a country in one call |
 | GET    | `/api/v1/top10/{movies\|tv-shows}/:country/:provider/history` | One chart over a range (`from`, `to`; ≤ 92 days) |
 | GET    | `/api/v1/top10/global/:provider`            | A provider's titles across all countries by points (`date`, `category`, `kind`) |
 | GET    | `/api/v1/charts`, `/api/v1/charts/:country/:provider/dates` | Stored charts with date ranges and freshness; stored dates |
 | GET    | `/api/v1/changes?since=`                    | Charts stored / re-scraped since a time (poll this) |
-| GET    | `/api/v1/movers`                            | Climbers, fallers, debuts, re-entries, exits (`country`, `provider`, `date`). Like every chart-derived list (history, breakouts, leaderboards, analytics items), each title carries `poster_path` (TMDB path, null until it has metadata) |
+| GET    | `/api/v1/movers`                            | Climbers, fallers, debuts, re-entries, exits (`country`, `provider`, `date`). Like every chart-derived list (history, breakouts, leaderboards, analytics items), each title carries `poster_path` (TMDB path, null until it has metadata); history, movers, breakouts, leaderboards and the Netflix Top 10 also carry the [title facts](#title-facts-on-chart-rows) |
 | GET    | `/api/v1/discover/:country/hidden-gems`     | Highly rated titles (IMDb ≥ `min_rating` 7.5 from ≥ `min_votes` 5,000) streamable in the country that weren't in its Top 10 over `days` (90), ranked by a vote-weighted rating (`kind`, `provider_id`, `limit`) |
 | GET    | `/api/v1/discover/:country/elsewhere`       | Titles in other countries' Top 10s over `days` (7) with no subscription / free / ads offer in the country, with where they chart and rent / buy offers here (`kind`, `limit`) |
-| GET    | `/api/v1/discover/:country/rotation`        | Which subscription services to pay for (plans and channels grouped per service; `include_other=true` adds TV bundles and niche services): each scored on its titles' chart points, upcoming episodes, arrivals and top-rated titles over `days` (30), with `subscribe` / `skip` (or `keep` / `pause` / `add` given `subscribed=8,9`) for the best `slots` (2) |
+| GET    | `/api/v1/discover/:country/rotation`        | Which subscription services to pay for (plans and channels grouped per service; `include_other=true` adds TV bundles and niche services): each scored on its titles' chart points, upcoming episodes, arrivals and top-rated titles over `days` (30), with `subscribe` / `skip` (or `keep` / `pause` / `add` given `subscribed=8,9`) for the best `slots` (2); each service carries `logo_path` and `chart_provider` |
 | GET    | `/api/v1/breakouts`                         | Titles rising in several countries at once: entered a chart or climbed `min_climb`+ places (default 3) over `window` days (1–14, default 3) in at least `min_countries` countries (default 2); `date`, `category`, `provider`, `kind`, `limit` |
 | GET    | `/api/v1/leaderboards`                      | Titles by chart points (`period=day\|week\|month\|custom`, filters) |
 | GET    | `/api/v1/export/rankings`                   | Chart entries as CSV / NDJSON (≤ 366 days) |
-| GET    | `/api/v1/countries`, `/api/v1/providers`    | Supported countries; providers with stored charts |
+| GET    | `/api/v1/countries`, `/api/v1/providers`    | Supported countries; providers with stored charts, each with `tmdb_provider_id` (main), `tmdb_provider_ids` (every tier that counts as it) and TMDB's `logo_path` |
 | GET    | `/api/v1/titles`, `/api/v1/titles/:id`      | Scraped titles (paged; `match_status` filter); a single mapped title carries its TMDB title's `ids` |
 | GET    | `/api/v1/search?q=&kind=movie\|tv&limit=` | Find titles by any name (TMDB title / original title, FlixPatrol and Netflix names); accent- and punctuation-insensitive, word prefixes ("strang thin"), best match then most recently charted first |
 | GET    | `/api/v1/titles/lookup?imdb=\|tmdb=\|slug=\|netflix=\|letterboxd=` | Find a title by any ID (`netflix` = the number in netflix.com/title/<id>; `letterboxd` = a boxd.it or letterboxd.com film link, resolved through the film page's TMDB id) |
-| GET    | `/api/v1/version` | The running server's version and git revision |
-| GET    | `/api/v1/titles/trending?kind=all\|movie\|tv` | What is trending on TMDB today (live, cached 30 minutes) |
-| GET    | `/api/v1/titles/in-cinemas/:country`        | Films in cinemas in a country, from TMDB's now playing (live, cached 30 minutes) |
-| GET    | `/api/v1/titles/tmdb/:kind/:id`             | Everything about a title: TMDB metadata, chart stats, current positions, ratings, where to watch, Netflix numbers (`include=`), and `ids` — every known ID (IMDb, Wikidata, Rotten Tomatoes, Netflix, JustWatch, FlixPatrol slugs, Netflix Top 10 names) |
+| GET    | `/api/v1/version` | The running server's version, git revision and `features` (optional API capabilities, e.g. `chart_title_facts`, so clients need not guess from missing fields) |
+| GET    | `/api/v1/titles/trending?kind=all\|movie\|tv` | What is trending on TMDB today (live, cached 30 minutes); items carry `overview`, and titles metareel knows `season_count` (TV) and `logo_path` |
+| GET    | `/api/v1/titles/in-cinemas/:country`        | Films in cinemas in a country, from TMDB's now playing (live, cached 30 minutes), with `overview` and, for films metareel knows, `logo_path` and the country's `certification` |
+| GET    | `/api/v1/titles/tmdb/:kind/:id`             | Everything about a title: TMDB metadata, chart stats, current positions, ratings, where to watch, Netflix numbers (`include=`; `rankings`, `timeline` and `releases` only when asked for, per `countries=IN,US`, at most 5), and `ids` — every known ID (IMDb, Wikidata, Rotten Tomatoes, Netflix, JustWatch, FlixPatrol slugs, Netflix Top 10 names) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/stats`       | Chart performance: points, peak, days at #1, debut, streak, spread across countries |
-| GET    | `/api/v1/titles/tmdb/:kind/:id/availability` | Watch providers per country (TMDB, data by JustWatch), each with `url` to the title on that service |
+| GET    | `/api/v1/titles/tmdb/:kind/:id/availability` | Watch providers per country (TMDB, data by JustWatch), each with `url` to the title on that service and, for charted services, `chart_provider` |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/availability/history` | When the title arrived on / left each service per country (`added` / `removed` between two TMDB refreshes; `country` optional) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/history`     | Ratings, TMDB popularity and English Wikipedia pageviews over time (`from`, `to`; default last 90 days, ≤ 366): IMDb dataset, each provider's rating sources (a point when a value changed) and daily TMDB popularity |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/credits`     | Top 25 cast and key crew (directors, writers, creators, composers, cinematographers) from TMDB; TV with episodes credited |
-| GET    | `/api/v1/people/:id`                        | A TMDB person: profile and full filmography live from TMDB (cached 12 h; `details_status` says why they're missing), and their titles metareel knows with roles and each title's chart record (points, days, best rank, countries) |
+| GET    | `/api/v1/people/:id`                        | A TMDB person: profile and full filmography live from TMDB (cached 12 h; `details_status` says why they're missing), and their titles metareel knows with roles and each title's chart record (points, days, best rank, countries); `seasons=true` adds `filmography_seasons` (every TV credit once per season: season number, name, air date, the person's episode count, season poster, roles) and `seasons_status` |
 | GET    | `/api/v1/titles/tmdb/movie/:id/releases`    | A movie's premiere, theatrical (limited / wide), digital (PVOD), physical and TV dates per country from TMDB, the observed streaming arrival (first offer seen arriving, or first chart day) and the windows between them in days (`country`) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/timeline`    | Everything that happened to a title, newest first: chart debuts, peaks, #1 runs and re-entries, availability added/removed, rating changes, Wikipedia pageview spikes, Netflix Top 10 weeks and engagement periods, season premieres, release (`types`, `country`, `from`, `to`, `limit`) |
 | GET    | `/api/v1/calendar/:country`                 | Upcoming episodes of shows streamable in the country (subscription / free / ads), one entry per show, season and day with the services (`from`, `to`: default the next 14 days, ≤ 62; `provider_id`) |
-| GET    | `/api/v1/availability/changes`              | Titles that arrived on / left a service across titles (`since` RFC 3339, default 7 days; `country`, `event=added\|removed`, `monetization`, `provider_id`, `limit`) |
+| GET    | `/api/v1/availability/changes`              | Titles that arrived on / left a service across titles (`since` RFC 3339, default 7 days; `country`, `event=added\|removed`, `monetization`, `provider_id`, `limit`); each event carries the provider's `logo_path` and, for charted services, `chart_provider` (the `/providers` slug) |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/netflix`     | Weeks in Netflix's official Top 10, with a per-season summary (`seasons`) for TV |
 | GET    | `/api/v1/titles/tmdb/:kind/:id/rankings`    | Ranking history by TMDB ID (`kind` = movie or tv; `country`, `from`, `to` optional) |
 | GET    | `/api/v1/titles/tmdb/rankings?ids=movie:425,tv:1` | Batch ranking history (max 50 ids)    |
@@ -66,7 +66,7 @@ The public API, the per-user tracking API and webhooks. The OpenAPI specs are th
 | GET    | `/api/v1/analytics/origins`                 | Each service's chart points by origin — `original` / `in_house` (parent company's studios and channels) / `licensed` / `unknown` — per week or month (`interval`), with the owners of licensed titles and top titles. Chart entries carry the same `origin` |
 | GET    | `/api/v1/titles/new/:country/:service`      | Titles added to a service per day, live from JustWatch (`from`, `to` default last 7 days; `type`) |
 | GET    | `/api/v1/titles/upcoming/:country/:service` | Titles announced for a service, live from JustWatch (`from`, `to`, `type`) |
-| GET    | `/api/v1/services/:country`                 | JustWatch service codes in a country (for `:service`) |
+| GET    | `/api/v1/services/:country`                 | JustWatch service codes in a country (for `:service`), each with its `tmdb_provider_id`, TMDB `logo_path` and, for charted services, `chart_provider` |
 | GET/POST/PATCH/DELETE | `/api/v1/admin/...`           | Admin API (admin sign-in with `AUTH_REQUIRE_ADMIN_LOGIN`): schedules, runs, stats, API keys, users (`/users`, `/users/:username`, `/users/:username/logout`) and sessions (`/sessions`, `DELETE /sessions/:id`), settings, title corrections (`PATCH /api/v1/admin/titles/:id`, `POST .../rematch`), `POST /jobs/:type/run`, `POST /backfill`, `GET /data-quality`, `GET /task-types`, and admin copies of the read routes above |
 | GET/PATCH/POST | `/api/v1/admin/netflix/titles[/:id[/rematch\|/candidates]]` | Netflix official Top 10 titles: list (`q`, `kind`, `match_status`, `missing=tmdb\|season`, `flag=cross_kind\|linked`, `sort`), detail with season titles, weeks and linked FlixPatrol titles, fix by hand (`tmdb_kind` + `tmdb_id`, or an IMDb / Wikidata ID resolved to TMDB), rematch, candidate search |
 | GET/POST | `/api/v1/admin/mappings[/sync\|/:kind/:id[/remap]]` | The TMDB-keyed mapping: every TMDB title with all its IDs and the FlixPatrol / Netflix titles mapped to it (`q`, `kind`, `flag=conflict\|cross_kind\|both\|netflix_only\|flixpatrol_only\|manual`); `sync` recomputes links now; `remap` moves everything on a TMDB title to another (by TMDB, IMDb or Wikidata ID) |
@@ -93,7 +93,7 @@ The public API, the per-user tracking API and webhooks. The OpenAPI specs are th
 | GET    | `/api/v1/me/account`                        | Your user and where you're signed in (sessions, `current` marks this one) |
 | POST   | `/api/v1/me/password`                       | Change your password (`current_password`, `new_password`); ends your other sessions |
 | DELETE | `/api/v1/me/sessions[/:id]`                 | Sign one of your other sessions out, or (no id) every session but this one |
-| GET/PUT | `/api/v1/me/preferences`                   | Preferences that follow you: default `country` + `provider`, `currency`, `screen_unit` (m/ft), `stale_days` for `/me/shows`, `services` you pay for (TMDB provider IDs), `notify_watchlist_arrivals`; PUT replaces them |
+| GET/PUT | `/api/v1/me/preferences`                   | Preferences that follow you: default `country` + `provider`, `currency`, `screen_unit` (m/ft), `stale_days` for `/me/shows`, `services` you pay for (TMDB provider IDs, as `tmdb_provider_id` / `provider_id` elsewhere), `countries` in your order (at most 20), `notify_watchlist_arrivals`; PUT replaces them. Clients that sync these (the apps, Tides) sign in as the user |
 | GET    | `/api/v1/me/glance`                         | Widget summary: next episodes of up to 3 shows in progress, the next one airing, the cinema plan's month, the last watch |
 | GET/PUT | `/api/v1/me/devices`                       | Phones registered for push notifications (mobile app); PUT registers this device's Expo push token for this session |
 | DELETE | `/api/v1/me/devices/:id`                    | Unregister one of your devices |
@@ -141,6 +141,21 @@ The public API, the per-user tracking API and webhooks. The OpenAPI specs are th
 | GET    | `/api/v1/me/watchlist/insights`             | What your watchlist is doing on the charts and on streaming (`country`, `days`) |
 | GET    | `/admin` (and `/admin/...`)                 | The admin console SPA from `web/dist/` (`UI_STATIC_DIR`) |
 | GET    | `/` (and any unmatched path)                | The user app SPA from `app/dist/` (`APP_STATIC_DIR`); redirects to `/admin/` when the app isn't built |
+
+### Title facts on chart rows
+
+Chart rows (Top 10s, chart history, movers, breakouts, leaderboards, the global
+Top 10 and Netflix's weekly Top 10) carry the title's stored TMDB facts, so a
+client needs no TMDB lookup per row: `tmdb_kind` (`movie` / `tv`, the spelling
+TMDB-keyed URLs use), `backdrop_path`, `overview`, `release_date`, `year`,
+`runtime` (TV: episode runtime), `season_count` (TV), `genres`, `logo_path`
+(the title's logo, English else the original language) and `certification`
+(the age rating in the chart's country; omitted on breakouts, the global Top 10
+and leaderboards without `country`). Each is omitted when unknown; everything but `tmdb_kind` is omitted until the title has
+TMDB details. `include=ratings` adds `ratings` (stored IMDb and Rotten Tomatoes
+headline values with `refreshed_at` and `stale`); they are never fetched for
+the request (`ratings.prewarm` keeps charting titles fresh). Any other
+`include` value is a 400.
 
 GET responses under `/api/v1` carry an `ETag`; send it back as
 `If-None-Match` to get `304 Not Modified` when nothing changed. The one

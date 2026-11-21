@@ -27,13 +27,17 @@ const ROOT_TITLES: Record<string, string> = {
 
 const PINNED = new Set(['tv', 'movies']);
 
+// You pushed from a tab root's account button (iPhone; see youInHeader):
+// shown like a root, with its large title, under a Back button.
+const PUSHED_ROOTS: Record<string, string> = { profile: 'You' };
+
 export default function TabStack() {
   const { colors } = useTheme();
   const side = useSideInsets();
   return (
     <Stack
       screenOptions={({ route }) => {
-        const root = ROOT_TITLES[route.name];
+        const root = ROOT_TITLES[route.name] ?? PUSHED_ROOTS[route.name];
         // On iOS a root's title and actions live in the system bar with a
         // large title (see layout/root-header); Android roots draw their own.
         // TV and Movies pin a To watch / Upcoming switch under a standard
@@ -68,6 +72,7 @@ export default function TabStack() {
               fontFamily: 'SourceSerif4_700Bold',
               color: colors.textPrimary,
             },
+            headerBackButtonDisplayMode: 'minimal',
             contentStyle: { backgroundColor: colors.bgCanvas },
           };
         }

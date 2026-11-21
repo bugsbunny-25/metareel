@@ -11,6 +11,7 @@ import { useWatchlist } from '@/data/queries';
 import { CollectionScreen } from '@/layout/CollectionScreen';
 import { useTwoPane } from '@/layout/ListDetail';
 import { openLog, openTitle } from '@/lib/actions';
+import { usePullToRefresh } from '@/lib/refresh';
 import { runtimeText, year } from '@/lib/format';
 import { usePersisted } from '@/lib/persisted';
 import { TitleView } from '@/screens/TitleView';
@@ -39,6 +40,7 @@ export default function Movies() {
   const [segment, setSegment] = usePersisted('tabs.movies.segment', 'towatch', ['towatch', 'upcoming']);
   const [view, setView] = usePersisted<'list' | 'grid'>('tabs.movies.view', 'list', ['list', 'grid']);
   const list = useWatchlist();
+  const pull = usePullToRefresh(() => list.refetch());
   const twoPane = useTwoPane();
   const [selected, setSelected] = useState<string | null>(null);
   const today = localDay();
@@ -97,8 +99,8 @@ export default function Movies() {
       loading={list.isPending}
       error={list.isError}
       empty={segment === 'towatch' ? 'No films waiting. Add some to your watchlist from a title page.' : 'No films on your watchlist are still to come.'}
-      refreshing={list.isRefetching}
-      onRefresh={() => void list.refetch()}
+      refreshing={pull.refreshing}
+      onRefresh={pull.onRefresh}
       banner={
         <>
           <OutboxBanner kinds={['watchlist', 'watch']} />

@@ -9,7 +9,7 @@ import type { Group } from '@/data/collections';
 import { useTheme } from '@/theme';
 
 import { ListDetail } from './ListDetail';
-import { nativeRootHeader, type RootAction, RootActions, RootTitle, searchAction } from './root-header';
+import { accountAction, nativeRootHeader, type RootAction, RootActions, RootTitle, searchAction } from './root-header';
 
 export { searchAction };
 
@@ -95,6 +95,7 @@ export function CollectionScreen<T, S extends string>({
       ? { label: 'List', sf: 'list.bullet', icon: 'list', onPress: () => onView('list') }
       : { label: 'Grid', sf: 'square.grid.2x2', icon: 'grid', onPress: () => onView('grid') },
     searchAction,
+    accountAction,
   ];
 
   const list = (

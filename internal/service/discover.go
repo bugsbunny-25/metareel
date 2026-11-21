@@ -26,7 +26,14 @@ type DiscoverService struct {
 	analytics *repository.AnalyticsRepository
 	episodes  *repository.EpisodesRepository
 	metadata  *repository.MetadataRepository
+	logos     *ProviderLogos // optional: rotation services' logos
 	now       func() time.Time
+}
+
+// WithProviderLogos adds TMDB logos to the rotation's services.
+func (s *DiscoverService) WithProviderLogos(p *ProviderLogos) *DiscoverService {
+	s.logos = p
+	return s
 }
 
 func NewDiscoverService(repo *repository.DiscoverRepository, analytics *repository.AnalyticsRepository, episodes *repository.EpisodesRepository, metadata *repository.MetadataRepository) *DiscoverService {
@@ -483,6 +490,10 @@ type RotationService struct {
 	ProviderName string `json:"provider_name"`
 	// ProviderIDs: every TMDB provider (plans, channels) counted in it.
 	ProviderIDs []int64 `json:"provider_ids"`
+	// ChartProvider: the FlixPatrol chart provider it is; LogoPath: TMDB's
+	// logo for provider_id.
+	ChartProvider string  `json:"chart_provider,omitempty"`
+	LogoPath      *string `json:"logo_path,omitempty"`
 	// Titles: titles metareel knows with a subscription or ads offer here.
 	Titles int `json:"titles"`
 	// ChartPoints: Top 10 points its titles earned over the past window
@@ -517,6 +528,10 @@ type RotationResponse struct {
 // and airs on each, and recommends which to pay for in the coming window.
 func (s *DiscoverService) Rotation(ctx context.Context, q RotationQuery) (*RotationResponse, error) {
 	country, err := validCountry(q.Country, true)
+	if err != nil {
+		return nil, err
+	}
+	logos, err := s.logos.Get(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -734,6 +749,8 @@ func (s *DiscoverService) Rotation(ctx context.Context, q RotationQuery) (*Rotat
 		default:
 			sv.Recommendation = "skip"
 		}
+		sv.ChartProvider = ChartProviderOf(sv.ProviderID)
+		sv.LogoPath = logoPtr(logos, sv.ProviderID)
 		out.Services = append(out.Services, sv.RotationService)
 	}
 	return out, nil
