@@ -81,9 +81,12 @@ jobs:
           cache: true
 
       - name: Run local CI parity checks
+        if: ${{ !inputs.artifacts }}
         run: make ci-local
 
-      - name: Generate additional CI artifacts (HTML/JUnit/JSON)
+      # Releases: the same checks, with the race tests run once under
+      # gotestsum so the coverage, JUnit and JSON reports come from one run.
+      - name: Run local CI parity checks with the report bundle (HTML/JUnit/JSON)
         if: inputs.artifacts
         run: make ci-artifacts
 

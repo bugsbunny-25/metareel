@@ -182,16 +182,16 @@ reports-open: ## Open $(REPORT_DIR)/index.html in your browser
 	 { echo "open this file in a browser: $(REPORT_DIR)/index.html"; }
 
 .PHONY: ci-artifacts
-ci-artifacts: ## Generate CI-friendly artifacts under tmp/ci-artifacts (HTML/JUnit/JSON/govulncheck)
+ci-artifacts: tidy-check vet build ## ci-local plus HTML/JUnit/JSON/govulncheck reports under tmp/ci-artifacts (the race tests run once)
 	@mkdir -p tmp/ci-artifacts
 	@set -euo pipefail; \
-	$(GO) tool cover -html="$(COVERAGE_FILE)" -o tmp/ci-artifacts/coverage.html; \
 	$(GO) run gotest.tools/gotestsum@latest \
 		--format standard-verbose \
 		--junitfile tmp/ci-artifacts/junit.xml \
 		--jsonfile tmp/ci-artifacts/test.json \
 		-- \
-		./... -race -count=1; \
+		./... -race -covermode=atomic -coverprofile="$(COVERAGE_FILE)" -count=1; \
+	$(GO) tool cover -html="$(COVERAGE_FILE)" -o tmp/ci-artifacts/coverage.html; \
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@latest -show verbose ./... 2>&1 | tee tmp/ci-artifacts/govulncheck.txt
 
 ## ------- Local Dev Services -------
