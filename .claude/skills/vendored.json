@@ -1,24 +1,86 @@
 {
-  "source": "callstackincubator/agent-skills",
-  "ref": "main",
-  "commit": "59e9d17446a248b21d86f078fcd0bd2d36db1ca4",
-  "exclude": [
-    "agents/",
-    "POWER.md",
-    "references/images/"
-  ],
-  "skills": {
-    "react-native-best-practices": {
-      "path": "skills/react-native-best-practices",
-      "hash": "98f9f32a78d47771e7a8e446bf999eb40a130e3ab563444540e7a530884f4260"
+  "sources": [
+    {
+      "repo": "callstackincubator/agent-skills",
+      "ref": "main",
+      "commit": "59e9d17446a248b21d86f078fcd0bd2d36db1ca4",
+      "exclude": [
+        "agents/",
+        "POWER.md",
+        "references/images/"
+      ],
+      "skills": {
+        "react-native-best-practices": {
+          "path": "skills/react-native-best-practices",
+          "hash": "98f9f32a78d47771e7a8e446bf999eb40a130e3ab563444540e7a530884f4260"
+        },
+        "upgrading-react-native": {
+          "path": "skills/upgrading-react-native",
+          "hash": "6a780bb79d77ab8ab05fa4923db4e99c4b2dcf7023434616d1a2625c1884ad1f"
+        },
+        "react-native-testing": {
+          "path": "plugins/vendored/.agents/skills/react-native-testing",
+          "hash": "9bbd7f54c8172884772c19a11bcf84c1cb0bda6c068733090c825187e01a281e"
+        }
+      }
     },
-    "upgrading-react-native": {
-      "path": "skills/upgrading-react-native",
-      "hash": "6a780bb79d77ab8ab05fa4923db4e99c4b2dcf7023434616d1a2625c1884ad1f"
-    },
-    "react-native-testing": {
-      "path": "plugins/vendored/.agents/skills/react-native-testing",
-      "hash": "9bbd7f54c8172884772c19a11bcf84c1cb0bda6c068733090c825187e01a281e"
+    {
+      "repo": "expo/skills",
+      "ref": "main",
+      "commit": "8f2b6c0c65533e695243aa401eaa1cb6f1fe86c2",
+      "exclude": [
+        "agents/"
+      ],
+      "skills": {
+        "expo-overview": {
+          "path": "plugins/expo/skills/expo-overview",
+          "hash": "fefa4b8e3297a0da1f9a317ff6638433d65a3cce68da97746f52ce16f6141972"
+        },
+        "expo-router": {
+          "path": "plugins/expo/skills/expo-router",
+          "hash": "cb90c9cdebf7a775c521f6082a261ee8cc836f47d8223a0d9921080f0bd08908"
+        },
+        "expo-data-fetching": {
+          "path": "plugins/expo/skills/expo-data-fetching",
+          "hash": "586f3e9598ae77e478527a4be64b6b7b741394ab7a493d2b00ee864c9613e0be"
+        },
+        "expo-native-ui": {
+          "path": "plugins/expo/skills/expo-native-ui",
+          "hash": "8c1fdf23dbb44eea30bf3e843320c4f9fb5c95d41ebad21bf7bcdf9061c5873b"
+        },
+        "expo-ui": {
+          "path": "plugins/expo/skills/expo-ui",
+          "hash": "01bf23a4ca0562e945b96d0c31603c7c0e048c098f3d664facb1ba55d4a476fe"
+        },
+        "expo-animation": {
+          "path": "plugins/expo/skills/expo-animation",
+          "hash": "eac20b59aad5c524073cbcd86819851564abe750c2d6715c42eabc65dee0d2b2"
+        },
+        "expo-design-system": {
+          "path": "plugins/expo/skills/expo-design-system",
+          "hash": "640df680ee82f55a4f1905d72e4d87748bb158ea92df514008476dee81a503eb"
+        },
+        "expo-upgrade": {
+          "path": "plugins/expo/skills/expo-upgrade",
+          "hash": "c84547f5c3da40fca82f50892c53d13e15592a16753ff1b750cd668587b86e9e"
+        },
+        "expo-dev-client": {
+          "path": "plugins/expo/skills/expo-dev-client",
+          "hash": "eaa58d7e1155d48c8ce2e49de60abf57d0ca4e79b90763452518b91b5e8cd4a6"
+        },
+        "expo-module": {
+          "path": "plugins/expo/skills/expo-module",
+          "hash": "e5fedce593eb4fbe3c3c5acb46f2e904fd06b74980eff6f22c55d147df72354e"
+        },
+        "eas-app-stores": {
+          "path": "plugins/expo/skills/eas-app-stores",
+          "hash": "0414662f9cb570cd58253eedac703c110b9373c1cff15e0b871ca21069c89cfb"
+        },
+        "eas-update": {
+          "path": "plugins/expo/skills/eas-update",
+          "hash": "ac3368a910cdc0b1373b20f089a4ad3bd2dc8c6814be0987b3399cddd7abfb50"
+        }
+      }
     }
-  }
+  ]
 }

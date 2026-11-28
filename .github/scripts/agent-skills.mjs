@@ -1,13 +1,15 @@
-// Third-party agent skills vendored into .claude/skills, pinned in
-// .claude/skills/vendored.json (source repo, commit, and a content hash per
+// Third-party agent skills vendored into .claude/skills, pinned per source in
+// .claude/skills/vendored.json (repo, branch, commit, and a content hash per
 // skill so local edits are noticed before an update overwrites them).
 //   node .github/scripts/agent-skills.mjs check    (make skills-check)
 //   node .github/scripts/agent-skills.mjs update   (make skills-update)
-// "check" compares the pinned commit with the source branch and lists the
+// "check" compares each source's pinned commit with its branch and lists the
 // vendored skills that changed upstream (exit 2 when any did). "update"
-// downloads the branch head, replaces those skills (minus the excluded paths)
-// and moves the pin; review the diff before committing it. Set GITHUB_TOKEN
-// to avoid the anonymous GitHub API rate limit.
+// downloads the branch heads, replaces those skills (minus the excluded paths)
+// and moves the pins; review the diff before committing it. Vendored SKILL.md
+// files lose any `allowed-tools` frontmatter, so a skill can never pre-approve
+// commands: they go through the normal permission prompts. Set GITHUB_TOKEN to
+// avoid the anonymous GitHub API rate limit.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -19,15 +21,16 @@ const skillsDir = join(root, '.claude/skills');
 const lockPath = join(skillsDir, 'vendored.json');
 
 const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
-const excluded = (rel) => lock.exclude.some((e) => (e.endsWith('/') ? rel.startsWith(e) : rel === e));
+const excluded = (src, rel) => src.exclude.some((e) => (e.endsWith('/') ? rel.startsWith(e) : rel === e));
 
-async function gh(path, accept = 'application/vnd.github+json') {
+async function gh(src, path, accept = 'application/vnd.github+json') {
   const headers = { Accept: accept, 'User-Agent': 'agent-skills-vendor' };
   if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-  const res = await fetch(`https://api.github.com/repos/${lock.source}/${path}`, { headers });
-  if (!res.ok) throw new Error(`GitHub API ${path}: ${res.status} ${res.statusText}`);
+  const res = await fetch(`https://api.github.com/repos/${src.repo}/${path}`, { headers });
+  if (!res.ok) throw new Error(`GitHub API ${src.repo} ${path}: ${res.status} ${res.statusText}`);
   return accept.endsWith('sha') ? (await res.text()).trim() : res.json();
 }
+const branchHead = (src) => gh(src, `commits/${src.ref}`, 'application/vnd.github.sha');
 
 function files(dir) {
   return readdirSync(dir, { recursive: true })
@@ -43,33 +46,50 @@ function hashDir(dir) {
   return h.digest('hex');
 }
 
-function locallyEdited() {
-  return Object.entries(lock.skills)
-    .filter(([name, s]) => !existsSync(join(skillsDir, name)) || hashDir(join(skillsDir, name)) !== s.hash)
-    .map(([name]) => name);
+// Drop `allowed-tools` (single or multi-line) from SKILL.md frontmatter.
+function stripAllowedTools(skillMd) {
+  const text = readFileSync(skillMd, 'utf8');
+  const m = text.match(/^---\n([\s\S]*?)\n---\n/);
+  if (!m) return false;
+  const kept = m[1].replace(/^allowed-tools:.*(\n[ \t]+.*)*\n?/m, '');
+  if (kept === m[1]) return false;
+  writeFileSync(skillMd, `---\n${kept.replace(/\n$/, '')}\n---\n${text.slice(m[0].length)}`);
+  return true;
 }
 
-async function changedUpstream(head) {
-  if (head === lock.commit) return [];
-  const cmp = await gh(`compare/${lock.commit}...${head}`);
+const allSkills = () => lock.sources.flatMap((src) => Object.entries(src.skills).map(([name, s]) => ({ src, name, s })));
+
+function locallyEdited() {
+  return allSkills()
+    .filter(({ name, s }) => !existsSync(join(skillsDir, name)) || hashDir(join(skillsDir, name)) !== s.hash)
+    .map(({ name }) => name);
+}
+
+async function changedUpstream(src, head) {
+  if (head === src.commit) return [];
+  const cmp = await gh(src, `compare/${src.commit}...${head}`);
   const paths = (cmp.files ?? []).map((f) => f.filename);
-  return Object.entries(lock.skills)
-    .filter(([, s]) => paths.some((p) => p.startsWith(`${s.path}/`) && !excluded(p.slice(s.path.length + 1))))
+  return Object.entries(src.skills)
+    .filter(([, s]) => paths.some((p) => p.startsWith(`${s.path}/`) && !excluded(src, p.slice(s.path.length + 1))))
     .map(([name]) => name);
 }
 
 async function check() {
-  const head = await gh(`commits/${lock.ref}`, 'application/vnd.github.sha');
-  const changed = await changedUpstream(head);
+  let updates = false;
   const edited = locallyEdited();
   if (edited.length) console.log(`edited locally since the pin: ${edited.join(', ')}`);
-  if (!changed.length) {
-    console.log(`vendored skills are up to date with ${lock.source}@${lock.ref} (${head.slice(0, 7)})`);
-    return 0;
+  for (const src of lock.sources) {
+    const head = await branchHead(src);
+    const changed = await changedUpstream(src, head);
+    if (!changed.length) {
+      console.log(`${src.repo}@${src.ref}: up to date (${head.slice(0, 7)})`);
+      continue;
+    }
+    updates = true;
+    console.log(`${src.repo}@${src.ref} ${src.commit.slice(0, 7)}..${head.slice(0, 7)}: ${changed.join(', ')}`);
   }
-  console.log(`updates in ${lock.source}@${lock.ref} ${lock.commit.slice(0, 7)}..${head.slice(0, 7)}: ${changed.join(', ')}`);
-  console.log('run `make skills-update`, review the diff and commit it on its own');
-  return 2;
+  if (updates) console.log('run `make skills-update`, review the diff and commit it on its own');
+  return updates ? 2 : 0;
 }
 
 async function update() {
@@ -77,29 +97,31 @@ async function update() {
   if (edited.length && !process.argv.includes('--force')) {
     throw new Error(`skills edited locally: ${edited.join(', ')} (keep the edits upstream, or rerun with --force to overwrite)`);
   }
-  const head = await gh(`commits/${lock.ref}`, 'application/vnd.github.sha');
-  const tmp = mkdtempSync(join(tmpdir(), 'agent-skills-'));
-  try {
-    const res = await fetch(`https://codeload.github.com/${lock.source}/tar.gz/${head}`);
-    if (!res.ok) throw new Error(`download ${head}: ${res.status}`);
-    writeFileSync(join(tmp, 'src.tgz'), Buffer.from(await res.arrayBuffer()));
-    execFileSync('tar', ['xzf', 'src.tgz'], { cwd: tmp });
-    const top = readdirSync(tmp).find((d) => d !== 'src.tgz');
-    for (const [name, s] of Object.entries(lock.skills)) {
-      const from = join(tmp, top, s.path);
-      if (!existsSync(join(from, 'SKILL.md'))) throw new Error(`${name}: no SKILL.md at ${s.path} upstream`);
-      const to = join(skillsDir, name);
-      rmSync(to, { recursive: true, force: true });
-      cpSync(from, to, { recursive: true, filter: (src) => src === from || !excluded(relative(from, src)) });
-      s.hash = hashDir(to);
+  for (const src of lock.sources) {
+    const head = await branchHead(src);
+    const tmp = mkdtempSync(join(tmpdir(), 'agent-skills-'));
+    try {
+      const res = await fetch(`https://codeload.github.com/${src.repo}/tar.gz/${head}`);
+      if (!res.ok) throw new Error(`download ${src.repo}@${head}: ${res.status}`);
+      writeFileSync(join(tmp, 'src.tgz'), Buffer.from(await res.arrayBuffer()));
+      execFileSync('tar', ['xzf', 'src.tgz'], { cwd: tmp });
+      const top = readdirSync(tmp).find((d) => d !== 'src.tgz');
+      for (const [name, s] of Object.entries(src.skills)) {
+        const from = join(tmp, top, s.path);
+        if (!existsSync(join(from, 'SKILL.md'))) throw new Error(`${name}: no SKILL.md at ${src.repo}/${s.path}`);
+        const to = join(skillsDir, name);
+        rmSync(to, { recursive: true, force: true });
+        cpSync(from, to, { recursive: true, filter: (p) => p === from || !excluded(src, relative(from, p)) });
+        if (stripAllowedTools(join(to, 'SKILL.md'))) console.log(`${name}: dropped allowed-tools from SKILL.md`);
+        s.hash = hashDir(to);
+      }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
     }
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    console.log(head !== src.commit ? `${src.repo}: updated to ${head.slice(0, 7)}` : `${src.repo}: already at ${head.slice(0, 7)}; files refreshed`);
+    src.commit = head;
   }
-  const moved = head !== lock.commit;
-  lock.commit = head;
   writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
-  console.log(moved ? `vendored skills updated to ${lock.source}@${head.slice(0, 7)}` : 'already at the branch head; files refreshed');
 }
 
 const cmd = process.argv[2];
