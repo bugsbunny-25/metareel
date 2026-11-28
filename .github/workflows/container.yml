@@ -59,19 +59,13 @@ jobs:
       - uses: dorny/paths-filter@v4
         id: filter
         with:
+          # A file counts when it matches the allow-list and isn't Markdown, so
+          # docs, agent skills (.claude/) and READMEs never start this workflow.
+          predicate-quantifier: every
           filters: |
             image:
-              - 'cmd/**'
-              - 'internal/**'
-              - 'db/**'
-              - 'go.mod'
-              - 'go.sum'
-              - 'web/**'
-              - 'app/**'
-              - 'Dockerfile'
-              - '.dockerignore'
-              - '.github/workflows/container.yml'
-              - '.github/scripts/cleanup-main-images.sh'
+              - '{cmd/**,internal/**,db/**,go.mod,go.sum,web/**,app/**,Dockerfile,.dockerignore,.github/workflows/container.yml,.github/scripts/cleanup-main-images.sh}'
+              - '!**/*.md'
 
   build-scan-publish:
     name: build-scan-publish

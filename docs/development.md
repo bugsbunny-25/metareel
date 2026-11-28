@@ -110,8 +110,12 @@ make down
 
 Each workflow's jobs run only when files they cover change: a first `changes` job
 (`dorny/paths-filter`) lists the changed files and the other jobs skip themselves otherwise,
-so a change to `docs/` or a README runs only those small jobs. Releases run every check
-regardless, and if `changes` fails everything runs.
+so a change to `docs/` or a README runs only those small jobs. Each filter is one allow-list
+pattern plus `!**/*.md` under `predicate-quantifier: every`, so Markdown anywhere (READMEs
+inside `mobile/` or `web/`, `mobile/AGENTS.md`), `CLAUDE.md` and the vendored agent skills in
+`.claude/` never start a check. The jobs stay in the workflow rather than behind trigger-level
+`paths`, so required checks still report (as skipped) and such PRs can merge. Releases run
+every check regardless, and if `changes` fails everything runs.
 
 - `ci.yml` (Go: `cmd/`, `internal/`, `db/`, `tools/`, `go.mod`, `Makefile`, …)
   - `go-quality`: `go mod tidy` check, `make vet`, race tests with coverage, coverage artifact (no
