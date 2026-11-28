@@ -7,5 +7,5 @@ import { StyleSheet, View } from 'react-native';
  * square. Put it first inside the pill.
  */
 export function PillFill({ on, color, radius }: { on: boolean; color: string; radius: number }) {
-  return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, backgroundColor: color, opacity: on ? 1 : 0 }]} />;
+  return <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none', borderRadius: radius, backgroundColor: color, opacity: on ? 1 : 0 }]} />;
 }

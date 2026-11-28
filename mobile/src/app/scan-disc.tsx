@@ -133,7 +133,7 @@ export default function ScanDisc() {
                   )}
                 </View>
               )}
-              {perm?.granted ? <View pointerEvents="none" style={[styles.target, { borderColor: colors.accentPrimary }]} /> : null}
+              {perm?.granted ? <View style={[styles.target, { pointerEvents: 'none', borderColor: colors.accentPrimary }]} /> : null}
               {busy ? <ActivityIndicator style={StyleSheet.absoluteFill} color={colors.accentPrimary} /> : null}
             </View>
             <Field
