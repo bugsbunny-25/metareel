@@ -79,7 +79,7 @@ func TestAPIKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	var limited int
-	for i := 0; i < 15; i++ {
+	for range 15 {
 		if errors.Is(authorize(rotated.Key, "1.2.3.4"), ErrRateLimited) {
 			limited++
 		}

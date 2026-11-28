@@ -120,10 +120,8 @@ func (r *TrackingRepository) UpcomingEpisodes(ctx context.Context, userID int64,
 		airDate := row.AirDate
 		out = append(out, UpcomingEpisode{
 			TmdbID: row.TmdbID, ShowTitle: row.ShowTitle, PosterPath: row.PosterPath, Status: row.Status,
-			QueueEpisode: QueueEpisode{
-				SeasonNumber: row.SeasonNumber, EpisodeNumber: row.EpisodeNumber, Name: row.Name,
-				AirDate: &airDate, Runtime: nullInt64Ptr(row.Runtime), EpisodeType: nullStringPtr(row.EpisodeType),
-			},
+			SeasonNumber: row.SeasonNumber, EpisodeNumber: row.EpisodeNumber, Name: row.Name,
+			AirDate: &airDate, Runtime: nullInt64Ptr(row.Runtime), EpisodeType: nullStringPtr(row.EpisodeType),
 		})
 	}
 	return out, nil

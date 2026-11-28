@@ -71,13 +71,13 @@ func TestVenueImport(t *testing.T) {
 	repo := repository.NewTrackingRepository(db)
 
 	// Entered by hand before any import: two to adopt, two that share a name.
-	pcc, _ := repo.CreateVenue(ctx, repository.Venue{Name: "Prince Charles Cinema", City: str("London"), Country: str("GB"), Timezone: str("Europe/London"), Status: "open"}, 0)
-	bfi, _ := repo.CreateVenue(ctx, repository.Venue{Name: "BFI Southbank (NFT)", Country: str("GB"), Status: "open"}, 0)
+	pcc, _ := repo.CreateVenue(ctx, repository.Venue{Name: "Prince Charles Cinema", City: new("London"), Country: new("GB"), Timezone: new("Europe/London"), Status: "open"}, 0)
+	bfi, _ := repo.CreateVenue(ctx, repository.Venue{Name: "BFI Southbank (NFT)", Country: new("GB"), Status: "open"}, 0)
 	if err := repo.SaveVenueRef(ctx, bfi, repository.VenueRef{Source: "wikidata_id", Ref: "Q4835803"}); err != nil {
 		t.Fatal(err)
 	}
-	odeonA, _ := repo.CreateVenue(ctx, repository.Venue{Name: "Odeon", City: str("Leeds"), Country: str("GB"), Status: "open"}, 0)
-	odeonB, _ := repo.CreateVenue(ctx, repository.Venue{Name: "ODEON", City: str("Leeds"), Country: str("GB"), Status: "open"}, 0)
+	odeonA, _ := repo.CreateVenue(ctx, repository.Venue{Name: "Odeon", City: new("Leeds"), Country: new("GB"), Status: "open"}, 0)
+	odeonB, _ := repo.CreateVenue(ctx, repository.Venue{Name: "ODEON", City: new("Leeds"), Country: new("GB"), Status: "open"}, 0)
 
 	src := &fakeOSM{places: map[string][]client.OSMPlace{
 		"GB": {
@@ -196,7 +196,7 @@ func TestVenueImport(t *testing.T) {
 
 	// An admin edits the Ritzy; a re-run keeps the edit, adds nothing and
 	// counts the cinema OSM dropped.
-	rv.Chain = str("Picturehouse Cinemas")
+	rv.Chain = new("Picturehouse Cinemas")
 	if _, err := repo.UpdateVenue(ctx, rv); err != nil {
 		t.Fatal(err)
 	}

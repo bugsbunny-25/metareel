@@ -136,7 +136,6 @@ func TestDiscover(t *testing.T) {
 		t.Fatalf("FR = %+v", fr)
 	}
 
-	var v *ValidationError
 	for _, err := range []error{
 		func() error { _, err := svc.HiddenGems(ctx, HiddenGemsQuery{Country: "USA"}); return err }(),
 		func() error { _, err := svc.HiddenGems(ctx, HiddenGemsQuery{Country: "US", MinRating: 11}); return err }(),
@@ -153,7 +152,7 @@ func TestDiscover(t *testing.T) {
 			return err
 		}(),
 	} {
-		if !errors.As(err, &v) {
+		if _, ok := errors.AsType[*ValidationError](err); !ok {
 			t.Errorf("err = %v, want ValidationError", err)
 		}
 	}

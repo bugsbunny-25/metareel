@@ -17,8 +17,7 @@ import (
 func (h *Handler) UploadImport(c *echo.Context) error {
 	body, err := io.ReadAll(io.LimitReader(c.Request().Body, service.MaxImportUploadBytes+1))
 	if err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return c.JSON(http.StatusRequestEntityTooLarge, map[string]any{"error": "the upload is too large"})
 		}
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": "couldn't read the upload"})

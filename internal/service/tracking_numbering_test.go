@@ -89,7 +89,7 @@ func TestWatchNumbersArePerEpisode(t *testing.T) {
 	s, _, alice, _, db := newTrackingEnvDB(t)
 	ctx := context.Background()
 	ep := func(season, episode int64, at string) int64 {
-		return mustLog(t, s, alice, WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: tp(season), EpisodeNumber: tp(episode), EndedAt: at}).ID
+		return mustLog(t, s, alice, WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: new(season), EpisodeNumber: new(episode), EndedAt: at}).ID
 	}
 	e1a := ep(1, 1, "2026-03-01T20:00:00Z")
 	e2a := ep(1, 2, "2026-03-02T20:00:00Z")
@@ -98,7 +98,7 @@ func TestWatchNumbersArePerEpisode(t *testing.T) {
 	wantNumbers(t, numbers(t, s, alice, e1early, e1a, e1b, e2a), 1, 2, 3, 1)
 
 	// A bulk mark skips episodes already seen, so marking season 1 adds only E3.
-	if _, err := s.MarkEpisodes(ctx, alice, "1396", MarkEpisodesInput{Scope: ScopeSeason, SeasonNumber: tp(int64(1)), EndedAt: "2026-07-01T12:00:00Z"}); err != nil {
+	if _, err := s.MarkEpisodes(ctx, alice, "1396", MarkEpisodesInput{Scope: ScopeSeason, SeasonNumber: new(int64(1)), EndedAt: "2026-07-01T12:00:00Z"}); err != nil {
 		t.Fatalf("mark season: %v", err)
 	}
 	var marked int64

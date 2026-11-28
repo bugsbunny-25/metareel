@@ -381,7 +381,7 @@ func (r *MappingRepository) ReviewCandidates(ctx context.Context) ([]ReviewCandi
 		var providers []string
 		last := map[string]string{}
 		if t.Providers != "" {
-			for _, pl := range strings.Split(t.Providers, ",") {
+			for pl := range strings.SplitSeq(t.Providers, ",") {
 				p, d, _ := strings.Cut(pl, "@")
 				providers = append(providers, p)
 				last[p] = d

@@ -18,7 +18,7 @@ func TestKeepCredits(t *testing.T) {
 		c.Cast = append(c.Cast, client.TMDBCredit{PersonID: 100 + i, Name: "A", Order: i})
 	}
 	c.Cast = append(c.Cast, client.TMDBCredit{PersonID: 100, Name: "A", Order: 40}) // same person again
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		c.Crew = append(c.Crew, client.TMDBCredit{PersonID: 200 + i, Name: "D", Job: "Director", Episodes: i})
 	}
 	c.Crew = append(c.Crew,

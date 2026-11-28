@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -591,8 +592,8 @@ func TestEvidenceMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []string
-	for i := len(events) - 1; i >= 0; i-- {
-		e := events[i]
+	for _, e := range slices.Backward(events) {
+
 		got = append(got, e.Action+":"+ptrStr(e.FromID)+">"+ptrStr(e.ToID))
 	}
 	want := "adopt:<nil>>1 match:1>2 adopt:2>9 unshare:9>2 clear:2>1 unshare:1><nil> match:<nil>>2 adopt:2>3"

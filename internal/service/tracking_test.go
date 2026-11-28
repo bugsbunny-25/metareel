@@ -131,7 +131,9 @@ func mustLog(t *testing.T, s *TrackingService, userID int64, in WatchInput) repo
 }
 
 // tp is a generic pointer helper (ptr in this package is int64-only).
-func tp[T any](v T) *T { return &v }
+//
+//go:fix inline
+func tp[T any](v T) *T { return new(v) }
 
 // The day a watch belongs to is the local day of its start, which is
 // ended_at minus the runtime unless the client sent a start.
@@ -157,7 +159,7 @@ func TestLogWatchDerivesTheLocalDay(t *testing.T) {
 			// Same instant in New York: 20:30 local on the 9th, started
 			// 18:02 local, still the 9th.
 			name:      "local zone decides the day",
-			in:        WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", TZ: tp("America/New_York")},
+			in:        WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", TZ: new("America/New_York")},
 			wantDay:   "2026-11-09",
 			wantRtSrc: "tmdb_title",
 		},
@@ -165,7 +167,7 @@ func TestLogWatchDerivesTheLocalDay(t *testing.T) {
 			// 02:00Z on 1 January is still 31 December in New York, so the
 			// watch belongs to the previous year.
 			name:      "year boundary follows the local zone",
-			in:        WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2027-01-01T02:00:00Z", TZ: tp("America/New_York")},
+			in:        WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2027-01-01T02:00:00Z", TZ: new("America/New_York")},
 			wantDay:   "2026-12-31",
 			wantRtSrc: "tmdb_title",
 		},
@@ -173,15 +175,15 @@ func TestLogWatchDerivesTheLocalDay(t *testing.T) {
 			// A half-hour zone: 18:20Z is 23:50 in Kolkata, and 148 minutes
 			// earlier is 21:22 the same day.
 			name:      "half-hour offset zone",
-			in:        WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-06-15T18:20:00Z", TZ: tp("Asia/Kolkata")},
+			in:        WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-06-15T18:20:00Z", TZ: new("Asia/Kolkata")},
 			wantDay:   "2026-06-15",
 			wantRtSrc: "tmdb_title",
 		},
 		{
 			name:      "an explicit start wins over the runtime",
-			in:        WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", StartedAt: tp("2026-11-10T00:10:00Z")},
+			in:        WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", StartedAt: new("2026-11-10T00:10:00Z")},
 			wantDay:   "2026-11-10",
-			wantStart: tp("2026-11-10 00:10:00"),
+			wantStart: new("2026-11-10 00:10:00"),
 		},
 		{
 			name:      "no runtime known: the end is the start",
@@ -226,7 +228,7 @@ func TestLogWatchStoresTheOffsetInForce(t *testing.T) {
 		{"utc", "2026-07-04T18:00:00Z", "UTC", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			e := mustLog(t, s, alice, WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: tc.endedAt, TZ: tp(tc.tz)})
+			e := mustLog(t, s, alice, WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: tc.endedAt, TZ: new(tc.tz)})
 			if e.UTCOffsetMinutes == nil || *e.UTCOffsetMinutes != tc.wantOffset {
 				t.Fatalf("utc_offset_minutes = %v, want %d", derefInt(e.UTCOffsetMinutes), tc.wantOffset)
 			}
@@ -265,7 +267,7 @@ func TestLogWatchHandlesDSTEdges(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := mustLog(t, s, alice, WatchInput{
-				Kind: "movie", TmdbID: "999", EndedAt: tc.endedAt, TZ: tp("America/New_York")})
+				Kind: "movie", TmdbID: "999", EndedAt: tc.endedAt, TZ: new("America/New_York")})
 			if e.UTCOffsetMinutes == nil || *e.UTCOffsetMinutes != tc.wantOffset {
 				t.Errorf("utc_offset_minutes = %v, want %d", derefInt(e.UTCOffsetMinutes), tc.wantOffset)
 			}
@@ -302,7 +304,7 @@ func TestLogWatchNormalizesImpreciseTimes(t *testing.T) {
 		{"day", PrecisionDay, "2019-08-17T21:45:00Z", nil, "2019-08-17", "2019-08-17 00:00:00"},
 		// 01:00Z on 18 August is still the 17th in New York, so the day
 		// precision keeps the user's own day and stores its local midnight.
-		{"day in a western zone", PrecisionDay, "2019-08-18T01:00:00Z", tp("America/New_York"), "2019-08-17", "2019-08-17 04:00:00"},
+		{"day in a western zone", PrecisionDay, "2019-08-18T01:00:00Z", new("America/New_York"), "2019-08-17", "2019-08-17 04:00:00"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := mustLog(t, s, alice, WatchInput{
@@ -334,18 +336,17 @@ func TestLogWatchRejectsBadInput(t *testing.T) {
 		{"not a tmdb id", WatchInput{Kind: "movie", TmdbID: "tt1375666", EndedAt: "2026-11-10T01:30:00Z"}},
 		{"no ended_at", WatchInput{Kind: "movie", TmdbID: "27205"}},
 		{"ended_at is not rfc3339", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "10/11/2026"}},
-		{"unknown zone", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", TZ: tp("Mars/Olympus")}},
-		{"rating too high", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", Rating: tp(int64(11))}},
-		{"rating zero", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", Rating: tp(int64(0))}},
+		{"unknown zone", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", TZ: new("Mars/Olympus")}},
+		{"rating too high", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", Rating: new(int64(11))}},
+		{"rating zero", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", Rating: new(int64(0))}},
 		{"unknown precision", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", Precision: "decade"}},
-		{"start after end", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", StartedAt: tp("2026-11-10T02:00:00Z")}},
-		{"unknown venue kind", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", VenueKind: tp("submarine")}},
+		{"start after end", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", StartedAt: new("2026-11-10T02:00:00Z")}},
+		{"unknown venue kind", WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", VenueKind: new("submarine")}},
 		{"a show without an episode number", WatchInput{Kind: "tv", TmdbID: "1396", EndedAt: "2026-11-10T01:30:00Z"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, err := s.LogWatch(context.Background(), alice, tc.in)
-			var ve *ValidationError
-			if !errors.As(err, &ve) {
+			if _, ok := errors.AsType[*ValidationError](err); !ok {
 				t.Fatalf("err = %v, want a ValidationError", err)
 			}
 		})
@@ -368,7 +369,7 @@ func TestRewatchesAndRollup(t *testing.T) {
 	ctx := context.Background()
 
 	first := mustLog(t, s, alice, WatchInput{Kind: "movie", TmdbID: "27205",
-		EndedAt: "2026-11-10T01:30:00Z", Rating: tp(int64(9)), Tags: []string{"imax", "Imax", " nolan "}})
+		EndedAt: "2026-11-10T01:30:00Z", Rating: new(int64(9)), Tags: []string{"imax", "Imax", " nolan "}})
 	if first.WatchNumber != 1 || first.IsRewatch {
 		t.Fatalf("first watch: number %d rewatch %v", first.WatchNumber, first.IsRewatch)
 	}
@@ -377,7 +378,7 @@ func TestRewatchesAndRollup(t *testing.T) {
 	}
 
 	second := mustLog(t, s, alice, WatchInput{Kind: "movie", TmdbID: "27205",
-		EndedAt: "2026-11-12T23:00:00Z", Rating: tp(int64(8))})
+		EndedAt: "2026-11-12T23:00:00Z", Rating: new(int64(8))})
 	if second.WatchNumber != 2 || !second.IsRewatch {
 		t.Fatalf("second watch: number %d rewatch %v", second.WatchNumber, second.IsRewatch)
 	}
@@ -410,7 +411,7 @@ func TestRewatchesAndRollup(t *testing.T) {
 func TestLogWatchIsIdempotentPerClientKey(t *testing.T) {
 	s, _, alice, _ := newTrackingEnv(t)
 	ctx := context.Background()
-	in := WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", ClientKey: tp("abc-123")}
+	in := WatchInput{Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-10T01:30:00Z", ClientKey: new("abc-123")}
 
 	first, created, err := s.LogWatch(ctx, alice, in)
 	if err != nil || !created {
@@ -462,7 +463,7 @@ func TestWatchesAreScopedToTheirUser(t *testing.T) {
 	// The same client key may be used by each of them.
 	for _, u := range []int64{alice, bob} {
 		if _, _, err := s.LogWatch(ctx, u, WatchInput{Kind: "movie", TmdbID: "155",
-			EndedAt: "2026-11-10T01:30:00Z", ClientKey: tp("shared-key")}); err != nil {
+			EndedAt: "2026-11-10T01:30:00Z", ClientKey: new("shared-key")}); err != nil {
 			t.Fatalf("log for user %d: %v", u, err)
 		}
 	}
@@ -473,7 +474,7 @@ func TestWatchlistPositionsAndRemoval(t *testing.T) {
 	ctx := context.Background()
 
 	for _, id := range []string{"27205", "155"} {
-		if _, err := s.SetTitleState(ctx, alice, "movie", id, TitleStateInput{Status: tp(StatusWatchlist)}); err != nil {
+		if _, err := s.SetTitleState(ctx, alice, "movie", id, TitleStateInput{Status: new(StatusWatchlist)}); err != nil {
 			t.Fatalf("watchlist %s: %v", id, err)
 		}
 	}
@@ -494,7 +495,7 @@ func TestWatchlistPositionsAndRemoval(t *testing.T) {
 
 	// Leaving the watchlist clears the position but keeps the row's other
 	// state; with nothing else on it, the row goes away entirely.
-	if _, err := s.SetTitleState(ctx, alice, "movie", "155", TitleStateInput{Status: tp(StatusNone)}); err != nil {
+	if _, err := s.SetTitleState(ctx, alice, "movie", "155", TitleStateInput{Status: new(StatusNone)}); err != nil {
 		t.Fatalf("remove from watchlist: %v", err)
 	}
 	st, err := s.read.UserTitle(ctx, alice, "movie", "155")
@@ -511,9 +512,8 @@ func TestWatchlistPositionsAndRemoval(t *testing.T) {
 func TestSetTitleStateRefusesARating(t *testing.T) {
 	s, _, alice, _ := newTrackingEnv(t)
 	_, err := s.SetTitleState(context.Background(), alice, "movie", "27205",
-		TitleStateInput{Rating: tp(int64(8))})
-	var ve *ValidationError
-	if !errors.As(err, &ve) {
+		TitleStateInput{Rating: new(int64(8))})
+	if _, ok := errors.AsType[*ValidationError](err); !ok {
 		t.Fatalf("err = %v, want a ValidationError", err)
 	}
 }

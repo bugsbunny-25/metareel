@@ -84,7 +84,7 @@ func seedTimeline(t *testing.T, db *sql.DB) TmdbRef {
 	}
 	var views []repository.PageviewPoint
 	start := day("2026-09-10")
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		views = append(views, repository.PageviewPoint{Date: repository.FormatDate(start.AddDate(0, 0, i)), Views: 400})
 	}
 	views = append(views, repository.PageviewPoint{Date: "2026-09-30", Views: 2000}, repository.PageviewPoint{Date: "2026-10-01", Views: 3000},

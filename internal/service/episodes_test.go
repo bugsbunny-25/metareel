@@ -208,7 +208,7 @@ func TestReleasePatterns(t *testing.T) {
 		saveShow(t, meta, id, title, []client.TMDBSeason{{Number: 1, AirDate: "2026-06-01"}})
 	}
 	weekly := []client.TMDBEpisode{}
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		weekly = append(weekly, ep(i+1, repository.FormatDate(day("2026-06-01").AddDate(0, 0, 7*i)), "standard"))
 	}
 	for id, eps := range map[string]map[int][]client.TMDBEpisode{
@@ -226,7 +226,7 @@ func TestReleasePatterns(t *testing.T) {
 		{Slug: "filler", Name: "Filler", Kind: "tv_show"}}
 	var rankings []seedRanking
 	start := day("2026-05-20")
-	for i := 0; i < 90; i++ {
+	for i := range 90 {
 		d := repository.FormatDate(start.AddDate(0, 0, i))
 		rankings = append(rankings, seedRanking{"filler", d, "US", "netflix", "tv_shows", 10})
 		off := int(day(d).Sub(day("2026-06-01")).Hours() / 24)

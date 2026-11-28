@@ -72,10 +72,17 @@ func (f *fakeRT) Search(_ context.Context, _ client.RTKind, name string, _ int) 
 	return f.search, f.err
 }
 
-func i64(v int64) *int64     { return &v }
-func f64(v float64) *float64 { return &v }
-func str(v string) *string   { return &v }
-func boolp(v bool) *bool     { return &v }
+//go:fix inline
+func i64(v int64) *int64 { return new(v) }
+
+//go:fix inline
+func f64(v float64) *float64 { return new(v) }
+
+//go:fix inline
+func str(v string) *string { return new(v) }
+
+//go:fix inline
+func boolp(v bool) *bool { return new(v) }
 
 func bugoniaFragment() client.MovieOrShowFragment {
 	var f client.MovieOrShowFragment
@@ -83,14 +90,14 @@ func bugoniaFragment() client.MovieOrShowFragment {
 	f.Content.Title = "Bugonia"
 	year := 2025
 	f.Content.OriginalReleaseYear = &year
-	f.Content.ExternalIds.TmdbId = str("701387")
-	f.Content.ExternalIds.ImdbId = str("tt12300742")
+	f.Content.ExternalIds.TmdbId = new("701387")
+	f.Content.ExternalIds.ImdbId = new("tt12300742")
 	votes, meter, certified := 228706.0, 87.0, true
-	f.Content.Scoring.ImdbScore = f64(7.4)
+	f.Content.Scoring.ImdbScore = new(7.4)
 	f.Content.Scoring.ImdbVotes = &votes
 	f.Content.Scoring.TomatoMeter = &meter
 	f.Content.Scoring.CertifiedFresh = &certified
-	f.Content.Scoring.TmdbScore = f64(7.3)
+	f.Content.Scoring.TmdbScore = new(7.3)
 	return f
 }
 
@@ -101,7 +108,7 @@ func bugoniaMDBList() *client.MDBListMedia {
 		ImdbID: "tt12300742",
 		Score:  f64(78),
 		Ratings: []client.MDBListRating{
-			{Source: "imdb", Value: f64(7.5), Votes: f64(230000)},
+			{Source: "imdb", Value: new(7.5), Votes: f64(230000)},
 			{Source: "tomatoes", Value: f64(86), URL: "https://www.rottentomatoes.com/m/bugonia"},
 			{Source: "tomatoesaudience", Value: f64(71)},
 			{Source: "metacritic", Value: f64(73)},
@@ -129,7 +136,7 @@ func newRatingsFixture(t *testing.T) *ratingsFixture {
 		db:    db,
 		jw:    &fakeJustWatch{search: []client.MovieOrShowFragment{bugoniaFragment()}},
 		mdb:   &fakeMDBList{media: bugoniaMDBList()},
-		rt:    &fakeRT{bySlug: map[string]*client.RTRating{"m/bugonia": {Slug: "m/bugonia", Title: "Bugonia", Year: 2025, CriticsScore: i64(88), AudienceScore: i64(72), CertifiedFresh: boolp(true)}}},
+		rt:    &fakeRT{bySlug: map[string]*client.RTRating{"m/bugonia": {Slug: "m/bugonia", Title: "Bugonia", Year: 2025, CriticsScore: i64(88), AudienceScore: i64(72), CertifiedFresh: new(true)}}},
 		clock: time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC),
 	}
 	f.svc = &RatingsService{
@@ -215,7 +222,7 @@ func TestRatings_RefreshThenCache(t *testing.T) {
 	// refresh=true bypasses the cache, and the stored JustWatch ID is used
 	// instead of searching again.
 	frag := bugoniaFragment()
-	frag.Content.Scoring.ImdbScore = f64(7.6)
+	frag.Content.Scoring.ImdbScore = new(7.6)
 	f.jw.byID = map[string]*client.MovieOrShowFragment{"tm1504418": &frag}
 	f.jw.search = nil
 	out, err = f.svc.GetRatings(ctx, bugonia, true)
@@ -254,7 +261,7 @@ func TestRatings_SearchFindsSlugWithoutMDBList(t *testing.T) {
 	f := newRatingsFixture(t)
 	f.svc.mdblist = nil
 	f.rt.bySlug = nil
-	f.rt.search = &client.RTRating{Slug: "m/bugonia", Title: "Bugonia", Year: 2025, CriticsScore: i64(88), AudienceScore: i64(72), CertifiedFresh: boolp(true)}
+	f.rt.search = &client.RTRating{Slug: "m/bugonia", Title: "Bugonia", Year: 2025, CriticsScore: i64(88), AudienceScore: i64(72), CertifiedFresh: new(true)}
 	ctx := context.Background()
 	if _, err := seedOne(t, f.db, seedTitle{Slug: "bugonia", Name: "Bugonia", Kind: "movie", TmdbID: "701387"}); err != nil {
 		t.Fatal(err)

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -451,8 +452,7 @@ func (s *DiscService) releaseWrite(ctx context.Context, in DiscReleaseInput, dep
 		for i, p := range in.Parts {
 			pw, err := s.releaseWrite(ctx, p, depth+1)
 			if err != nil {
-				var v *ValidationError
-				if errors.As(err, &v) {
+				if v, ok := errors.AsType[*ValidationError](err); ok {
 					return w, &ValidationError{Message: fmt.Sprintf("part %d: %s", i+1, v.Message)}
 				}
 				return w, err
@@ -590,12 +590,7 @@ func validFeatures(in []SpecialFeature) ([]SpecialFeature, error) {
 }
 
 func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, x)
 }
 
 func validCopy(in DiscCopyInput) (repository.CopyWrite, error) {

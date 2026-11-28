@@ -18,13 +18,13 @@ func NewAsynqLogger(log *slog.Logger) *AsynqLogger {
 	return &AsynqLogger{log: log.With(slog.String("component", "asynq"))}
 }
 
-func (l *AsynqLogger) Debug(args ...interface{}) { l.log.Debug(fmt.Sprint(args...)) }
-func (l *AsynqLogger) Info(args ...interface{})  { l.log.Info(fmt.Sprint(args...)) }
-func (l *AsynqLogger) Warn(args ...interface{})  { l.log.Warn(fmt.Sprint(args...)) }
-func (l *AsynqLogger) Error(args ...interface{}) { l.log.Error(fmt.Sprint(args...)) }
+func (l *AsynqLogger) Debug(args ...any) { l.log.Debug(fmt.Sprint(args...)) }
+func (l *AsynqLogger) Info(args ...any)  { l.log.Info(fmt.Sprint(args...)) }
+func (l *AsynqLogger) Warn(args ...any)  { l.log.Warn(fmt.Sprint(args...)) }
+func (l *AsynqLogger) Error(args ...any) { l.log.Error(fmt.Sprint(args...)) }
 
 // Fatal matches asynq's expectation that Fatal terminates the process.
-func (l *AsynqLogger) Fatal(args ...interface{}) {
+func (l *AsynqLogger) Fatal(args ...any) {
 	l.log.Error(fmt.Sprint(args...), slog.Bool("fatal", true))
 	os.Exit(1)
 }

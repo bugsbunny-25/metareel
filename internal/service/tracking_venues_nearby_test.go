@@ -16,7 +16,7 @@ func TestNearbyVenues(t *testing.T) {
 	add := func(name string, in VenueInput) int64 {
 		t.Helper()
 		in.Name = name
-		in.Country, in.Timezone = tp("in"), tp("Asia/Kolkata")
+		in.Country, in.Timezone = new("in"), new("Asia/Kolkata")
 		out, err := s.CreateVenue(ctx, alice, in)
 		if err != nil {
 			t.Fatalf("create %s: %v", name, err)
@@ -26,13 +26,13 @@ func TestNearbyVenues(t *testing.T) {
 	// One degree of latitude is about 111 km.
 	neighbour := add("Mall Neighbour", VenueInput{Latitude: tp(lat + 0.0009), Longitude: tp(lon)}) // ~100 m
 	yours := add("Your Usual", VenueInput{Latitude: tp(lat - 0.0030), Longitude: tp(lon)})         // ~334 m
-	add("Old Single Screen", VenueInput{Latitude: tp(lat + 0.0018), Longitude: tp(lon), Status: tp("closed")})
+	add("Old Single Screen", VenueInput{Latitude: tp(lat + 0.0018), Longitude: tp(lon), Status: new("closed")})
 	far := add("Across Town", VenueInput{Latitude: tp(lat + 0.18), Longitude: tp(lon)}) // ~20 km
 	add("No Coordinates", VenueInput{})
 
 	if _, _, err := s.LogWatch(ctx, alice, WatchInput{
 		Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-12T18:20:00Z",
-		WatchContextInput: WatchContextInput{VenueID: &yours},
+		VenueID: &yours,
 	}); err != nil {
 		t.Fatalf("log watch: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestNearbyVenuesAcrossTheAntimeridian(t *testing.T) {
 	s, _, alice, _ := newTrackingEnv(t)
 	ctx := context.Background()
 	if _, err := s.CreateVenue(ctx, alice, VenueInput{
-		Name: "Date Line Cinema", Country: tp("fj"), Latitude: tp(-16.8), Longitude: tp(-179.98),
+		Name: "Date Line Cinema", Country: new("fj"), Latitude: new(-16.8), Longitude: new(-179.98),
 	}); err != nil {
 		t.Fatal(err)
 	}

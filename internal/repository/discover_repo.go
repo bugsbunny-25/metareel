@@ -82,8 +82,8 @@ func (r *DiscoverRepository) CountryOfferChanges(ctx context.Context, country, s
 	}
 	out := make([]OfferChange, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, OfferChange{CountryOffer: CountryOffer{Ref: TmdbRef{Kind: row.TmdbKind, ID: row.TmdbID}, ProviderID: row.ProviderID,
-			ProviderName: row.ProviderName, Monetization: row.Monetization}, Event: row.Event, ObservedAt: row.ObservedAt, Title: row.Title})
+		out = append(out, OfferChange{Ref: TmdbRef{Kind: row.TmdbKind, ID: row.TmdbID}, ProviderID: row.ProviderID,
+			ProviderName: row.ProviderName, Monetization: row.Monetization, Event: row.Event, ObservedAt: row.ObservedAt, Title: row.Title})
 	}
 	return out, nil
 }

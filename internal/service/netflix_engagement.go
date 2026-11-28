@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -84,10 +85,8 @@ func (n *NetflixEngagementImporter) reportURLs(ctx context.Context, extra string
 		}
 	}
 	if extra != "" {
-		for _, u := range urls {
-			if u == extra {
-				return urls, nil
-			}
+		if slices.Contains(urls, extra) {
+			return urls, nil
 		}
 		urls = append(append([]string{}, urls...), extra)
 		b, _ := json.Marshal(urls)

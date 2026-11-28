@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -193,7 +194,7 @@ func ParseTimelineTypes(raw string) (map[string]bool, error) {
 		valid[t] = true
 	}
 	out := map[string]bool{}
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		t := strings.ToLower(strings.TrimSpace(part))
 		if t == "" {
 			continue
@@ -605,12 +606,7 @@ func availabilityEvents(offers []repository.OfferEvent) []TimelineEvent {
 }
 
 func containsStr(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 // --- ratings --------------------------------------------------------------------
@@ -780,7 +776,7 @@ func finishSpike(e TimelineEvent) TimelineEvent {
 
 func median(v []int64) int64 {
 	s := append([]int64(nil), v...)
-	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	slices.Sort(s)
 	n := len(s)
 	if n%2 == 1 {
 		return s[n/2]

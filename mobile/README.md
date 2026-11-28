@@ -40,7 +40,7 @@ cookies. An optional home-network address is used over plain HTTP only after
 
 ## Develop
 
-Needs Node 24+, Xcode (iOS) and the Android SDK with Android Studio's bundled
+Needs Node 26+, Xcode (iOS) and the Android SDK with Android Studio's bundled
 JDK (Gradle 9.4 doesn't run on JDK 27 yet).
 
 ```bash

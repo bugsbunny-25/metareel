@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -399,7 +400,7 @@ func (s *DiscoverService) Elsewhere(ctx context.Context, q ElsewhereQuery) (*Els
 			out.Skipped["available_here"]++
 			continue
 		}
-		it := ElsewhereItem{DiscoverTitle: DiscoverTitle{Kind: ref.Kind, TmdbID: ref.ID, Title: names[key], PosterPath: m.PosterPath},
+		it := ElsewhereItem{Kind: ref.Kind, TmdbID: ref.ID, Title: names[key], PosterPath: m.PosterPath,
 			RentBuyHere: rentBuy[key], Countries: []ElsewhereCountry{}}
 		if m.Title != nil && *m.Title != "" {
 			it.Title = *m.Title
@@ -463,10 +464,8 @@ type RotationQuery struct {
 // providers.
 func rotationFamily(providerID int64) (id int64, name string, ok bool) {
 	for slug, ids := range providerOffers {
-		for _, pid := range ids {
-			if pid == providerID {
-				return rotationMainID[slug], providerNames[slug], true
-			}
+		if slices.Contains(ids, providerID) {
+			return rotationMainID[slug], providerNames[slug], true
 		}
 	}
 	return providerID, "", false
@@ -581,7 +580,7 @@ func (s *DiscoverService) Rotation(ctx context.Context, q RotationQuery) (*Rotat
 		}
 		sv := services[id]
 		if sv == nil {
-			sv = &svc{RotationService: RotationService{ProviderID: id, ProviderName: name, ProviderIDs: []int64{}}, titles: map[string]bool{}}
+			sv = &svc{ProviderID: id, ProviderName: name, ProviderIDs: []int64{}, titles: map[string]bool{}}
 			services[id] = sv
 		}
 		if !containsInt64(sv.ProviderIDs, o.ProviderID) {
@@ -764,10 +763,5 @@ func titleName(key string, names map[string]string, ratings map[string]repositor
 }
 
 func containsInt64(list []int64, v int64) bool {
-	for _, x := range list {
-		if x == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, v)
 }

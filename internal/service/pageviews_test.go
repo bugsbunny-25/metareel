@@ -90,7 +90,7 @@ func TestPageviewsImport(t *testing.T) {
 	}
 
 	// The title history carries them, with the article's URL.
-	got, err := NewHistoryService(hist, meta).TitleHistory(ctx, TmdbRef{Kind: "tv", ID: "1"}, TitleHistoryQuery{From: timePtr(day("2026-11-01")), To: timePtr(day("2026-11-06"))})
+	got, err := NewHistoryService(hist, meta).TitleHistory(ctx, TmdbRef{Kind: "tv", ID: "1"}, TitleHistoryQuery{From: new(day("2026-11-01")), To: new(day("2026-11-06"))})
 	if err != nil {
 		t.Fatal(err)
 	}

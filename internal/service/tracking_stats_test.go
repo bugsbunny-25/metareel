@@ -128,7 +128,7 @@ func TestSummaryCountsTimeWithoutAStoredRuntime(t *testing.T) {
 		EndedAt: "2026-03-02T22:00:00Z", Precision: PrecisionDay})
 	// An episode: its own runtime, not the show's typical one.
 	if _, _, err := s.LogWatch(ctx, alice, WatchInput{Kind: "tv", TmdbID: "1396",
-		SeasonNumber: tp(int64(1)), EpisodeNumber: tp(int64(1)), EndedAt: "2026-03-03T22:00:00Z"}); err != nil {
+		SeasonNumber: new(int64(1)), EpisodeNumber: new(int64(1)), EndedAt: "2026-03-03T22:00:00Z"}); err != nil {
 		t.Fatalf("log episode: %v", err)
 	}
 
@@ -195,9 +195,8 @@ func TestSpendIsPerCurrency(t *testing.T) {
 	} {
 		if _, _, err := s.LogWatch(ctx, alice, WatchInput{
 			Kind: "movie", TmdbID: "27205", EndedAt: "2026-03-01T22:00:00Z",
-			WatchContextInput: WatchContextInput{
-				VenueID: &venueID, PriceMinor: tp(tc.price), FeesMinor: tp(tc.fees),
-				Currency: tp(tc.currency)},
+			VenueID: &venueID, PriceMinor: new(tc.price), FeesMinor: new(tc.fees),
+			Currency: new(tc.currency),
 		}); err != nil {
 			t.Fatalf("log: %v", err)
 		}
@@ -248,7 +247,7 @@ func TestRatingsAgainstTheCrowd(t *testing.T) {
 
 	// Rated 10 half-stars: five stars, which is 10 on the crowd's scale.
 	mustLog(t, s, alice, WatchInput{Kind: "movie", TmdbID: "27205",
-		EndedAt: "2026-03-01T22:00:00Z", Rating: tp(int64(10))})
+		EndedAt: "2026-03-01T22:00:00Z", Rating: new(int64(10))})
 
 	out, err := s.Ratings(ctx, alice, "", "")
 	if err != nil {
@@ -335,7 +334,7 @@ func TestWatchlistInsightsFindCharts(t *testing.T) {
 		VALUES (1, '2026-03-01', 'IN', 'netflix', 'movies', 3)`); err != nil {
 		t.Fatalf("seed chart: %v", err)
 	}
-	if _, err := s.SetTitleState(ctx, alice, "movie", "27205", TitleStateInput{Status: tp(StatusWatchlist)}); err != nil {
+	if _, err := s.SetTitleState(ctx, alice, "movie", "27205", TitleStateInput{Status: new(StatusWatchlist)}); err != nil {
 		t.Fatalf("watchlist: %v", err)
 	}
 

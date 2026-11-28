@@ -63,7 +63,8 @@ func newDiscEnv(t *testing.T) (*DiscService, *fakeBarcodes, int64, int64, *sql.D
 	return s, bc, alice, bob, db
 }
 
-func iptr(v int) *int { return &v }
+//go:fix inline
+func iptr(v int) *int { return new(v) }
 
 func trilogy() *DiscReleaseInput {
 	return &DiscReleaseInput{
@@ -72,7 +73,7 @@ func trilogy() *DiscReleaseInput {
 		Parts: []DiscReleaseInput{
 			{Title: "Batman Begins", MediaFormat: "uhd_bluray", Packaging: "steelbook",
 				Titles: []DiscTitleRef{{TmdbKind: "movie", TmdbID: "272"}},
-				Discs: []DiscSpec{{Format: "uhd_bluray", Capacity: "bd66", TitleIndex: iptr(0), VideoCodec: "hevc",
+				Discs: []DiscSpec{{Format: "uhd_bluray", Capacity: "bd66", TitleIndex: new(0), VideoCodec: "hevc",
 					Resolution: "2160p", HDR: []string{"hdr10", "dolby_vision", "hdr10"}, AspectRatio: "2.39 : 1",
 					Audio: []AudioTrack{{Language: "English", Format: "dolby_atmos", Channels: "7.1"}}}}},
 			{Title: "The Dark Knight", MediaFormat: "uhd_bluray", Packaging: "steelbook",
@@ -89,8 +90,8 @@ func TestDiscBoxSetLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	got, err := s.Add(ctx, alice, AddDiscInput{
-		DiscCopyInput: DiscCopyInput{PriceMinor: i64(5999), Currency: "usd", Retailer: "Best Buy", PurchasedOn: "2026-11-01", Condition: "sealed"},
-		Release:       trilogy(),
+		PriceMinor: i64(5999), Currency: "usd", Retailer: "Best Buy", PurchasedOn: "2026-11-01", Condition: "sealed",
+		Release: trilogy(),
 	})
 	if err != nil {
 		t.Fatalf("add: %v", err)
@@ -136,7 +137,7 @@ func TestDiscBoxSetLifecycle(t *testing.T) {
 	if _, err := s.Add(ctx, bob, AddDiscInput{ReleaseID: r.Parts[0].ID}); err == nil {
 		t.Error("a copy of a box set's part was accepted")
 	}
-	if _, err := s.Add(ctx, bob, AddDiscInput{ReleaseID: r.ID, DiscCopyInput: DiscCopyInput{Condition: "used"}}); err != nil {
+	if _, err := s.Add(ctx, bob, AddDiscInput{ReleaseID: r.ID, Condition: "used"}); err != nil {
 		t.Fatalf("bob adds a copy: %v", err)
 	}
 
@@ -182,7 +183,7 @@ func TestDiscValidation(t *testing.T) {
 		"price no ccy":     {Release: base(), DiscCopyInput: DiscCopyInput{PriceMinor: i64(100)}},
 		"bad barcode":      {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Barcode: "883929640017"}},
 		"unknown tmdb":     {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Titles: []DiscTitleRef{{TmdbKind: "movie", TmdbID: "1"}}}},
-		"title index":      {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Discs: []DiscSpec{{Format: "bluray", TitleIndex: iptr(0)}}}},
+		"title index":      {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Discs: []DiscSpec{{Format: "bluray", TitleIndex: new(0)}}}},
 		"bad audio":        {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Discs: []DiscSpec{{Format: "bluray", Audio: []AudioTrack{{Format: "dolby_surround_9000"}}}}}},
 		"bad aspect":       {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Discs: []DiscSpec{{Format: "bluray", AspectRatio: "wide"}}}},
 		"nested box parts": {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Parts: []DiscReleaseInput{{Title: "Y", MediaFormat: "dvd", Parts: []DiscReleaseInput{{Title: "Z", MediaFormat: "dvd"}}}}}},
@@ -299,7 +300,7 @@ func TestDiscImages(t *testing.T) {
 func jpegWithOrientation(t *testing.T, w, h, orientation int) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for x := 0; x < w; x++ {
+	for x := range w {
 		img.Set(x, 0, color.RGBA{R: 255, A: 255})
 	}
 	var buf bytes.Buffer

@@ -182,7 +182,7 @@ func (s *ReleasesService) GetNew(ctx context.Context, q ReleasesQuery) (*Release
 	truncated := make([]bool, days)
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(4)
-	for i := 0; i < days; i++ {
+	for i := range days {
 		day := to.AddDate(0, 0, -i).Format("2006-01-02")
 		g.Go(func() error {
 			edges, trunc, err := s.fetchAll(gctx, client.NewPageTypeNew, country, lang, day, pkg.ShortName)

@@ -128,7 +128,7 @@ type GetTitlesByTopSearchPopularQuery struct {
 
 func (c *JustWatchClient) GetTitlesByPath(ctx context.Context, fullPath string, country string, language string) (*GetTitlesByPathQuery, error) {
 	var query GetTitlesByPathQuery
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"fullPath": fullPath,
 		"country":  Country(country),
 		"language": Language(language),
@@ -148,7 +148,7 @@ func (c *JustWatchClient) GetTitlesByTopSearchPopular(ctx context.Context, searc
 	if packages == nil {
 		packages = []Package{}
 	}
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"popularTitlesSortBy": PopularTitlesSorting("TRENDING"),
 		"first":               graphql.Int(first),
 		"sortRandomSeed":      graphql.Int(0),
@@ -180,7 +180,7 @@ func (c *JustWatchClient) GetTitlesByTopSearchPopular(ctx context.Context, searc
 // GetTitleByID looks a title up by its JustWatch node ID (e.g. "tm1504418").
 func (c *JustWatchClient) GetTitleByID(ctx context.Context, id string, country string, language string) (*MovieOrShowFragment, error) {
 	var query GetTitleByIDQuery
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"id":       graphql.ID(id),
 		"country":  Country(country),
 		"language": Language(language),

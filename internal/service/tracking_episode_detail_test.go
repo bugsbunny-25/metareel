@@ -42,7 +42,7 @@ func TestEpisodeDetail(t *testing.T) {
 		episode int64
 		at      string
 	}{{alice, 2, "2026-11-01T20:00:00Z"}, {alice, 2, "2026-11-10T20:00:00Z"}, {alice, 1, "2026-10-01T20:00:00Z"}, {bob, 2, "2026-11-02T20:00:00Z"}} {
-		if _, _, err := s.LogWatch(ctx, w.user, WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: tp(int64(1)), EpisodeNumber: tp(w.episode), EndedAt: w.at}); err != nil {
+		if _, _, err := s.LogWatch(ctx, w.user, WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: new(int64(1)), EpisodeNumber: new(w.episode), EndedAt: w.at}); err != nil {
 			t.Fatalf("log: %v", err)
 		}
 	}

@@ -141,7 +141,7 @@ func TestProbe(t *testing.T) {
 	}
 
 	limited := false
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		if _, err := f.sessions.Probe(ctx, res.SessionID, nonce, "10.1.0.3"); errors.Is(err, ErrProbeRateLimited) {
 			limited = true
 			break

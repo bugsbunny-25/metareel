@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -398,7 +398,7 @@ func ComputeTitleLinks(titles []repository.LinkingNetflixTitle, weeks []reposito
 		for id := range cands {
 			ids = append(ids, id)
 		}
-		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+		slices.Sort(ids)
 		for _, id := range ids {
 			if weeksOverlap(cands[id], nWeeks[n.ID]) {
 				out = append(out, repository.TitleLink{NetflixTitleID: n.ID, TitleID: id})

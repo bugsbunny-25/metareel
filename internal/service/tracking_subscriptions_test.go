@@ -27,7 +27,7 @@ func TestBillingDays(t *testing.T) {
 func TestPlanSavings(t *testing.T) {
 	i64 := func(v int64) *int64 { return &v }
 	usd, gbp := "USD", "GBP"
-	sub := repository.CinemaSubscription{ID: 1, Plan: "AMC Stubs A-List", Chain: str("AMC"), PriceMinor: 2399, Currency: "USD", Period: "month", StartedOn: "2026-09-10"}
+	sub := repository.CinemaSubscription{ID: 1, Plan: "AMC Stubs A-List", Chain: new("AMC"), PriceMinor: 2399, Currency: "USD", Period: "month", StartedOn: "2026-09-10"}
 	covered := i64(1)
 	watches := []repository.CinemaWatchCost{
 		// Paid tickets: price the covered watches without a face value (median at AMC: 1650).
@@ -60,7 +60,7 @@ func TestPlanSavings(t *testing.T) {
 	}
 
 	// Ended in October: two bills, inactive.
-	sub.EndedOn = str("2026-10-20")
+	sub.EndedOn = new("2026-10-20")
 	if r := planSavings(sub, watches, "2026-11-13"); r.Bills != 2 || r.Active {
 		t.Fatalf("ended = %+v", r)
 	}
@@ -77,7 +77,7 @@ func TestPlanBillsAcrossGapsAndPriceChanges(t *testing.T) {
 	// up to 25.00 from 1 Jul. Bills: 10 Jan, 10 Feb, 10 Mar (run 1); 1 Jun,
 	// 1 Jul, 1 Aug (run 2, the last two at the new price). Nothing in Apr/May.
 	sub := repository.CinemaSubscription{ID: 1, Plan: "ODEON Limitless", Currency: "GBP", Period: "month",
-		Periods: []repository.SubscriptionPeriod{{StartedOn: "2026-01-10", EndedOn: str("2026-03-15")}, {StartedOn: "2026-06-01"}},
+		Periods: []repository.SubscriptionPeriod{{StartedOn: "2026-01-10", EndedOn: new("2026-03-15")}, {StartedOn: "2026-06-01"}},
 		Prices:  []repository.SubscriptionPrice{{From: "2026-01-10", PriceMinor: 2000}, {From: "2026-07-01", PriceMinor: 2500}}}
 	got := planBills(sub, "2026-08-20")
 	want := []Bill{{"2026-01-10", 2000}, {"2026-02-10", 2000}, {"2026-03-10", 2000}, {"2026-06-01", 2000}, {"2026-07-01", 2500}, {"2026-08-01", 2500}}
@@ -94,7 +94,7 @@ func TestPlanBillsAcrossGapsAndPriceChanges(t *testing.T) {
 		}
 	}
 	// Cancelled again: inactive, and no bill after the end.
-	sub.Periods[1].EndedOn = str("2026-07-15")
+	sub.Periods[1].EndedOn = new("2026-07-15")
 	if r := planBills(sub, "2026-08-20"); len(r) != 5 {
 		t.Fatalf("bills after second cancel = %v", r)
 	}
@@ -107,7 +107,7 @@ func TestSubscriptionFromHistory(t *testing.T) {
 
 	// Periods given out of order with a gap, a price change; summary follows them.
 	in := base
-	in.Periods = &[]SubscriptionPeriodInput{{StartedOn: "2026-06-01"}, {StartedOn: "2026-01-10", EndedOn: str("2026-03-15")}}
+	in.Periods = &[]SubscriptionPeriodInput{{StartedOn: "2026-06-01"}, {StartedOn: "2026-01-10", EndedOn: new("2026-03-15")}}
 	in.Prices = &[]SubscriptionPriceInput{{From: "2099-01-01", PriceMinor: i64(2500)}, {From: "2026-02-01", PriceMinor: i64(1999)}}
 	got, err := s.subscriptionFrom(in, nil)
 	if err != nil {
@@ -124,7 +124,7 @@ func TestSubscriptionFromHistory(t *testing.T) {
 	bad := func(name string, mod func(*SubscriptionInput)) {
 		t.Helper()
 		in := base
-		in.Periods = &[]SubscriptionPeriodInput{{StartedOn: "2026-01-10", EndedOn: str("2026-03-15")}, {StartedOn: "2026-06-01"}}
+		in.Periods = &[]SubscriptionPeriodInput{{StartedOn: "2026-01-10", EndedOn: new("2026-03-15")}, {StartedOn: "2026-06-01"}}
 		in.PriceMinor = i64(2000)
 		mod(&in)
 		if _, err := s.subscriptionFrom(in, nil); err == nil {
@@ -133,7 +133,7 @@ func TestSubscriptionFromHistory(t *testing.T) {
 	}
 	bad("overlap", func(in *SubscriptionInput) { (*in.Periods)[1].StartedOn = "2026-03-15" })
 	bad("open period before another", func(in *SubscriptionInput) { (*in.Periods)[0].EndedOn = nil })
-	bad("end before start", func(in *SubscriptionInput) { (*in.Periods)[0].EndedOn = str("2026-01-01") })
+	bad("end before start", func(in *SubscriptionInput) { (*in.Periods)[0].EndedOn = new("2026-01-01") })
 	bad("no periods", func(in *SubscriptionInput) { in.Periods = &[]SubscriptionPeriodInput{} })
 	bad("duplicate price date", func(in *SubscriptionInput) {
 		in.Prices = &[]SubscriptionPriceInput{{From: "2026-02-01", PriceMinor: i64(1)}, {From: "2026-02-01", PriceMinor: i64(2)}}
@@ -144,7 +144,7 @@ func TestSubscriptionFromHistory(t *testing.T) {
 	// kept, the last end and today's price replaced.
 	prev := got
 	upd := base
-	upd.StartedOn, upd.EndedOn, upd.PriceMinor = "2026-01-10", str("2026-09-30"), i64(2100)
+	upd.StartedOn, upd.EndedOn, upd.PriceMinor = "2026-01-10", new("2026-09-30"), i64(2100)
 	got2, err := s.subscriptionFrom(upd, &prev)
 	if err != nil {
 		t.Fatal(err)

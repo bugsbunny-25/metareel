@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"time"
 
@@ -314,10 +315,8 @@ func chartEntries(entries []flixpatrol.Entry, ids map[string]int64) []repository
 }
 
 func appendUnique(ids []int64, id int64) []int64 {
-	for _, x := range ids {
-		if x == id {
-			return ids
-		}
+	if slices.Contains(ids, id) {
+		return ids
 	}
 	return append(ids, id)
 }

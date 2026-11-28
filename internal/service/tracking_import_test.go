@@ -254,7 +254,7 @@ func runImport(t *testing.T, s *ImportService, userID int64, body []byte) int64 
 
 func drain(t *testing.T, s *ImportService) {
 	t.Helper()
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		imp, err := s.repo.NextActiveUserImport(context.Background())
 		if err != nil {
 			t.Fatal(err)
@@ -468,14 +468,14 @@ func TestImportReviewFixesItems(t *testing.T) {
 		t.Fatalf("unmatched = %d, want 1", len(items))
 	}
 	itemID := items[0]["id"].(int64)
-	got, err := s.SetItem(ctx, alice, id, itemID, ImportItemInput{TmdbID: tp("27205")})
+	got, err := s.SetItem(ctx, alice, id, itemID, ImportItemInput{TmdbID: new("27205")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got["match_status"] != ItemMatched || got["match_method"] != "manual" {
 		t.Fatalf("after manual match = %v", got)
 	}
-	if _, err := s.SetItem(ctx, alice, id, itemID, ImportItemInput{Skip: tp(true)}); err != nil {
+	if _, err := s.SetItem(ctx, alice, id, itemID, ImportItemInput{Skip: new(true)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Commit(ctx, alice, id); err != nil {
@@ -485,7 +485,7 @@ func TestImportReviewFixesItems(t *testing.T) {
 	if res := mustImport(t, s, alice, id)["results"].(repository.ImportResults); res.Added != 0 {
 		t.Fatalf("a skipped title was imported: %+v", res)
 	}
-	if _, err := s.SetItem(ctx, alice, id, itemID, ImportItemInput{Skip: tp(false)}); err == nil {
+	if _, err := s.SetItem(ctx, alice, id, itemID, ImportItemInput{Skip: new(false)}); err == nil {
 		t.Fatal("changing an item after the import should be refused")
 	}
 }

@@ -3,6 +3,7 @@ package tasks
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -53,12 +54,7 @@ var Types = []string{
 
 // IsKnownType reports whether t is one of Types.
 func IsKnownType(t string) bool {
-	for _, k := range Types {
-		if k == t {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(Types, t)
 }
 
 // FlixPatrolTop10Timeout bounds one FlixPatrol run. Runs fetch a page per

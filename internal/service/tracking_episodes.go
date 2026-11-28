@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/bugsbunny-25/metareel/internal/repository"
@@ -296,9 +297,7 @@ func (s *TrackingService) showPayload(ctx context.Context, userID int64, tmdbID 
 	out := map[string]any{
 		"title": titlePayload(snap), "state": state, "progress": progress, "seasons": seasons,
 	}
-	for k, v := range extra {
-		out[k] = v
-	}
+	maps.Copy(out, extra)
 	return out, nil
 }
 

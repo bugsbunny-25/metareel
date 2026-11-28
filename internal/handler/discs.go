@@ -14,8 +14,7 @@ import (
 // writeDiscs maps physical-media errors: 403 for a release the user doesn't
 // own a copy of, the rest like tracking.
 func (h *Handler) writeDiscs(c *echo.Context, status int, out any, err error) error {
-	var forbidden *service.ForbiddenError
-	if errors.As(err, &forbidden) {
+	if forbidden, ok := errors.AsType[*service.ForbiddenError](err); ok {
 		return c.JSON(http.StatusForbidden, map[string]any{"error": forbidden.Message})
 	}
 	return h.writeTracking(c, status, out, err)
@@ -115,8 +114,7 @@ func (h *Handler) UploadDiscImage(c *echo.Context) error {
 	}
 	body, err := io.ReadAll(io.LimitReader(c.Request().Body, service.MaxDiscImageBytes+1))
 	if err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return c.JSON(http.StatusRequestEntityTooLarge, map[string]any{"error": "the picture is too large"})
 		}
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": "couldn't read the upload"})

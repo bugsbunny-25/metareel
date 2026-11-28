@@ -231,7 +231,7 @@ func TestWebhookRetriesAndFailures(t *testing.T) {
 
 	// The last allowed attempt marks it failed for good; retry requeues it.
 	d := repository.DueDelivery{ID: ds[0].ID, WebhookID: w.ID}
-	for i := 0; i < webhookMaxAttempts; i++ {
+	for i := range webhookMaxAttempts {
 		if err := repo.Failed(ctx, d, 500, "x", "+0 seconds", i == webhookMaxAttempts-1); err != nil {
 			t.Fatal(err)
 		}
@@ -438,7 +438,7 @@ func TestWebhookChartCursorPagesLargeBatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 1200; i++ {
+	for i := range 1200 {
 		d := day("2020-01-01").AddDate(0, 0, i).Format(repository.DateLayout)
 		country := "US"
 		if i == 700 {

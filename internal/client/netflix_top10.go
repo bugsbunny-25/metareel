@@ -162,6 +162,9 @@ func (c *NetflixTop10Search) ShowID(ctx context.Context, netflixID string) (stri
 		return "", fmt.Errorf("netflix title page: %w", err)
 	}
 	defer resp.Body.Close()
+	// Drained by hand: a title page can be bigger (or chunked) than what Close
+	// drains on its own (256 KB with a known length), and the next request reuses
+	// the connection.
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 	switch {
 	case resp.StatusCode >= 300 && resp.StatusCode < 400:

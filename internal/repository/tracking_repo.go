@@ -560,13 +560,11 @@ func (r *TrackingRepository) ListWatches(ctx context.Context, userID int64, f Di
 			WatchNumber: row.WatchNumber, Notes: nullStringPtr(row.Notes), VenueKind: nullStringPtr(row.VenueKind),
 			Source: row.Source, CreatedAt: row.CreatedAt, Tags: []string{}, Formats: []WatchFormat{},
 			Title: row.Title, ReleaseDate: row.ReleaseDate, PosterPath: row.PosterPath,
-			WatchContext: WatchContext{
-				VenueID: nullInt64Ptr(row.VenueID), VenueNameAtWatch: nullStringPtr(row.VenueNameAtWatch),
-				VenueCityAtWatch: nullStringPtr(row.VenueCityAtWatch), ScreeningType: nullStringPtr(row.ScreeningType),
-				PriceMinor: nullInt64Ptr(row.PriceMinor), Currency: nullStringPtr(row.Currency),
-				ProviderName: nullStringPtr(row.ProviderName), Media: nullStringPtr(row.Media),
-				Dimension: nullStringPtr(row.Dimension),
-			},
+			VenueID: nullInt64Ptr(row.VenueID), VenueNameAtWatch: nullStringPtr(row.VenueNameAtWatch),
+			VenueCityAtWatch: nullStringPtr(row.VenueCityAtWatch), ScreeningType: nullStringPtr(row.ScreeningType),
+			PriceMinor: nullInt64Ptr(row.PriceMinor), Currency: nullStringPtr(row.Currency),
+			ProviderName: nullStringPtr(row.ProviderName), Media: nullStringPtr(row.Media),
+			Dimension: nullStringPtr(row.Dimension),
 		}
 		out = append(out, e)
 		ids = append(ids, row.ID)

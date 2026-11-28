@@ -271,10 +271,7 @@ func jaroSimilarity(s1, s2 string) float64 {
 	if len(a) == 0 || len(b) == 0 {
 		return 0
 	}
-	window := max(len(a), len(b))/2 - 1
-	if window < 0 {
-		window = 0
-	}
+	window := max(max(len(a), len(b))/2-1, 0)
 	aMatched := make([]bool, len(a))
 	bMatched := make([]bool, len(b))
 	matches := 0

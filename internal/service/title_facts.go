@@ -67,7 +67,7 @@ func NewTitleFactsService(metadata *repository.MetadataRepository, ratings *Rati
 // ParseFactsInclude parses a chart endpoint's include= ("ratings" is the
 // only optional section).
 func ParseFactsInclude(raw string) (withRatings bool, err error) {
-	for _, p := range strings.Split(raw, ",") {
+	for p := range strings.SplitSeq(raw, ",") {
 		switch strings.ToLower(strings.TrimSpace(p)) {
 		case "":
 		case "ratings":

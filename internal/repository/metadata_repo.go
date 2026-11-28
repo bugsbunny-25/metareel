@@ -340,18 +340,18 @@ type TmdbMetadata struct {
 	// Certifications: country → age certification (TMDB release dates or
 	// content ratings); LogoPath: the title's logo image (English, else the
 	// original language).
-	Certifications map[string]string `json:"certifications,omitempty"`
-	LogoPath       *string           `json:"logo_path,omitempty"`
-	Seasons             []TmdbSeason      `json:"seasons,omitempty"` // TV only
-	IMDbID              *string           `json:"imdb_id"`
-	WikidataID          *string           `json:"wikidata_id"`
-	RottenTomatoesID    *string           `json:"rotten_tomatoes_id"`
-	MetacriticID        *string           `json:"metacritic_id"`
-	LetterboxdID        *string           `json:"letterboxd_id"`
-	NetflixID           *string           `json:"netflix_id"`   // Wikidata P1874 (netflix.com/title/<id>)
-	JustWatchID         *string           `json:"justwatch_id"` // e.g. tm123 / ts123
-	DetailsFetchedAt    *time.Time        `json:"details_fetched_at"`
-	WikidataLookedUp    bool              `json:"-"` // looked up on Wikidata at least once
+	Certifications   map[string]string `json:"certifications,omitempty"`
+	LogoPath         *string           `json:"logo_path,omitempty"`
+	Seasons          []TmdbSeason      `json:"seasons,omitempty"` // TV only
+	IMDbID           *string           `json:"imdb_id"`
+	WikidataID       *string           `json:"wikidata_id"`
+	RottenTomatoesID *string           `json:"rotten_tomatoes_id"`
+	MetacriticID     *string           `json:"metacritic_id"`
+	LetterboxdID     *string           `json:"letterboxd_id"`
+	NetflixID        *string           `json:"netflix_id"`   // Wikidata P1874 (netflix.com/title/<id>)
+	JustWatchID      *string           `json:"justwatch_id"` // e.g. tm123 / ts123
+	DetailsFetchedAt *time.Time        `json:"details_fetched_at"`
+	WikidataLookedUp bool              `json:"-"` // looked up on Wikidata at least once
 	// IDSources says where each ID came from (imdb, wikidata, rotten_tomatoes,
 	// metacritic, letterboxd, netflix, justwatch → manual | tmdb | wikidata | match | netflix).
 	IDSources map[string]string `json:"-"`

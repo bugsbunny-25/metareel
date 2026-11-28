@@ -22,7 +22,7 @@ func TestTMDBTVEpisode(t *testing.T) {
 			t.Errorf("missing api key")
 		}
 		var guests []string
-		for i := 0; i < 15; i++ {
+		for i := range 15 {
 			guests = append(guests, fmt.Sprintf(`{"id": %d, "name": "Guest %d", "character": "Role", "profile_path": "/g.jpg"}`, i, i))
 		}
 		fmt.Fprintf(w, `{"id": 9, "name": " Two Wolves ", "overview": " A plot. ", "air_date": "2024-11-24", "episode_type": "standard",

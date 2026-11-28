@@ -47,7 +47,7 @@ func TestOriginsAnalyticsAndChartOrigin(t *testing.T) {
 	}
 
 	svc := NewAnalyticsService(repository.NewAnalyticsRepository(db), meta, repository.NewImportsRepository(db), repository.NewRatingsRepository(db))
-	got, err := svc.Origins(ctx, AnalyticsQuery{From: timePtr(day("2026-10-01")), To: timePtr(day("2026-10-31"))})
+	got, err := svc.Origins(ctx, AnalyticsQuery{From: new(day("2026-10-01")), To: new(day("2026-10-31"))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestOriginsAnalyticsAndChartOrigin(t *testing.T) {
 		t.Errorf("peacock = %+v", pk.Origins)
 	}
 
-	month, err := svc.Origins(ctx, AnalyticsQuery{From: timePtr(day("2026-10-01")), To: timePtr(day("2026-10-31")), Interval: "month", Provider: "netflix", Kind: "movie"})
+	month, err := svc.Origins(ctx, AnalyticsQuery{From: new(day("2026-10-01")), To: new(day("2026-10-31")), Interval: "month", Provider: "netflix", Kind: "movie"})
 	if err != nil {
 		t.Fatal(err)
 	}

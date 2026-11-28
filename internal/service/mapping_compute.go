@@ -71,7 +71,7 @@ func computeMapping(in repository.MappingInputs, s repository.Subject) mappingOu
 	anchor, ok, conflict := groupAnchor(set)
 	if own != nil && own.Kind == repository.EvidenceManual {
 		// A fix by hand stands, even against a linked title's fix.
-		return mappingOutcome{Mapping: repository.Mapping{Ref: own.Ref, Status: repository.MatchStatusManual, Source: repository.MatchStatusManual}, conflict: conflict}
+		return mappingOutcome{Ref: own.Ref, Status: repository.MatchStatusManual, Source: repository.MatchStatusManual, conflict: conflict}
 	}
 	self := ok && anchor.netflix == (s.Type == repository.SubjectNetflix) && anchor.id == s.ID
 	switch {
