@@ -6,13 +6,15 @@ name: mobile-release
 # commit's package.json carries it, app.config.ts reads it from there, and
 # the iOS build number and Android versionCode are computed from it
 # (mobile/version.ts), so every later release is higher in both stores.
-#   - iOS: a production build, submitted to TestFlight (not awaited).
+#   - iOS: a production build, awaited and submitted to TestFlight on completion.
 #   - Android: a signed release APK with the EAS-managed keystore; its
 #     download URL is returned so release.yml attaches the APK to the GitHub
 #     Release. The keystore never reaches GitHub, and the APK is never a
 #     workflow artifact.
+# Both platforms build in parallel and are awaited so a failed iOS build stops
+# the release instead of publishing notes claiming iOS shipped to TestFlight.
 # Needs the EXPO_TOKEN secret and the EAS_PROJECT_ID variable in the "mobile"
-# environment; without EXPO_TOKEN the job is skipped and the release has no
+# environment; without EXPO_TOKEN the builds are skipped and the release has no
 # mobile builds. The APK and the JS bundle are public: they contain no server
 # URL and no secrets.
 
@@ -26,7 +28,7 @@ on:
     outputs:
       apk_url:
         description: "Download URL of the Android APK on EAS (empty when skipped)"
-        value: ${{ jobs.build.outputs.apk_url }}
+        value: ${{ jobs.android.outputs.apk_url }}
 
 permissions:
   contents: read
@@ -36,7 +38,30 @@ defaults:
     working-directory: mobile
 
 jobs:
-  build:
+  ios:
+    runs-on: ubuntu-latest
+    environment: mobile
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+    steps:
+      - name: EXPO_TOKEN is not set
+        if: env.EXPO_TOKEN == ''
+        working-directory: .
+        run: echo "::warning::EXPO_TOKEN is not set; the release ships without an iOS build."
+      - uses: actions/checkout@v7
+        if: env.EXPO_TOKEN != ''
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/setup-mobile
+        if: env.EXPO_TOKEN != ''
+        with:
+          expo-token: ${{ secrets.EXPO_TOKEN }}
+      - name: iOS build on EAS, submitted to TestFlight
+        if: env.EXPO_TOKEN != ''
+        run: eas build --platform ios --profile production --auto-submit --non-interactive --wait
+
+  android:
     runs-on: ubuntu-latest
     environment: mobile
     outputs:
@@ -48,7 +73,7 @@ jobs:
       - name: EXPO_TOKEN is not set
         if: env.EXPO_TOKEN == ''
         working-directory: .
-        run: echo "::warning::EXPO_TOKEN is not set; the release ships without mobile builds."
+        run: echo "::warning::EXPO_TOKEN is not set; the release ships without an Android APK."
       - uses: actions/checkout@v7
         if: env.EXPO_TOKEN != ''
         with:
@@ -57,9 +82,6 @@ jobs:
         if: env.EXPO_TOKEN != ''
         with:
           expo-token: ${{ secrets.EXPO_TOKEN }}
-      - name: iOS build on EAS, submitted to TestFlight
-        if: env.EXPO_TOKEN != ''
-        run: eas build --platform ios --profile production --auto-submit --non-interactive --no-wait
       - name: Android APK build on EAS
         id: android
         if: env.EXPO_TOKEN != ''
