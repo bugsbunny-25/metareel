@@ -7,20 +7,27 @@
       "exclude": [
         "agents/",
         "POWER.md",
-        "references/images/"
+        "references/images/",
+        "references/bundle-code-splitting.md",
+        "references/bundle-hermes-mmap.md",
+        "references/js-bottomsheet.md"
       ],
       "skills": {
         "react-native-best-practices": {
           "path": "skills/react-native-best-practices",
-          "hash": "98f9f32a78d47771e7a8e446bf999eb40a130e3ab563444540e7a530884f4260"
-        },
-        "upgrading-react-native": {
-          "path": "skills/upgrading-react-native",
-          "hash": "6a780bb79d77ab8ab05fa4923db4e99c4b2dcf7023434616d1a2625c1884ad1f"
-        },
+          "hash": "44d824b1b5897edbceb3a223742c01632fbd0332998090d44900547efc52ef97"
+        }
+      }
+    },
+    {
+      "repo": "callstack/react-native-testing-library",
+      "ref": "main",
+      "commit": "5a05c26926077b507b9dcca235063432a23068e1",
+      "exclude": [],
+      "skills": {
         "react-native-testing": {
-          "path": "plugins/vendored/.agents/skills/react-native-testing",
-          "hash": "9bbd7f54c8172884772c19a11bcf84c1cb0bda6c068733090c825187e01a281e"
+          "path": "skills/react-native-testing",
+          "hash": "17f57b95680faedc0502befbd8ac63f697d56707e37d98584d11ca36c5df580d"
         }
       }
     },
@@ -29,7 +36,12 @@
       "ref": "main",
       "commit": "8f2b6c0c65533e695243aa401eaa1cb6f1fe86c2",
       "exclude": [
-        "agents/"
+        "agents/",
+        "references/webgpu-three.md",
+        "references/expo-av-to-audio.md",
+        "references/expo-av-to-video.md",
+        "references/react-navigation-to-expo-router.md",
+        "references/native-ios.md"
       ],
       "skills": {
         "expo-overview": {
@@ -46,7 +58,7 @@
         },
         "expo-native-ui": {
           "path": "plugins/expo/skills/expo-native-ui",
-          "hash": "8c1fdf23dbb44eea30bf3e843320c4f9fb5c95d41ebad21bf7bcdf9061c5873b"
+          "hash": "8f7b430ac3118c4cdbe87d4a4413b377145ee11df9e12d50e9fa820f79ca0f05"
         },
         "expo-ui": {
           "path": "plugins/expo/skills/expo-ui",
@@ -62,7 +74,7 @@
         },
         "expo-upgrade": {
           "path": "plugins/expo/skills/expo-upgrade",
-          "hash": "c84547f5c3da40fca82f50892c53d13e15592a16753ff1b750cd668587b86e9e"
+          "hash": "e18d37be0bd413cff92b2e13789a77434f7e461377fa2aab1594a861ef88697f"
         },
         "expo-dev-client": {
           "path": "plugins/expo/skills/expo-dev-client",
@@ -74,11 +86,36 @@
         },
         "eas-app-stores": {
           "path": "plugins/expo/skills/eas-app-stores",
-          "hash": "0414662f9cb570cd58253eedac703c110b9373c1cff15e0b871ca21069c89cfb"
+          "hash": "0bcabcc234189cd70c1b671d67ba758a4f8760ea0caa001bf5bc289997fe3c8d"
         },
         "eas-update": {
           "path": "plugins/expo/skills/eas-update",
           "hash": "ac3368a910cdc0b1373b20f089a4ad3bd2dc8c6814be0987b3399cddd7abfb50"
+        }
+      }
+    },
+    {
+      "repo": "vercel-labs/agent-skills",
+      "ref": "main",
+      "commit": "5a37a6329fbad3666c3207392a6a7c0110e92efb",
+      "exclude": [
+        "README.md",
+        "AGENTS.md",
+        "rules/_template.md",
+        "rules/monorepo-native-deps-in-app.md",
+        "rules/monorepo-single-dependency-versions.md",
+        "rules/ui-image-gallery.md",
+        "rules/ui-menus.md",
+        "rules/navigation-native-navigators.md",
+        "rules/list-performance-item-memo.md",
+        "rules/list-performance-callbacks.md",
+        "rules/list-performance-function-references.md",
+        "rules/animation-gesture-detector-press.md"
+      ],
+      "skills": {
+        "vercel-react-native-skills": {
+          "path": "skills/react-native-skills",
+          "hash": "8ef13e7d8d6c50b2155749a7a62ebd1f752b6673230e70f3ed200bc26ba5851f"
         }
       }
     }

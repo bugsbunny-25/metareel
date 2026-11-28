@@ -1,4 +1,5 @@
-import { backoffMs, classify, MemoryStore, NO_CONNECTION, Outbox, type OutboxOp } from '@/offline/outbox';
+import { backoffMs, classify, MemoryStore, NO_CONNECTION, Outbox, type OutboxItem, type OutboxOp } from '@/offline/outbox';
+import { watchlistShown } from '@/offline/watchlist';
 
 const op = (label: string): OutboxOp => ({ kind: 'watch', method: 'POST', path: '/api/v1/me/watches', body: { label }, label });
 
@@ -96,4 +97,23 @@ test('concurrent flushes share one run, and listeners hear changes', async () =>
   box.enqueue(op('b'));
   box.clear();
   expect(box.items()).toHaveLength(0);
+});
+
+describe('watchlistShown', () => {
+  const item = (on: boolean, status: 'pending' | 'failed' = 'pending') =>
+    ({ id: 1, kind: 'watchlist', status, meta: { kind: 'movie', id: '9', on } }) as unknown as OutboxItem;
+
+  it('uses the server value when nothing is queued for the title', () => {
+    expect(watchlistShown([], 'movie', '9', true)).toBe(true);
+    expect(watchlistShown([item(false)], 'tv', '9', true)).toBe(true); // another kind
+  });
+
+  it('uses the latest queued change over the server value', () => {
+    expect(watchlistShown([item(true)], 'movie', '9', false)).toBe(true);
+    expect(watchlistShown([item(true), item(false)], 'movie', '9', true)).toBe(false);
+  });
+
+  it('ignores failed items', () => {
+    expect(watchlistShown([item(true, 'failed')], 'movie', '9', false)).toBe(false);
+  });
 });

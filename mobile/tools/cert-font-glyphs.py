@@ -6,7 +6,7 @@ The font (tides' certification font) has blank glyphs for everything but
 letters, digits, '-' and '.', so ratings like "U/A 16+" and "R18+" lost their
 '/' and '+'. Run once on the original file (needs fonttools):
 
-    python3 tools/cert-font-glyphs.py original.ttf assets/fonts/motion_picture_ratings.ttf
+    python3 tools/cert-font-glyphs.py original.ttf assets/fonts/MotionPictureRatings.ttf
 """
 import sys
 from fontTools.ttLib import TTFont

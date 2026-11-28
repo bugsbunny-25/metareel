@@ -43,10 +43,21 @@ export function toMinor(text: string, currency: string): number | null | undefin
   return Math.round(n * 10 ** fractionDigits(currency));
 }
 
+// Intl formatters are costly to build; one per currency, reused.
+const moneyFormats = new Map<string, Intl.NumberFormat>();
+function moneyFormat(currency: string): Intl.NumberFormat {
+  let f = moneyFormats.get(currency);
+  if (!f) {
+    f = new Intl.NumberFormat(undefined, { style: 'currency', currency });
+    moneyFormats.set(currency, f);
+  }
+  return f;
+}
+
 export function formatMoney(minor: number | null | undefined, currency: string | null | undefined): string {
   if (minor == null || !currency) return '';
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(minor / 10 ** fractionDigits(currency));
+    return moneyFormat(currency).format(minor / 10 ** fractionDigits(currency));
   } catch {
     return `${(minor / 10 ** fractionDigits(currency)).toFixed(fractionDigits(currency))} ${currency}`;
   }

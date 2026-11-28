@@ -1,7 +1,7 @@
 {
   "name": "metareel-admin",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,5 +12,8 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.2",
     "svelte": "^5.59.2",
     "vite": "^8.4.0"
+  },
+  "allowScripts": {
+    "fsevents": false
   }
 }

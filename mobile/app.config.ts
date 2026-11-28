@@ -170,6 +170,24 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
     ['./plugins/with-home-http.js', { hosts: homeHttpHosts }],
+    // Fonts are embedded at build time, so text never waits on a font load.
+    // The family name is the file name on Android and the font's PostScript
+    // name on iOS: src/theme/index.ts maps the two (fonts).
+    [
+      'expo-font',
+      {
+        fonts: [
+          './node_modules/@expo-google-fonts/source-serif-4/600SemiBold/SourceSerif4_600SemiBold.ttf',
+          './node_modules/@expo-google-fonts/source-serif-4/700Bold/SourceSerif4_700Bold.ttf',
+          './node_modules/@expo-google-fonts/source-sans-3/400Regular/SourceSans3_400Regular.ttf',
+          './node_modules/@expo-google-fonts/source-sans-3/600SemiBold/SourceSans3_600SemiBold.ttf',
+          './node_modules/@expo-google-fonts/source-sans-3/700Bold/SourceSans3_700Bold.ttf',
+          './node_modules/@expo-google-fonts/barlow-condensed/800ExtraBold/BarlowCondensed_800ExtraBold.ttf',
+          // Named after its PostScript name, so one name works on both.
+          './assets/fonts/MotionPictureRatings.ttf',
+        ],
+      },
+    ],
   ],
   runtimeVersion: { policy: 'fingerprint' },
   ...(projectId

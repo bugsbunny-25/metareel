@@ -51,6 +51,7 @@ Docs: https://docs.expo.dev/eas/index.md
 - Lay out by window class (`useWindowClass`), never by device model.
 - Use the Screening Room tokens via `useTheme()`; no hard-coded colours.
 - Expo skills (expo/skills, entry point `expo-overview`) and React Native skills
-  (callstackincubator/agent-skills: performance, upgrades, RNTL tests) are vendored in
-  `../.claude/skills`; run `make skills-check` from the repo root before mobile work and
-  update them when it reports changes.
+  (Callstack's performance skill, Testing Library's RNTL skill, Vercel's rule list) are
+  vendored in `../.claude/skills`; run `make skills-check` from the repo root before mobile
+  work and update them when it reports changes. Where they're wrong for this app (Expo Go,
+  RN Switch on Android, file naming, profiling tools), `../CLAUDE.md` says so and wins.

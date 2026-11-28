@@ -1,6 +1,3 @@
-import { BarlowCondensed_800ExtraBold } from '@expo-google-fonts/barlow-condensed';
-import { SourceSans3_400Regular, SourceSans3_600SemiBold, SourceSans3_700Bold, SourceSans3_800ExtraBold } from '@expo-google-fonts/source-sans-3';
-import { SourceSerif4_600SemiBold, SourceSerif4_700Bold, useFonts } from '@expo-google-fonts/source-serif-4';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -16,37 +13,26 @@ import { useEpisodeReminderSync } from '@/notifications/use-reminders';
 import { useOutboxSync } from '@/offline/use-sync';
 import { persister, persistMaxAge, queryClient } from '@/query/client';
 import { useWindowClass } from '@/layout/window-class';
-import { useTheme } from '@/theme';
+import { fonts, useTheme } from '@/theme';
 
 void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({
-    SourceSerif4_600SemiBold,
-    SourceSerif4_700Bold,
-    SourceSans3_400Regular,
-    SourceSans3_600SemiBold,
-    SourceSans3_700Bold,
-    SourceSans3_800ExtraBold,
-    BarlowCondensed_800ExtraBold,
-    // Age ratings only (CertificationBadge), as in tides.
-    MotionPictureRatings: require('../../assets/fonts/motion_picture_ratings.ttf'),
-  });
   return (
     <SafeAreaProvider>
       <SessionProvider>
         <PersistQueryClientProvider client={queryClient} persistOptions={{ persister, maxAge: persistMaxAge }}>
-          <Root fontsLoaded={fontsLoaded} />
+          <Root />
         </PersistQueryClientProvider>
       </SessionProvider>
     </SafeAreaProvider>
   );
 }
 
-function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
+function Root() {
   const session = useSession();
   const { scheme, colors } = useTheme();
-  const ready = fontsLoaded && session.status !== 'loading';
+  const ready = session.status !== 'loading';
   // The log sheet: a bottom sheet on phones, a side panel beside the content
   // on unfolded foldables and tablets (drawn by the log screen itself).
   const sidePanel = useWindowClass() !== 'compact';
@@ -83,7 +69,7 @@ function Root({ fontsLoaded }: { fontsLoaded: boolean }) {
                 headerBackButtonDisplayMode: 'minimal',
                 headerStyle: { backgroundColor: colors.bgCanvas },
                 headerTintColor: colors.textPrimary,
-                headerTitleStyle: { fontFamily: 'SourceSerif4_700Bold', color: colors.textPrimary },
+                headerTitleStyle: { fontFamily: fonts.display, color: colors.textPrimary },
                 contentStyle: { backgroundColor: colors.bgCanvas, ...side },
               }}
             />

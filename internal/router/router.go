@@ -404,13 +404,31 @@ func registerStatic(e *echo.Echo, adminDir, appDir string) {
 }
 
 // spa serves a file from dir when the wildcard names one, else dir/index.html.
+//
+// Vite names everything under assets/ by content hash, so those files never
+// change and are cached for a year. index.html names the current hashes, so
+// browsers revalidate it and pick up a new build at once. A missing asset is a
+// 404, not index.html: a page still running an old build then fails to load
+// the old chunk cleanly instead of being handed HTML as JavaScript.
 func spa(dir string) echo.HandlerFunc {
 	indexPath := filepath.Join(dir, "index.html")
 	return func(c *echo.Context) error {
-		filePath := filepath.Join(dir, filepath.Clean("/"+c.Param("*")))
+		rel := filepath.Clean("/" + c.Param("*"))
+		filePath := filepath.Join(dir, rel)
+		asset := strings.HasPrefix(rel, "/assets/")
 		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			switch {
+			case asset:
+				c.Response().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			case filePath == indexPath:
+				c.Response().Header().Set("Cache-Control", "no-cache")
+			}
 			return c.File(filePath)
 		}
+		if asset {
+			return echo.ErrNotFound
+		}
+		c.Response().Header().Set("Cache-Control", "no-cache")
 		return c.File(indexPath)
 	}
 }

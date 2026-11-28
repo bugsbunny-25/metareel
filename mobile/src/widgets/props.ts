@@ -1,4 +1,5 @@
 import type { paths } from '@/api/schema';
+import { formatMoney } from '@/lib/format';
 
 // What the widgets show, worked out in the app from GET /me/glance (widget
 // code runs in an isolated runtime: no fetching, no app state, plain props).
@@ -44,13 +45,6 @@ function day(date: string | null | undefined): string {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-function money(minor: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(minor / 100);
-  } catch {
-    return `${(minor / 100).toFixed(2)} ${currency}`;
-  }
-}
 
 export function upNextProps(g: Glance): UpNextProps {
   const items = (g.up_next ?? []).slice(0, 3).map((e) => ({
@@ -80,7 +74,7 @@ export function breakEvenProps(g: Glance): BreakEvenProps {
     plan: s.plan ?? '',
     progressLabel: target ? `${watches} of ${target} films this month` : `${watches} film${watches === 1 ? '' : 's'} this month`,
     progress: target ? Math.min(1, watches / target) : 0,
-    balance: saved >= 0 ? `Saved ${money(saved, currency)} so far` : `${money(-saved, currency)} more than tickets so far`,
+    balance: saved >= 0 ? `Saved ${formatMoney(saved, currency)} so far` : `${formatMoney(-saved, currency)} more than tickets so far`,
     url: 'metareel:///subscriptions',
   };
 }

@@ -51,17 +51,13 @@ jobs:
       - uses: dorny/paths-filter@v4
         id: filter
         with:
+          # A file counts when it matches the allow-list and isn't Markdown, so
+          # docs, agent skills (.claude/) and READMEs never start this workflow.
+          predicate-quantifier: every
           filters: |
             go:
-              - 'cmd/**'
-              - 'internal/**'
-              - 'db/**'
-              - 'tools/**'
-              - 'go.mod'
-              - 'go.sum'
-              - 'sqlc.yaml'
-              - 'Makefile'
-              - '.github/workflows/ci.yml'
+              - '{cmd/**,internal/**,db/**,tools/**,go.mod,go.sum,sqlc.yaml,Makefile,.github/workflows/ci.yml}'
+              - '!**/*.md'
 
   go-quality:
     name: go-quality
