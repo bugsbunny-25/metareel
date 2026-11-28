@@ -1,4 +1,4 @@
-import { type ComponentRef, type ReactNode, useRef, useState } from 'react';
+import { type ComponentRef, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { isBookSplit, useFold } from 'fold-info';
@@ -27,6 +27,13 @@ export function ListDetail({ list, detail, placeholder }: { list: ReactNode; det
   // fold's position is in window coordinates.
   const ref = useRef<ComponentRef<typeof View>>(null);
   const [originX, setOriginX] = useState(0);
+  // Measured before the first paint, so the split never starts out of place,
+  // and again whenever the layout moves (rotation, folding, the rail).
+  const measureOrigin = () => {
+    const rect = ref.current?.getBoundingClientRect();
+    if (rect) setOriginX(Math.round(rect.x));
+  };
+  useLayoutEffect(measureOrigin, []);
   // On a book-style foldable the split sits on the hinge: the list on one
   // panel, the detail on the other, nothing under the fold.
   const onHinge = wc !== 'compact' && isBookSplit(fold) && fold.left - originX - (side.paddingLeft ?? 0) > 240;
@@ -36,7 +43,7 @@ export function ListDetail({ list, detail, placeholder }: { list: ReactNode; det
       ? Math.min(420, Math.round(width * 0.4))
       : Math.max(300, Math.round(width * 0.45));
   return (
-    <View ref={ref} style={[styles.row, side]} onLayout={() => ref.current?.measureInWindow((x: number) => setOriginX(Math.round(x)))}>
+    <View ref={ref} style={[styles.row, side]} onLayout={measureOrigin}>
       <View style={wc === 'compact' ? styles.full : { width: listWidth }}>{list}</View>
       {wc === 'compact' ? null : (
         <View style={[styles.detail, onHinge ? { marginLeft: fold.width, borderLeftWidth: 0 } : { borderLeftColor: colors.borderSubtle }]}>

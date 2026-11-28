@@ -3,19 +3,22 @@
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
+// Intl formatters are costly to build; one per zone, reused.
+const zoneFormats = new Map<string, Intl.DateTimeFormat>();
+function zoneFormat(zone: string): Intl.DateTimeFormat {
+  let f = zoneFormats.get(zone);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    zoneFormats.set(zone, f);
+  }
+  return f;
+}
+
 /** A Date as "YYYY-MM-DDTHH:MM" wall time in a zone (the device's when none). */
 export function wallTime(date: Date, zone?: string | null): string {
   if (!zone) return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   const p = Object.fromEntries(
-    new Intl.DateTimeFormat('en-CA', {
-      timeZone: zone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    })
+    zoneFormat(zone)
       .formatToParts(date)
       .map((x) => [x.type, x.value]),
   );
