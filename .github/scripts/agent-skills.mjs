@@ -21,7 +21,7 @@ const skillsDir = join(root, '.claude/skills');
 const lockPath = join(skillsDir, 'vendored.json');
 
 const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
-const excluded = (src, rel) => src.exclude.some((e) => (e.endsWith('/') ? rel.startsWith(e) : rel === e));
+const excluded = (src, rel) => src.exclude.some((e) => (e.endsWith('/') ? `${rel}/`.startsWith(e) : rel === e));
 
 async function gh(src, path, accept = 'application/vnd.github+json') {
   const headers = { Accept: accept, 'User-Agent': 'agent-skills-vendor' };

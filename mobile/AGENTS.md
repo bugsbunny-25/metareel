@@ -51,6 +51,7 @@ Docs: https://docs.expo.dev/eas/index.md
 - Lay out by window class (`useWindowClass`), never by device model.
 - Use the Screening Room tokens via `useTheme()`; no hard-coded colours.
 - Expo skills (expo/skills, entry point `expo-overview`) and React Native skills
-  (callstackincubator/agent-skills: performance, upgrades, RNTL tests) are vendored in
+  (callstackincubator/agent-skills: performance, RNTL tests;
+  vercel-labs/agent-skills: `vercel-react-native-skills` rules) are vendored in
   `../.claude/skills`; run `make skills-check` from the repo root before mobile work and
   update them when it reports changes.
