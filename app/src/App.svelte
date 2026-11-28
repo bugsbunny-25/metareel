@@ -15,25 +15,8 @@
   import Icon from './components/Icon.svelte'
   import Login from './pages/Login.svelte'
   import Home from './pages/Home.svelte'
-  import Charts from './pages/Charts.svelte'
-  import Title from './pages/Title.svelte'
-  import Diary from './pages/Diary.svelte'
-  import Watchlist from './pages/Watchlist.svelte'
-  import Library from './pages/Library.svelte'
-  import Stats from './pages/Stats.svelte'
-  import TV from './pages/TV.svelte'
-  import Movies from './pages/Movies.svelte'
-  import You from './pages/You.svelte'
-  import StatsDetailed from './pages/StatsDetailed.svelte'
-  import Episode from './pages/Episode.svelte'
-  import Watch from './pages/Watch.svelte'
-  import Settings from './pages/Settings.svelte'
-  import Discover from './pages/Discover.svelte'
-  import Show from './pages/Show.svelte'
-  import Person from './pages/Person.svelte'
-  import Import from './pages/Import.svelte'
-  import Collection from './pages/Collection.svelte'
-  import Disc from './pages/Disc.svelte'
+  import LazyPage from './components/LazyPage.svelte'
+  import { prefetchPages } from './lib/pages.svelte.js'
 
   let logTarget = $state(null)
   let confirmRequest = $state(null)
@@ -63,6 +46,7 @@
     if (!session.user) return
     untrack(() => {
       bootError = ''
+      prefetchPages()
       // Preferences after the reference lists, so a saved country/service pair is checked against them.
       Promise.all([loadReference().then(loadPrefs), library.load()]).catch((err) => (bootError = err.message))
     })
@@ -153,43 +137,43 @@
     {#if page === 'home'}
       <Home {onlog} />
     {:else if page === 'charts'}
-      <Charts {onlog} />
+      <LazyPage name="charts" {onlog} />
     {:else if page === 'watchlist'}
-      <Watchlist {onlog} />
+      <LazyPage name="watchlist" {onlog} />
     {:else if page === 'library'}
-      <Library {onlog} />
+      <LazyPage name="library" {onlog} />
     {:else if page === 'discover'}
-      <Discover {onlog} />
+      <LazyPage name="discover" {onlog} />
     {:else if page === 'settings'}
-      <Settings {onconfirm} />
+      <LazyPage name="settings" {onconfirm} />
     {:else if page === 'import'}
-      <Import {onconfirm} />
+      <LazyPage name="import" {onconfirm} />
     {:else if page === 'collection'}
-      <Collection />
+      <LazyPage name="collection" />
     {:else if page === 'disc'}
-      {#key route.path}<Disc id={discMatch[1]} {onconfirm} />{/key}
+      {#key route.path}<LazyPage name="disc" id={discMatch[1]} {onconfirm} />{/key}
     {:else if page === 'tv'}
-      <TV {onlog} />
+      <LazyPage name="tv" {onlog} />
     {:else if page === 'movies'}
-      <Movies {onlog} />
+      <LazyPage name="movies" {onlog} />
     {:else if page === 'you'}
-      <You />
+      <LazyPage name="you" />
     {:else if page === 'statsDetailed'}
-      <StatsDetailed />
+      <LazyPage name="statsDetailed" />
     {:else if page === 'episode'}
-      {#key route.path}<Episode show={episodeMatch[1]} season={+episodeMatch[2]} episode={+episodeMatch[3]} {onlog} />{/key}
+      {#key route.path}<LazyPage name="episode" show={episodeMatch[1]} season={+episodeMatch[2]} episode={+episodeMatch[3]} {onlog} />{/key}
     {:else if page === 'watch'}
-      {#key route.path}<Watch id={watchMatch[1]} {onlog} {onconfirm} />{/key}
+      {#key route.path}<LazyPage name="watch" id={watchMatch[1]} {onlog} {onconfirm} />{/key}
     {:else if page === 'show'}
-      {#key route.path}<Show id={showMatch[1]} {onlog} {onconfirm} />{/key}
+      {#key route.path}<LazyPage name="show" id={showMatch[1]} {onlog} {onconfirm} />{/key}
     {:else if page === 'person'}
-      {#key route.path}<Person id={personMatch[1]} />{/key}
+      {#key route.path}<LazyPage name="person" id={personMatch[1]} />{/key}
     {:else if page === 'stats'}
-      <Stats />
+      <LazyPage name="stats" />
     {:else if page === 'diary'}
-      <Diary {onlog} {onconfirm} />
+      <LazyPage name="diary" {onlog} {onconfirm} />
     {:else if page === 'title'}
-      {#key route.path}<Title kind={titleMatch[1]} id={titleMatch[2]} {onlog} />{/key}
+      {#key route.path}<LazyPage name="title" kind={titleMatch[1]} id={titleMatch[2]} {onlog} />{/key}
     {:else}
       <section class="missing">
         <h1>Page not found</h1>

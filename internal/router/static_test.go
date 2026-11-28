@@ -50,13 +50,38 @@ func TestRegisterStatic_TwoApps(t *testing.T) {
 		{"/admin/", "admin index"},                          // console home
 		{"/admin/assets/admin.js", "admin js"},              // console assets (Vite base /admin/)
 		{"/admin/titles", "admin index"},                    // console fallback
-		{"/assets/admin.js", "app index"},                   // admin assets are not at the root any more
 		{"/admin/../app/dist/assets/app.js", "admin index"}, // ".." can't climb out of the admin dir
 	}
 	for _, tc := range cases {
 		rec := get(e, tc.path)
 		if rec.Code != http.StatusOK || rec.Body.String() != tc.want {
 			t.Errorf("GET %s = %d %q, want 200 %q", tc.path, rec.Code, rec.Body.String(), tc.want)
+		}
+	}
+}
+
+func TestRegisterStatic_Caching(t *testing.T) {
+	e := staticServer(t)
+	cases := []struct {
+		path        string
+		code        int
+		cacheHeader string
+	}{
+		{"/assets/app.js", http.StatusOK, "public, max-age=31536000, immutable"},
+		{"/admin/assets/admin.js", http.StatusOK, "public, max-age=31536000, immutable"},
+		{"/", http.StatusOK, "no-cache"},
+		{"/index.html", http.StatusOK, "no-cache"},
+		{"/charts", http.StatusOK, "no-cache"},
+		{"/admin/", http.StatusOK, "no-cache"},
+		// A chunk from an older build: a clean 404, never index.html served as JavaScript.
+		{"/assets/Old-abc123.js", http.StatusNotFound, ""},
+		{"/assets/admin.js", http.StatusNotFound, ""}, // admin assets are not at the root
+		{"/admin/assets/old.js", http.StatusNotFound, ""},
+	}
+	for _, tc := range cases {
+		rec := get(e, tc.path)
+		if rec.Code != tc.code || rec.Header().Get("Cache-Control") != tc.cacheHeader {
+			t.Errorf("GET %s = %d Cache-Control %q, want %d %q", tc.path, rec.Code, rec.Header().Get("Cache-Control"), tc.code, tc.cacheHeader)
 		}
 	}
 }

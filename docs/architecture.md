@@ -741,9 +741,18 @@ resolves an absolute path):
   files are served as they are, anything else loads its `index.html` (hash
   router). Without a user app build, `/` redirects to `/admin/`.
 
+Caching follows Vite's output: files under `assets/` are named by content hash,
+so they're sent with `Cache-Control: public, max-age=31536000, immutable`;
+`index.html` (and every fallback to it) gets `no-cache`, so a new build is
+picked up on the next load. A missing `assets/` file is a 404, not
+`index.html`, so a tab still running an older build fails to load an old chunk
+cleanly. The user app loads each page except Home as its own chunk
+(`app/src/lib/pages.svelte.js`), prefetches the rest once signed in, and shows a
+"Try again / Reload" message when a chunk can't be fetched.
+
 `filepath.Clean("/"+param)` keeps every lookup inside its app directory (`..`
 can't climb out); `internal/router/static_test.go` covers both apps, the
-fallbacks and traversal.
+fallbacks, caching headers and traversal.
 
 The user app (`app/`) calls the public routes and `/api/v1/me` with the
 session cookie set by `/api/v1/auth/login`, so it needs a signed-in user and
