@@ -97,12 +97,12 @@ The public API, the per-user tracking API and webhooks. The OpenAPI specs are th
 | GET    | `/api/v1/me/glance`                         | Widget summary: next episodes of up to 3 shows in progress, the next one airing, the cinema plan's month, the last watch |
 | GET/PUT | `/api/v1/me/devices`                       | Phones registered for push notifications (mobile app); PUT registers this device's Expo push token for this session |
 | DELETE | `/api/v1/me/devices/:id`                    | Unregister one of your devices |
-| GET    | `/api/v1/me/shows`                          | Every show you track, sorted into stages (`new_episodes` for a series or season out within `stale_days`, `watching`, `stalled` after `stale_days` (30) without a watch, `not_started`, `on_hold`, `dropped`, `caught_up`) with progress, the next episode and the next air date |
+| GET    | `/api/v1/me/shows`                          | Every show you track, sorted into stages (`new_episodes` for a series or season premiering or still airing within `stale_days`, `watching`, `stalled` after `stale_days` (30) without a watch or new episode after catching up, `not_started`, `on_hold`, `dropped`, `caught_up`) with progress, the next episode and the next air date |
 | GET    | `/api/v1/me/upcoming`                       | Episodes still to air of your shows, soonest first (`days`: 90, ≤ 365); on hold, dropped and unwanted shows left out |
 | GET    | `/api/v1/me/shows/:id`                      | A show with the user's progress: seasons, episodes, watch counts (`include_specials`) |
 | POST   | `/api/v1/me/shows/:id/watched`              | Mark episodes watched: `scope` = `episode` / `season` / `up_to` / `all` |
 | DELETE | `/api/v1/me/shows/:id/watched`              | Unmark episodes (`scope`, `season`, `episode`, `include_specials`); deletes their watches |
-| GET    | `/api/v1/me/up-next`                        | The next episode to watch of each show in progress |
+| GET    | `/api/v1/me/up-next`                        | The next episode to watch of each show in progress (including caught-up shows with new episodes out; excludes on hold, dropped and unwanted) |
 | GET/POST | `/api/v1/me/imports`                      | Your imports; POST uploads a TV Time or Suite export zip as the body (`tz`, `file_name`; 64 MB max) and answers 202 while titles are matched to TMDB in the background |
 | GET/DELETE | `/api/v1/me/imports/:id`                | One import with its progress (`matching` -> `ready` -> `importing` -> `done`); DELETE forgets it, keeping what it wrote |
 | GET    | `/api/v1/me/imports/:id/items`              | Its titles for review (`kind`, `match` = unmatched / matched / skipped / pending, `limit`, `offset`), with TMDB candidates for unmatched ones |

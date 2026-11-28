@@ -57,6 +57,10 @@ type ShowQueueRow struct {
 	NextAirDate       *string
 	// NextEpisode is the first aired episode they have not seen, if any.
 	NextEpisode *QueueEpisode
+	// NextSeasonLatestAirDate is the latest air date among aired unwatched
+	// episodes in NextEpisode's season (YYYY-MM-DD), so an ongoing weekly
+	// season stays fresh while new episodes are still airing.
+	NextSeasonLatestAirDate *string
 }
 
 // ShowQueue returns every show in the user's library (not the ones they are
@@ -75,6 +79,7 @@ func (r *TrackingRepository) ShowQueue(ctx context.Context, userID int64, today 
 			TotalEpisodes: row.TotalEpisodes, AiredEpisodes: row.AiredEpisodes,
 			WatchedEpisodes: row.WatchedEpisodes, MinutesLeft: row.MinutesLeft,
 			LastWatchedAt: nonEmptyPtr(row.LastWatchedAt), NextAirDate: nonEmptyPtr(row.NextAirDate),
+			NextSeasonLatestAirDate: nonEmptyPtr(row.NextSeasonLatestAirDate),
 		}
 		if row.WatchlistPosition >= 0 {
 			p := row.WatchlistPosition

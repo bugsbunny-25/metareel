@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/bugsbunny-25/metareel/internal/client"
 	"github.com/bugsbunny-25/metareel/internal/repository"
 )
 
@@ -244,9 +245,10 @@ func TestUnmarkEpisodes(t *testing.T) {
 }
 
 // Up-next is the first unwatched aired episode of each show in progress, and
-// a rewatch does not push it forward.
+// a rewatch does not push it forward. A caught-up show reappears once a new
+// episode or season airs, while on-hold shows stay out.
 func TestUpNext(t *testing.T) {
-	s, _, alice, bob := newTrackingEnv(t)
+	s, src, alice, bob := newTrackingEnv(t)
 	ctx := context.Background()
 
 	next := func(userID int64) []repository.UpNextEpisode {
@@ -285,13 +287,40 @@ func TestUpNext(t *testing.T) {
 		t.Errorf("up next after a rewatch = %+v, want S1E3 still", got)
 	}
 
-	// Finishing every aired episode empties the queue.
+	// Putting a show on hold removes it from up-next; resuming brings it back.
+	if _, err := s.SetTitleState(ctx, alice, "tv", "1396", TitleStateInput{Status: new(StatusOnHold)}); err != nil {
+		t.Fatalf("on hold: %v", err)
+	}
+	if got := next(alice); len(got) != 0 {
+		t.Errorf("up next while on hold = %+v, want empty", got)
+	}
+	if _, err := s.SetTitleState(ctx, alice, "tv", "1396", TitleStateInput{Status: new(StatusWatching)}); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+
+	// Finishing every aired episode marks the show completed and empties up-next.
 	if _, err := s.MarkEpisodes(ctx, alice, "1396", MarkEpisodesInput{
 		Scope: ScopeAll, EndedAt: "2026-11-12T20:00:00Z"}); err != nil {
 		t.Fatalf("mark all: %v", err)
 	}
 	if got := next(alice); len(got) != 0 {
 		t.Errorf("up next when caught up = %+v, want empty", got)
+	}
+
+	// Once a new season airs for that completed show, it returns to up-next
+	// even though user_titles.status is still "completed".
+	src.details["tv/1396"] = client.TMDBTitleDetails{
+		Title: "Breaking Bad", Found: true, NumberOfSeasons: 3,
+		Seasons: []client.TMDBSeason{{Number: 1}, {Number: 2}, {Number: 3}},
+	}
+	src.episodes["1396"][3] = []client.TMDBEpisode{
+		{SeasonNumber: 3, EpisodeNumber: 1, Name: "No Mas", AirDate: "2026-11-12", Runtime: 47},
+	}
+	if err := s.titles.ResolveEpisodes(ctx, "1396", true); err != nil {
+		t.Fatalf("refresh episodes: %v", err)
+	}
+	if got := next(alice); len(got) != 1 || got[0].SeasonNumber != 3 || got[0].EpisodeNumber != 1 {
+		t.Errorf("up next after new season airs on completed show = %+v, want S3E1", got)
 	}
 
 	// Another user's progress is their own.
