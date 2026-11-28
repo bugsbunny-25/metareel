@@ -22,6 +22,9 @@ type Show = components['schemas']['ShowQueueItem'];
 type Episode = components['schemas']['UpcomingEpisode'];
 type Item = { type: 'show'; show: Show } | { type: 'episode'; ep: Episode };
 
+
+type ViewMode = 'list' | 'grid';
+const VIEWS: ViewMode[] = ['list', 'grid'];
 const SEGMENTS = [
   { key: 'towatch' as const, label: 'To watch' },
   { key: 'upcoming' as const, label: 'Upcoming' },
@@ -41,7 +44,11 @@ export default function TV() {
   // its whole show after "View whole series".
   const [selected, setSelected] = useState<string | null>(null);
   const [episodeSel, setEpisodeSel] = useState<{ show: string; season: number; episode: number } | null>(null);
-  const [view, setView] = usePersisted<'list' | 'grid'>('tabs.tv.view', 'list', ['list', 'grid']);
+  // To watch and Upcoming each keep their own list or grid.
+  const [towatchView, setTowatchView] = usePersisted<ViewMode>('tabs.tv.view.towatch', 'list', VIEWS, 'tabs.tv.view');
+  const [upcomingView, setUpcomingView] = usePersisted<ViewMode>('tabs.tv.view.upcoming', 'list', VIEWS, 'tabs.tv.view');
+  const view = segment === 'towatch' ? towatchView : upcomingView;
+  const setView = segment === 'towatch' ? setTowatchView : setUpcomingView;
   const today = localDay();
 
   const open = (id: string, title?: string) => {

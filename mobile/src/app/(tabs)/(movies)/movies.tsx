@@ -25,6 +25,9 @@ const SORTS: [FilmSort, string][] = [
   ['earliest', 'Earliest release'],
 ];
 
+
+type ViewMode = 'list' | 'grid';
+const VIEWS: ViewMode[] = ['list', 'grid'];
 const SEGMENTS = [
   { key: 'towatch' as const, label: 'To watch' },
   { key: 'upcoming' as const, label: 'Upcoming' },
@@ -38,7 +41,11 @@ const SEGMENTS = [
  */
 export default function Movies() {
   const [segment, setSegment] = usePersisted('tabs.movies.segment', 'towatch', ['towatch', 'upcoming']);
-  const [view, setView] = usePersisted<'list' | 'grid'>('tabs.movies.view', 'list', ['list', 'grid']);
+  // To watch and Upcoming each keep their own list or grid.
+  const [towatchView, setTowatchView] = usePersisted<ViewMode>('tabs.movies.view.towatch', 'list', VIEWS, 'tabs.movies.view');
+  const [upcomingView, setUpcomingView] = usePersisted<ViewMode>('tabs.movies.view.upcoming', 'list', VIEWS, 'tabs.movies.view');
+  const view = segment === 'towatch' ? towatchView : upcomingView;
+  const setView = segment === 'towatch' ? setTowatchView : setUpcomingView;
   const list = useWatchlist();
   const pull = usePullToRefresh(() => list.refetch());
   const twoPane = useTwoPane();
