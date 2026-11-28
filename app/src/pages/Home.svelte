@@ -36,7 +36,8 @@
     return () => ctrl.abort()
   })
 
-  // Up next: the next episode of each show you're watching, most recently watched first.
+  // Up next: the next episode of each show you're watching (including returning shows with
+  // new seasons), keeping the queue's stage order so new seasons stay ahead of older watches.
   let queue = $state(null)
   let queueNonce = $state(0)
   let marking = $state(null)
@@ -49,7 +50,6 @@
   const upNext = $derived(
     (queue?.shows ?? [])
       .filter((s) => (s.stage === 'watching' || (s.stage === 'new_episodes' && s.watched_episodes)) && s.next_episode)
-      .sort((a, b) => (b.last_watched_at ?? '').localeCompare(a.last_watched_at ?? ''))
       .slice(0, 6),
   )
   async function tick(s) {

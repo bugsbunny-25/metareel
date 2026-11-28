@@ -303,7 +303,8 @@ agg AS (
 ),
 nxt AS (
     SELECT tmdb_id, season_number, episode_number, name, air_date, runtime, episode_type,
-           ROW_NUMBER() OVER (PARTITION BY tmdb_id ORDER BY season_number, episode_number) AS rn
+           ROW_NUMBER() OVER (PARTITION BY tmdb_id ORDER BY season_number, episode_number) AS rn,
+           MAX(air_date) OVER (PARTITION BY tmdb_id, season_number) AS season_latest_air_date
     FROM eps
     WHERE aired = 1 AND seen = 0
 )
@@ -324,7 +325,8 @@ SELECT s.tmdb_id, s.status, s.favorite,
     CAST(COALESCE(n.name, '') AS TEXT) AS next_name,
     CAST(COALESCE(n.air_date, '') AS TEXT) AS next_episode_air_date,
     CAST(COALESCE(n.runtime, 0) AS INTEGER) AS next_runtime,
-    CAST(COALESCE(n.episode_type, '') AS TEXT) AS next_episode_type
+    CAST(COALESCE(n.episode_type, '') AS TEXT) AS next_episode_type,
+    CAST(COALESCE(n.season_latest_air_date, '') AS TEXT) AS next_season_latest_air_date
 FROM shows s
 LEFT JOIN agg a ON a.tmdb_id = s.tmdb_id
 LEFT JOIN nxt n ON n.tmdb_id = s.tmdb_id AND n.rn = 1
@@ -339,26 +341,27 @@ type ListShowQueueParams struct {
 }
 
 type ListShowQueueRow struct {
-	TmdbID             string `json:"tmdb_id"`
-	Status             string `json:"status"`
-	Favorite           int64  `json:"favorite"`
-	WatchlistPosition  int64  `json:"watchlist_position"`
-	LastWatchedAt      string `json:"last_watched_at"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at"`
-	Title              string `json:"title"`
-	PosterPath         string `json:"poster_path"`
-	TotalEpisodes      int64  `json:"total_episodes"`
-	AiredEpisodes      int64  `json:"aired_episodes"`
-	WatchedEpisodes    int64  `json:"watched_episodes"`
-	MinutesLeft        int64  `json:"minutes_left"`
-	NextAirDate        string `json:"next_air_date"`
-	NextSeason         int64  `json:"next_season"`
-	NextEpisode        int64  `json:"next_episode"`
-	NextName           string `json:"next_name"`
-	NextEpisodeAirDate string `json:"next_episode_air_date"`
-	NextRuntime        int64  `json:"next_runtime"`
-	NextEpisodeType    string `json:"next_episode_type"`
+	TmdbID                  string `json:"tmdb_id"`
+	Status                  string `json:"status"`
+	Favorite                int64  `json:"favorite"`
+	WatchlistPosition       int64  `json:"watchlist_position"`
+	LastWatchedAt           string `json:"last_watched_at"`
+	CreatedAt               string `json:"created_at"`
+	UpdatedAt               string `json:"updated_at"`
+	Title                   string `json:"title"`
+	PosterPath              string `json:"poster_path"`
+	TotalEpisodes           int64  `json:"total_episodes"`
+	AiredEpisodes           int64  `json:"aired_episodes"`
+	WatchedEpisodes         int64  `json:"watched_episodes"`
+	MinutesLeft             int64  `json:"minutes_left"`
+	NextAirDate             string `json:"next_air_date"`
+	NextSeason              int64  `json:"next_season"`
+	NextEpisode             int64  `json:"next_episode"`
+	NextName                string `json:"next_name"`
+	NextEpisodeAirDate      string `json:"next_episode_air_date"`
+	NextRuntime             int64  `json:"next_runtime"`
+	NextEpisodeType         string `json:"next_episode_type"`
+	NextSeasonLatestAirDate string `json:"next_season_latest_air_date"`
 }
 
 // Every show in the user's library with its progress (seasons 1+ only):
@@ -394,6 +397,7 @@ func (q *Queries) ListShowQueue(ctx context.Context, arg ListShowQueueParams) ([
 			&i.NextEpisodeAirDate,
 			&i.NextRuntime,
 			&i.NextEpisodeType,
+			&i.NextSeasonLatestAirDate,
 		); err != nil {
 			return nil, err
 		}
@@ -597,7 +601,7 @@ WITH candidates AS (
     JOIN tracked_episodes e ON e.tmdb_id = u.tmdb_id
     WHERE u.user_id = ?2
       AND u.tmdb_kind = 'tv'
-      AND u.status NOT IN ('completed', 'dropped', 'not_interested')
+      AND u.status NOT IN ('on_hold', 'dropped', 'not_interested')
       AND (u.episodes_watched > 0 OR u.status = 'watching')
       AND e.season_number > 0
       AND e.air_date IS NOT NULL AND e.air_date <> ''
@@ -637,7 +641,8 @@ type UpNextRow struct {
 }
 
 // UpNext is the next aired, unwatched episode of each show the user is part
-// way through, most recently aired first. Specials are left out.
+// way through (including caught-up shows with new episodes out), most recently
+// aired first. Specials, on-hold, dropped and unwanted shows are left out.
 func (q *Queries) UpNext(ctx context.Context, arg UpNextParams) ([]UpNextRow, error) {
 	rows, err := q.db.QueryContext(ctx, upNext, arg.Limit, arg.UserID, arg.Today)
 	if err != nil {

@@ -805,7 +805,8 @@ type Querier interface {
 	// Unmatched titles per country they charted in, from a date on.
 	UnmatchedTitlesByCountry(ctx context.Context, since string) ([]UnmatchedTitlesByCountryRow, error)
 	// UpNext is the next aired, unwatched episode of each show the user is part
-	// way through, most recently aired first. Specials are left out.
+	// way through (including caught-up shows with new episodes out), most recently
+	// aired first. Specials, on-hold, dropped and unwanted shows are left out.
 	UpNext(ctx context.Context, arg UpNextParams) ([]UpNextRow, error)
 	UpdateCinemaSubscription(ctx context.Context, arg UpdateCinemaSubscriptionParams) (int64, error)
 	UpdateDiscCopy(ctx context.Context, arg UpdateDiscCopyParams) (int64, error)

@@ -123,7 +123,8 @@ WHERE e.tmdb_id = sqlc.arg(tmdb_id)
   AND (CAST(sqlc.arg(include_specials) AS INTEGER) = 1 OR e.season_number > 0);
 
 -- UpNext is the next aired, unwatched episode of each show the user is part
--- way through, most recently aired first. Specials are left out.
+-- way through (including caught-up shows with new episodes out), most recently
+-- aired first. Specials, on-hold, dropped and unwanted shows are left out.
 -- name: UpNext :many
 WITH candidates AS (
     SELECT u.tmdb_id,
@@ -133,7 +134,7 @@ WITH candidates AS (
     JOIN tracked_episodes e ON e.tmdb_id = u.tmdb_id
     WHERE u.user_id = sqlc.arg(user_id)
       AND u.tmdb_kind = 'tv'
-      AND u.status NOT IN ('completed', 'dropped', 'not_interested')
+      AND u.status NOT IN ('on_hold', 'dropped', 'not_interested')
       AND (u.episodes_watched > 0 OR u.status = 'watching')
       AND e.season_number > 0
       AND e.air_date IS NOT NULL AND e.air_date <> ''
@@ -197,7 +198,8 @@ agg AS (
 ),
 nxt AS (
     SELECT tmdb_id, season_number, episode_number, name, air_date, runtime, episode_type,
-           ROW_NUMBER() OVER (PARTITION BY tmdb_id ORDER BY season_number, episode_number) AS rn
+           ROW_NUMBER() OVER (PARTITION BY tmdb_id ORDER BY season_number, episode_number) AS rn,
+           MAX(air_date) OVER (PARTITION BY tmdb_id, season_number) AS season_latest_air_date
     FROM eps
     WHERE aired = 1 AND seen = 0
 )
@@ -218,7 +220,8 @@ SELECT s.tmdb_id, s.status, s.favorite,
     CAST(COALESCE(n.name, '') AS TEXT) AS next_name,
     CAST(COALESCE(n.air_date, '') AS TEXT) AS next_episode_air_date,
     CAST(COALESCE(n.runtime, 0) AS INTEGER) AS next_runtime,
-    CAST(COALESCE(n.episode_type, '') AS TEXT) AS next_episode_type
+    CAST(COALESCE(n.episode_type, '') AS TEXT) AS next_episode_type,
+    CAST(COALESCE(n.season_latest_air_date, '') AS TEXT) AS next_season_latest_air_date
 FROM shows s
 LEFT JOIN agg a ON a.tmdb_id = s.tmdb_id
 LEFT JOIN nxt n ON n.tmdb_id = s.tmdb_id AND n.rn = 1

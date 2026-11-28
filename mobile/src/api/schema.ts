@@ -1820,7 +1820,7 @@ export interface paths {
         };
         /**
          * The next episode to watch of each show in progress
-         * @description The first aired, unwatched episode of every show the user has started and not finished, most recently aired first. Specials are left out, and rewatching an episode already seen does not move the queue on.
+         * @description The first aired, unwatched episode of every show the user has started (including caught-up shows once a new episode or season airs), most recently aired first. Specials and shows on hold, dropped or not interested are left out, and rewatching an episode already seen does not move the queue on.
          */
         get: operations["upNext"];
         put?: never;
@@ -2004,7 +2004,7 @@ export interface paths {
         };
         /**
          * Every show in the library, sorted into stages
-         * @description Each show the user tracks (except ones they are not interested in) with its progress, the next aired episode they have not seen and the next air date, in stage order: new_episodes, watching, stalled, not_started, on_hold, dropped, caught_up. A status the user chose (on hold, dropped) decides the stage; otherwise the episodes do, so a "completed" show with a new episode out is back to watching. A series or season that premiered within stale_days, with nothing watched since, is new_episodes until the window passes, then not_started (no episode seen) or stalled. Counts leave specials out. Episode lists missing or older than a day are re-fetched from TMDB on the way, up to 12 shows per request; a TMDB failure leaves those shows on cached data instead of failing the call.
+         * @description Each show the user tracks (except ones they are not interested in) with its progress, the next aired episode they have not seen and the next air date, in stage order: new_episodes, watching, stalled, not_started, on_hold, dropped, caught_up. A status the user chose (on hold, dropped) decides the stage; otherwise the episodes do, so a "completed" show with a new episode out is back to watching or new_episodes. A series or season that premiered (or is still airing unwatched episodes) within stale_days, with nothing watched since the premiere, is new_episodes until the window passes, then not_started (no episode seen) or stalled. A caught-up show returning mid-season after a break stays in watching while new episodes air within stale_days. Counts leave specials out. Episode lists missing or older than a day are re-fetched from TMDB on the way, up to 12 shows per request; a TMDB failure leaves those shows on cached data instead of failing the call.
          */
         get: operations["showQueue"];
         put?: never;

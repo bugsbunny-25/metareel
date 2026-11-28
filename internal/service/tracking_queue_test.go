@@ -208,13 +208,94 @@ func TestStageOfNewEpisodes(t *testing.T) {
 		{"new season", repository.ShowQueueRow{Status: StatusWatching, WatchedEpisodes: 8, LastWatchedAt: new("2026-11-01 20:00:00"), NextEpisode: next(2, 1, "2026-11-12")}, StageNewEpisodes},
 		{"new season after a long break", repository.ShowQueueRow{Status: StatusCompleted, WatchedEpisodes: 8, LastWatchedAt: new("2025-03-01 20:00:00"), NextEpisode: next(2, 1, "2026-11-12")}, StageNewEpisodes},
 		{"new season, window passed", repository.ShowQueueRow{Status: StatusWatching, WatchedEpisodes: 8, LastWatchedAt: new("2026-08-01 20:00:00"), NextEpisode: next(2, 1, "2026-09-01")}, StageStalled},
+		{"new season, premiere passed but still airing weekly", repository.ShowQueueRow{Status: StatusCompleted, WatchedEpisodes: 8, LastWatchedAt: new("2025-03-01 20:00:00"), NextEpisode: next(2, 1, "2026-10-01"), NextSeasonLatestAirDate: new("2026-11-12")}, StageNewEpisodes},
+		{"new series, premiere passed but still airing weekly", repository.ShowQueueRow{Status: StatusWatchlist, NextEpisode: next(1, 1, "2026-10-01"), NextSeasonLatestAirDate: new("2026-11-12")}, StageNewEpisodes},
 		{"new season, already started", repository.ShowQueueRow{Status: StatusWatching, WatchedEpisodes: 9, LastWatchedAt: new("2026-11-12 22:00:00"), NextEpisode: next(2, 1, "2026-11-12")}, StageWatching},
 		{"weekly episode mid-season", repository.ShowQueueRow{Status: StatusWatching, WatchedEpisodes: 3, LastWatchedAt: new("2026-11-01 20:00:00"), NextEpisode: next(2, 4, "2026-11-12")}, StageWatching},
+		{"mid-season return after a long break", repository.ShowQueueRow{Status: StatusCompleted, WatchedEpisodes: 4, LastWatchedAt: new("2026-09-01 20:00:00"), NextEpisode: next(2, 5, "2026-11-12")}, StageWatching},
+		{"mid-season return still airing weekly", repository.ShowQueueRow{Status: StatusCompleted, WatchedEpisodes: 4, LastWatchedAt: new("2026-09-01 20:00:00"), NextEpisode: next(2, 5, "2026-10-01"), NextSeasonLatestAirDate: new("2026-11-12")}, StageWatching},
+		{"mid-season return, window passed", repository.ShowQueueRow{Status: StatusCompleted, WatchedEpisodes: 4, LastWatchedAt: new("2026-07-01 20:00:00"), NextEpisode: next(2, 5, "2026-09-01"), NextSeasonLatestAirDate: new("2026-09-22")}, StageStalled},
+		{"abandoned mid-season stays stalled even as season keeps airing", repository.ShowQueueRow{Status: StatusWatching, WatchedEpisodes: 2, LastWatchedAt: new("2026-10-05 20:00:00"), NextEpisode: next(1, 3, "2026-09-20"), NextSeasonLatestAirDate: new("2026-11-12")}, StageStalled},
 		{"on hold wins", repository.ShowQueueRow{Status: StatusOnHold, NextEpisode: next(1, 1, "2026-11-10")}, StageOnHold},
 	}
 	for _, c := range cases {
 		if got := stageOf(c.row, staleBefore); got != c.want {
 			t.Errorf("%s: stage = %s, want %s", c.name, got, c.want)
 		}
+	}
+}
+
+// A caught-up show whose new season started over stale_days ago stays in
+// new_episodes while weekly episodes are still airing, and a caught-up show
+// returning from a mid-season break lands in watching (sorted by its return
+// date rather than its old last_watched_at).
+func TestShowQueueOngoingNewSeasonAndMidSeasonReturn(t *testing.T) {
+	s, src, alice, _ := newTrackingEnv(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+	s.titles.now = s.now
+
+	// Show 3001: watched S1 in 2025; S2 started 2026-10-01 (>30 days ago) and
+	// S2E6 aired 2026-11-12 (within 30 days).
+	src.details["tv/3001"] = client.TMDBTitleDetails{
+		Title: "Returning Weekly", Found: true, NumberOfSeasons: 2,
+		Seasons: []client.TMDBSeason{{Number: 1}, {Number: 2}},
+	}
+	src.episodes["3001"] = map[int][]client.TMDBEpisode{
+		1: {{SeasonNumber: 1, EpisodeNumber: 1, Name: "S1E1", AirDate: "2025-01-01", Runtime: 45}},
+		2: {
+			{SeasonNumber: 2, EpisodeNumber: 1, Name: "S2E1", AirDate: "2026-10-01", Runtime: 45},
+			{SeasonNumber: 2, EpisodeNumber: 2, Name: "S2E2", AirDate: "2026-11-12", Runtime: 45},
+		},
+	}
+	// Show 3002: watched S1E1-E2 in Aug 2026; S1E3 (part 2) aired 2026-11-12.
+	src.details["tv/3002"] = client.TMDBTitleDetails{
+		Title: "Part Two Return", Found: true, NumberOfSeasons: 1,
+		Seasons: []client.TMDBSeason{{Number: 1}},
+	}
+	src.episodes["3002"] = map[int][]client.TMDBEpisode{
+		1: {
+			{SeasonNumber: 1, EpisodeNumber: 1, Name: "One", AirDate: "2026-08-01", Runtime: 40},
+			{SeasonNumber: 1, EpisodeNumber: 2, Name: "Two", AirDate: "2026-08-08", Runtime: 40},
+			{SeasonNumber: 1, EpisodeNumber: 3, Name: "Three", AirDate: "2026-11-12", Runtime: 40},
+		},
+	}
+	// Show 3003: watched recently (Nov 10) to check sort order against 3002.
+	src.details["tv/3003"] = client.TMDBTitleDetails{
+		Title: "Recent Watch", Found: true, NumberOfSeasons: 1,
+		Seasons: []client.TMDBSeason{{Number: 1}},
+	}
+	src.episodes["3003"] = map[int][]client.TMDBEpisode{
+		1: {
+			{SeasonNumber: 1, EpisodeNumber: 1, Name: "One", AirDate: "2024-01-01", Runtime: 30},
+			{SeasonNumber: 1, EpisodeNumber: 2, Name: "Two", AirDate: "2024-01-08", Runtime: 30},
+		},
+	}
+
+	mark := func(id, scope string, season, episode *int64, endedAt string) {
+		t.Helper()
+		if _, err := s.MarkEpisodes(ctx, alice, id, MarkEpisodesInput{
+			Scope: scope, SeasonNumber: season, EpisodeNumber: episode, EndedAt: endedAt,
+		}); err != nil {
+			t.Fatalf("mark %s: %v", id, err)
+		}
+	}
+	mark("3001", ScopeSeason, new(int64(1)), nil, "2025-02-01T20:00:00Z")
+	mark("3002", ScopeUpTo, new(int64(1)), new(int64(2)), "2026-08-10T20:00:00Z")
+	mark("3003", ScopeEpisode, new(int64(1)), new(int64(1)), "2026-11-10T20:00:00Z")
+
+	out, err := s.ShowQueue(ctx, alice, 0)
+	if err != nil {
+		t.Fatalf("queue: %v", err)
+	}
+	shows := out["shows"].([]ShowQueueItem)
+	got := make([]string, 0, len(shows))
+	for _, sh := range shows {
+		got = append(got, sh.TmdbID+":"+sh.Stage)
+	}
+	want := []string{"3001:new_episodes", "3002:watching", "3003:watching"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("queue = %v, want %v", got, want)
 	}
 }
