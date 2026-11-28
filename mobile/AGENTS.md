@@ -50,3 +50,6 @@ Docs: https://docs.expo.dev/eas/index.md
   with the token yourself, and never send cookies.
 - Lay out by window class (`useWindowClass`), never by device model.
 - Use the Screening Room tokens via `useTheme()`; no hard-coded colours.
+- React Native skills (performance, upgrades, RNTL tests) are vendored in
+  `../.claude/skills` from callstackincubator/agent-skills; run `make skills-check`
+  from the repo root before mobile work and update them when it reports changes.

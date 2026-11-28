@@ -1,0 +1,24 @@
+{
+  "source": "callstackincubator/agent-skills",
+  "ref": "main",
+  "commit": "59e9d17446a248b21d86f078fcd0bd2d36db1ca4",
+  "exclude": [
+    "agents/",
+    "POWER.md",
+    "references/images/"
+  ],
+  "skills": {
+    "react-native-best-practices": {
+      "path": "skills/react-native-best-practices",
+      "hash": "98f9f32a78d47771e7a8e446bf999eb40a130e3ab563444540e7a530884f4260"
+    },
+    "upgrading-react-native": {
+      "path": "skills/upgrading-react-native",
+      "hash": "6a780bb79d77ab8ab05fa4923db4e99c4b2dcf7023434616d1a2625c1884ad1f"
+    },
+    "react-native-testing": {
+      "path": "plugins/vendored/.agents/skills/react-native-testing",
+      "hash": "9bbd7f54c8172884772c19a11bcf84c1cb0bda6c068733090c825187e01a281e"
+    }
+  }
+}
