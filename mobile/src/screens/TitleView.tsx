@@ -7,7 +7,7 @@ import { useMyTitle, usePreferences, useTitleOverview } from '@/data/queries';
 import { useDetailScroll } from '@/layout/root-header';
 import { openLog, setWatchlist } from '@/lib/actions';
 import { runtimeText, starText, year } from '@/lib/format';
-import { useOutbox } from '@/offline';
+import { useOutbox, watchlistShown } from '@/offline';
 import { useTheme } from '@/theme';
 
 import { Top10Graph } from '@/components/Top10Graph';
@@ -27,14 +27,14 @@ export function TitleView({ kind: k, id, embedded }: { kind: string; id: string;
   const country = prefs.data?.country;
   const overview = useTitleOverview(kind, id, country);
   const mine = useMyTitle(kind, id);
-  const queued = useOutbox().filter((i) => i.kind === 'watchlist' && i.meta?.id === id && i.status === 'pending');
+  const outboxItems = useOutbox();
 
   const m = overview.data?.metadata;
   const snap = mine.data?.title;
   const state = mine.data?.state;
   const title = m?.title ?? snap?.title ?? '';
   const poster = m?.poster_path ?? snap?.poster_path;
-  const onWatchlist = queued.length ? !!queued[queued.length - 1].meta?.on : state?.status === 'watchlist';
+  const onWatchlist = watchlistShown(outboxItems, kind, id, state?.status === 'watchlist');
 
   return (
     <ScrollView

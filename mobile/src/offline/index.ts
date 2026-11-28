@@ -10,9 +10,11 @@ import { Outbox, type OutboxItem, type OutboxKind, type OutboxOp } from './outbo
 import { SQLiteStore } from './sqlite-store';
 
 export type { OutboxItem, OutboxKind, OutboxOp };
+export { watchlistShown } from './watchlist';
 
 async function send(op: OutboxOp) {
   const res = await apiFetch(apiRequest(op.method, op.path, op.body));
+  if (res.ok && op.kind === 'watchlist') await settleWatchlist(op);
   let error: string | undefined;
   if (!res.ok) {
     try {
@@ -22,6 +24,22 @@ async function send(op: OutboxOp) {
     }
   }
   return { status: res.status, error };
+}
+
+/**
+ * A watchlist change shows its queued value until it's sent (see
+ * watchlistShown). Before the item leaves the queue, refetch what that title's
+ * screens read, so the button goes from the queued value straight to the
+ * server's instead of flashing back to the old one in between.
+ */
+async function settleWatchlist(op: OutboxOp) {
+  const { kind, id } = (op.meta ?? {}) as { kind?: string; id?: string };
+  if (!kind || !id) return;
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['my-title', kind, id] }),
+    kind === 'tv' ? queryClient.invalidateQueries({ queryKey: ['show', id] }) : null,
+    queryClient.invalidateQueries({ queryKey: ['watchlist'] }),
+  ]).catch(() => undefined);
 }
 
 export const outbox = new Outbox(new SQLiteStore(), send, Date.now, () => {

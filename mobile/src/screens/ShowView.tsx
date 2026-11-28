@@ -14,7 +14,7 @@ import { Text } from '@/components/Text';
 import { useMyTitle, usePreferences, useShow, useTitleOverview } from '@/data/queries';
 import { markEpisode, openEpisode, openLog, setWatchlist } from '@/lib/actions';
 import { episodeCode, year } from '@/lib/format';
-import { useOutbox } from '@/offline';
+import { useOutbox, watchlistShown } from '@/offline';
 import { queryClient } from '@/query/client';
 import { useTheme } from '@/theme';
 
@@ -40,7 +40,9 @@ export function ShowView({
   const { colors, gutter } = useTheme();
   const detail = useDetailScroll(embedded);
   const show = useShow(id);
-  const queued = useOutbox().filter((i) => i.kind === 'episodes' && i.meta?.show === id && i.status === 'pending');
+  const outboxItems = useOutbox();
+  const queued = outboxItems.filter((i) => i.kind === 'episodes' && i.meta?.show === id && i.status === 'pending');
+  const onWatchlist = watchlistShown(outboxItems, 'tv', id, show.data?.state?.status === 'watchlist');
   const seasons = (show.data?.seasons ?? []).filter((s) => (s.season_number ?? 0) > 0 || (show.data?.seasons ?? []).length === 1);
   const [picked, setPicked] = useState<number | null>(null);
   const current = picked ?? firstUnfinished(seasons) ?? seasons[0]?.season_number ?? 1;
@@ -110,8 +112,8 @@ export function ShowView({
               <Button
                 grow
                 kind="quiet"
-                title={show.data.state?.status === 'watchlist' ? 'On watchlist' : 'Watchlist'}
-                onPress={() => setWatchlist({ kind: 'tv', id, title }, show.data?.state?.status !== 'watchlist')}
+                title={onWatchlist ? 'On watchlist' : 'Watchlist'}
+                onPress={() => setWatchlist({ kind: 'tv', id, title }, !onWatchlist)}
               />
             </View>
           </Hero>

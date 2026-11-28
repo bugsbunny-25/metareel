@@ -206,7 +206,8 @@ function ViewAll({ label, onPress }: { label: string; onPress: () => void }) {
   const { colors } = useTheme();
   return (
     <Pressable onPress={onPress} accessibilityRole="link" accessibilityLabel={label} hitSlop={8} style={styles.viewAll}>
-      <Text variant="label" style={{ color: colors.accentYours }}>
+      {/* One line: Android otherwise can wrap "all" to a clipped second line. */}
+      <Text variant="label" numberOfLines={1} style={{ color: colors.accentYours }}>
         View all
       </Text>
       <Icon name="chevron" size={16} color={colors.accentYours} />
