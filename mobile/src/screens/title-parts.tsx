@@ -61,8 +61,8 @@ export function Hero({
   // theme keeps the typeset name.
   const logoUri = scheme === 'dark' ? tmdbImage(logo, 'w500') : null;
   return (
-    <View style={[styles.hero, wide && styles.heroWide, { backgroundColor: colors.bgSurface, borderRadius: radius.hero }]}>
-      {tint ? <View style={[StyleSheet.absoluteFill, { backgroundColor: tint, opacity: 0.4, borderRadius: radius.hero }]} /> : null}
+    <View style={[styles.hero, wide && styles.heroWide, { backgroundColor: colors.bgSurface, borderRadius: radius.hero, borderCurve: 'continuous' }]}>
+      {tint ? <View style={[StyleSheet.absoluteFill, { backgroundColor: tint, opacity: 0.4, borderRadius: radius.hero, borderCurve: 'continuous' }]} /> : null}
       <Poster path={poster} title={title} width={wide ? 180 : 132} />
       <View style={styles.heroText}>
         {top ? (
@@ -171,7 +171,7 @@ function Score({ label, value, logo, url }: { label: string; value: string; logo
       accessibilityRole={url ? 'link' : undefined}
       accessibilityLabel={`${label} ${value}`}
       accessibilityHint={url ? `Opens ${label === 'TMDB' ? 'TMDB' : label.startsWith('IMDb') ? 'IMDb' : 'Rotten Tomatoes'}` : undefined}
-      style={({ pressed }) => [styles.score, { backgroundColor: colors.bgSurface, borderRadius: radius.panel, opacity: pressed ? 0.7 : 1 }]}
+      style={({ pressed }) => [styles.score, { backgroundColor: colors.bgSurface, borderRadius: radius.panel, borderCurve: 'continuous', opacity: pressed ? 0.7 : 1 }]}
     >
       {logo}
       <Text variant="title" num numberOfLines={1} adjustsFontSizeToFit>
@@ -358,6 +358,6 @@ const styles = StyleSheet.create({
   providers: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   provider: { alignItems: 'center', gap: 4, width: 76 },
   providerName: { width: 76, textAlign: 'center' },
-  logo: { width: 48, height: 48, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
+  logo: { width: 48, height: 48, borderRadius: 12, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth },
   fact: { flexDirection: 'row', gap: 12, alignItems: 'baseline' },
 });

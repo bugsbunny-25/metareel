@@ -165,7 +165,7 @@ const styles = StyleSheet.create({
   barSlot: { flex: 1, justifyContent: 'flex-end' },
   total: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderTopWidth: StyleSheet.hairlineWidth },
   band: { paddingVertical: 10, marginTop: 8, marginBottom: 4 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6, borderRadius: 10 },
-  dayBox: { width: 48, height: 48, borderWidth: 1, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6, borderRadius: 10, borderCurve: 'continuous' },
+  dayBox: { width: 48, height: 48, borderWidth: 1, borderRadius: 6, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
   rowText: { flex: 1, alignSelf: 'stretch', justifyContent: 'center', gap: 2, paddingVertical: 6 },
 });

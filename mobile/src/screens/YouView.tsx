@@ -9,7 +9,7 @@ import { recentDistinct } from '@/data/collections';
 import { useAccount, useDetailedStats, useRecentWatches, useSavings, useShowQueue } from '@/data/queries';
 import { tabBodyScroll } from '@/layout/TabbedRoot';
 import { useWindowClass } from '@/layout/window-class';
-import { openTitle } from '@/lib/actions';
+import { titleHref } from '@/lib/actions';
 import { formatMoney } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/refresh';
 import { BarList, Card, SectionHead, shortDuration, StatTile } from '@/screens/stats-parts';
@@ -163,7 +163,7 @@ export function YouView({ onOpen }: { onOpen: (page: 'diary') => void }) {
                 kind="tv"
                 tmdbId={x.tmdb_id}
                 percent={x.percent ?? 0}
-                onPress={() => openTitle({ kind: 'tv', id: x.tmdb_id ?? '', title: x.title })}
+                href={titleHref({ kind: 'tv', id: x.tmdb_id ?? '', title: x.title })}
               />
             ))}
             <View style={{ width: gutter.compact - 12 }} />
@@ -185,7 +185,7 @@ export function YouView({ onOpen }: { onOpen: (page: 'diary') => void }) {
                 kind="movie"
                 tmdbId={w.tmdb_id}
                 caption={w.rating ? '★'.repeat(Math.floor(w.rating / 2)) + (w.rating % 2 ? '½' : '') : null}
-                onPress={() => openTitle({ kind: 'movie', id: w.tmdb_id ?? '', title: w.title })}
+                href={titleHref({ kind: 'movie', id: w.tmdb_id ?? '', title: w.title })}
               />
             ))}
             <View style={{ width: gutter.compact - 12 }} />

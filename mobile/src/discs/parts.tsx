@@ -54,7 +54,7 @@ export function DiscCase({ release, width }: { release: DiscRelease; width: numb
           {look.mark}
         </Text>
       ) : null}
-      <View style={[styles.art, { backgroundColor: colors.bgElevated, borderRadius: steel ? 4 : 0 }]}>
+      <View style={[styles.art, { backgroundColor: colors.bgElevated, borderRadius: steel ? 4 : 0, borderCurve: 'continuous' }]}>
         {cover.image ? (
           <DiscImage url={width > 140 ? cover.image.url : cover.image.thumb_url} style={StyleSheet.absoluteFill} contentFit="cover" />
         ) : poster ? (
@@ -179,13 +179,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: 4,
+    borderCurve: 'continuous',
     overflow: 'hidden',
     backgroundColor: 'rgba(0,0,0,0.72)',
     color: '#fff',
     fontSize: 9,
     fontWeight: '700',
   },
-  spine: { overflow: 'hidden', borderRadius: 3 },
+  spine: { overflow: 'hidden', borderRadius: 3, borderCurve: 'continuous' },
   spineTitle: {
     color: '#fff',
     fontFamily: 'SourceSerif4_700Bold',

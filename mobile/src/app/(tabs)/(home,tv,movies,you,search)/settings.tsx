@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Linking, Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
 import { endpoint, setHomeURL, signOut, useSignedIn } from '@/auth/session';
@@ -13,6 +13,7 @@ import { DetailScreen, Panel } from '@/components/Screen';
 import { PillFill } from '@/components/PillFill';
 import { Text } from '@/components/Text';
 import { tmdbLogo } from '@/components/tmdb-logo';
+import { Toggle } from '@/components/Toggle';
 import { useAccount, usePreferences, useServerVersion } from '@/data/queries';
 import { appVersion, useAppUpdate } from '@/data/app-update';
 import { type ArrivalsResult, setWatchlistArrivals } from '@/notifications/push';
@@ -103,7 +104,7 @@ export default function Settings() {
       </Panel>
 
       <Panel title="About">
-        <Row label="App version" value={`${appVersion()}${Platform.OS === 'android' ? ' (APK)' : ''}`} />
+        <Row label="App version" value={`${appVersion()}${process.env.EXPO_OS === 'android' ? ' (APK)' : ''}`} />
         <Row
           label="Server version"
           value={
@@ -168,7 +169,6 @@ function Row({ label, value }: { label: string; value: string }) {
 function EpisodeReminders() {
   const on = useEpisodeReminders();
   const scheduled = useReminderStatus();
-  const { colors } = useTheme();
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState(false);
   return (
@@ -178,12 +178,10 @@ function EpisodeReminders() {
           <Text>New episodes</Text>
           <Text variant="muted">At 6 pm on the day a new episode of a show you follow airs. Scheduled on this phone.</Text>
         </View>
-        <Switch
+        <Toggle
           value={on}
           disabled={busy}
-          accessibilityLabel="New episode reminders"
-          trackColor={{ true: colors.accentYours }}
-          thumbColor={Platform.OS === 'android' ? '#ffffff' : undefined}
+          label="New episode reminders"
           onValueChange={async (v) => {
             setBusy(true);
             setBlocked((await setEpisodeReminders(v)) === 'blocked');
@@ -220,7 +218,6 @@ function WatchlistArrivals() {
   const prefs = usePreferences();
   const on = prefs.data?.notify_watchlist_arrivals === true;
   const country = prefs.data?.country;
-  const { colors } = useTheme();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ArrivalsResult | null>(null);
   return (
@@ -232,12 +229,10 @@ function WatchlistArrivals() {
             When a title on your watchlist starts streaming on one of your services{country ? ` in ${country}` : ''}. Sent by your server, once per title.
           </Text>
         </View>
-        <Switch
+        <Toggle
           value={on}
           disabled={busy || !prefs.data}
-          accessibilityLabel="Watchlist arrival notifications"
-          trackColor={{ true: colors.accentYours }}
-          thumbColor={Platform.OS === 'android' ? '#ffffff' : undefined}
+          label="Watchlist arrival notifications"
           onValueChange={async (v) => {
             setBusy(true);
             try {
@@ -295,6 +290,6 @@ function ThemePicker() {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 12, alignItems: 'center', minHeight: 28 },
   tmdb: { alignItems: 'center', gap: 6, paddingTop: 16, paddingBottom: 8 },
-  segment: { flexDirection: 'row', borderRadius: 20, padding: 3 },
-  segmentItem: { flex: 1, minHeight: 36, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  segment: { flexDirection: 'row', borderRadius: 20, borderCurve: 'continuous', padding: 3 },
+  segmentItem: { flex: 1, minHeight: 36, borderRadius: 17, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
 });

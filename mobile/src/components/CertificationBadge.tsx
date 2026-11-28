@@ -59,6 +59,7 @@ export function CertificationBadge({ rating, size = 10 }: { rating: string; size
           borderColor: color,
           borderWidth: em * STROKE,
           borderRadius: em * CORNER,
+          borderCurve: 'continuous',
           // tides draws the border inside its padding; React Native adds it
           // outside, so the clear space is the padding less the stroke.
           paddingHorizontal: em * (PADDING_X - STROKE),

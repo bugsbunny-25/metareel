@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { pickerToWall, wallToPicker } from '@/log/zones';
-import { useTheme } from '@/theme';
 
 import { Chip } from './Chip';
+import { SystemDatePicker } from './SystemDatePicker';
 
 /**
  * A date (and time) as a wall-clock string ("YYYY-MM-DDTHH:MM", or
@@ -33,94 +33,11 @@ export function DateTimeField({ value, onChange, withTime = true, max }: { value
         <Chip label={dayText} selected={open === 'date'} onPress={() => toggle('date')} />
         {withTime ? <Chip label={timeText} selected={open === 'time'} onPress={() => toggle('time')} /> : null}
       </View>
-      {open && Platform.OS === 'ios' ? (
-        <IOSPicker
-          part={open}
-          value={local}
-          max={max}
-          onChange={(d) => {
-            set(d, open);
-            // A picked day closes the calendar; the time wheel stays while it's spun.
-            if (open === 'date') setOpen(null);
-          }}
-        />
-      ) : null}
-      {open && Platform.OS === 'android' ? (
-        <AndroidDialog
-          part={open}
-          day={day}
-          value={local}
-          max={max}
-          onClose={() => setOpen(null)}
-          onChange={(d) => {
-            setOpen(null);
-            set(d, open);
-          }}
-        />
-      ) : null}
+      {open ? <SystemDatePicker part={open} day={day} value={local} max={max} onChange={(d) => set(d, open)} onClose={() => setOpen(null)} /> : null}
     </View>
-  );
-}
-
-/** The system calendar (date) or time wheel, inline, tinted like the app. */
-function IOSPicker({ part, value, max, onChange }: { part: 'date' | 'time'; value: Date; max?: Date; onChange: (d: Date) => void }) {
-  const { colors, scheme, radius } = useTheme();
-  // Loaded here, not imported, so Android never loads the SwiftUI views.
-  /* eslint-disable @typescript-eslint/no-require-imports -- platform-only native module, loaded on that platform */
-  const { DatePicker, Host } = require('@expo/ui/swift-ui') as typeof import('@expo/ui/swift-ui');
-  const { datePickerStyle, tint, labelsHidden } = require('@expo/ui/swift-ui/modifiers') as typeof import('@expo/ui/swift-ui/modifiers');
-  /* eslint-enable @typescript-eslint/no-require-imports */
-  return (
-    <View style={[styles.panel, { backgroundColor: colors.bgElevated, borderRadius: radius.panel }]}>
-      <Host matchContents={{ vertical: true }} colorScheme={scheme} style={{ width: '100%' }}>
-        <DatePicker
-          selection={value}
-          range={max ? { end: max } : undefined}
-          displayedComponents={part === 'date' ? ['date'] : ['hourAndMinute']}
-          onDateChange={onChange}
-          modifiers={[datePickerStyle(part === 'date' ? 'graphical' : 'wheel'), tint(colors.accentYours), labelsHidden()]}
-        />
-      </Host>
-    </View>
-  );
-}
-
-function AndroidDialog({
-  part,
-  day,
-  value,
-  max,
-  onClose,
-  onChange,
-}: {
-  part: 'date' | 'time';
-  day: string;
-  value: Date;
-  max?: Date;
-  onClose: () => void;
-  onChange: (d: Date) => void;
-}) {
-  // Loaded here, not imported, so iOS never loads the Compose views.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- platform-only native module, loaded on that platform
-  const { DatePickerDialog, TimePickerDialog, Host } = require('@expo/ui/jetpack-compose') as typeof import('@expo/ui/jetpack-compose');
-  return (
-    <Host matchContents>
-      {part === 'date' ? (
-        // The Material date picker works in UTC days; hand back a local date.
-        <DatePickerDialog
-          initialDate={`${day}T00:00:00Z`}
-          selectableDates={max ? { end: max } : undefined}
-          onDismissRequest={onClose}
-          onDateSelected={(d) => onChange(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), value.getHours(), value.getMinutes()))}
-        />
-      ) : (
-        <TimePickerDialog initialDate={value.toISOString()} is24Hour={false} onDismissRequest={onClose} onDateSelected={onChange} />
-      )}
-    </Host>
   );
 }
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  panel: { padding: 8, overflow: 'hidden' },
 });

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { type ReactNode, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { unwrap } from '@/api/client';
 import type { components } from '@/api/schema';
@@ -15,6 +15,7 @@ import { Icon } from '@/components/Icon';
 import { ServiceLogo } from '@/components/ServiceLogo';
 import { Stars } from '@/components/Stars';
 import { Text } from '@/components/Text';
+import { Toggle as Switch } from '@/components/Toggle';
 import { findNearby, type NearbyResult } from '@/data/nearby';
 import { useFormats, useServices, useSubscriptions } from '@/data/queries';
 import { deviceTimeZone } from '@/lib/format';
@@ -119,11 +120,10 @@ function Suggest({
 }
 
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
-  const { colors } = useTheme();
   return (
     <View style={styles.toggle}>
       <Text style={{ flex: 1 }}>{label}</Text>
-      <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.accentYours }} accessibilityLabel={label} />
+      <Switch value={value} onValueChange={onChange} label={label} />
     </View>
   );
 }
@@ -633,7 +633,7 @@ const styles = StyleSheet.create({
   ratingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   like: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   venue: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
-  venuePicked: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12 },
-  empty: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12 },
-  disclosure: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, minHeight: 48, borderRadius: 12 },
+  venuePicked: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderCurve: 'continuous' },
+  empty: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderCurve: 'continuous' },
+  disclosure: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, minHeight: 48, borderRadius: 12, borderCurve: 'continuous' },
 });

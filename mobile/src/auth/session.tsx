@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import * as Device from 'expo-device';
 import * as SecureStore from 'expo-secure-store';
-import { createContext, type PropsWithChildren, useContext, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { createContext, type PropsWithChildren, use, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { AppState, type NativeEventSubscription } from 'react-native';
 
 import { makeApi, makeApiFetch } from '@/api/client';
@@ -228,11 +228,11 @@ export function SessionProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (state.status === 'loading') void restoreSession();
   }, []);
-  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
+  return <SessionContext value={value}>{children}</SessionContext>;
 }
 
 export function useSession(): SessionState {
-  return useContext(SessionContext);
+  return use(SessionContext);
 }
 
 /** The signed-in session; only for screens behind the sign-in guard. */

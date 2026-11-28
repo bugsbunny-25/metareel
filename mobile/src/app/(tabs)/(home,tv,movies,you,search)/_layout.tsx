@@ -42,7 +42,7 @@ export default function TabStack() {
           return {
             headerShown: true,
             title: root,
-            headerLargeTitle: false,
+            headerLargeTitleEnabled: false,
             headerTransparent: false,
             headerShadowVisible: false,
             headerStyle: { backgroundColor: colors.bgCanvas },
@@ -55,7 +55,7 @@ export default function TabStack() {
           return {
             headerShown: true,
             title: root,
-            headerLargeTitle: true,
+            headerLargeTitleEnabled: true,
             headerTransparent: true,
             headerShadowVisible: false,
             headerLargeTitleShadowVisible: false,

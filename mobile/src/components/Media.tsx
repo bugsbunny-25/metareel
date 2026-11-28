@@ -1,10 +1,11 @@
 import { Image } from 'expo-image';
+import { type Href, Link } from 'expo-router';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useTop10Of } from '@/data/top10now';
 import { tmdbImage } from '@/lib/format';
-import { useTheme } from '@/theme';
+import { onArtwork, useTheme } from '@/theme';
 
 import { Icon } from './Icon';
 import { Text } from './Text';
@@ -50,6 +51,7 @@ export function MediaCard({
         {
           backgroundColor: selected ? colors.bgElevated : colors.bgSurface,
           borderRadius: radius.panel,
+          borderCurve: 'continuous',
           borderColor: selected ? colors.borderStrong : 'transparent',
           opacity: pressed ? 0.8 : 1,
         },
@@ -87,6 +89,7 @@ export function PosterTile({
   percent,
   caption,
   onPress,
+  href,
   selected,
 }: {
   poster?: string | null;
@@ -98,6 +101,8 @@ export function PosterTile({
   percent?: number | null;
   caption?: string | null;
   onPress?: () => void;
+  /** Where the tile goes, as a link: on iOS a long press previews it. Use instead of onPress. */
+  href?: Href;
   selected?: boolean;
   /** With tmdbId: the Top 10 badge when the title charts today. */
   kind?: string | null;
@@ -106,10 +111,10 @@ export function PosterTile({
   const { colors } = useTheme();
   const top = useTop10Of(kind, tmdbId);
   const uri = tmdbImage(poster, width > 120 ? 'w342' : 'w185');
-  return (
+  const tile = (
     <Pressable
       onPress={onPress}
-      accessibilityRole="button"
+      accessibilityRole={href ? 'link' : 'button'}
       accessibilityLabel={[title, badge, caption].filter(Boolean).join(', ')}
       accessibilityState={selected ? { selected: true } : undefined}
       style={({ pressed }) => [{ width, gap: 6, opacity: pressed ? 0.8 : 1 }]}
@@ -159,6 +164,13 @@ export function PosterTile({
       </View>
     </Pressable>
   );
+  if (!href) return tile;
+  return (
+    <Link href={href} asChild>
+      <Link.Trigger>{tile}</Link.Trigger>
+      <Link.Preview />
+    </Link>
+  );
 }
 
 export function ProgressBar({ percent }: { percent: number }) {
@@ -166,7 +178,7 @@ export function ProgressBar({ percent }: { percent: number }) {
   const p = Math.max(0, Math.min(100, percent));
   return (
     <View style={[styles.bar, { backgroundColor: colors.bgElevated }]} accessible accessibilityLabel={`${Math.round(p)}% watched`}>
-      <View style={{ width: `${p}%`, height: '100%', backgroundColor: p >= 100 ? colors.deltaUp : colors.accentYours, borderRadius: 2 }} />
+      <View style={{ width: `${p}%`, height: '100%', backgroundColor: p >= 100 ? colors.deltaUp : colors.accentYours, borderRadius: 2, borderCurve: 'continuous' }} />
     </View>
   );
 }
@@ -232,11 +244,11 @@ const styles = StyleSheet.create({
   poster: { width: 72, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   body: { flex: 1, paddingVertical: 12, paddingHorizontal: 14, gap: 4, justifyContent: 'center' },
   right: { paddingRight: 14, justifyContent: 'center' },
-  tile: { borderRadius: 10, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  tile: { borderRadius: 10, borderCurve: 'continuous', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   top10: { position: 'absolute', top: 5, right: 5 },
-  badge: { position: 'absolute', bottom: 6, backgroundColor: 'rgba(11,11,12,0.78)', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
-  badgeText: { color: '#f5f5f7', fontSize: 12.5 },
+  badge: { position: 'absolute', bottom: 6, backgroundColor: 'rgba(11,11,12,0.78)', borderRadius: 8, borderCurve: 'continuous', paddingHorizontal: 7, paddingVertical: 3 },
+  badgeText: { color: onArtwork, fontSize: 12.5 },
   bar: { height: 4, borderRadius: 2, overflow: 'hidden' },
   tick: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  pill: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, alignSelf: 'flex-start' },
+  pill: { borderRadius: 6, borderCurve: 'continuous', paddingHorizontal: 6, paddingVertical: 2, alignSelf: 'flex-start' },
 });

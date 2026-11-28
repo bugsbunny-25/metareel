@@ -16,6 +16,7 @@ import { deleteDisc, deleteDiscImage, updateDisc, uploadDiscImage, useDisc } fro
 import { DiscCase, DiscImage } from '@/discs/parts';
 import { allImages, type Condition, CONDITIONS, type DiscRelease, HIGHLIGHT, IMAGE_KINDS, type ImageKind, isBoxSet, label, videoLine } from '@/discs/vocab';
 import { openTitle } from '@/lib/actions';
+import { attempt } from '@/lib/attempt';
 import { usePullToRefresh } from '@/lib/refresh';
 import { formatMoney, fractionDigits, toMinor } from '@/lib/format';
 import { useTheme } from '@/theme';
@@ -135,15 +136,12 @@ export function DiscView({ id, part, disc }: { id: number; part?: number; disc?:
     const asset = res.canceled ? null : res.assets[0];
     if (!asset) return;
     setBusy(true);
-    try {
-      // quality < 1 makes the picker re-encode, so this is a JPEG even for a HEIC photo.
-      const bytes = await new File(asset.uri).arrayBuffer();
-      await uploadDiscImage(target ?? root!.id, kind, bytes, asset.mimeType && asset.mimeType !== 'image/heic' ? asset.mimeType : 'image/jpeg');
-    } catch (err) {
-      Alert.alert('Couldn’t add the picture', err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    const id = target ?? root!.id;
+    // quality < 1 makes the picker re-encode, so this is a JPEG even for a HEIC photo.
+    const mime = asset.mimeType && asset.mimeType !== 'image/heic' ? asset.mimeType : 'image/jpeg';
+    const failed = await attempt(async () => uploadDiscImage(id, kind, await new File(asset.uri).arrayBuffer(), mime));
+    if (failed) Alert.alert('Couldn’t add the picture', failed);
+    setBusy(false);
   }
 
   function confirmRemove() {
@@ -187,6 +185,7 @@ export function DiscView({ id, part, disc }: { id: number; part?: number; disc?:
                   width: pageW,
                   height: Math.min(420, pageW * 1.2),
                   borderRadius: radius.panel,
+                  borderCurve: 'continuous',
                 }}
                 contentFit="contain"
               />
@@ -479,20 +478,17 @@ function CopyPanel({ copy, editing, setEditing }: { copy: components['schemas'][
     const minor = toMinor(price, cur || 'USD');
     if (minor === undefined) return Alert.alert('The price isn’t a number.');
     setSaving(true);
-    try {
-      await updateDisc(copy.id, {
-        retailer: retailer.trim(),
-        purchased_on: bought.trim() || undefined,
-        condition,
-        notes: copy.notes ?? '',
-        ...(minor !== null ? { price_minor: minor, currency: cur } : {}),
-      });
-      setEditing(false);
-    } catch (err) {
-      Alert.alert('Couldn’t save', err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
+    const changes = {
+      retailer: retailer.trim(),
+      purchased_on: bought.trim() || undefined,
+      condition,
+      notes: copy.notes ?? '',
+      ...(minor !== null ? { price_minor: minor, currency: cur } : {}),
+    };
+    const failed = await attempt(() => updateDisc(copy.id, changes));
+    if (failed) Alert.alert('Couldn’t save', failed);
+    else setEditing(false);
+    setSaving(false);
   }
 
   if (!editing) {
@@ -543,6 +539,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
+    borderCurve: 'continuous',
     overflow: 'hidden',
     fontSize: 12,
     fontWeight: '700',

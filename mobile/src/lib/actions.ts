@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { type Href, router } from 'expo-router';
 
 import { deviceTimeZone, episodeCode } from '@/lib/format';
 import { enqueue } from '@/offline';
@@ -19,9 +19,13 @@ export function openLog(t: Target & { season?: number; episode?: number }) {
   });
 }
 
+/** A movie's or show's page, as a link target. */
+export function titleHref(t: Target): Href {
+  return t.kind === 'tv' ? { pathname: '/show/[id]', params: { id: t.id } } : { pathname: '/title/[kind]/[id]', params: { kind: t.kind, id: t.id } };
+}
+
 export function openTitle(t: Target) {
-  if (t.kind === 'tv') router.push({ pathname: '/show/[id]', params: { id: t.id } });
-  else router.push({ pathname: '/title/[kind]/[id]', params: { kind: t.kind, id: t.id } });
+  router.push(titleHref(t));
 }
 
 /** Opens a person (cast or crew) in the current tab. */

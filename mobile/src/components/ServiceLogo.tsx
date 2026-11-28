@@ -12,7 +12,7 @@ export function ServiceLogo({ path, size = 26 }: { path?: string | null; size?: 
   return (
     <Image
       source={{ uri }}
-      style={{ width: size, height: size, borderRadius: Math.round(size / 4), borderWidth: StyleSheet.hairlineWidth, borderColor: colors.posterHairline }}
+      style={{ width: size, height: size, borderRadius: Math.round(size / 4), borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.posterHairline }}
       accessible={false}
     />
   );
