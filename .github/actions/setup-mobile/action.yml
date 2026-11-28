@@ -11,9 +11,18 @@ inputs:
 runs:
   using: composite
   steps:
+    # Read the exact Node version from mobile/eas.json so GitHub Actions and
+    # EAS Build cloud workers always run the same Node and npm versions.
+    - id: node-version
+      shell: bash
+      working-directory: mobile
+      run: |
+        v="$(jq -r '.build.base.node // empty' eas.json)"
+        test -n "$v" || { echo "::error::mobile/eas.json build.base.node is not set"; exit 1; }
+        echo "version=$v" >> "$GITHUB_OUTPUT"
     - uses: actions/setup-node@v7
       with:
-        node-version: 26
+        node-version: ${{ steps.node-version.outputs.version }}
         cache: npm
         cache-dependency-path: mobile/package-lock.json
     - if: inputs.expo-token != ''
