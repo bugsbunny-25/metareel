@@ -1,10 +1,12 @@
 name: mobile
 
 # Checks for the React Native app in mobile/ (docs/mobile-app-plan.md):
-# typecheck, lint, unit tests, and that the generated API types, theme tokens
-# and license list match their sources. On main, publishes the JS to the EAS
-# Update "preview" channel when EXPO_TOKEN is set. Release builds run on EAS
-# through release.yml (mobile-release.yml), so signing keys never reach GitHub.
+# typecheck, lint, unit tests, generated-file drift, expo-doctor, prebuild, and
+# Metro export. On main, publishes JS to the EAS Update "preview" channel when
+# EXPO_TOKEN is set, and runs unsigned Android/iOS native builds on GitHub
+# runners when native-affecting files change (preserving the EAS Free tier
+# quota for releases). Signed release builds run on EAS through release.yml
+# (mobile-release.yml), so signing keys never reach GitHub.
 
 on:
   pull_request:
@@ -47,6 +49,7 @@ jobs:
       pull-requests: read
     outputs:
       mobile: ${{ steps.filter.outputs.mobile }}
+      native: ${{ steps.filter.outputs.native }}
     steps:
       - uses: actions/checkout@v7
         if: github.event_name == 'push'
@@ -58,6 +61,17 @@ jobs:
               - 'mobile/**'
               - 'internal/openapi/spec/public.yaml'
               - 'app/src/tokens.css'
+              - '.github/actions/setup-mobile/**'
+              - '.github/workflows/mobile.yml'
+            native:
+              - 'mobile/package.json'
+              - 'mobile/package-lock.json'
+              - 'mobile/app.config.ts'
+              - 'mobile/version.ts'
+              - 'mobile/eas.json'
+              - 'mobile/plugins/**'
+              - 'mobile/modules/**'
+              - 'mobile/assets/**'
               - '.github/actions/setup-mobile/**'
               - '.github/workflows/mobile.yml'
 
@@ -75,6 +89,64 @@ jobs:
       - run: npm test -- --ci
       - name: Generated files are up to date
         run: npm run check:generated
+      - name: Expo project health
+        run: npx --yes expo-doctor
+      - name: Prebuild config plugins
+        run: npx expo prebuild --no-install --clean
+      - name: Bundle JS for iOS and Android
+        run: npx expo export --platform ios --platform android --output-dir "$RUNNER_TEMP/expo-export"
+
+  # Unsigned native builds on main when native-affecting files change. Runs on
+  # GitHub-hosted runners so native compilation, Gradle/R8, Pods, Swift/Kotlin
+  # modules and extensions are verified before a release without consuming EAS
+  # Build quota or requiring signing secrets.
+  native-android:
+    needs: [changes, checks]
+    if: ${{ needs.checks.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && (needs.changes.result != 'success' || needs.changes.outputs.native == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-mobile
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Prebuild Android project
+        run: npx expo prebuild --platform android --no-install --clean
+      - name: Compile unsigned release APK (arm64-v8a)
+        working-directory: mobile/android
+        env:
+          GRADLE_OPTS: -Xmx4g -XX:MaxMetaspaceSize=1g
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+
+  native-ios:
+    needs: [changes, checks]
+    if: ${{ needs.checks.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && (needs.changes.result != 'success' || needs.changes.outputs.native == 'true') }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-mobile
+      - name: Prebuild iOS project
+        run: npx expo prebuild --platform ios --no-install --clean
+      - name: Install CocoaPods
+        working-directory: mobile/ios
+        env:
+          LANG: en_US.UTF-8
+        run: pod install
+      - name: Compile iOS simulator release build
+        run: >-
+          xcodebuild
+          -workspace ios/metareel.xcworkspace
+          -scheme metareel
+          -configuration Release
+          -sdk iphonesimulator
+          -destination "generic/platform=iOS Simulator"
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          build
 
   update:
     # Only on main, never for pull requests or releases (forks get no secrets anyway).
