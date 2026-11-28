@@ -78,7 +78,9 @@
   "overrides": {
     "openapi-typescript": {
       "typescript": "$typescript"
-    }
+    },
+    "glob@>=9 <14.0.2": "^14.0.6",
+    "minimatch@>=7 <11.0.1": "^11.0.9"
   },
   "jest": {
     "preset": "jest-expo",
