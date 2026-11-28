@@ -1,6 +1,6 @@
 {
   "name": "metareel-mobile",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "main": "index.js",
   "dependencies": {
     "@expo-google-fonts/barlow-condensed": "^0.4.1",
@@ -93,5 +93,5 @@
       "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|react-native-svg|@noble/.*)"
     ]
   },
-  "versionCode": 6000
+  "versionCode": 7000
 }
