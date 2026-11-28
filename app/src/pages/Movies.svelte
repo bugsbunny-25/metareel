@@ -9,6 +9,7 @@
   import { library } from '../lib/library.svelte.js'
   import { route, setQuery } from '../lib/router.svelte.js'
   import { remembered } from '../lib/remember.svelte.js'
+  import { tabScroll } from '../lib/tab-scroll.js'
   import { localDay, daysUntil, dayLabel, hm } from '../lib/dates.js'
 
   let { onlog } = $props()
@@ -19,9 +20,13 @@
   const sort = remembered('tabs.movies.sort', 'added', ['added', 'latest', 'earliest'])
   const SORTS = [['added', 'Added'], ['latest', 'Latest release'], ['earliest', 'Earliest release']]
   const seg = $derived(route.query.seg === 'towatch' || route.query.seg === 'upcoming' ? route.query.seg : savedSeg.value)
+  // Each segment keeps its own scroll position.
+  const switchTab = tabScroll()
   function pickSeg(v) {
-    savedSeg.value = v
-    setQuery({ seg: v }, { replace: true })
+    switchTab(seg, v, () => {
+      savedSeg.value = v
+      setQuery({ seg: v }, { replace: true })
+    })
   }
 
   const today = localDay()

@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -69,6 +69,38 @@ export function CollectionScreen<T, S extends string>({
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
   const isCollapsed = (g: Group<T>) => toggled[g.key] ?? !!g.collapsed;
 
+  // Each segment keeps its own scroll position: the list is remounted per
+  // segment (so a switch never lands the new one mid-way down), and goes back
+  // to where that segment was left once its content is laid out.
+  const listRef = useRef<SectionList<{ key: string; items: T[] }, { key: string; title: string; count: number; collapsible: boolean; data: { key: string; items: T[] }[] }>>(null);
+  const offsets = useRef<Partial<Record<S, number>>>({});
+  const restoring = useRef<S | null>(null);
+  const listHeight = useRef(0);
+  const pickSegment = (s: S) => {
+    if (s === segment) return;
+    restoring.current = s;
+    onSegment(s);
+  };
+  // Called as the remounted list's content grows (rows render in batches):
+  // scroll as far toward the saved offset as the content allows, until it
+  // fits or the user drags.
+  const restoreScroll = (contentHeight: number) => {
+    if (restoring.current !== segment) return;
+    const y = offsets.current[segment];
+    if (y == null || y <= 0) {
+      restoring.current = null;
+      return;
+    }
+    if (loading) return; // again when the content arrives
+    const max = Math.max(0, contentHeight - listHeight.current);
+    // A frame later: Android drops a scroll past the content it has laid out
+    // so far. Scroll events stay unrecorded until the last step is sent.
+    requestAnimationFrame(() => {
+      listRef.current?.getScrollResponder()?.scrollTo({ y: Math.min(y, max), animated: false });
+      if (max >= y && restoring.current === segment) restoring.current = null;
+    });
+  };
+
   const pad = gutter.compact;
   const gap = 12;
   const inner = Math.max(0, width - pad * 2);
@@ -115,10 +147,19 @@ export function CollectionScreen<T, S extends string>({
             <RootActions actions={actions} />
           </View>
         )}
-        <Segmented segments={segments} value={segment} onChange={onSegment} />
+        <Segmented segments={segments} value={segment} onChange={pickSegment} />
       </View>
       <SectionList
+        key={segment}
+        ref={listRef}
         style={{ flex: 1 }}
+        onLayout={(e) => (listHeight.current = e.nativeEvent.layout.height)}
+        onScroll={(e) => {
+          if (restoring.current !== segment) offsets.current[segment] = e.nativeEvent.contentOffset.y;
+        }}
+        onScrollBeginDrag={() => (restoring.current = null)}
+        scrollEventThrottle={32}
+        onContentSizeChange={(_, h) => restoreScroll(h)}
         contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : undefined}
         contentContainerStyle={{ paddingHorizontal: pad, paddingRight: pad + (nativeRootHeader ? 0 : insets.right), paddingTop: 8, paddingBottom: 32 }}
         sections={sections}

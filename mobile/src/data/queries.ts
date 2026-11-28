@@ -179,6 +179,39 @@ export function useInCinemas(country: string) {
   });
 }
 
+/** What a streaming service added in a country over the last 7 days (live from JustWatch). */
+export function useNewOnService(country: string, service: string) {
+  return useQuery({
+    queryKey: ['new-on-service', country, service],
+    enabled: !!country && !!service,
+    staleTime: 60 * 60_000,
+    queryFn: async ({ signal }) =>
+      unwrap(await api.GET('/api/v1/titles/new/{country}/{service}', { params: { path: { country, service } }, signal })),
+  });
+}
+
+/** Highly rated titles streamable in a country that weren't in its Top 10 lately. */
+export function useHiddenGems(country: string, limit = 40) {
+  return useQuery({
+    queryKey: ['hidden-gems', country, limit],
+    enabled: !!country,
+    staleTime: 60 * 60_000,
+    queryFn: async ({ signal }) =>
+      unwrap(await api.GET('/api/v1/discover/{country}/hidden-gems', { params: { path: { country }, query: { limit } }, signal })),
+  });
+}
+
+/** Titles charting in other countries that can't be streamed in this one. */
+export function useElsewhere(country: string, limit = 20) {
+  return useQuery({
+    queryKey: ['elsewhere', country, limit],
+    enabled: !!country,
+    staleTime: 60 * 60_000,
+    queryFn: async ({ signal }) =>
+      unwrap(await api.GET('/api/v1/discover/{country}/elsewhere', { params: { path: { country }, query: { limit } }, signal })),
+  });
+}
+
 /** TMDB title search (anything, charted or not). */
 export function useTitleSearch(q: string) {
   return useQuery({
@@ -268,14 +301,19 @@ export function useDetailedStats(kind: '' | 'tv' | 'movie') {
 }
 
 /** Where a title streams in one country (Where to watch, for a country other than your default). */
-export function useTitleAvailability(kind: Kind, id: string, country: string | undefined, enabled = true) {
-  return useQuery({
+/** Where a title streams in one country, for useTitleAvailability and useQueries. */
+export function titleAvailabilityQuery(kind: Kind, id: string, country: string | undefined, enabled = true) {
+  return {
     queryKey: ['title-availability', kind, id, country ?? ''],
     enabled: enabled && !!id && !!country,
     staleTime: 30 * 60_000,
-    queryFn: async ({ signal }) =>
+    queryFn: async ({ signal }: { signal: AbortSignal }) =>
       unwrap(await api.GET('/api/v1/titles/tmdb/{kind}/{id}/availability', { params: { path: { kind, id }, query: { country } }, signal })),
-  });
+  };
+}
+
+export function useTitleAvailability(kind: Kind, id: string, country: string | undefined, enabled = true) {
+  return useQuery(titleAvailabilityQuery(kind, id, country, enabled));
 }
 
 /** Every day a title was in a Top 10 (country, service, rank), for its Top 10 graph. */

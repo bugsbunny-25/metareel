@@ -1,18 +1,21 @@
 import { Image } from 'expo-image';
+import { useQueries } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import type { components } from '@/api/schema';
+import { CertificationBadge } from '@/components/CertificationBadge';
 import { Poster } from '@/components/Poster';
 import { RatingLogo } from '@/components/RatingLogo';
 import { Top10Badge } from '@/components/Top10Badge';
 import { Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
-import { usePreferences, useTitleAvailability } from '@/data/queries';
+import { titleAvailabilityQuery, usePreferences } from '@/data/queries';
 import { providerName } from '@/data/scope';
 import { useTop10Of } from '@/data/top10now';
 import { useWindowClass } from '@/layout/window-class';
 import { runtimeText, tmdbImage } from '@/lib/format';
+import { breaksAWord } from '@/lib/line-breaks';
 import { MiniSegment } from '@/screens/stats-parts';
 import { useTheme } from '@/theme';
 
@@ -27,7 +30,8 @@ export function Hero({
   poster,
   title,
   tint,
-  meta,
+  facts,
+  lines = [],
   children,
   kind,
   tmdbId,
@@ -38,10 +42,13 @@ export function Hero({
   title: string;
   /** The title's logo (TMDB path): shown for the name on dark themes. */
   logo?: string | null;
-  /** The age rating in your country, as a badge before the meta line. */
+  /** The age rating in your country, as a badge at the start of the facts line. */
   certification?: string | null;
   tint?: string | null;
-  meta: string;
+  /** The short facts beside the rating: year (or years) and length (or seasons). */
+  facts: string;
+  /** Lines under it, one each and in this order: a show's network, then genres. */
+  lines?: string[];
   children?: ReactNode;
   /** The title, for the Top 10 badge and "No. 2 in films today" when it charts. */
   kind?: string;
@@ -70,29 +77,53 @@ export function Hero({
             <Image source={{ uri: logoUri }} style={StyleSheet.absoluteFill} contentFit="contain" contentPosition="left" transition={150} />
           </View>
         ) : (
-          <Text variant="display" accessibilityRole="header">
-            {title || ' '}
-          </Text>
+          <HeroTitle key={title} title={title} />
         )}
-        {meta || certification ? (
+        {/* In a fixed order, one line each, so long facts never wrap under the badge:
+            rating + year and length, then network, then genres. */}
+        {facts || certification ? (
           <View style={styles.metaRow}>
-            {certification ? (
-              <View style={[styles.cert, { borderColor: colors.textMuted }]} accessible accessibilityLabel={`Rated ${certification}`}>
-                <Text variant="caption" num style={{ color: colors.textPrimary }}>
-                  {certification}
-                </Text>
-              </View>
-            ) : null}
-            {meta ? (
-              <Text variant="muted" num style={{ flexShrink: 1 }}>
-                {meta}
+            {certification ? <CertificationBadge rating={certification} size={14} /> : null}
+            {facts ? (
+              <Text variant="muted" num numberOfLines={1} style={{ flexShrink: 1 }}>
+                {facts}
               </Text>
             ) : null}
           </View>
         ) : null}
+        {lines.filter(Boolean).map((l) => (
+          <Text key={l} variant="muted" numberOfLines={1}>
+            {l}
+          </Text>
+        ))}
         {children}
       </View>
     </View>
+  );
+}
+
+/** The largest and smallest size of a hero's typeset title. */
+const TITLE_MAX = 30;
+const TITLE_MIN = 18;
+
+/**
+ * A hero's typeset title. A narrow column would otherwise break a long word
+ * mid-way ("Resurrectio" / "n"); while a laid-out line ends inside a word,
+ * the size steps down (to TITLE_MIN at most) until every word fits on a line.
+ */
+function HeroTitle({ title }: { title: string }) {
+  const [size, setSize] = useState(TITLE_MAX);
+  return (
+    <Text
+      variant="display"
+      accessibilityRole="header"
+      style={size === TITLE_MAX ? undefined : { fontSize: size, lineHeight: Math.round(size * 1.2) }}
+      onTextLayout={(e) => {
+        if (size > TITLE_MIN && breaksAWord(e.nativeEvent.lines.map((l) => l.text))) setSize((n) => Math.max(TITLE_MIN, n - 2));
+      }}
+    >
+      {title || ' '}
+    </Text>
   );
 }
 
@@ -153,7 +184,9 @@ function Score({ label, value, logo, url }: { label: string; value: string; logo
 /**
  * Where to watch, in your default country or any country in your order
  * (Settings), switched here. The default's providers come with the overview;
- * another country's are asked for when picked.
+ * the other countries are fetched together as soon as the panel shows, so a
+ * switch is instant. Until a picked country has loaded, the last list stays
+ * up, dimmed, rather than collapsing to a loading line.
  */
 export function WhereToWatch({ overview, country, kind, id }: { overview?: Overview; country?: string; kind: 'movie' | 'tv'; id: string }) {
   const { colors } = useTheme();
@@ -161,14 +194,26 @@ export function WhereToWatch({ overview, country, kind, id }: { overview?: Overv
   const options = [...new Set([country, ...(prefs.data?.countries ?? [])].filter((c): c is string => !!c))];
   const [picked, setPicked] = useState<string>();
   const where = picked && options.includes(picked) ? picked : country;
-  const other = useTitleAvailability(kind, id, where, where !== country);
+  const switchable = options.length > 1 && !!overview?.availability;
+  const others = options.filter((c) => c !== country);
+  const fetched = useQueries({ queries: others.map((c) => titleAvailabilityQuery(kind, id, c, switchable)) });
+  const ready = (c?: string) => !!c && (c === country || !!fetched[others.indexOf(c)]?.data);
+  // The country whose list was on screen when another was picked, kept up
+  // (dimmed) until the picked one has loaded.
+  const [before, setBefore] = useState<string>();
+  const shown = ready(where) ? where : ready(before) ? before : country;
+  const pending = shown !== where && !!fetched[others.indexOf(where ?? '')]?.isPending;
+  const failed = shown !== where && !!fetched[others.indexOf(where ?? '')]?.isError;
   const avail =
-    where !== country
-      ? other.data?.countries?.[where ?? '']
+    shown !== country
+      ? (fetched[others.indexOf(shown ?? '')]?.data?.countries?.[shown ?? ''] ?? {})
       : (overview?.availability?.countries?.[country ?? ''] ?? Object.values(overview?.availability?.countries ?? {})[0]);
+  const pick = (c: string) => {
+    setBefore(shown);
+    setPicked(c);
+  };
   const streams: Provider[] = [...(avail?.flatrate ?? []), ...(avail?.free ?? []), ...(avail?.ads ?? [])];
   const buy: Provider[] = [...(avail?.rent ?? []), ...(avail?.buy ?? [])].filter((p, i, all) => all.findIndex((x) => x.provider_id === p.provider_id) === i);
-  const switchable = options.length > 1 && !!overview?.availability;
   if (!streams.length && !buy.length && !switchable) return null;
   const row = (list: Provider[]) => (
     <View style={styles.providers}>
@@ -185,7 +230,7 @@ export function WhereToWatch({ overview, country, kind, id }: { overview?: Overv
           ) : (
             <View style={[styles.logo, { backgroundColor: colors.bgElevated }]} />
           )}
-          <Text variant="caption" numberOfLines={1} style={{ maxWidth: 72, textAlign: 'center' }}>
+          <Text variant="caption" numberOfLines={3} style={styles.providerName}>
             {p.provider_name}
           </Text>
         </Pressable>
@@ -194,20 +239,26 @@ export function WhereToWatch({ overview, country, kind, id }: { overview?: Overv
   );
   return (
     <Panel title={switchable ? 'Where to watch' : `Where to watch${country ? ` in ${country}` : ''}`}>
-      {switchable && where ? <MiniSegment options={options.map((c) => [c, c] as [string, string])} value={where} onChange={setPicked} /> : null}
-      {where !== country && other.isPending ? (
-        <Text variant="muted">Loading…</Text>
-      ) : streams.length ? (
-        row(streams)
+      {switchable && where ? <MiniSegment options={options.map((c) => [c, c] as [string, string])} value={where} onChange={pick} /> : null}
+      {failed ? (
+        <Text variant="muted">Couldn&apos;t load where this streams in {where}.</Text>
       ) : (
-        <Text variant="muted">Not streaming in {where ?? 'this country'}.</Text>
+        <View style={{ gap: 12, opacity: pending ? 0.45 : 1 }} accessibilityState={{ busy: pending }}>
+          {streams.length ? (
+            row(streams)
+          ) : pending ? (
+            <Text variant="muted">Loading…</Text>
+          ) : (
+            <Text variant="muted">Not streaming in {where ?? 'this country'}.</Text>
+          )}
+          {buy.length ? (
+            <>
+              <Text variant="caption">Rent or buy</Text>
+              {row(buy)}
+            </>
+          ) : null}
+        </View>
       )}
-      {buy.length ? (
-        <>
-          <Text variant="caption">Rent or buy</Text>
-          {row(buy)}
-        </>
-      ) : null}
       <Text variant="caption">Data from JustWatch</Text>
     </Panel>
   );
@@ -295,17 +346,18 @@ function Facts({ rows }: { rows: [string, string][] }) {
 
 const styles = StyleSheet.create({
   top10: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
-  hero: { flexDirection: 'row', gap: 16, padding: 16, alignItems: 'flex-end', overflow: 'hidden' },
+  // Top-aligned: the poster stays in the same place however tall the text beside it grows.
+  hero: { flexDirection: 'row', gap: 16, padding: 16, alignItems: 'flex-start', overflow: 'hidden' },
   heroWide: { padding: 24, gap: 24 },
   heroText: { flex: 1, gap: 6 },
   logoBox: { width: '100%', height: 64 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
-  cert: { borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   // One row of equal boxes, however many sources there are (up to four).
   scores: { flexDirection: 'row', gap: 8 },
   score: { flex: 1, minWidth: 0, paddingVertical: 12, paddingHorizontal: 12, gap: 6, alignItems: 'flex-start' },
   providers: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-  provider: { alignItems: 'center', gap: 4 },
+  provider: { alignItems: 'center', gap: 4, width: 76 },
+  providerName: { width: 76, textAlign: 'center' },
   logo: { width: 48, height: 48, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
   fact: { flexDirection: 'row', gap: 12, alignItems: 'baseline' },
 });

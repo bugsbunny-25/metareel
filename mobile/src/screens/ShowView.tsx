@@ -55,12 +55,7 @@ export function ShowView({
   const poster = m?.poster_path ?? show.data?.title?.poster_path;
   const first = year(m?.release_date ?? show.data?.title?.release_date);
   const years = first ? (m?.status === 'Ended' || m?.status === 'Canceled' ? `${first}–${year(m.last_air_date) || ''}` : `${first}–`) : '';
-  const heroMeta = [
-    years,
-    m?.number_of_seasons ? `${m.number_of_seasons} ${m.number_of_seasons === 1 ? 'season' : 'seasons'}` : '',
-    m?.networks?.[0] ?? '',
-    (m?.genres ?? []).slice(0, 2).join(', '),
-  ]
+  const heroFacts = [years, m?.number_of_seasons ? `${m.number_of_seasons} ${m.number_of_seasons === 1 ? 'season' : 'seasons'}` : '']
     .filter(Boolean)
     .join(' · ');
   // The first aired episode not seen yet, for "Log S01 E02".
@@ -95,7 +90,8 @@ export function ShowView({
             poster={poster}
             title={title}
             tint={mine.data?.title?.poster_color}
-            meta={heroMeta}
+            facts={heroFacts}
+            lines={[m?.networks?.[0] ?? '', (m?.genres ?? []).slice(0, 3).join(', ')]}
             logo={m?.logo_path}
             certification={country ? m?.certifications?.[country] : undefined}
           >
@@ -106,11 +102,13 @@ export function ShowView({
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
               {next ? (
                 <Button
+                  grow
                   title={`Log ${episodeCode(next.season_number, next.episode_number)}`}
                   onPress={() => openLog({ kind: 'tv', id, title, poster, season: next.season_number, episode: next.episode_number })}
                 />
               ) : null}
               <Button
+                grow
                 kind="quiet"
                 title={show.data.state?.status === 'watchlist' ? 'On watchlist' : 'Watchlist'}
                 onPress={() => setWatchlist({ kind: 'tv', id, title }, show.data?.state?.status !== 'watchlist')}

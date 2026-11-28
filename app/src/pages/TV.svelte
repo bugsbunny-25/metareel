@@ -1,5 +1,5 @@
-<!-- TV (#/tv?seg=towatch|upcoming). To watch: shows by stage (continue watching → haven't
-     watched in a while → not started → on hold → dropped) from /me/shows, each with its next
+<!-- TV (#/tv?seg=towatch|upcoming). To watch: shows by stage (new episodes → continue
+     watching → haven't watched in a while → not started → on hold → dropped) from /me/shows, each with its next
      episode. Upcoming: episodes still to air from /me/upcoming, by day. Both as a list or a poster
      grid; the segment and the view are remembered in this browser (as on mobile). Picking an
      episode opens the episode first; its page links to the whole series. -->
@@ -16,15 +16,20 @@
   import { ago, sinceDay, daysUntil, dayLabel, weekdayLabel, localDay, addDays, hm } from '../lib/dates.js'
   import { markWatched, epCode, EPISODE_TYPE } from '../lib/shows.js'
   import { remembered } from '../lib/remember.svelte.js'
+  import { tabScroll } from '../lib/tab-scroll.js'
 
   let { onlog } = $props()
 
   const savedSeg = remembered('tabs.tv.segment', 'towatch', ['towatch', 'upcoming'])
   const view = remembered('tabs.tv.view', 'list', ['list', 'grid'])
   const seg = $derived(route.query.seg === 'towatch' || route.query.seg === 'upcoming' ? route.query.seg : savedSeg.value)
+  // Each segment keeps its own scroll position.
+  const switchTab = tabScroll()
   function pickSeg(v) {
-    savedSeg.value = v
-    setQuery({ seg: v }, { replace: true })
+    switchTab(seg, v, () => {
+      savedSeg.value = v
+      setQuery({ seg: v }, { replace: true })
+    })
   }
   const epHref = (id, season, episode) => `#/episode/${id}/${season}/${episode}`
   const nextHref = (s) => (s.next_episode ? epHref(s.tmdb_id, s.next_episode.season_number, s.next_episode.episode_number) : `#/show/${s.tmdb_id}`)
@@ -38,6 +43,7 @@
   // Stages in the order they're shown. Caught-up shows have no section: they surface in
   // Upcoming when a new episode is on its way, and back in Continue watching once it airs.
   const STAGES = [
+    ['new_episodes', 'New episodes', (n) => `New series and seasons out in the last ${n} days`],
     ['watching', 'Continue watching', (n) => `Watched in the last ${n} days`],
     ['stalled', 'Haven’t watched in a while', (n) => `Nothing watched for more than ${n} days`],
     ['not_started', 'Not started', 'On your watchlist'],
@@ -96,8 +102,8 @@
   })
   const count = (k) => queue?.counts?.[k] ?? 0
   const inProgress = $derived([...byStage.watching, ...byStage.stalled])
-  const toCatchUp = $derived(inProgress.reduce((n, s) => n + s.remaining_episodes, 0))
-  const minutesLeft = $derived(inProgress.reduce((n, s) => n + s.minutes_left, 0))
+  const toCatchUp = $derived([...byStage.new_episodes, ...inProgress].reduce((n, s) => n + s.remaining_episodes, 0))
+  const minutesLeft = $derived([...byStage.new_episodes, ...inProgress].reduce((n, s) => n + s.minutes_left, 0))
 
   const today = localDay()
   const soon = $derived((upcoming?.episodes ?? []).filter((e) => daysUntil(e.air_date, today) <= 7))
@@ -242,7 +248,7 @@
               {#each list as s (s.tmdb_id)}
                 {@const ep = s.next_episode}
                 {@const t = library.get('tv', s.tmdb_id)}
-                {@const going = (key === 'watching' || key === 'stalled') && ep}
+                {@const going = (key === 'new_episodes' || key === 'watching' || key === 'stalled') && ep}
                 <li class:stalled={key === 'stalled'}>
                   <a class="art" href={going ? nextHref(s) : `#/show/${s.tmdb_id}`} tabindex="-1" aria-hidden="true"><Poster path={s.poster_path} seed={s.tmdb_id} title={s.title} kind="tv" tmdbId={s.tmdb_id} width={44} radius={5} size="w92" /></a>
                   <div class="rbody">

@@ -39,7 +39,6 @@ export default function Find() {
         contentInsetAdjustmentBehavior="automatic"
         insetLeft={insets.left}
         insetRight={insets.right}
-        empty="Search films and shows, or paste a link from IMDb, TMDB, Netflix or Letterboxd."
       />
     </View>
   );

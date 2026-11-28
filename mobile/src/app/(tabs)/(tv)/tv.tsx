@@ -77,7 +77,7 @@ export default function TV() {
 
   const summary = useMemo(() => {
     if (segment === 'towatch') {
-      const on = shows.filter((s) => s.next_episode && ['watching', 'not_started', 'stalled', 'on_hold'].includes(s.stage ?? ''));
+      const on = shows.filter((s) => s.next_episode && ['new_episodes', 'watching', 'stalled', 'not_started', 'on_hold'].includes(s.stage ?? ''));
       if (!on.length) return null;
       const left = on.reduce((n, s) => n + (s.remaining_episodes ?? 0), 0);
       const mins = on.reduce((n, s) => n + (s.minutes_left ?? 0), 0);

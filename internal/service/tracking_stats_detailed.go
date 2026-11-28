@@ -103,6 +103,7 @@ type DetailedStats struct {
 }
 
 var stageLabels = []struct{ key, label string }{
+	{StageNewEpisodes, "New episodes"},
 	{StageWatching, "Watching"},
 	{StageStalled, "Not watched lately"},
 	{StageNotStarted, "Not started"},
@@ -343,7 +344,7 @@ func (s *TrackingService) showStats(ctx context.Context, userID int64, out *Deta
 	for _, r := range rows {
 		st := stageOf(r, staleBefore)
 		counts[st]++
-		if st == StageWatching || st == StageStalled || st == StageNotStarted {
+		if st == StageNewEpisodes || st == StageWatching || st == StageStalled || st == StageNotStarted {
 			left += r.MinutesLeft
 		}
 	}

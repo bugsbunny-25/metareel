@@ -224,7 +224,7 @@
           </div>
         </div>
         <div class="row">
-          <div class="lab"><b>“Haven’t watched in a while”</b><span class="hint">How long a show can sit untouched before Up next moves it out of Continue watching.</span></div>
+          <div class="lab"><b>“Haven’t watched in a while”</b><span class="hint">How long a show can sit untouched before it moves out of Continue watching, and how long a new series or season stays in New episodes.</span></div>
           <div class="ctl">
             <label class="days"><input type="number" min="7" max="365" bind:value={draft.stale_days} aria-label="Days" /> days</label>
           </div>

@@ -188,3 +188,33 @@ func TestUpcoming(t *testing.T) {
 		}
 	}
 }
+
+// A new series or season sits in new episodes for the stale window after it
+// premieres, then falls to not started or stalled if nothing is watched.
+func TestStageOfNewEpisodes(t *testing.T) {
+	staleBefore := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC) // 30 days before 2026-11-13
+	next := func(season, episode int64, aired string) *repository.QueueEpisode {
+		return &repository.QueueEpisode{SeasonNumber: season, EpisodeNumber: episode, AirDate: &aired}
+	}
+	cases := []struct {
+		name string
+		row  repository.ShowQueueRow
+		want string
+	}{
+		{"new series", repository.ShowQueueRow{Status: StatusWatchlist, NextEpisode: next(1, 1, "2026-11-10")}, StageNewEpisodes},
+		{"new series, window passed", repository.ShowQueueRow{Status: StatusWatchlist, NextEpisode: next(1, 1, "2026-09-01")}, StageNotStarted},
+		{"new series premiering on the window's first day", repository.ShowQueueRow{Status: StatusWatchlist, NextEpisode: next(1, 1, "2026-10-14")}, StageNewEpisodes},
+		{"old series never started", repository.ShowQueueRow{Status: StatusWatchlist, NextEpisode: next(1, 1, "2019-01-01")}, StageNotStarted},
+		{"new season", repository.ShowQueueRow{Status: StatusWatching, WatchedEpisodes: 8, LastWatchedAt: tp("2026-11-01 20:00:00"), NextEpisode: next(2, 1, "2026-11-12")}, StageNewEpisodes},
+		{"new season after a long break", repository.ShowQueueRow{Status: StatusCompleted, WatchedEpisodes: 8, LastWatchedAt: tp("2025-03-01 20:00:00"), NextEpisode: next(2, 1, "2026-11-12")}, StageNewEpisodes},
+		{"new season, window passed", repository.ShowQueueRow{Status: StatusWatching, WatchedEpisodes: 8, LastWatchedAt: tp("2026-08-01 20:00:00"), NextEpisode: next(2, 1, "2026-09-01")}, StageStalled},
+		{"new season, already started", repository.ShowQueueRow{Status: StatusWatching, WatchedEpisodes: 9, LastWatchedAt: tp("2026-11-12 22:00:00"), NextEpisode: next(2, 1, "2026-11-12")}, StageWatching},
+		{"weekly episode mid-season", repository.ShowQueueRow{Status: StatusWatching, WatchedEpisodes: 3, LastWatchedAt: tp("2026-11-01 20:00:00"), NextEpisode: next(2, 4, "2026-11-12")}, StageWatching},
+		{"on hold wins", repository.ShowQueueRow{Status: StatusOnHold, NextEpisode: next(1, 1, "2026-11-10")}, StageOnHold},
+	}
+	for _, c := range cases {
+		if got := stageOf(c.row, staleBefore); got != c.want {
+			t.Errorf("%s: stage = %s, want %s", c.name, got, c.want)
+		}
+	}
+}

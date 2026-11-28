@@ -32,8 +32,8 @@ app, an admin console, iOS and Android apps, and an API.
 - A diary of every watch: when (to the minute, or just the year), where (cinema
   and screen, streaming service, disc, TV), how (IMAX, Dolby, 70mm, 3D…),
   rating, tags and notes. Rewatches are their own entries.
-- Shows episode by episode: up next, continue watching, upcoming episodes and
-  reminders.
+- Shows episode by episode: new series and seasons, up next, continue
+  watching, upcoming episodes and reminders.
 - Statistics and a year in review: time watched, streaks, genres, people,
   decades, how your ratings compare with the critics', and what you spent.
 - Cinema subscriptions (AMC A-List, ODEON Limitless…): whether each plan paid

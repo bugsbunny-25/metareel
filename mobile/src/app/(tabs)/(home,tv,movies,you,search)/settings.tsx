@@ -10,6 +10,7 @@ import { CountryOrder } from '@/components/CountryOrder';
 import { Field } from '@/components/Field';
 import { Icon } from '@/components/Icon';
 import { DetailScreen, Panel } from '@/components/Screen';
+import { PillFill } from '@/components/PillFill';
 import { Text } from '@/components/Text';
 import { tmdbLogo } from '@/components/tmdb-logo';
 import { useAccount, usePreferences, useServerVersion } from '@/data/queries';
@@ -278,8 +279,9 @@ function ThemePicker() {
             accessibilityRole="radio"
             accessibilityState={{ checked: on }}
             onPress={() => setThemePreference(o.value)}
-            style={[styles.segmentItem, on && { backgroundColor: colors.accentPrimary }]}
+            style={styles.segmentItem}
           >
+            <PillFill on={on} color={colors.accentPrimary} radius={17} />
             <Text variant="label" style={{ color: on ? colors.accentOn : colors.textPrimary }}>
               {o.label}
             </Text>

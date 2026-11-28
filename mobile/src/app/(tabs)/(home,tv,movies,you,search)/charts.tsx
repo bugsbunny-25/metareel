@@ -5,6 +5,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-
 import type { components } from '@/api/schema';
 import { DateTimeField } from '@/components/DateTimeField';
 import { Icon } from '@/components/Icon';
+import { CertificationBadge } from '@/components/CertificationBadge';
 import { Numeral } from '@/components/Numeral';
 import { Poster } from '@/components/Poster';
 import { ScopePicker } from '@/components/ScopePicker';
@@ -147,7 +148,6 @@ function ChartRow({ entry: e }: { entry: Entry }) {
   // The chart carries the title's stored facts, so no lookup per row.
   const facts = [
     e.year ? String(e.year) : '',
-    e.certification ?? '',
     e.season_count ? `${e.season_count} ${e.season_count === 1 ? 'season' : 'seasons'}` : '',
     e.genres?.[0] ?? '',
   ]
@@ -174,15 +174,15 @@ function ChartRow({ entry: e }: { entry: Entry }) {
         <Text variant="label" numberOfLines={2}>
           {e.name}
         </Text>
-        {facts ? (
-          <Text variant="caption" num numberOfLines={1}>
-            {facts}
-          </Text>
-        ) : null}
-        {e.overview ? (
-          <Text variant="muted" numberOfLines={2}>
-            {e.overview}
-          </Text>
+        {facts || e.certification ? (
+          <View style={styles.facts}>
+            {e.certification ? <CertificationBadge rating={e.certification} /> : null}
+            {facts ? (
+              <Text variant="caption" num numberOfLines={1} style={{ flexShrink: 1 }}>
+                {facts}
+              </Text>
+            ) : null}
+          </View>
         ) : null}
         <Text variant="caption" num>
           {e.days_in_top10} {e.days_in_top10 === 1 ? 'day' : 'days'} in the Top 10
@@ -193,6 +193,7 @@ function ChartRow({ entry: e }: { entry: Entry }) {
 }
 
 const styles = StyleSheet.create({
+  facts: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   scope: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', minHeight: 36 },
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   step: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },

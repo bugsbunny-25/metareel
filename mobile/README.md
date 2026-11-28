@@ -13,7 +13,7 @@ cookies. An optional home-network address is used over plain HTTP only after
 
 | Path | What |
 |---|---|
-| `src/app/` | Routes (Expo Router): `sign-in`, `search` and the `log` sheet (full screen), and the tab shell `(tabs)/` (Tonight, TV, Movies, Diary, You; Settings is behind You's gear; on iOS a system search tab, `(search)/find`, which sits with the other tabs, so in the iPhone Duo's side strip too; Android searches from a button beside each tab's title) |
+| `src/app/` | Routes (Expo Router): `sign-in`, `search` and the `log` sheet (full screen), and the tab shell `(tabs)/` (Tonight, TV, Movies, Diary, You; Settings is behind You's gear; on iOS a system search tab, `(search)/find`, which sits with the other tabs, so in the iPhone Duo's side strip too; Android searches from a button beside each tab's title). Before anything is typed, search shows `src/screens/DiscoverRails.tsx`: the web's Discover, lean -- new on the service your Top 10 follows (last 7 days), hidden gems and popular elsewhere for your country |
 | `src/app/(tabs)/_layout.tsx` | Android: one navigator for every window size, a bottom bar on compact windows and a rail on medium/expanded ones |
 | `src/app/(tabs)/_layout.ios.tsx` | iOS: the system tab bar (`NativeTabs`), which iOS places itself (side strip on iPhone Duo, sidebar on iPad) |
 | `src/layout/root-header.tsx` | Tab-root titles and actions: native large-title bar and toolbar buttons on iOS, a title row on Android |

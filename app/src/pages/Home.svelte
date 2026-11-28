@@ -48,7 +48,7 @@
   })
   const upNext = $derived(
     (queue?.shows ?? [])
-      .filter((s) => s.stage === 'watching' && s.next_episode)
+      .filter((s) => (s.stage === 'watching' || (s.stage === 'new_episodes' && s.watched_episodes)) && s.next_episode)
       .sort((a, b) => (b.last_watched_at ?? '').localeCompare(a.last_watched_at ?? ''))
       .slice(0, 6),
   )

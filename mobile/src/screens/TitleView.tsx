@@ -50,13 +50,12 @@ export function TitleView({ kind: k, id, embedded }: { kind: string; id: string;
         tint={snap?.poster_color}
         logo={m?.logo_path}
         certification={country ? m?.certifications?.[country] : undefined}
-        meta={[year(m?.release_date ?? snap?.release_date), runtimeText(m?.runtime ?? snap?.runtime), (m?.genres ?? []).slice(0, 2).join(', ')]
-          .filter(Boolean)
-          .join(' · ')}
+        facts={[year(m?.release_date ?? snap?.release_date), runtimeText(m?.runtime ?? snap?.runtime)].filter(Boolean).join(' · ')}
+        lines={[(m?.genres ?? []).slice(0, 3).join(', ')]}
       >
         <View style={styles.actions}>
-          {kind === 'movie' ? <Button title="Log" onPress={() => openLog({ kind, id, title, poster })} /> : null}
-          <Button kind="quiet" title={onWatchlist ? 'On watchlist' : 'Watchlist'} onPress={() => setWatchlist({ kind, id, title }, !onWatchlist)} />
+          {kind === 'movie' ? <Button grow title="Log" onPress={() => openLog({ kind, id, title, poster })} /> : null}
+          <Button grow kind="quiet" title={onWatchlist ? 'On watchlist' : 'Watchlist'} onPress={() => setWatchlist({ kind, id, title }, !onWatchlist)} />
         </View>
       </Hero>
 

@@ -6,7 +6,7 @@ import { tokens } from './tokens';
 export type Scheme = 'dark' | 'light';
 export type Colors = { [K in keyof typeof tokens.dark]: string };
 
-/** Font family names as loaded in the root layout (@expo-google-fonts). */
+/** Font family names as loaded in the root layout (@expo-google-fonts, and assets/fonts). */
 export const fonts = {
   display: 'SourceSerif4_700Bold',
   displaySemi: 'SourceSerif4_600SemiBold',
@@ -15,6 +15,12 @@ export const fonts = {
   sansBold: 'SourceSans3_700Bold',
   /** The chart rank numerals (Numeral.tsx). */
   numeral: 'BarlowCondensed_800ExtraBold',
+  /**
+   * Age ratings (CertificationBadge): Motion Picture Ratings (Daniel Lyons
+   * Entertainment, all rights reserved), the font tides uses. It draws only
+   * A-Z, a-z, 0-9, "-" and ".".
+   */
+  certification: 'MotionPictureRatings',
 } as const;
 
 /** Lining, tabular figures for numbers that line up (the web's `.num`). */
