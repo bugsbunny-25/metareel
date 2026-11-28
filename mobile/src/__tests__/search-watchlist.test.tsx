@@ -22,6 +22,8 @@ jest.mock('@/data/queries', () => ({
     isError: false,
   }),
   useWatchlist: () => ({ data: { titles: [{ tmdb_kind: 'tv', tmdb_id: '2', status: 'watchlist' }] } }),
+  useMyTitle: (kind: string, id: string) =>
+    kind === 'movie' && id === '1518204' ? { data: { title: { title: 'Allen', poster_path: '/allen.jpg', release_date: '2026-11-13' } } } : { data: undefined },
 }));
 jest.mock('@/offline', () => ({
   watchlistShown: jest.requireActual<typeof import('@/offline/watchlist')>('@/offline/watchlist').watchlistShown,
@@ -69,5 +71,20 @@ describe('search results watchlist button', () => {
     mockQueued = [{ kind: 'watchlist', status: 'pending', meta: { kind: 'movie', id: '3', on: true } }];
     await render(<SearchResults q="a" onPick={jest.fn()} />);
     expect(screen.getByRole('button', { name: 'Remove Heat from your watchlist' })).toBeSelected();
+  });
+
+  it('shows the real title for a pasted TMDB link, not the placeholder', async () => {
+    const user = userEvent.setup();
+    const onPick = jest.fn();
+    await render(<SearchResults q="https://www.themoviedb.org/movie/1518204" onPick={onPick} />);
+    expect(screen.getByText('Allen')).toBeOnTheScreen();
+    expect(screen.queryByText('TMDB movie 1518204')).not.toBeOnTheScreen();
+    await user.press(screen.getByRole('button', { name: 'Add Allen to your watchlist' }));
+    expect(mockSetWatchlist).toHaveBeenLastCalledWith({ kind: 'movie', id: '1518204', title: 'Allen' }, true);
+  });
+
+  it('keeps the placeholder when the linked title cannot be looked up', async () => {
+    await render(<SearchResults q="https://www.themoviedb.org/movie/42" onPick={jest.fn()} />);
+    expect(screen.getByText('TMDB movie 42')).toBeOnTheScreen();
   });
 });

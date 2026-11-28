@@ -8,7 +8,7 @@ import { api } from '@/auth/session';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { TitleRow } from '@/components/TitleRow';
-import { useTitleSearch, useWatchlist } from '@/data/queries';
+import { useMyTitle, useTitleSearch, useWatchlist } from '@/data/queries';
 import { DiscoverRails } from '@/screens/DiscoverRails';
 import { setWatchlist } from '@/lib/actions';
 import { year } from '@/lib/format';
@@ -16,7 +16,10 @@ import { lookupQuery, parseShared } from '@/lib/share';
 import { useOutbox, watchlistShown } from '@/offline';
 import { useTheme } from '@/theme';
 
-type Result = components['schemas']['TitleSearchResult'];
+type Result = components['schemas']['TitleSearchResult'] & {
+  /** From a pasted link or ID: only the kind and ID are known, the row looks the rest up. */
+  linked?: boolean;
+};
 
 /**
  * Results for a search: a pasted link or ID is looked up, anything else is
@@ -49,9 +52,9 @@ export function SearchResults({
   });
   const results: Result[] =
     ref?.type === 'tmdb'
-      ? [{ tmdb_kind: ref.kind, tmdb_id: ref.id, title: `TMDB ${ref.kind} ${ref.id}` }]
+      ? [{ tmdb_kind: ref.kind, tmdb_id: ref.id, title: `TMDB ${ref.kind} ${ref.id}`, linked: true }]
       : ref
-        ? (lookup.data?.items ?? []).map((i) => ({ tmdb_kind: i.kind, tmdb_id: i.tmdb_id, title: `Found: ${i.kind} ${i.tmdb_id}` }))
+        ? (lookup.data?.items ?? []).map((i) => ({ tmdb_kind: i.kind, tmdb_id: i.tmdb_id, title: `Found: ${i.kind} ${i.tmdb_id}`, linked: true }))
         : (search.data?.results ?? []);
   const busy = search.isFetching || lookup.isFetching;
   // What's on the watchlist now: the server's list, then any change still queued.
@@ -76,28 +79,36 @@ export function SearchResults({
           <DiscoverRails onPick={onPick} />
         ) : undefined
       }
-      renderItem={({ item: r }) => (
-        <TitleRow
-          poster={r.poster_path}
-          title={r.title ?? ''}
-          kind={r.tmdb_kind}
-          tmdbId={r.tmdb_id}
-          subtitle={[r.tmdb_kind === 'tv' ? 'Series' : 'Film', year(r.release_date)].filter(Boolean).join(' · ')}
-          onPress={() => onPick(r.tmdb_kind ?? 'movie', r.tmdb_id ?? '', r.title, r.poster_path)}
-          right={
-            r.tmdb_id ? (
-              <WatchlistButton
-                kind={r.tmdb_kind ?? 'movie'}
-                id={r.tmdb_id}
-                title={r.title ?? ''}
-                on={watchlistShown(outboxItems, r.tmdb_kind ?? 'movie', r.tmdb_id, listed.has(`${r.tmdb_kind ?? 'movie'}:${r.tmdb_id}`))}
-              />
-            ) : null
-          }
-        />
-      )}
+      renderItem={({ item: r }) => {
+        const kind = r.tmdb_kind ?? 'movie';
+        const id = r.tmdb_id ?? '';
+        const row = (shown: Result) => (
+          <TitleRow
+            poster={shown.poster_path}
+            title={shown.title ?? ''}
+            kind={kind}
+            tmdbId={id}
+            subtitle={[kind === 'tv' ? 'Series' : 'Film', year(shown.release_date)].filter(Boolean).join(' · ')}
+            onPress={() => onPick(kind, id, shown.title, shown.poster_path)}
+            right={
+              id ? <WatchlistButton kind={kind} id={id} title={shown.title ?? ''} on={watchlistShown(outboxItems, kind, id, listed.has(`${kind}:${id}`))} /> : null
+            }
+          />
+        );
+        return r.linked ? <LinkedRow result={r} render={row} /> : row(r);
+      }}
     />
   );
+}
+
+/**
+ * A result from a pasted link: shows the title's own record (metareel's, or
+ * TMDB's on demand) once it loads, the placeholder until then or if it fails.
+ */
+function LinkedRow({ result, render }: { result: Result; render: (shown: Result) => React.ReactElement }) {
+  const mine = useMyTitle(result.tmdb_kind ?? 'movie', result.tmdb_id ?? '');
+  const t = mine.data?.title;
+  return render(t?.title ? { ...result, title: t.title, poster_path: t.poster_path, release_date: t.release_date } : result);
 }
 
 /** Puts a result on the watchlist or takes it off; filled when it's on. */
