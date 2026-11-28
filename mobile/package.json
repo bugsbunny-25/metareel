@@ -94,5 +94,9 @@
       "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|react-native-svg|@noble/.*)"
     ]
   },
-  "versionCode": 7001
+  "versionCode": 7001,
+  "allowScripts": {
+    "@parcel/watcher": false,
+    "fsevents": false
+  }
 }
