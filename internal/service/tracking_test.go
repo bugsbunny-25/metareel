@@ -132,9 +132,6 @@ func mustLog(t *testing.T, s *TrackingService, userID int64, in WatchInput) repo
 
 // tp is a generic pointer helper (ptr in this package is int64-only).
 //
-//go:fix inline
-func tp[T any](v T) *T { return new(v) }
-
 // The day a watch belongs to is the local day of its start, which is
 // ended_at minus the runtime unless the client sent a start.
 func TestLogWatchDerivesTheLocalDay(t *testing.T) {

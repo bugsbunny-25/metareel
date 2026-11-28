@@ -84,10 +84,9 @@ func TestTasteBreakdown(t *testing.T) {
 // A missing crowd score is left out of the comparison rather than counted
 // as a zero, which would drag every gap upwards.
 func TestCrowdComparison(t *testing.T) {
-	f := func(v float64) *float64 { return &v }
 	rows := []repository.RatingComparison{
-		{UserRating: 9, TmdbRating: f(8.0), ImdbRating: f(8.5)},
-		{UserRating: 6, TmdbRating: f(7.0)},
+		{UserRating: 9, TmdbRating: new(8.0), ImdbRating: new(8.5)},
+		{UserRating: 6, TmdbRating: new(7.0)},
 		{UserRating: 8, TmdbRating: nil, ImdbRating: nil, RtRating: nil},
 	}
 	out := crowdComparison(rows)

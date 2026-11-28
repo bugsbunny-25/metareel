@@ -217,7 +217,7 @@ func ResolveNetflixSeason(showTitle, seasonTitle, firstWeek string, tmdb []repos
 		return atoi64p(m[1]), repository.SeasonSourceParsed
 	}
 	if limitedRe.MatchString(suffix) {
-		return int64p(1), repository.SeasonSourceParsed
+		return new(int64(1)), repository.SeasonSourceParsed
 	}
 	if n, ok := tmdbSeasonNamed(tmdb, suffix, seasonTitle); ok {
 		return new(n), repository.SeasonSourceTmdbName
@@ -360,9 +360,6 @@ func atoi64p(s string) *int64 {
 	}
 	return &n
 }
-
-//go:fix inline
-func int64p(n int64) *int64 { return new(n) }
 
 func sameInt(a, b *int64) bool {
 	if a == nil || b == nil {

@@ -24,10 +24,10 @@ func TestNearbyVenues(t *testing.T) {
 		return out["venue"].(repository.Venue).ID
 	}
 	// One degree of latitude is about 111 km.
-	neighbour := add("Mall Neighbour", VenueInput{Latitude: tp(lat + 0.0009), Longitude: tp(lon)}) // ~100 m
-	yours := add("Your Usual", VenueInput{Latitude: tp(lat - 0.0030), Longitude: tp(lon)})         // ~334 m
-	add("Old Single Screen", VenueInput{Latitude: tp(lat + 0.0018), Longitude: tp(lon), Status: new("closed")})
-	far := add("Across Town", VenueInput{Latitude: tp(lat + 0.18), Longitude: tp(lon)}) // ~20 km
+	neighbour := add("Mall Neighbour", VenueInput{Latitude: new(lat + 0.0009), Longitude: new(lon)}) // ~100 m
+	yours := add("Your Usual", VenueInput{Latitude: new(lat - 0.0030), Longitude: new(lon)})         // ~334 m
+	add("Old Single Screen", VenueInput{Latitude: new(lat + 0.0018), Longitude: new(lon), Status: new("closed")})
+	far := add("Across Town", VenueInput{Latitude: new(lat + 0.18), Longitude: new(lon)}) // ~20 km
 	add("No Coordinates", VenueInput{})
 
 	if _, _, err := s.LogWatch(ctx, alice, WatchInput{
