@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -6,6 +6,7 @@ import { Icon } from '@/components/Icon';
 import { Placeholder } from '@/components/Placeholder';
 import { Text } from '@/components/Text';
 import type { Group } from '@/data/collections';
+import { chunk } from '@/lib/chunk';
 import { useTheme } from '@/theme';
 
 import { ListDetail } from './ListDetail';
@@ -108,19 +109,15 @@ export function CollectionScreen<T, S extends string>({
   const tileWidth = Math.floor((inner - gap * (cols - 1)) / cols);
 
   type Row = { key: string; items: T[] };
-  const sections = useMemo(
-    () =>
-      groups.map((g) => {
-        const shown = isCollapsed(g) ? [] : g.data;
-        const rows: Row[] =
-          view === 'grid'
-            ? chunk(shown, cols).map((items) => ({ key: items.map(itemKey).join('|'), items }))
-            : shown.map((t) => ({ key: itemKey(t), items: [t] }));
-        return { key: g.key, title: g.title, count: g.data.length, collapsible: !!g.collapsed, data: rows };
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [groups, view, cols, toggled],
-  );
+  // React Compiler memoizes this on what it reads.
+  const sections = groups.map((g) => {
+    const shown = isCollapsed(g) ? [] : g.data;
+    const rows: Row[] =
+      view === 'grid'
+        ? chunk(shown, cols).map((items) => ({ key: items.map(itemKey).join('|'), items }))
+        : shown.map((t) => ({ key: itemKey(t), items: [t] }));
+    return { key: g.key, title: g.title, count: g.data.length, collapsible: !!g.collapsed, data: rows };
+  });
 
   const actions: RootAction[] = [
     view === 'grid'
@@ -250,18 +247,12 @@ export function Segmented<S extends string>({ segments, value, onChange }: { seg
   );
 }
 
-function chunk<T>(items: T[], n: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += n) out.push(items.slice(i, i + n));
-  return out;
-}
-
 const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   segments: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
   segment: { flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: 2, marginBottom: -StyleSheet.hairlineWidth },
   sectionHead: { alignItems: 'center', marginTop: 18, marginBottom: 10 },
-  sectionPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16 },
+  sectionPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, borderCurve: 'continuous' },
   sectionText: { textTransform: 'uppercase', letterSpacing: 0.6, fontSize: 12.5 },
   gridRow: { flexDirection: 'row', marginBottom: 18 },
   listRow: { marginBottom: 12, width: '100%', maxWidth: 760, alignSelf: 'center' },

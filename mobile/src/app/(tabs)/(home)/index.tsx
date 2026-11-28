@@ -19,7 +19,7 @@ import { TitleRow } from '@/components/TitleRow';
 import { useDiary, useInCinemas, usePreferences, useShowQueue, useTop10, useTrending } from '@/data/queries';
 import { changeText, type LibraryState, libraryMark, movement, providerName, useLibrary, useScope } from '@/data/scope';
 import { useWindowClass } from '@/layout/window-class';
-import { markEpisode, openEpisode, openLog, openTitle } from '@/lib/actions';
+import { markEpisode, openEpisode, openLog, openTitle, titleHref } from '@/lib/actions';
 import { episodeCode, starText, tmdbKind } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/refresh';
 import { searchAction } from '@/layout/root-header';
@@ -171,7 +171,7 @@ function ListRail({ title, hint, items, loading }: { title: string; hint: string
                 title={item.title}
                 kind={item.tmdb_kind}
                 tmdbId={item.tmdb_id}
-                onPress={() => openTitle({ kind: item.tmdb_kind, id: item.tmdb_id, title: item.title })}
+                href={titleHref({ kind: item.tmdb_kind, id: item.tmdb_id, title: item.title })}
               />
               <View style={styles.railMeta}>
                 <Text variant="caption" num>

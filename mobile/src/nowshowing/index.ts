@@ -2,7 +2,6 @@ import * as Notifications from 'expo-notifications';
 import { AndroidImportance } from 'expo-notifications';
 import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
-import { Platform } from 'react-native';
 
 import type { NowShowingProps } from './props';
 
@@ -104,7 +103,7 @@ async function notification() {
 
 async function show(s: NowShowingSession) {
   const props = nowShowingProps(s);
-  if (Platform.OS === 'ios') {
+  if (process.env.EXPO_OS === 'ios') {
     const factory = await liveActivity();
     const existing = factory.getInstances();
     if (existing.length) {
@@ -137,7 +136,7 @@ export async function startNowShowing(s: Omit<NowShowingSession, 'startMs'> & { 
 export async function stopNowShowing() {
   save(null);
   try {
-    if (Platform.OS === 'ios') {
+    if (process.env.EXPO_OS === 'ios') {
       const factory = await liveActivity();
       await Promise.all(factory.getInstances().map((a) => a.end('immediate')));
     } else {
@@ -159,7 +158,7 @@ export async function refreshNowShowing() {
     await stopNowShowing();
     return;
   }
-  if (Platform.OS === 'android') await show(s).catch(() => undefined);
+  if (process.env.EXPO_OS === 'android') await show(s).catch(() => undefined);
 }
 
 /** Logging the title ends its "Now showing". */

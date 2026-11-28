@@ -6,7 +6,7 @@ import { PermissionsAndroid, Platform } from 'react-native';
 const ACCESS_LOCAL_NETWORK = 'android.permission.ACCESS_LOCAL_NETWORK';
 
 export async function ensureLocalNetworkAccess(): Promise<boolean> {
-  if (Platform.OS !== 'android' || Number(Platform.Version) < 37) return true;
+  if (process.env.EXPO_OS !== 'android' || Number(Platform.Version) < 37) return true;
   const perm = ACCESS_LOCAL_NETWORK as Parameters<typeof PermissionsAndroid.request>[0];
   if (await PermissionsAndroid.check(perm)) return true;
   const res = await PermissionsAndroid.request(perm, {

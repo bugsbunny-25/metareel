@@ -2,7 +2,7 @@ import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import Storage from 'expo-sqlite/kv-store';
 import { router, useLocalSearchParams } from 'expo-router';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useEffectEvent, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,6 +16,7 @@ import { Text } from '@/components/Text';
 import { useMyTitle, usePreferences, useSubscriptions, useWatch } from '@/data/queries';
 import { useWindowClass } from '@/layout/window-class';
 import { isBookSplit, isTabletop, useFold } from 'fold-info';
+import { attempt } from '@/lib/attempt';
 import { currencyFor, deviceTimeZone, episodeCode } from '@/lib/format';
 import { blankForm, buildInput, FORM_VERSION, formDay, formFromEntry, type LogForm, planOnDay, suggestPlan } from '@/log/form';
 import { PictureSection, Section, TakeSection, WhenSection, WhereSection } from '@/log/sections';
@@ -162,7 +163,9 @@ function FormBody({ f, set, isNew, country }: { f: LogForm; set: (p: Partial<Log
 function usePlanSuggestion(f: LogForm, set: (p: Partial<LogForm>) => void) {
   const subs = useSubscriptions();
   const venueId = f.venue?.id;
-  useEffect(() => {
+  // Reads the whole form, but only a change of place, cinema, plans or a
+  // manual pick re-suggests: editing the price or date must not.
+  const suggest = useEffectEvent(() => {
     if (f.place !== 'theater' || f.subTouched || !f.venue) return;
     const day = formDay(f);
     const plan = suggestPlan(
@@ -172,8 +175,8 @@ function usePlanSuggestion(f: LogForm, set: (p: Partial<LogForm>) => void) {
     if ((plan?.id ?? null) !== f.subId) {
       set({ subId: plan?.id ?? null, ...(plan && !f.price && !f.faceValue ? { currency: plan.currency ?? f.currency } : {}) });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [f.place, f.subTouched, venueId, subs.data]);
+  });
+  useEffect(() => suggest(), [f.place, f.subTouched, venueId, subs.data]);
 }
 
 /** Edit a logged watch: every field, as on the web. */
@@ -203,23 +206,24 @@ function EditForm({ entry: e }: { entry: components['schemas']['WatchEntry'] }) 
 
   async function save() {
     setError(null);
-    let body: WatchInput;
-    try {
-      body = buildInput({ ...f, currency }, { kind: e.tmdb_kind ?? 'movie', id: e.tmdb_id ?? '', season: e.season_number, episode: e.episode_number });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Check the form.');
+    const target = { kind: e.tmdb_kind ?? 'movie', id: e.tmdb_id ?? '', season: e.season_number, episode: e.episode_number };
+    let body: WatchInput | undefined;
+    const invalid = await attempt(() => {
+      body = buildInput({ ...f, currency }, target);
+    }, 'Check the form.');
+    if (invalid || !body) return setError(invalid);
+    setBusy(true);
+    const id = e.id!;
+    const input = body;
+    const failed = await attempt(async () => unwrap(await api.PUT('/api/v1/me/watches/{id}', { params: { path: { id } }, body: input })), "Couldn't save. Are you online?");
+    if (failed) {
+      setError(failed);
+      setBusy(false);
       return;
     }
-    setBusy(true);
-    try {
-      unwrap(await api.PUT('/api/v1/me/watches/{id}', { params: { path: { id: e.id! } }, body }));
-      void queryClient.invalidateQueries();
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.back();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't save. Are you online?");
-      setBusy(false);
-    }
+    void queryClient.invalidateQueries();
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    router.back();
   }
 
   return (
@@ -411,6 +415,6 @@ const styles = StyleSheet.create({
   ratingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   like: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   venue: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
-  venuePicked: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12 },
+  venuePicked: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderCurve: 'continuous' },
   money: { flexDirection: 'row', gap: 10 },
 });

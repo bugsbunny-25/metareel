@@ -197,7 +197,7 @@ function Progress({ percent }: { percent: number }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.bar, { backgroundColor: colors.bgElevated }]} accessible accessibilityLabel={`${Math.round(percent)}% watched`}>
-      <View style={{ width: `${Math.min(100, percent)}%`, height: '100%', backgroundColor: colors.accentYours, borderRadius: 3 }} />
+      <View style={{ width: `${Math.min(100, percent)}%`, height: '100%', backgroundColor: colors.accentYours, borderRadius: 3, borderCurve: 'continuous' }} />
     </View>
   );
 }

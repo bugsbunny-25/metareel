@@ -29,7 +29,7 @@ export function Poster({
   const { colors } = useTheme();
   const top = useTop10Of(kind, tmdbId);
   const uri = tmdbImage(path, width > 120 ? 'w342' : 'w185');
-  const box = { width, height: Math.round(width * 1.5), borderRadius: width > 100 ? 12 : 8 };
+  const box = { width, height: Math.round(width * 1.5), borderRadius: width > 100 ? 12 : 8, borderCurve: 'continuous' as const };
   return (
     <View style={[box, styles.wrap, { backgroundColor: colors.bgElevated, borderColor: colors.posterHairline }]}>
       {uri ? (

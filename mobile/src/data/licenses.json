@@ -654,6 +654,12 @@
    "url": "https://github.com/expo/expo"
   },
   {
+   "name": "@isaacs/nonrecursive-glob-match",
+   "version": "1.1.0",
+   "license": "BlueOak-1.0.0",
+   "url": "https://www.npmjs.com/package/@isaacs/nonrecursive-glob-match"
+  },
+  {
    "name": "@isaacs/ttlcache",
    "version": "1.4.1",
    "license": "ISC",
@@ -2347,9 +2353,9 @@
   },
   {
    "name": "minimatch",
-   "version": "10.2.6",
+   "version": "11.0.9",
    "license": "BlueOak-1.0.0",
-   "url": "https://www.npmjs.com/package/minimatch"
+   "url": "https://github.com/isaacs/minimatch"
   },
   {
    "name": "ms",

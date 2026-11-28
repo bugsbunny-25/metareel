@@ -1,6 +1,6 @@
 import { router, Stack } from 'expo-router';
 import type { ComponentProps } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/Icon';
@@ -14,7 +14,7 @@ import { useTheme } from '@/theme';
  * in the vertical control strip on iPhone Duo with the tab bar. Android draws
  * its own title row.
  */
-export const nativeRootHeader = Platform.OS === 'ios';
+export const nativeRootHeader = process.env.EXPO_OS === 'ios';
 
 /** Scroll-view props for a tab root's content. */
 export function useRootScroll(): { contentInsetAdjustmentBehavior?: 'automatic'; paddingTop: number; insetRight: number } {

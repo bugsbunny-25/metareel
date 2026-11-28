@@ -254,6 +254,3 @@ func TestTMDBPopularityImport(t *testing.T) {
 		t.Fatal("no requests made")
 	}
 }
-
-//go:fix inline
-func timePtr(t time.Time) *time.Time { return new(t) }

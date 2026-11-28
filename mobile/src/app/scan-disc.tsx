@@ -16,8 +16,9 @@ import { usePreferences } from '@/data/queries';
 import { addDisc, lookupDisc, searchTitles } from '@/discs/data';
 import { DiscCase } from '@/discs/parts';
 import { type Condition, CONDITIONS, type DiscLookup, label, MEDIA_FORMATS, type MediaFormat, type Packaging } from '@/discs/vocab';
+import { attempt } from '@/lib/attempt';
 import { currencyFor, toMinor } from '@/lib/format';
-import { useTheme } from '@/theme';
+import { photoMatte, useTheme } from '@/theme';
 
 type TitleHit = components['schemas']['TitleSearchResult'];
 
@@ -44,18 +45,19 @@ export default function ScanDisc() {
 
   async function look(raw: string) {
     if (scanning.current || !raw.trim()) return;
+    const barcode = raw.trim();
     scanning.current = true;
     setBusy(true);
     setErr('');
-    try {
-      setFound(await lookupDisc(raw.trim()));
-      setCode(raw.trim());
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+    const failed = await attempt(async () => {
+      setFound(await lookupDisc(barcode));
+      setCode(barcode);
+    });
+    if (failed) {
+      setErr(failed);
       scanning.current = false;
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   }
 
   function onScan(r: BarcodeScanningResult) {
@@ -133,7 +135,7 @@ export default function ScanDisc() {
                   )}
                 </View>
               )}
-              {perm?.granted ? <View pointerEvents="none" style={[styles.target, { borderColor: colors.accentPrimary }]} /> : null}
+              {perm?.granted ? <View style={[styles.target, { pointerEvents: 'none', borderColor: colors.accentPrimary }]} /> : null}
               {busy ? <ActivityIndicator style={StyleSheet.absoluteFill} color={colors.accentPrimary} /> : null}
             </View>
             <Field
@@ -194,11 +196,8 @@ function Result({
   const toggle = (t: TitleHit) => setTitles(has(t) ? titles.filter((x) => !(x.tmdb_kind === t.tmdb_kind && x.tmdb_id === t.tmdb_id)) : [...titles, t]);
 
   async function search() {
-    try {
-      setHits((await searchTitles(title)).results ?? []);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
+    const failed = await attempt(async () => setHits((await searchTitles(title)).results ?? []));
+    if (failed) setErr(failed);
   }
 
   async function add() {
@@ -207,7 +206,7 @@ function Result({
     if (minor === undefined) return setErr('The price isn’t a number.');
     setBusy(true);
     setErr('');
-    try {
+    const failed = await attempt(async () => {
       const copy = {
         retailer: retailer.trim(),
         condition,
@@ -234,11 +233,9 @@ function Result({
             import_images: front ? [{ url: front, kind: 'front' }] : [],
           });
       onAdded({ id: out.id, title: out.release?.title ?? title });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (failed) setErr(failed);
+    setBusy(false);
   }
 
   return (
@@ -365,6 +362,7 @@ const styles = StyleSheet.create({
   camera: {
     height: 260,
     borderRadius: 18,
+    borderCurve: 'continuous',
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
@@ -378,6 +376,7 @@ const styles = StyleSheet.create({
     height: '24%',
     borderWidth: 2,
     borderRadius: 10,
+    borderCurve: 'continuous',
     opacity: 0.8,
   },
   known: { flexDirection: 'row', gap: 14, alignItems: 'center' },
@@ -385,8 +384,9 @@ const styles = StyleSheet.create({
     width: 90,
     height: 110,
     borderRadius: 8,
+    borderCurve: 'continuous',
     borderWidth: 2,
-    backgroundColor: '#fff',
+    backgroundColor: photoMatte,
   },
   hit: {
     flexDirection: 'row',

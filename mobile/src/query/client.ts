@@ -2,7 +2,7 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import { focusManager, onlineManager, QueryClient } from '@tanstack/react-query';
 import * as Network from 'expo-network';
 import Storage from 'expo-sqlite/kv-store';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -33,7 +33,7 @@ onlineManager.setEventListener((setOnline) => {
   return () => sub.remove();
 });
 focusManager.setEventListener((handleFocus) => {
-  if (Platform.OS === 'web') return;
+  if (process.env.EXPO_OS === 'web') return;
   const sub = AppState.addEventListener('change', (s) => handleFocus(s === 'active'));
   return () => sub.remove();
 });

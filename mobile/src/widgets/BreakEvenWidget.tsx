@@ -3,7 +3,6 @@ import { background, fillMaxSize, fillMaxWidth, paddingAll } from '@expo/ui/jetp
 import { ProgressView, Spacer, Text, VStack } from '@expo/ui/swift-ui';
 import { containerBackground, font, foregroundStyle, lineLimit, tint, widgetURL } from '@expo/ui/swift-ui/modifiers';
 import { createWidget } from 'expo-widgets';
-import { Platform } from 'react-native';
 
 import type { BreakEvenProps } from './props';
 
@@ -55,7 +54,7 @@ const BreakEvenAndroid = (p: BreakEvenProps) => {
   );
 };
 
-export default createWidget<BreakEvenProps>('BreakEven', Platform.OS === 'ios' ? BreakEvenIOS : BreakEvenAndroid, {
+export default createWidget<BreakEvenProps>('BreakEven', process.env.EXPO_OS === 'ios' ? BreakEvenIOS : BreakEvenAndroid, {
   state: 'signedOut',
   plan: '',
   progressLabel: '',

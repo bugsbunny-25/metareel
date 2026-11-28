@@ -2,7 +2,6 @@ import * as Notifications from 'expo-notifications';
 import { AndroidImportance } from 'expo-notifications';
 import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
-import { Platform } from 'react-native';
 
 import { unwrap } from '@/api/client';
 import { api, currentSession, subscribeSession } from '@/auth/session';
@@ -41,7 +40,7 @@ export type PermissionResult = 'granted' | 'denied' | 'blocked';
 
 /** Android shows the permission prompt only once a channel exists. */
 async function ensureChannel() {
-  if (Platform.OS !== 'android') return;
+  if (process.env.EXPO_OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(EPISODE_CHANNEL, {
     name: 'New episodes',
     description: 'A reminder on the day a new episode of a show you follow airs',

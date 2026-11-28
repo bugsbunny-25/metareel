@@ -63,7 +63,7 @@ export function Screen({
 export function Panel({ children, title }: PropsWithChildren<{ title?: string }>) {
   const { colors, radius } = useTheme();
   return (
-    <View style={[styles.panel, { backgroundColor: colors.bgSurface, borderRadius: radius.panel }]}>
+    <View style={[styles.panel, { backgroundColor: colors.bgSurface, borderRadius: radius.panel, borderCurve: 'continuous' }]}>
       {title ? <Text variant="heading">{title}</Text> : null}
       {children}
     </View>

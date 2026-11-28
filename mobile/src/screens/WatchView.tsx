@@ -204,7 +204,7 @@ function Badges({ label: name, formats, named }: { label: string; formats: Forma
 const styles = StyleSheet.create({
   badges: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 },
   named: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  textBadge: { paddingHorizontal: 8, height: 26, borderRadius: 8, justifyContent: 'center' },
+  textBadge: { paddingHorizontal: 8, height: 26, borderRadius: 8, borderCurve: 'continuous', justifyContent: 'center' },
   line: { flexDirection: 'row', gap: 12, minHeight: 30, alignItems: 'center' },
   buttons: { gap: 10 },
 });

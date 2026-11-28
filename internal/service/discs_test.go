@@ -63,9 +63,6 @@ func newDiscEnv(t *testing.T) (*DiscService, *fakeBarcodes, int64, int64, *sql.D
 	return s, bc, alice, bob, db
 }
 
-//go:fix inline
-func iptr(v int) *int { return new(v) }
-
 func trilogy() *DiscReleaseInput {
 	return &DiscReleaseInput{
 		Barcode: "883929640010", Title: "The Dark Knight Trilogy", MediaFormat: "uhd_bluray", Packaging: "box_set",
@@ -90,7 +87,7 @@ func TestDiscBoxSetLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	got, err := s.Add(ctx, alice, AddDiscInput{
-		PriceMinor: i64(5999), Currency: "usd", Retailer: "Best Buy", PurchasedOn: "2026-11-01", Condition: "sealed",
+		PriceMinor: new(int64(5999)), Currency: "usd", Retailer: "Best Buy", PurchasedOn: "2026-11-01", Condition: "sealed",
 		Release: trilogy(),
 	})
 	if err != nil {
@@ -180,14 +177,14 @@ func TestDiscValidation(t *testing.T) {
 	cases := map[string]AddDiscInput{
 		"no release":       {},
 		"bad format":       {Release: &DiscReleaseInput{Title: "X", MediaFormat: "laserdisc"}},
-		"price no ccy":     {Release: base(), DiscCopyInput: DiscCopyInput{PriceMinor: i64(100)}},
+		"price no ccy":     {Release: base(), DiscCopyInput: DiscCopyInput{PriceMinor: new(int64(100))}},
 		"bad barcode":      {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Barcode: "883929640017"}},
 		"unknown tmdb":     {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Titles: []DiscTitleRef{{TmdbKind: "movie", TmdbID: "1"}}}},
 		"title index":      {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Discs: []DiscSpec{{Format: "bluray", TitleIndex: new(0)}}}},
 		"bad audio":        {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Discs: []DiscSpec{{Format: "bluray", Audio: []AudioTrack{{Format: "dolby_surround_9000"}}}}}},
 		"bad aspect":       {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Discs: []DiscSpec{{Format: "bluray", AspectRatio: "wide"}}}},
 		"nested box parts": {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Parts: []DiscReleaseInput{{Title: "Y", MediaFormat: "dvd", Parts: []DiscReleaseInput{{Title: "Z", MediaFormat: "dvd"}}}}}},
-		"season on movie":  {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Titles: []DiscTitleRef{{TmdbKind: "movie", TmdbID: "155", SeasonNumber: i64(1)}}}},
+		"season on movie":  {Release: &DiscReleaseInput{Title: "X", MediaFormat: "bluray", Titles: []DiscTitleRef{{TmdbKind: "movie", TmdbID: "155", SeasonNumber: new(int64(1))}}}},
 	}
 	for name, in := range cases {
 		t.Run(name, func(t *testing.T) {

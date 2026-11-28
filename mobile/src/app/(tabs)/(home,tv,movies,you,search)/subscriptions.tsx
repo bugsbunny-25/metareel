@@ -67,7 +67,7 @@ function Meter({ value, max }: { value: number; max: number }) {
   const pct = Math.min(100, (value / Math.max(1, max)) * 100);
   return (
     <View style={[styles.meter, { backgroundColor: colors.bgElevated }]} accessible accessibilityLabel={`${value} of ${max}`}>
-      <View style={{ width: `${pct}%`, height: '100%', borderRadius: 4, backgroundColor: value >= max ? colors.deltaUp : colors.accentYours }} />
+      <View style={{ width: `${pct}%`, height: '100%', borderRadius: 4, borderCurve: 'continuous', backgroundColor: value >= max ? colors.deltaUp : colors.accentYours }} />
     </View>
   );
 }

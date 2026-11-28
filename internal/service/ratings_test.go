@@ -72,18 +72,6 @@ func (f *fakeRT) Search(_ context.Context, _ client.RTKind, name string, _ int) 
 	return f.search, f.err
 }
 
-//go:fix inline
-func i64(v int64) *int64 { return new(v) }
-
-//go:fix inline
-func f64(v float64) *float64 { return new(v) }
-
-//go:fix inline
-func str(v string) *string { return new(v) }
-
-//go:fix inline
-func boolp(v bool) *bool { return new(v) }
-
 func bugoniaFragment() client.MovieOrShowFragment {
 	var f client.MovieOrShowFragment
 	f.Id = "tm1504418"
@@ -106,12 +94,12 @@ func bugoniaMDBList() *client.MDBListMedia {
 		Title:  "Bugonia",
 		Year:   2025,
 		ImdbID: "tt12300742",
-		Score:  f64(78),
+		Score:  new(float64(78)),
 		Ratings: []client.MDBListRating{
-			{Source: "imdb", Value: new(7.5), Votes: f64(230000)},
-			{Source: "tomatoes", Value: f64(86), URL: "https://www.rottentomatoes.com/m/bugonia"},
-			{Source: "tomatoesaudience", Value: f64(71)},
-			{Source: "metacritic", Value: f64(73)},
+			{Source: "imdb", Value: new(7.5), Votes: new(float64(230000))},
+			{Source: "tomatoes", Value: new(float64(86)), URL: "https://www.rottentomatoes.com/m/bugonia"},
+			{Source: "tomatoesaudience", Value: new(float64(71))},
+			{Source: "metacritic", Value: new(float64(73))},
 			{Source: "letterboxd", Value: nil},
 		},
 	}
@@ -136,7 +124,7 @@ func newRatingsFixture(t *testing.T) *ratingsFixture {
 		db:    db,
 		jw:    &fakeJustWatch{search: []client.MovieOrShowFragment{bugoniaFragment()}},
 		mdb:   &fakeMDBList{media: bugoniaMDBList()},
-		rt:    &fakeRT{bySlug: map[string]*client.RTRating{"m/bugonia": {Slug: "m/bugonia", Title: "Bugonia", Year: 2025, CriticsScore: i64(88), AudienceScore: i64(72), CertifiedFresh: new(true)}}},
+		rt:    &fakeRT{bySlug: map[string]*client.RTRating{"m/bugonia": {Slug: "m/bugonia", Title: "Bugonia", Year: 2025, CriticsScore: new(int64(88)), AudienceScore: new(int64(72)), CertifiedFresh: new(true)}}},
 		clock: time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC),
 	}
 	f.svc = &RatingsService{
@@ -261,7 +249,7 @@ func TestRatings_SearchFindsSlugWithoutMDBList(t *testing.T) {
 	f := newRatingsFixture(t)
 	f.svc.mdblist = nil
 	f.rt.bySlug = nil
-	f.rt.search = &client.RTRating{Slug: "m/bugonia", Title: "Bugonia", Year: 2025, CriticsScore: i64(88), AudienceScore: i64(72), CertifiedFresh: new(true)}
+	f.rt.search = &client.RTRating{Slug: "m/bugonia", Title: "Bugonia", Year: 2025, CriticsScore: new(int64(88)), AudienceScore: new(int64(72)), CertifiedFresh: new(true)}
 	ctx := context.Background()
 	if _, err := seedOne(t, f.db, seedTitle{Slug: "bugonia", Name: "Bugonia", Kind: "movie", TmdbID: "701387"}); err != nil {
 		t.Fatal(err)

@@ -3,7 +3,6 @@ import { background, fillMaxSize, paddingAll } from '@expo/ui/jetpack-compose/mo
 import { Spacer, Text, VStack } from '@expo/ui/swift-ui';
 import { containerBackground, font, foregroundStyle, lineLimit, widgetURL } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
-import { Platform } from 'react-native';
 
 import type { UpNextProps } from './props';
 
@@ -81,7 +80,7 @@ const UpNextAndroid = (p: UpNextProps) => {
   );
 };
 
-export default createWidget<UpNextProps>('UpNext', Platform.OS === 'ios' ? UpNextIOS : UpNextAndroid, {
+export default createWidget<UpNextProps>('UpNext', process.env.EXPO_OS === 'ios' ? UpNextIOS : UpNextAndroid, {
   state: 'signedOut',
   items: [],
   airing: '',

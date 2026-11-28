@@ -49,23 +49,21 @@ func TestReviewSuggestions(t *testing.T) {
 		ReleaseDate: "1990-09-21"}, false); err != nil {
 		t.Fatal(err)
 	}
-	id := func(s string) *string { return &s }
-	year := func(y int) *int { return &y }
 	chartYear := time.Now().UTC().AddDate(0, 0, -10).Year()
 	search := &fakeReviewSearch{hits: map[string][]MappingCandidate{
 		"tv_show|The Family Man": {
-			{Title: "The Family Man", Year: year(1990), Kind: "tv_show", TmdbID: id("1111")}, // the current mapping
-			{Title: "The Family Man", Year: year(2019), Kind: "tv_show", TmdbID: id("93352")},
-			{Title: "The Family Man Show", Year: year(2001), Kind: "tv_show", TmdbID: id("5")},
-			{Title: "The Family Man", Year: year(chartYear + 3), Kind: "tv_show", TmdbID: id("6")}, // not out yet
+			{Title: "The Family Man", Year: new(1990), Kind: "tv_show", TmdbID: new("1111")}, // the current mapping
+			{Title: "The Family Man", Year: new(2019), Kind: "tv_show", TmdbID: new("93352")},
+			{Title: "The Family Man Show", Year: new(2001), Kind: "tv_show", TmdbID: new("5")},
+			{Title: "The Family Man", Year: new(chartYear + 3), Kind: "tv_show", TmdbID: new("6")}, // not out yet
 			{Title: "No TMDB", Kind: "tv_show"},
-			{Title: "The Family Man", Kind: "tv_show", TmdbID: id("../search")}, // not a TMDB ID
+			{Title: "The Family Man", Kind: "tv_show", TmdbID: new("../search")}, // not a TMDB ID
 			// Dated: out 5 days after it first charted / 100 days before.
-			{Title: "The Family Man", Kind: "tv_show", TmdbID: id("7"), ReleaseDate: id(time.Now().UTC().AddDate(0, 0, -5).Format("2006-01-02"))},
-			{Title: "The Family Man", Kind: "tv_show", TmdbID: id("8"), ReleaseDate: id(time.Now().UTC().AddDate(0, 0, -110).Format("2006-01-02"))},
+			{Title: "The Family Man", Kind: "tv_show", TmdbID: new("7"), ReleaseDate: new(time.Now().UTC().AddDate(0, 0, -5).Format("2006-01-02"))},
+			{Title: "The Family Man", Kind: "tv_show", TmdbID: new("8"), ReleaseDate: new(time.Now().UTC().AddDate(0, 0, -110).Format("2006-01-02"))},
 		},
-		"movie|The Family Man": {{Title: "The Family Man", Year: year(2000), Kind: "movie", TmdbID: id("9")},
-			{Title: "The Family Man", Year: year(2019), Kind: "tv_show", TmdbID: id("93352")}}, // seen already
+		"movie|The Family Man": {{Title: "The Family Man", Year: new(2000), Kind: "movie", TmdbID: new("9")},
+			{Title: "The Family Man", Year: new(2019), Kind: "tv_show", TmdbID: new("93352")}}, // seen already
 	}}
 	svc := NewReviewFixService(slog.New(slog.NewTextHandler(io.Discard, nil)), repository.NewMappingRepository(db), search,
 		fakeReviewOffers{"tv:93352": {"IN", "US"}})

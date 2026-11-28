@@ -17,7 +17,7 @@ import { useWindowClass } from '@/layout/window-class';
 import { markEpisode, openLog, openTitle } from '@/lib/actions';
 import { episodeCode, runtimeText, starText, tmdbImage } from '@/lib/format';
 import { useOutbox } from '@/offline';
-import { useTheme } from '@/theme';
+import { onArtwork, useTheme } from '@/theme';
 
 import { watchedText } from './WatchView';
 
@@ -84,7 +84,7 @@ export function EpisodeView({
       {q.isError ? <Text variant="muted">Couldn&apos;t load this episode. It needs a connection.</Text> : null}
       {d && e ? (
         <>
-          <View style={[styles.still, { borderRadius: radius.hero, backgroundColor: colors.bgSurface }]}>
+          <View style={[styles.still, { borderRadius: radius.hero, borderCurve: 'continuous', backgroundColor: colors.bgSurface }]}>
             {still ? <Image source={{ uri: still }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} accessible={false} /> : null}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(11,11,12,0.35)' }]} />
             <View style={styles.stillText}>
@@ -93,10 +93,10 @@ export function EpisodeView({
                   {title} ›
                 </Text>
               </Pressable>
-              <Text variant="caption" num style={{ color: '#f5f5f7' }}>
+              <Text variant="caption" num style={{ color: onArtwork }}>
                 {episodeCode(season, episode)}
               </Text>
-              <Text variant={wide ? 'display' : 'title'} accessibilityRole="header" style={{ color: '#f5f5f7' }}>
+              <Text variant={wide ? 'display' : 'title'} accessibilityRole="header" style={{ color: onArtwork }}>
                 {e.name || `Episode ${episode}`}
               </Text>
             </View>
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   eyebrow: { textTransform: 'uppercase', letterSpacing: 1.2 },
-  face: { width: 84, height: 112, borderRadius: 10, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  face: { width: 84, height: 112, borderRadius: 10, borderCurve: 'continuous', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   watch: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 36 },
   fact: { flexDirection: 'row', gap: 12, alignItems: 'baseline' },
 });

@@ -37,7 +37,7 @@ export function TitleRow({
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : undefined}
       accessibilityState={selected ? { selected: true } : undefined}
-      style={({ pressed }) => [styles.row, selected && { backgroundColor: colors.bgElevated, marginHorizontal: -8, paddingHorizontal: 8, borderRadius: 12 }, { opacity: pressed ? 0.75 : 1 }]}
+      style={({ pressed }) => [styles.row, selected && { backgroundColor: colors.bgElevated, marginHorizontal: -8, paddingHorizontal: 8, borderRadius: 12, borderCurve: 'continuous' }, { opacity: pressed ? 0.75 : 1 }]}
     >
       <Poster path={poster} title={title} width={44} kind={kind} tmdbId={tmdbId} />
       <View style={styles.text}>

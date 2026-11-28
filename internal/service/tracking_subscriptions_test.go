@@ -25,20 +25,19 @@ func TestBillingDays(t *testing.T) {
 }
 
 func TestPlanSavings(t *testing.T) {
-	i64 := func(v int64) *int64 { return &v }
 	usd, gbp := "USD", "GBP"
 	sub := repository.CinemaSubscription{ID: 1, Plan: "AMC Stubs A-List", Chain: new("AMC"), PriceMinor: 2399, Currency: "USD", Period: "month", StartedOn: "2026-09-10"}
-	covered := i64(1)
+	covered := new(int64(1))
 	watches := []repository.CinemaWatchCost{
 		// Paid tickets: price the covered watches without a face value (median at AMC: 1650).
-		{ID: 1, Day: "2026-05-01", PriceMinor: i64(1600), Currency: &usd, Tickets: 1, Chain: "AMC Theatres"},
-		{ID: 2, Day: "2026-06-01", PriceMinor: i64(3400), Currency: &usd, Tickets: 2, Chain: "AMC Theatres"},
-		{ID: 3, Day: "2026-06-02", PriceMinor: i64(900), Currency: &usd, Tickets: 1, Chain: "Regal"},
+		{ID: 1, Day: "2026-05-01", PriceMinor: new(int64(1600)), Currency: &usd, Tickets: 1, Chain: "AMC Theatres"},
+		{ID: 2, Day: "2026-06-01", PriceMinor: new(int64(3400)), Currency: &usd, Tickets: 2, Chain: "AMC Theatres"},
+		{ID: 3, Day: "2026-06-02", PriceMinor: new(int64(900)), Currency: &usd, Tickets: 1, Chain: "Regal"},
 		// Covered.
-		{ID: 4, Day: "2026-09-12", SubscriptionID: covered, FaceValueMinor: i64(2200), PriceMinor: i64(500), Currency: &usd, Tickets: 1, Chain: "AMC Theatres"}, // IMAX upcharge
+		{ID: 4, Day: "2026-09-12", SubscriptionID: covered, FaceValueMinor: new(int64(2200)), PriceMinor: new(int64(500)), Currency: &usd, Tickets: 1, Chain: "AMC Theatres"}, // IMAX upcharge
 		{ID: 5, Day: "2026-09-20", SubscriptionID: covered, Tickets: 1, Chain: "AMC Theatres"},
-		{ID: 6, Day: "2026-10-03", SubscriptionID: covered, FaceValueMinor: i64(1800), Currency: &usd, Tickets: 1},
-		{ID: 7, Day: "2026-10-04", SubscriptionID: covered, FaceValueMinor: i64(1500), Currency: &gbp, Tickets: 1},
+		{ID: 6, Day: "2026-10-03", SubscriptionID: covered, FaceValueMinor: new(int64(1800)), Currency: &usd, Tickets: 1},
+		{ID: 7, Day: "2026-10-04", SubscriptionID: covered, FaceValueMinor: new(int64(1500)), Currency: &gbp, Tickets: 1},
 	}
 	r := planSavings(sub, watches, "2026-11-13")
 	// Bills: Sep 10, Oct 10, Nov 10 = 3 x 2399.
@@ -102,13 +101,12 @@ func TestPlanBillsAcrossGapsAndPriceChanges(t *testing.T) {
 
 func TestSubscriptionFromHistory(t *testing.T) {
 	s := &TrackingService{}
-	i64 := func(v int64) *int64 { return &v }
 	base := SubscriptionInput{Plan: "Regal Unlimited", Currency: "usd", Period: "month"}
 
 	// Periods given out of order with a gap, a price change; summary follows them.
 	in := base
 	in.Periods = &[]SubscriptionPeriodInput{{StartedOn: "2026-06-01"}, {StartedOn: "2026-01-10", EndedOn: new("2026-03-15")}}
-	in.Prices = &[]SubscriptionPriceInput{{From: "2099-01-01", PriceMinor: i64(2500)}, {From: "2026-02-01", PriceMinor: i64(1999)}}
+	in.Prices = &[]SubscriptionPriceInput{{From: "2099-01-01", PriceMinor: new(int64(2500))}, {From: "2026-02-01", PriceMinor: new(int64(1999))}}
 	got, err := s.subscriptionFrom(in, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -125,7 +123,7 @@ func TestSubscriptionFromHistory(t *testing.T) {
 		t.Helper()
 		in := base
 		in.Periods = &[]SubscriptionPeriodInput{{StartedOn: "2026-01-10", EndedOn: new("2026-03-15")}, {StartedOn: "2026-06-01"}}
-		in.PriceMinor = i64(2000)
+		in.PriceMinor = new(int64(2000))
 		mod(&in)
 		if _, err := s.subscriptionFrom(in, nil); err == nil {
 			t.Errorf("%s: no error", name)
@@ -136,7 +134,7 @@ func TestSubscriptionFromHistory(t *testing.T) {
 	bad("end before start", func(in *SubscriptionInput) { (*in.Periods)[0].EndedOn = new("2026-01-01") })
 	bad("no periods", func(in *SubscriptionInput) { in.Periods = &[]SubscriptionPeriodInput{} })
 	bad("duplicate price date", func(in *SubscriptionInput) {
-		in.Prices = &[]SubscriptionPriceInput{{From: "2026-02-01", PriceMinor: i64(1)}, {From: "2026-02-01", PriceMinor: i64(2)}}
+		in.Prices = &[]SubscriptionPriceInput{{From: "2026-02-01", PriceMinor: new(int64(1))}, {From: "2026-02-01", PriceMinor: new(int64(2))}}
 	})
 	bad("missing price", func(in *SubscriptionInput) { in.PriceMinor = nil })
 
@@ -144,7 +142,7 @@ func TestSubscriptionFromHistory(t *testing.T) {
 	// kept, the last end and today's price replaced.
 	prev := got
 	upd := base
-	upd.StartedOn, upd.EndedOn, upd.PriceMinor = "2026-01-10", new("2026-09-30"), i64(2100)
+	upd.StartedOn, upd.EndedOn, upd.PriceMinor = "2026-01-10", new("2026-09-30"), new(int64(2100))
 	got2, err := s.subscriptionFrom(upd, &prev)
 	if err != nil {
 		t.Fatal(err)

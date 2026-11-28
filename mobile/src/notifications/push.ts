@@ -2,7 +2,6 @@ import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { AndroidImportance } from 'expo-notifications';
 import Storage from 'expo-sqlite/kv-store';
-import { Platform } from 'react-native';
 
 import { unwrap } from '@/api/client';
 import { api } from '@/auth/session';
@@ -20,7 +19,7 @@ const DEVICE_KEY = 'push.device_id';
 export type ArrivalsResult = 'on' | 'off' | 'denied' | 'blocked' | 'unavailable' | 'server-off';
 
 async function ensureChannel() {
-  if (Platform.OS !== 'android') return;
+  if (process.env.EXPO_OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(ARRIVALS_CHANNEL, {
     name: 'Watchlist arrivals',
     description: 'A title on your watchlist arrives on one of your services',
@@ -49,7 +48,7 @@ export async function registerDevice(): Promise<{ id: number; pushEnabled: boole
   }
   const r = unwrap(
     await api.PUT('/api/v1/me/devices', {
-      body: { platform: Platform.OS === 'ios' ? 'ios' : 'android', token, app_version: Constants.expoConfig?.version },
+      body: { platform: process.env.EXPO_OS === 'ios' ? 'ios' : 'android', token, app_version: Constants.expoConfig?.version },
     }),
   );
   const deviceId = r.device?.id;

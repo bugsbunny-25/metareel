@@ -26,5 +26,5 @@ export function Field({ label, hint, style, ...rest }: TextInputProps & { label:
 
 const styles = StyleSheet.create({
   wrap: { gap: 6 },
-  input: { minHeight: 48, borderRadius: 12, paddingHorizontal: 14, fontSize: 16, borderWidth: StyleSheet.hairlineWidth },
+  input: { minHeight: 48, borderRadius: 12, borderCurve: 'continuous', paddingHorizontal: 14, fontSize: 16, borderWidth: StyleSheet.hairlineWidth },
 });

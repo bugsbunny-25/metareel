@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
 
 import { parseVersion, versionCode } from '../../version.ts';
 
@@ -41,7 +40,7 @@ export function latestApk(releases: Release[], current: string): { version: stri
 export function useAppUpdate() {
   return useQuery({
     queryKey: ['app-update'],
-    enabled: Platform.OS === 'android',
+    enabled: process.env.EXPO_OS === 'android',
     staleTime: 24 * 60 * 60_000,
     retry: false,
     queryFn: async ({ signal }) => {

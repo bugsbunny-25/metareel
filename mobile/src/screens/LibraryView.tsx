@@ -1,6 +1,6 @@
 import { router, Stack } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Chip } from '@/components/Chip';
@@ -9,6 +9,7 @@ import { Text } from '@/components/Text';
 import { useDiscs } from '@/discs/data';
 import { DiscCase, DiscSpine } from '@/discs/parts';
 import { CASE, type DiscCopy, HIGHLIGHT, isBoxSet, label, MEDIA_FORMATS, type MediaFormat } from '@/discs/vocab';
+import { chunk } from '@/lib/chunk';
 import { formatMoney } from '@/lib/format';
 import { tabBodyScroll } from '@/layout/TabbedRoot';
 import { usePullToRefresh } from '@/lib/refresh';
@@ -32,18 +33,20 @@ export function LibraryView({ standalone }: { standalone?: boolean }) {
   const [format, setFormat] = useState<MediaFormat | ''>('');
   const [picked, setPicked] = useState<number | null>(null);
 
-  const items = useMemo(() => discs.data?.items ?? [], [discs.data]);
+  const items = discs.data?.items ?? [];
   const totals = discs.data?.totals;
   const rows = items.filter((c) => !format || c.release?.media_format === format || c.release?.parts.some((p) => p.media_format === format));
   const shelves = MEDIA_FORMATS.map(
-    ([f, l]) =>
-      [f, l, rows.filter((c) => c.release?.media_format === f).sort((a, b) => (a.release?.title ?? '').localeCompare(b.release?.title ?? ''))] as const,
+    ([f, l]) => [f, l, rows.filter((c) => c.release?.media_format === f).sort((a, b) => (a.release?.title ?? '').localeCompare(b.release?.title ?? ''))] as const,
   ).filter(([, , cs]) => cs.length);
   const formats = MEDIA_FORMATS.filter(([f]) => totals?.by_format[f]);
   const spend = totals?.spend[0];
   const pickedCopy = items.find((c) => c.id === picked);
   const cols = Math.max(3, Math.floor((Math.min(width, 760) - gutter.compact * 2 + 12) / 124));
   const caseW = Math.floor((Math.min(width, 760) - gutter.compact * 2 - (cols - 1) * 12) / cols);
+  // Cases is a virtualized grid (rows of cols), so a big collection only
+  // draws the covers on screen; everything above it is the list's header.
+  const caseRows = view === 'cases' ? chunk(rows.filter((c) => c.release), cols) : [];
 
   function tap(c: DiscCopy) {
     if (picked === c.id) router.push({ pathname: '/disc/[id]', params: { id: String(c.id) } });
@@ -51,148 +54,165 @@ export function LibraryView({ standalone }: { standalone?: boolean }) {
   }
 
   return (
-    <ScrollView
+    <FlatList
       style={{ backgroundColor: colors.bgCanvas }}
       contentInsetAdjustmentBehavior={standalone ? 'automatic' : tabBodyScroll.contentInsetAdjustmentBehavior}
       contentContainerStyle={{
         padding: gutter.compact,
         paddingTop: standalone ? gutter.compact : tabBodyScroll.paddingTop,
-        gap: 16,
         paddingBottom: 40,
       }}
       refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.textMuted} />}
-    >
-      {standalone ? <Stack.Screen options={{ headerTitle: 'Library' }} /> : null}
-      <View style={styles.column}>
-        <Button title="Scan a barcode" onPress={() => router.push('/scan-disc')} />
+      data={caseRows}
+      keyExtractor={(row) => row.map((c) => c.id).join('|')}
+      ItemSeparatorComponent={RowGap}
+      ListHeaderComponent={
+        <>
+          {standalone ? <Stack.Screen options={{ headerTitle: 'Library' }} /> : null}
+          <View style={[styles.column, { paddingBottom: caseRows.length ? 16 : 0 }]}>
+            <Button title="Scan a barcode" onPress={() => router.push('/scan-disc')} />
 
-        {discs.isPending ? <ActivityIndicator color={colors.textMuted} /> : null}
-        {discs.error ? (
-          <Panel>
-            <Text variant="muted">Your collection didn’t load: {discs.error.message}</Text>
-          </Panel>
-        ) : null}
-        {discs.data && !items.length ? (
-          <Panel title="Your shelf is empty">
-            <Text variant="muted">
-              Scan the barcode on the back of a DVD, Blu-ray or 4K disc: metareel looks the release up, links it to its films and keeps what you paid and where.
-              Box sets, Steelbooks and slipcovers included.
-            </Text>
-          </Panel>
-        ) : null}
-
-        {totals && items.length ? (
-          <>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-              <StatTile value={String(totals.copies)} label={`Releases · ${totals.discs} discs`} />
-              <StatTile value={spend ? formatMoney(spend.minor, spend.currency) : '–'} label={spend ? `Spent · ${spend.copies} priced` : 'Add prices'} wide />
-              <StatTile value={String(totals.titles)} label="Films & shows" />
-              <StatTile value={String(totals.box_sets)} label="Box sets" />
-            </ScrollView>
-
-            <View
-              style={[
-                styles.mix,
-                {
-                  backgroundColor: colors.bgSurface,
-                  borderRadius: radius.panel,
-                },
-              ]}
-            >
-              <View style={styles.bar}>
-                {formats.map(([f]) => (
-                  <View
-                    key={f}
-                    style={{
-                      flex: totals.by_format[f],
-                      backgroundColor: CASE[f].chart,
-                    }}
-                  />
-                ))}
-              </View>
-              <View style={styles.legend}>
-                {formats.map(([f, l]) => (
-                  <Text key={f} variant="muted" num>
-                    <Text style={{ color: CASE[f].chart }}>■ </Text>
-                    {l} {totals.by_format[f]}
-                  </Text>
-                ))}
-              </View>
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-              <Chip label="Everything" selected={!format} onPress={() => setFormat('')} />
-              {formats.map(([f, l]) => (
-                <Chip key={f} label={l} selected={format === f} onPress={() => setFormat(format === f ? '' : f)} />
-              ))}
-              <View style={{ width: 8 }} />
-              <Chip label="Shelf" selected={view === 'shelf'} onPress={() => setView('shelf')} />
-              <Chip label="Cases" selected={view === 'cases'} onPress={() => setView('cases')} />
-            </ScrollView>
-          </>
-        ) : null}
-
-        {view === 'shelf' && items.length ? (
-          <View style={[styles.cabinet, { backgroundColor: colors.bgSurface, borderRadius: radius.panel }]}>
-            {shelves.map(([f, l, cs]) => (
-              <View key={f} style={{ gap: 8 }}>
-                <Text variant="label">
-                  {l} <Text variant="muted">{cs.length}</Text>
+            {discs.isPending ? <ActivityIndicator color={colors.textMuted} /> : null}
+            {discs.error ? (
+              <Panel>
+                <Text variant="muted">Your collection didn’t load: {discs.error.message}</Text>
+              </Panel>
+            ) : null}
+            {discs.data && !items.length ? (
+              <Panel title="Your shelf is empty">
+                <Text variant="muted">
+                  Scan the barcode on the back of a DVD, Blu-ray or 4K disc: metareel looks the release up, links it to its films and keeps what you paid and where.
+                  Box sets, Steelbooks and slipcovers included.
                 </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.spines}>
-                  {cs.map((c) =>
-                    c.release ? (
-                      <Pressable
-                        key={c.id}
-                        onPress={() => tap(c)}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${c.release.title}${c.release.edition ? `, ${c.release.edition}` : ''}`}
-                        accessibilityHint={picked === c.id ? 'Opens it' : 'Pulls it off the shelf'}
-                      >
-                        <DiscSpine release={c.release} height={176} lifted={picked === c.id} />
-                      </Pressable>
-                    ) : null,
-                  )}
-                </ScrollView>
-                <View style={[styles.plank, { backgroundColor: colors.bgElevated }]} />
-                {pickedCopy?.release && cs.some((c) => c.id === picked) ? <PulledOut copy={pickedCopy} /> : null}
-              </View>
-            ))}
-          </View>
-        ) : null}
+              </Panel>
+            ) : null}
 
-        {view === 'cases' && items.length ? (
-          <View style={[styles.grid, { gap: 12 }]}>
-            {rows.map((c) =>
-              c.release ? (
-                <Pressable
-                  key={c.id}
-                  style={{ width: caseW, gap: 4 }}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/disc/[id]',
-                      params: { id: String(c.id) },
-                    })
-                  }
-                  accessibilityRole="button"
+            {totals && items.length ? (
+              <>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+                  <StatTile value={String(totals.copies)} label={`Releases · ${totals.discs} discs`} />
+                  <StatTile value={spend ? formatMoney(spend.minor, spend.currency) : '–'} label={spend ? `Spent · ${spend.copies} priced` : 'Add prices'} wide />
+                  <StatTile value={String(totals.titles)} label="Films & shows" />
+                  <StatTile value={String(totals.box_sets)} label="Box sets" />
+                </ScrollView>
+
+                <View
+                  style={[
+                    styles.mix,
+                    {
+                      backgroundColor: colors.bgSurface,
+                      borderRadius: radius.panel,
+                      borderCurve: 'continuous',
+                    },
+                  ]}
                 >
-                  <DiscCase release={c.release} width={caseW} />
-                  <Text variant="label" numberOfLines={1} style={{ fontSize: 14 }}>
-                    {c.release.title}
-                  </Text>
-                  <Text variant="caption" numberOfLines={1}>
-                    {label(c.release.media_format)}
-                    {c.release.edition ? ` · ${c.release.edition}` : ''}
-                  </Text>
-                </Pressable>
-              ) : null,
-            )}
+                  <View style={styles.bar}>
+                    {formats.map(([f]) => (
+                      <View
+                        key={f}
+                        style={{
+                          flex: totals.by_format[f],
+                          backgroundColor: CASE[f].chart,
+                        }}
+                      />
+                    ))}
+                  </View>
+                  <View style={styles.legend}>
+                    {formats.map(([f, l]) => (
+                      <Text key={f} variant="muted" num>
+                        <Text style={{ color: CASE[f].chart }}>■ </Text>
+                        {l} {totals.by_format[f]}
+                      </Text>
+                    ))}
+                  </View>
+                </View>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  <Chip label="Everything" selected={!format} onPress={() => setFormat('')} />
+                  {formats.map(([f, l]) => (
+                    <Chip key={f} label={l} selected={format === f} onPress={() => setFormat(format === f ? '' : f)} />
+                  ))}
+                  <View style={{ width: 8 }} />
+                  <Chip label="Shelf" selected={view === 'shelf'} onPress={() => setView('shelf')} />
+                  <Chip label="Cases" selected={view === 'cases'} onPress={() => setView('cases')} />
+                </ScrollView>
+              </>
+            ) : null}
+
+            {view === 'shelf' && items.length ? (
+              <View
+                style={[
+                  styles.cabinet,
+                  {
+                    backgroundColor: colors.bgSurface,
+                    borderRadius: radius.panel,
+                    borderCurve: 'continuous',
+                  },
+                ]}
+              >
+                {shelves.map(([f, l, cs]) => (
+                  <View key={f} style={{ gap: 8 }}>
+                    <Text variant="label">
+                      {l} <Text variant="muted">{cs.length}</Text>
+                    </Text>
+                    <FlatList
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.spines}
+                      data={cs.filter((c) => c.release)}
+                      keyExtractor={(c) => String(c.id)}
+                      extraData={picked}
+                      renderItem={({ item: c }) => (
+                        <Pressable
+                          onPress={() => tap(c)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${c.release!.title}${c.release!.edition ? `, ${c.release!.edition}` : ''}`}
+                          accessibilityHint={picked === c.id ? 'Opens it' : 'Pulls it off the shelf'}
+                        >
+                          <DiscSpine release={c.release!} height={176} lifted={picked === c.id} />
+                        </Pressable>
+                      )}
+                    />
+                    <View style={[styles.plank, { backgroundColor: colors.bgElevated }]} />
+                    {pickedCopy?.release && cs.some((c) => c.id === picked) ? <PulledOut copy={pickedCopy} /> : null}
+                  </View>
+                ))}
+              </View>
+            ) : null}
           </View>
-        ) : null}
-      </View>
-    </ScrollView>
+        </>
+      }
+      renderItem={({ item: row }) => (
+        <View style={[styles.column, styles.caseRow]}>
+          {row.map((c) => (
+            <Pressable
+              key={c.id}
+              style={{ width: caseW, gap: 4 }}
+              onPress={() =>
+                router.push({
+                  pathname: '/disc/[id]',
+                  params: { id: String(c.id) },
+                })
+              }
+              accessibilityRole="button"
+            >
+              <DiscCase release={c.release!} width={caseW} />
+              <Text variant="label" numberOfLines={1} style={{ fontSize: 14 }}>
+                {c.release!.title}
+              </Text>
+              <Text variant="caption" numberOfLines={1}>
+                {label(c.release!.media_format)}
+                {c.release!.edition ? ` · ${c.release!.edition}` : ''}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    />
   );
 }
+
+const RowGap = () => <View style={{ height: 12 }} />;
 
 /** A spine pulled off the shelf: its cover and the essentials. */
 function PulledOut({ copy }: { copy: DiscCopy }) {
@@ -202,7 +222,7 @@ function PulledOut({ copy }: { copy: DiscCopy }) {
     <Pressable
       onPress={() => router.push({ pathname: '/disc/[id]', params: { id: String(copy.id) } })}
       accessibilityRole="button"
-      style={[styles.pulled, { backgroundColor: colors.bgElevated, borderRadius: radius.panel }]}
+      style={[styles.pulled, { backgroundColor: colors.bgElevated, borderRadius: radius.panel, borderCurve: 'continuous' }]}
     >
       <DiscCase release={r} width={104} />
       <View style={{ flex: 1, gap: 4 }}>
@@ -253,16 +273,17 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingHorizontal: 2,
   },
-  plank: { height: 10, borderRadius: 3, marginTop: -8, marginHorizontal: -6 },
+  plank: { height: 10, borderRadius: 3, borderCurve: 'continuous', marginTop: -8, marginHorizontal: -6 },
   pulled: { flexDirection: 'row', gap: 14, padding: 12, marginTop: 4 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   badge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 5,
+    borderCurve: 'continuous',
     overflow: 'hidden',
     fontSize: 11,
     fontWeight: '700',
   },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  caseRow: { flexDirection: 'row', gap: 12 },
 });

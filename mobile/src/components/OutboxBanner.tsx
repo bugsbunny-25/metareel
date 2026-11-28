@@ -22,7 +22,7 @@ export function OutboxBanner({ kinds }: { kinds?: OutboxKind[] }) {
           onPress={() => void flushOutbox()}
           accessibilityRole="button"
           accessibilityHint="Tries to send them now"
-          style={[styles.box, { backgroundColor: colors.bgSurface, borderRadius: radius.panel }]}
+          style={[styles.box, { backgroundColor: colors.bgSurface, borderRadius: radius.panel, borderCurve: 'continuous' }]}
         >
           <Text variant="label">
             {pending.length === 1 ? '1 change' : `${pending.length} changes`} waiting to sync
@@ -34,7 +34,7 @@ export function OutboxBanner({ kinds }: { kinds?: OutboxKind[] }) {
         </Pressable>
       ) : null}
       {failed.map((i) => (
-        <View key={i.id} style={[styles.box, { backgroundColor: colors.bgSurface, borderRadius: radius.panel }]}>
+        <View key={i.id} style={[styles.box, { backgroundColor: colors.bgSurface, borderRadius: radius.panel, borderCurve: 'continuous' }]}>
           <Text variant="label" style={{ color: colors.deltaDown }}>
             Couldn&apos;t sync {i.label}
           </Text>

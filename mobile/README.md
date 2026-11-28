@@ -28,7 +28,7 @@ cookies. An optional home-network address is used over plain HTTP only after
 | `src/nowshowing/` | "Now showing": iOS Live Activity / Android ongoing notification for the film you're watching, ending with a pre-filled log |
 | `plugins/with-unique-extension-plists.js` | Gives the share and widget extensions their own `Info.plist` reference (both plugins would share one, which Xcode rejects) |
 | `src/layout/window-class.ts` | Material window size classes (compact < 600 dp ≤ medium < 840 dp ≤ expanded) |
-| `src/layout/CollectionScreen.tsx` | The TV and Movies tabs: a pinned To watch / Upcoming switch, list cards or a poster grid (kept per tab), collapsible groups, a summary line; grouping in `src/data/collections.ts` |
+| `src/layout/CollectionScreen.tsx` | The TV and Movies tabs: a pinned To watch / Upcoming switch, list cards or a poster grid (kept per tab and segment: To watch and Upcoming each remember their own), collapsible groups, a summary line; grouping in `src/data/collections.ts` |
 | `src/app/(tabs)/(you)/you.tsx`, `.../stats.tsx` | You: profile, statistics tiles, this year, cinema plans' break-even and savings, genres, your shows and films; Detailed stats (Shows / Movies) from `GET /me/stats/detailed` |
 | `src/log/` | The log sheet's form (`form.ts`: one form for new and edited watches, every field, tested), zones and sections |
 | `src/layout/ListDetail.tsx` | List and detail side by side on medium/expanded windows (Diary, TV, Movies); on a half-open book foldable (Android, or iPhone Duo via UIKit's division region) the split sits on the fold |

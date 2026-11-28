@@ -23,11 +23,7 @@ export function CountryOrder() {
   const name = (cc: string) => ref.data?.countries.find((c) => c.code === cc)?.name ?? cc;
   const save = async (next: string[]) => {
     setBusy(true);
-    try {
-      await updatePreferences({ countries: next });
-    } finally {
-      setBusy(false);
-    }
+    await updatePreferences({ countries: next }).finally(() => setBusy(false));
   };
   const move = (i: number, by: number) => {
     const next = [...list];
@@ -78,6 +74,6 @@ function Mini({ label, text, disabled, onPress }: { label: string; text: string;
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 12, paddingRight: 4, minHeight: 44, borderRadius: 12 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 12, paddingRight: 4, minHeight: 44, borderRadius: 12, borderCurve: 'continuous' },
   mini: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
 });

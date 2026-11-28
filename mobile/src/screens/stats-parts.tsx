@@ -71,7 +71,7 @@ export function StatTile({ value, label, icon, onPress, wide }: { value: string;
       style={({ pressed }) => [
         styles.tile,
         wide && { minWidth: 160 },
-        { backgroundColor: colors.bgSurface, borderRadius: radius.panel, opacity: pressed ? 0.8 : 1 },
+        { backgroundColor: colors.bgSurface, borderRadius: radius.panel, borderCurve: 'continuous', opacity: pressed ? 0.8 : 1 },
       ]}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -123,7 +123,7 @@ export function Card({
 }) {
   const { colors, radius } = useTheme();
   return (
-    <View style={[styles.card, flex && { flex: 1, flexBasis: 0, minWidth: 0 }, { backgroundColor: colors.bgSurface, borderRadius: radius.panel }]}>
+    <View style={[styles.card, flex && { flex: 1, flexBasis: 0, minWidth: 0 }, { backgroundColor: colors.bgSurface, borderRadius: radius.panel, borderCurve: 'continuous' }]}>
       {title || right ? (
         <View style={styles.cardHead}>
           {title ? (
@@ -140,7 +140,9 @@ export function Card({
 }
 
 /** Labelled horizontal bars, longest first as given. */
-export function BarList({ rows, format = (n) => n.toLocaleString() }: { rows: { label: string; value: number }[]; format?: (n: number) => string }) {
+const localeNumber = (n: number) => n.toLocaleString();
+
+export function BarList({ rows, format = localeNumber }: { rows: { label: string; value: number }[]; format?: (n: number) => string }) {
   const { colors } = useTheme();
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
@@ -193,6 +195,7 @@ export function BarChart({ bars, format, height = 140 }: { bars: { label: string
               style={{
                 height: Math.max(3, Math.round((b.value / max) * (height - 4))),
                 borderRadius: 4,
+                borderCurve: 'continuous',
                 backgroundColor: i === shown ? colors.accentYours : b.value ? colors.borderStrong : colors.bgElevated,
               }}
             />
@@ -300,6 +303,6 @@ const styles = StyleSheet.create({
   chartLabels: { flexDirection: 'row', gap: 4 },
   rank: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 40 },
   face: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden' },
-  mini: { flexDirection: 'row', borderRadius: 10, padding: 3 },
-  miniItem: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8 },
+  mini: { flexDirection: 'row', borderRadius: 10, borderCurve: 'continuous', padding: 3 },
+  miniItem: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8, borderCurve: 'continuous' },
 });

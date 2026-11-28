@@ -26,6 +26,12 @@ export const fonts = {
 /** Lining, tabular figures for numbers that line up (the web's `.num`). */
 export const tabularNums = ['lining-nums', 'tabular-nums'] as ('lining-nums' | 'tabular-nums')[];
 
+/** Text over artwork (stills, scrims, poster badges): the dark theme's primary text, in either theme. */
+export const onArtwork = tokens.dark.textPrimary;
+
+/** The white behind retail product photos, which come shot on white. */
+export const photoMatte = tokens.light.bgSurface;
+
 /**
  * Dark first: "system" means light only when the OS asks for light, so a
  * device with no preference gets the Screening Room's dark canvas.

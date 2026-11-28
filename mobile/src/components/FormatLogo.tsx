@@ -35,5 +35,5 @@ export function FormatLogo({ url, mono, height = 14, maxWidth = 64 }: { url?: st
 export const hasLogo = (f: { logo_url?: string | null }) => !!f.logo_url;
 
 const styles = StyleSheet.create({
-  plate: { paddingHorizontal: 6, borderRadius: 8, backgroundColor: '#161618', alignItems: 'center', justifyContent: 'center' },
+  plate: { paddingHorizontal: 6, borderRadius: 8, borderCurve: 'continuous', backgroundColor: '#161618', alignItems: 'center', justifyContent: 'center' },
 });

@@ -156,9 +156,9 @@ func TestTop10_PreviousRankAndDaysInTop10(t *testing.T) {
 				rank, days int64
 				prev       *int64
 			}{
-				"b": {rank: 1, prev: ptr(2), days: 2}, // previous scraped date is 10-01, despite the gap
-				"c": {rank: 2, prev: nil, days: 1},    // new on netflix; its hbo-max rank must not count
-				"a": {rank: 3, prev: ptr(1), days: 2},
+				"b": {rank: 1, prev: new(int64(2)), days: 2}, // previous scraped date is 10-01, despite the gap
+				"c": {rank: 2, prev: nil, days: 1},           // new on netflix; its hbo-max rank must not count
+				"a": {rank: 3, prev: new(int64(1)), days: 2},
 			}
 			if len(out.Items) != len(want) {
 				t.Fatalf("got %d items, want %d", len(out.Items), len(want))
@@ -318,9 +318,6 @@ func TestTitleRankings(t *testing.T) {
 		}
 	})
 }
-
-//go:fix inline
-func ptr(v int64) *int64 { return new(v) }
 
 func equalPtr(a, b *int64) bool {
 	if a == nil || b == nil {

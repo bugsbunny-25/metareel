@@ -1,10 +1,9 @@
 import { Image } from 'expo-image';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
-import { SvgCss } from 'react-native-svg/css';
 
 import { useTheme } from '@/theme';
 
-import { imdbBlack, imdbGold } from './rating-logos';
+import { IMDB_BLACK, IMDB_GOLD, IMDB_PATH, IMDB_VIEWBOX } from './rating-logos';
 
 const RT = {
   fresh: require('../../assets/ratings/rt-fresh.png'),
@@ -25,7 +24,11 @@ export type RatingSource = 'imdb' | 'rt' | 'rt-audience' | 'tmdb';
 export function RatingLogo({ source, rotten, certified, height = 18 }: { source: RatingSource; rotten?: boolean; certified?: boolean; height?: number }) {
   const { scheme } = useTheme();
   if (source === 'imdb') {
-    return <SvgCss xml={scheme === 'dark' ? imdbGold : imdbBlack} height={height} width={Math.round(height * 2.41)} accessible={false} />;
+    return (
+      <Svg width={Math.round(height * 2.41)} height={height} viewBox={IMDB_VIEWBOX} accessible={false}>
+        <Path fill={scheme === 'dark' ? IMDB_GOLD : IMDB_BLACK} d={IMDB_PATH} />
+      </Svg>
+    );
   }
   if (source === 'tmdb') {
     // TMDB's score: a star in TMDB's green-to-blue, drawn (an emoji differs on every system).

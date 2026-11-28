@@ -10,7 +10,7 @@ import { Poster } from '@/components/Poster';
 import { Panel } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { usePerson } from '@/data/queries';
-import { openTitle } from '@/lib/actions';
+import { openTitle, titleHref } from '@/lib/actions';
 import { useTheme } from '@/theme';
 
 import { Face } from './cast-parts';
@@ -119,7 +119,7 @@ export function PersonView({ id }: { id: number }) {
                 title={t.title ?? ''}
                 width={104}
                 caption={t.best_rank ? `Best #${t.best_rank} · ${t.days} days` : `${t.days} days`}
-                onPress={() => t.tmdb_id && openTitle({ kind: t.kind === 'tv' ? 'tv' : 'movie', id: t.tmdb_id, title: t.title ?? '' })}
+                href={t.tmdb_id ? titleHref({ kind: t.kind === 'tv' ? 'tv' : 'movie', id: t.tmdb_id, title: t.title ?? '' }) : undefined}
               />
             ))}
           </ScrollView>

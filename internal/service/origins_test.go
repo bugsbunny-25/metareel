@@ -9,12 +9,11 @@ import (
 // TestClassifyOrigin uses real TMDB networks / production companies and
 // Wikidata distributors of titles seen on the charts.
 func TestClassifyOrigin(t *testing.T) {
-	str := func(s string) *string { return &s }
 	tv := func(networks []string, companies ...string) *repository.TmdbMetadata {
 		return &repository.TmdbMetadata{Networks: networks, ProductionCompanies: companies}
 	}
 	film := func(year string, companies, distributors []string) *repository.TmdbMetadata {
-		return &repository.TmdbMetadata{ReleaseDate: str(year + "-06-01"), ProductionCompanies: companies, Distributors: distributors}
+		return &repository.TmdbMetadata{ReleaseDate: new(year + "-06-01"), ProductionCompanies: companies, Distributors: distributors}
 	}
 	cases := []struct {
 		name, provider string

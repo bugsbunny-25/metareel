@@ -57,6 +57,14 @@ version: ## Set the release version in every package: make version V=0.5.0 (then
 	@test -n "$(V)" || (echo "usage: make version V=0.5.0" && exit 1)
 	node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON .github/scripts/version.mjs set $(V)
 
+.PHONY: skills-check
+skills-check: ## Check the vendored agent skills (.claude/skills/vendored.json) for upstream updates (exit 2 when there are some)
+	node .github/scripts/agent-skills.mjs check
+
+.PHONY: skills-update
+skills-update: ## Update the vendored agent skills to their source branch head (review the diff, commit it on its own)
+	node .github/scripts/agent-skills.mjs update
+
 .PHONY: build
 build: ## Build local binary
 	mkdir -p $(BIN_DIR)
