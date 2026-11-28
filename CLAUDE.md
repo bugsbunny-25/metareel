@@ -17,20 +17,37 @@ Consumed by the user's other project, "tides".
 - For `mobile/` (Expo), start with `expo-overview`, which routes to the Expo skills:
   `expo-router`, `expo-native-ui`, `expo-ui`, `expo-animation`, `expo-data-fetching`,
   `expo-design-system`, `expo-module`, `expo-upgrade`, `expo-dev-client`, `eas-app-stores`,
-  `eas-update` (from expo/skills). Callstack's (callstackincubator/agent-skills) add
-  `react-native-best-practices` (performance) and `react-native-testing` (RNTL v14 tests). Vercel's (vercel-labs/agent-skills)
-  `vercel-react-native-skills` adds rule-level checks the others don't: conditional rendering
-  and text outside `<Text>`, list-item props and callbacks, React Compiler with Reanimated,
-  state shape, hoisted `Intl` formatters. All are vendored and pinned in
-  `.claude/skills/vendored.json`; never edit them in place (`make skills-update` refuses to
-  overwrite local edits). `mobile/AGENTS.md` and the project's own skills win where they
-  disagree (e.g. Screening Room tokens over a skill's generic design advice), and Expo's skills
-  win over the others on Expo APIs (e.g. `@expo/ui` menus and sheets, not zeego or Galeria).
+  `eas-update` (from expo/skills). `react-native-best-practices` (performance: measuring,
+  bundle size, native profiling; callstackincubator/agent-skills) and `react-native-testing`
+  (RNTL v14 tests; from Testing Library's own repo, which is current) add the rest. Vercel's
+  `vercel-react-native-skills` (vercel-labs/agent-skills) is a rule list for checks the
+  others don't have: conditional rendering and text outside `<Text>`, React Compiler with
+  Reanimated, state shape, hoisted `Intl` formatters, measuring views. All are vendored and
+  pinned in `.claude/skills/vendored.json`; never edit them in place (`make skills-update`
+  refuses to overwrite local edits).
+- Which wins: `mobile/AGENTS.md`, this file and the project's own skills over any vendored
+  skill (e.g. Screening Room tokens over generic design advice); then Expo's skills on Expo
+  APIs (`@expo/ui` menus and sheets, not zeego or Galeria); Callstack's for measuring and
+  profiling; Vercel's only as a checklist. Measure before acting on any performance rule.
+- Where the vendored skills are wrong for this app (checked 2026-11-29):
+  - The app needs its own development build (native modules, widgets); ignore
+    `expo-native-ui`'s "try Expo Go first".
+  - Toggles go through `Toggle`: SwiftUI's on iOS, React Native's `Switch` on Android, because
+    `@expo/ui`'s Compose switch gives TalkBack an unlabelled node. `expo-ui` says never use
+    RN's Switch; on Android it is the right one here.
+  - Component files are PascalCase (`DiscView.tsx`), not the kebab-case the Expo skills ask for.
+  - `agent-device`, which `react-native-best-practices` uses for profiling, isn't installed:
+    profile with React DevTools (`j` in Metro) and check compiler coverage with
+    `npm run check:compiler` (lists any component the React Compiler skips, and why).
+  - With the React Compiler on, don't add `memo`/`useCallback`/`useMemo` for performance;
+    in Reanimated code use `.get()`/`.set()`, not `.value` (Callstack's examples still use it).
 - Only relevant skills are kept: `vendored.json` lists each source's skills and, under
-  `exclude`, the files dropped because the app doesn't use what they cover (bare-RN upgrade
-  workflow, monorepos, WebGPU, expo-av, Re.Pack chunks, gorhom sheets, zeego, Galeria). A
-  vendored SKILL.md may still mention a dropped file; ignore that. When the app starts using
-  one of those, take it out of `exclude` and run `make skills-update`.
+  `exclude`, the files dropped because the app doesn't use what they cover or they're out of
+  date for it (bare-RN upgrade workflow, monorepos, WebGPU, expo-av, Re.Pack chunks, gorhom
+  sheets, zeego, Galeria, `@react-navigation` imports, manual list memoization, the old
+  Gesture builder press rule). A vendored SKILL.md may still mention a dropped file; ignore
+  that. When the app starts using one of those, take it out of `exclude` and run
+  `make skills-update`.
 
 ## Vendored skill updates
 
@@ -42,9 +59,11 @@ Consumed by the user's other project, "tides".
   feature work. Tell the user what changed. The script strips `allowed-tools` from vendored
   SKILL.md files; never add it back.
 - Before a dependency upgrade or release, also look for new skills in the source repos
-  (https://docs.expo.dev/skills/ lists Expo's; callstackincubator/agent-skills and
-  vercel-labs/agent-skills keep theirs under `skills/`) that fit this project, and drop vendored ones
-  that stop fitting (e.g. a navigation skill for a library the app no longer uses). Ask the
+  (https://docs.expo.dev/skills/ lists Expo's; callstackincubator/agent-skills,
+  callstack/react-native-testing-library and vercel-labs/agent-skills keep theirs under
+  `skills/`) that fit this project, prefer a library's own repo over a re-vendored copy, and
+  re-check the list under "Where the vendored skills are wrong" against the new versions. Drop
+  vendored ones that stop fitting (e.g. a navigation skill for a library the app no longer uses). Ask the
   user before adding or removing one; add one by listing it under its source in
   `vendored.json`, then `make skills-update`.
 

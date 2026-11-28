@@ -59,6 +59,7 @@ Checks (all run in CI, `.github/workflows/mobile.yml`):
 ```bash
 npm run typecheck && npm run lint && npm test
 npm run check:generated         # API types, theme tokens and the license list match their sources
+npm run check:compiler          # React Compiler optimizes every component (lists any it skips, and why)
 ```
 
 After changing `internal/openapi/spec/public.yaml` run `npm run gen:api`;

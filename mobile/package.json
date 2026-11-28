@@ -72,7 +72,8 @@
     "gen:theme": "node tools/gen-theme.mjs",
     "gen:licenses": "node tools/gen-licenses.mjs",
     "gen:icons": "node tools/gen-icons.mjs",
-    "check:generated": "node tools/check-generated.mjs"
+    "check:generated": "node tools/check-generated.mjs",
+    "check:compiler": "node tools/react-compiler-audit.cjs"
   },
   "private": true,
   "overrides": {

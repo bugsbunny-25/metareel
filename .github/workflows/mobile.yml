@@ -81,6 +81,8 @@ jobs:
       - run: npm test -- --ci
       - name: Generated files are up to date
         run: npm run check:generated
+      - name: React Compiler optimizes every component
+        run: npm run check:compiler
       - name: Expo project health
         run: npx --yes expo-doctor
       - name: Prebuild config plugins

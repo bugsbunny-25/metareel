@@ -16,10 +16,18 @@
         "react-native-best-practices": {
           "path": "skills/react-native-best-practices",
           "hash": "44d824b1b5897edbceb3a223742c01632fbd0332998090d44900547efc52ef97"
-        },
+        }
+      }
+    },
+    {
+      "repo": "callstack/react-native-testing-library",
+      "ref": "main",
+      "commit": "5a05c26926077b507b9dcca235063432a23068e1",
+      "exclude": [],
+      "skills": {
         "react-native-testing": {
-          "path": "plugins/vendored/.agents/skills/react-native-testing",
-          "hash": "9bbd7f54c8172884772c19a11bcf84c1cb0bda6c068733090c825187e01a281e"
+          "path": "skills/react-native-testing",
+          "hash": "17f57b95680faedc0502befbd8ac63f697d56707e37d98584d11ca36c5df580d"
         }
       }
     },
@@ -97,12 +105,17 @@
         "rules/monorepo-native-deps-in-app.md",
         "rules/monorepo-single-dependency-versions.md",
         "rules/ui-image-gallery.md",
-        "rules/ui-menus.md"
+        "rules/ui-menus.md",
+        "rules/navigation-native-navigators.md",
+        "rules/list-performance-item-memo.md",
+        "rules/list-performance-callbacks.md",
+        "rules/list-performance-function-references.md",
+        "rules/animation-gesture-detector-press.md"
       ],
       "skills": {
         "vercel-react-native-skills": {
           "path": "skills/react-native-skills",
-          "hash": "3b534c3d1f34b90d1021c65a0346e33017356c36a878253c6b9770d4000afbc3"
+          "hash": "8ef13e7d8d6c50b2155749a7a62ebd1f752b6673230e70f3ed200bc26ba5851f"
         }
       }
     }
