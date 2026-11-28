@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { currentSession, endpoint } from '@/auth/session';
 import { Text } from '@/components/Text';
 import { tmdbImage } from '@/lib/format';
-import { useTheme } from '@/theme';
+import { fonts, useTheme } from '@/theme';
 
 import { caseOf, coverOf, type DiscRelease, imageOf, isBoxSet } from './vocab';
 
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   spine: { overflow: 'hidden', borderRadius: 3, borderCurve: 'continuous' },
   spineTitle: {
     color: '#fff',
-    fontFamily: 'SourceSerif4_700Bold',
+    fontFamily: fonts.display,
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowRadius: 2,
   },

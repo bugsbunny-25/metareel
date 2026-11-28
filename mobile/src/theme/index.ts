@@ -6,15 +6,19 @@ import { tokens } from './tokens';
 export type Scheme = 'dark' | 'light';
 export type Colors = { [K in keyof typeof tokens.dark]: string };
 
-/** Font family names as loaded in the root layout (@expo-google-fonts, and assets/fonts). */
+// Embedded by the expo-font config plugin (app.config.ts). Android names a
+// family after its file; iOS after the font's PostScript name.
+const ios = process.env.EXPO_OS === 'ios';
+
+/** Font family names, as each platform knows the embedded fonts. */
 export const fonts = {
-  display: 'SourceSerif4_700Bold',
-  displaySemi: 'SourceSerif4_600SemiBold',
-  sans: 'SourceSans3_400Regular',
-  sansSemi: 'SourceSans3_600SemiBold',
-  sansBold: 'SourceSans3_700Bold',
+  display: ios ? 'SourceSerif4-Bold' : 'SourceSerif4_700Bold',
+  displaySemi: ios ? 'SourceSerif4-SemiBold' : 'SourceSerif4_600SemiBold',
+  sans: ios ? 'SourceSans3-Regular' : 'SourceSans3_400Regular',
+  sansSemi: ios ? 'SourceSans3-SemiBold' : 'SourceSans3_600SemiBold',
+  sansBold: ios ? 'SourceSans3-Bold' : 'SourceSans3_700Bold',
   /** The chart rank numerals (Numeral.tsx). */
-  numeral: 'BarlowCondensed_800ExtraBold',
+  numeral: ios ? 'BarlowCondensed-ExtraBold' : 'BarlowCondensed_800ExtraBold',
   /**
    * Age ratings (CertificationBadge): Motion Picture Ratings (Daniel Lyons
    * Entertainment, all rights reserved), the font tides uses. It draws only

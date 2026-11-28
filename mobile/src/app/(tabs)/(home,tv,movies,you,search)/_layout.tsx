@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router';
 
 import { nativeRootHeader, useSideInsets } from '@/layout/root-header';
-import { useTheme } from '@/theme';
+import { fonts, useTheme } from '@/theme';
 
 // Each tab is its own stack, so a title, show or watch opened from a tab
 // keeps the tab bar (or rail) on screen and Back returns within the tab.
@@ -47,7 +47,7 @@ export default function TabStack() {
             headerShadowVisible: false,
             headerStyle: { backgroundColor: colors.bgCanvas },
             headerTintColor: colors.textPrimary,
-            headerTitleStyle: { fontFamily: 'SourceSerif4_700Bold', color: colors.textPrimary },
+            headerTitleStyle: { fontFamily: fonts.display, color: colors.textPrimary },
             contentStyle: { backgroundColor: colors.bgCanvas },
           };
         }
@@ -61,11 +61,11 @@ export default function TabStack() {
             headerLargeTitleShadowVisible: false,
             headerTintColor: colors.textPrimary,
             headerTitleStyle: {
-              fontFamily: 'SourceSerif4_700Bold',
+              fontFamily: fonts.display,
               color: colors.textPrimary,
             },
             headerLargeTitleStyle: {
-              fontFamily: 'SourceSerif4_700Bold',
+              fontFamily: fonts.display,
               color: colors.textPrimary,
             },
             contentStyle: { backgroundColor: colors.bgCanvas },
@@ -79,7 +79,7 @@ export default function TabStack() {
           headerStyle: { backgroundColor: colors.bgCanvas },
           headerTintColor: colors.textPrimary,
           headerTitleStyle: {
-            fontFamily: 'SourceSerif4_700Bold',
+            fontFamily: fonts.display,
             color: colors.textPrimary,
           },
           contentStyle: { backgroundColor: colors.bgCanvas, ...side },
