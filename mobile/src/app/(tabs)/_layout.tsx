@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, View, type ViewProps } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/Icon';
+import { PillFill } from '@/components/PillFill';
 import { Text } from '@/components/Text';
 import { useWindowClass } from '@/layout/window-class';
 import { useTheme } from '@/theme';
@@ -86,7 +87,8 @@ function NavItem({
       style={[typeof style === 'function' ? undefined : style, rail ? styles.railItem : styles.barItem]}
     >
       {/* Material 3's active indicator: a full-radius pill, 64x32 in a bar, 56x32 in a rail. */}
-      <View style={[styles.pill, rail ? styles.pillRail : styles.pillBar, isFocused && { backgroundColor: colors.bgElevated }]}>
+      <View style={[styles.pill, rail ? styles.pillRail : styles.pillBar]}>
+        <PillFill on={!!isFocused} color={colors.bgElevated} radius={16} />
         <Icon name={icon} size={24} color={color} />
       </View>
       <Text variant="caption" style={{ color, fontSize: 12 }} numberOfLines={1}>

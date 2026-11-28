@@ -145,7 +145,7 @@ func TestTitleHistory(t *testing.T) {
 	}
 
 	svc := NewHistoryService(hist, meta)
-	got, err := svc.TitleHistory(ctx, TmdbRef{Kind: "movie", ID: "5"}, TitleHistoryQuery{From: timePtr(day("2026-02-15")), To: timePtr(day("2026-03-31"))})
+	got, err := svc.TitleHistory(ctx, TmdbRef{Kind: "movie", ID: "5"}, TitleHistoryQuery{From: new(day("2026-02-15")), To: new(day("2026-03-31"))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,10 +167,10 @@ func TestTitleHistory(t *testing.T) {
 	}
 
 	var v *ValidationError
-	if _, err := svc.TitleHistory(ctx, TmdbRef{Kind: "movie", ID: "5"}, TitleHistoryQuery{From: timePtr(day("2026-04-01")), To: timePtr(day("2026-03-01"))}); !errors.As(err, &v) {
+	if _, err := svc.TitleHistory(ctx, TmdbRef{Kind: "movie", ID: "5"}, TitleHistoryQuery{From: new(day("2026-04-01")), To: new(day("2026-03-01"))}); !errors.As(err, &v) {
 		t.Fatalf("from after to: err = %v", err)
 	}
-	if _, err := svc.TitleHistory(ctx, TmdbRef{Kind: "movie", ID: "5"}, TitleHistoryQuery{From: timePtr(day("2024-01-01")), To: timePtr(day("2026-03-01"))}); !errors.As(err, &v) {
+	if _, err := svc.TitleHistory(ctx, TmdbRef{Kind: "movie", ID: "5"}, TitleHistoryQuery{From: new(day("2024-01-01")), To: new(day("2026-03-01"))}); !errors.As(err, &v) {
 		t.Fatalf("range too long: err = %v", err)
 	}
 	if _, err := svc.TitleHistory(ctx, TmdbRef{Kind: "movie", ID: "6"}, TitleHistoryQuery{}); !errors.Is(err, ErrTitleNotFound) {
@@ -255,4 +255,5 @@ func TestTMDBPopularityImport(t *testing.T) {
 	}
 }
 
-func timePtr(t time.Time) *time.Time { return &t }
+//go:fix inline
+func timePtr(t time.Time) *time.Time { return new(t) }

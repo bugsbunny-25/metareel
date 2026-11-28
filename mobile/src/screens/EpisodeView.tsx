@@ -128,15 +128,16 @@ export function EpisodeView({
             <View style={styles.actions}>
               {aired ? (
                 <>
-                  <Button title="Log" onPress={() => openLog({ kind: 'tv', id: show, title, poster: d.show?.poster_path, season, episode })} />
+                  <Button grow title="Log" onPress={() => openLog({ kind: 'tv', id: show, title, poster: d.show?.poster_path, season, episode })} />
                   <Button
+                    grow
                     kind="quiet"
                     title={pending ? 'Marked' : watched ? `Watched ${d.watches!.length}×` : 'Mark watched'}
                     onPress={() => (pending || watched ? undefined : markEpisode(show, title, season, episode))}
                   />
                 </>
               ) : null}
-              <Button kind="quiet" title="View whole series" onPress={viewShow} />
+              <Button grow kind="quiet" title="View whole series" onPress={viewShow} />
             </View>
           </View>
 

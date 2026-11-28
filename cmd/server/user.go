@@ -188,8 +188,7 @@ func oneArg(cmd string, args []string) (string, error) {
 }
 
 func userCmdErr(err error) error {
-	var vErr *service.ValidationError
-	if errors.As(err, &vErr) {
+	if vErr, ok := errors.AsType[*service.ValidationError](err); ok {
 		return errors.New(vErr.Message)
 	}
 	return err

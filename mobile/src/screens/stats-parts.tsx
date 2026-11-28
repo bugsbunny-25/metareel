@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { components } from '@/api/schema';
 import { Icon, type IconName } from '@/components/Icon';
+import { PillFill } from '@/components/PillFill';
 import { Text } from '@/components/Text';
 import { tmdbImage } from '@/lib/format';
 import { useTheme } from '@/theme';
@@ -272,8 +273,9 @@ export function MiniSegment<T extends string>({ options, value, onChange }: { op
           onPress={() => onChange(v)}
           accessibilityRole="tab"
           accessibilityState={{ selected: v === value }}
-          style={[styles.miniItem, v === value && { backgroundColor: colors.bgCanvas }]}
+          style={styles.miniItem}
         >
+          <PillFill on={v === value} color={colors.bgCanvas} radius={8} />
           <Text variant="label" style={{ color: v === value ? colors.textPrimary : colors.textMuted, fontSize: 13.5 }}>
             {label}
           </Text>

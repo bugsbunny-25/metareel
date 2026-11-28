@@ -30,7 +30,7 @@ func TestVenueImportHistoric(t *testing.T) {
 	ctx := context.Background()
 	repo := repository.NewTrackingRepository(db)
 	// Typed in by hand, without a position: matched by name and town.
-	hand, _ := repo.CreateVenue(ctx, repository.Venue{Name: "The Scala", City: str("London"), Country: str("GB"), Status: "closed"}, 0)
+	hand, _ := repo.CreateVenue(ctx, repository.Venue{Name: "The Scala", City: new("London"), Country: new("GB"), Status: "closed"}, 0)
 
 	src := &fakeOSM{places: map[string][]client.OSMPlace{"GB": {
 		osm("node", 1, 51.5113, -0.1303, "name", "Prince Charles Cinema", "addr:city", "London"),

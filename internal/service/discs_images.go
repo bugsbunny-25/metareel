@@ -219,7 +219,7 @@ func exifOrientation(tiff []byte) int {
 		return 1
 	}
 	n := int(bo.Uint16(tiff[ifd : ifd+2]))
-	for k := 0; k < n; k++ {
+	for k := range n {
 		e := ifd + 2 + k*12
 		if e+12 > len(tiff) {
 			return 1
@@ -247,8 +247,8 @@ func orient(img image.Image, o int) image.Image {
 		dw, dh = h, w
 	}
 	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			var dx, dy int
 			switch o {
 			case 2:

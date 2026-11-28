@@ -2004,7 +2004,7 @@ export interface paths {
         };
         /**
          * Every show in the library, sorted into stages
-         * @description Each show the user tracks (except ones they are not interested in) with its progress, the next aired episode they have not seen and the next air date, in stage order: watching, stalled, not_started, on_hold, dropped, caught_up. A status the user chose (on hold, dropped) decides the stage; otherwise the episodes do, so a "completed" show with a new episode out is back to watching. Counts leave specials out. Episode lists missing or older than a day are re-fetched from TMDB on the way, up to 12 shows per request; a TMDB failure leaves those shows on cached data instead of failing the call.
+         * @description Each show the user tracks (except ones they are not interested in) with its progress, the next aired episode they have not seen and the next air date, in stage order: new_episodes, watching, stalled, not_started, on_hold, dropped, caught_up. A status the user chose (on hold, dropped) decides the stage; otherwise the episodes do, so a "completed" show with a new episode out is back to watching. A series or season that premiered within stale_days, with nothing watched since, is new_episodes until the window passes, then not_started (no episode seen) or stalled. Counts leave specials out. Episode lists missing or older than a day are re-fetched from TMDB on the way, up to 12 shows per request; a TMDB failure leaves those shows on cached data instead of failing the call.
          */
         get: operations["showQueue"];
         put?: never;
@@ -2754,7 +2754,7 @@ export interface components {
             /** @description tv only */
             shows_by_stage?: {
                 /** @enum {string} */
-                key?: "watching" | "stalled" | "not_started" | "on_hold" | "caught_up" | "dropped";
+                key?: "new_episodes" | "watching" | "stalled" | "not_started" | "on_hold" | "caught_up" | "dropped";
                 label?: string;
                 count?: number;
             }[];
@@ -3448,7 +3448,7 @@ export interface components {
             status?: components["schemas"]["TrackingStatus"];
             favorite?: boolean;
             /** @enum {string} */
-            stage?: "watching" | "stalled" | "not_started" | "on_hold" | "dropped" | "caught_up";
+            stage?: "new_episodes" | "watching" | "stalled" | "not_started" | "on_hold" | "dropped" | "caught_up";
             /** @description Episodes TMDB lists */
             total_episodes?: number;
             aired_episodes?: number;

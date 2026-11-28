@@ -59,8 +59,8 @@ func Read(data []byte) ([]Sheet, error) {
 	targets := map[string]string{}
 	for _, r := range rels.Rels {
 		t := r.Target
-		if strings.HasPrefix(t, "/") {
-			t = strings.TrimPrefix(t, "/")
+		if after, ok := strings.CutPrefix(t, "/"); ok {
+			t = after
 		} else {
 			t = path.Join("xl", t)
 		}

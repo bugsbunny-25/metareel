@@ -20,7 +20,7 @@ func TestDetailedStats(t *testing.T) {
 		}
 	}
 	ep := func(season, episode int64, at string) WatchInput {
-		return WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: tp(season), EpisodeNumber: tp(episode), EndedAt: at}
+		return WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: new(season), EpisodeNumber: new(episode), EndedAt: at}
 	}
 	// Three episodes on 13 Nov (a binge), one on 2 Nov, a rewatch of S1E1 on 14 Nov.
 	log(alice, ep(1, 1, "2026-11-13T20:00:00Z"))

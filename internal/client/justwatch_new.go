@@ -37,7 +37,7 @@ type getPackagesQuery struct {
 // GetPackages lists the streaming services JustWatch knows in a country.
 func (c *JustWatchClient) GetPackages(ctx context.Context, country string) ([]JWPackage, error) {
 	var q getPackagesQuery
-	if err := c.client.Query(ctx, &q, map[string]interface{}{"country": Country(country)}); err != nil {
+	if err := c.client.Query(ctx, &q, map[string]any{"country": Country(country)}); err != nil {
 		return nil, err
 	}
 	return q.Packages, nil
@@ -122,7 +122,7 @@ func (c *JustWatchClient) GetNewTitles(ctx context.Context, pageType NewPageType
 		objectTypes = []ObjectType{}
 	}
 	var q getNewTitlesQuery
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"country":  Country(country),
 		"language": Language(language),
 		"date":     Date(date),

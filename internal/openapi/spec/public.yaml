@@ -3451,10 +3451,13 @@ paths:
       description: >
         Each show the user tracks (except ones they are not interested in)
         with its progress, the next aired episode they have not seen and the
-        next air date, in stage order: watching, stalled, not_started,
-        on_hold, dropped, caught_up. A status the user chose (on hold,
-        dropped) decides the stage; otherwise the episodes do, so a
-        "completed" show with a new episode out is back to watching. Counts
+        next air date, in stage order: new_episodes, watching, stalled,
+        not_started, on_hold, dropped, caught_up. A status the user chose (on
+        hold, dropped) decides the stage; otherwise the episodes do, so a
+        "completed" show with a new episode out is back to watching. A series
+        or season that premiered within stale_days, with nothing watched
+        since, is new_episodes until the window passes, then not_started (no
+        episode seen) or stalled. Counts
         leave specials out. Episode lists missing or older than a day are
         re-fetched from TMDB on the way, up to 12 shows per request; a TMDB
         failure leaves those shows on cached data instead of failing the call.
@@ -4861,7 +4864,7 @@ components:
           items:
             type: object
             properties:
-              key: { type: string, enum: [watching, stalled, not_started, on_hold, caught_up, dropped] }
+              key: { type: string, enum: [new_episodes, watching, stalled, not_started, on_hold, caught_up, dropped] }
               label: { type: string }
               count: { type: integer }
         minutes_left: { type: integer, description: "tv only: aired episodes not seen yet, of shows you're watching, stalled on or haven't started" }
@@ -5564,7 +5567,7 @@ components:
         favorite: { type: boolean }
         stage:
           type: string
-          enum: [watching, stalled, not_started, on_hold, dropped, caught_up]
+          enum: [new_episodes, watching, stalled, not_started, on_hold, dropped, caught_up]
         total_episodes: { type: integer, description: Episodes TMDB lists, aired or not }
         aired_episodes: { type: integer }
         watched_episodes: { type: integer, description: Distinct aired episodes seen at least once }

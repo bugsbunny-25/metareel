@@ -97,7 +97,7 @@ The public API, the per-user tracking API and webhooks. The OpenAPI specs are th
 | GET    | `/api/v1/me/glance`                         | Widget summary: next episodes of up to 3 shows in progress, the next one airing, the cinema plan's month, the last watch |
 | GET/PUT | `/api/v1/me/devices`                       | Phones registered for push notifications (mobile app); PUT registers this device's Expo push token for this session |
 | DELETE | `/api/v1/me/devices/:id`                    | Unregister one of your devices |
-| GET    | `/api/v1/me/shows`                          | Every show you track, sorted into stages (`watching`, `stalled` after `stale_days` (30) without a watch, `not_started`, `on_hold`, `dropped`, `caught_up`) with progress, the next episode and the next air date |
+| GET    | `/api/v1/me/shows`                          | Every show you track, sorted into stages (`new_episodes` for a series or season out within `stale_days`, `watching`, `stalled` after `stale_days` (30) without a watch, `not_started`, `on_hold`, `dropped`, `caught_up`) with progress, the next episode and the next air date |
 | GET    | `/api/v1/me/upcoming`                       | Episodes still to air of your shows, soonest first (`days`: 90, ≤ 365); on hold, dropped and unwanted shows left out |
 | GET    | `/api/v1/me/shows/:id`                      | A show with the user's progress: seasons, episodes, watch counts (`include_specials`) |
 | POST   | `/api/v1/me/shows/:id/watched`              | Mark episodes watched: `scope` = `episode` / `season` / `up_to` / `all` |
@@ -343,12 +343,14 @@ counts distinct episodes, so a rewatch is not extra progress.
 you have started and not finished, most recently aired first.
 
 `GET /api/v1/me/shows` puts every show you track into one stage, in this
-order: `watching` (part way through and watched within `stale_days`, 30 by
-default), `stalled` (part way through, nothing watched for longer),
+order: `new_episodes` (a series or season that premiered within
+`stale_days`, with nothing watched since), `watching` (part way through and
+watched within `stale_days`, 30 by default), `stalled` (part way through, nothing watched for longer),
 `not_started`, `on_hold`, `dropped` and `caught_up` (every aired episode
 seen). A status you chose -- on hold, dropped -- decides the stage;
 otherwise the episodes do, so a completed show whose new episode has aired
-is back to `watching`. `GET /api/v1/me/upcoming` lists the episodes still to
+is back to `watching`. A new series or season left unwatched for `stale_days`
+after its premiere moves on to `not_started` or `stalled`. `GET /api/v1/me/upcoming` lists the episodes still to
 air of every show that is not on hold, dropped or unwanted. Both refresh
 episode lists older than a day from TMDB on the way, at most 12 shows a
 request, and fall back to the cache if TMDB fails.

@@ -557,8 +557,8 @@ func (s *AnalyticsService) People(ctx context.Context, q AnalyticsQuery) (*Peopl
 		}
 		p := people[c.PersonID]
 		if p == nil {
-			p = &personAgg{PersonPoints: PersonPoints{PersonID: c.PersonID, Name: c.Name, ProfilePath: strPtrOrNil(c.ProfilePath), BestRank: t.best,
-				TopTitles: []PersonTopTitle{}}, seen: map[string]bool{}}
+			p = &personAgg{PersonID: c.PersonID, Name: c.Name, ProfilePath: strPtrOrNil(c.ProfilePath), BestRank: t.best,
+				TopTitles: []PersonTopTitle{}, seen: map[string]bool{}}
 			people[c.PersonID] = p
 		}
 		if p.seen[key] {

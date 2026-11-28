@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/bugsbunny-25/metareel/internal/repository/sqlc"
@@ -346,7 +346,7 @@ func (tx *MappingTx) Inputs(subjects []Subject) (MappingInputs, error) {
 		ids[s.Type] = append(ids[s.Type], s.ID)
 	}
 	for typ, list := range ids {
-		sort.Slice(list, func(i, j int) bool { return list[i] < list[j] })
+		slices.Sort(list)
 		rows, err := tx.q.ListMappingEvidence(tx.ctx, sqlc.ListMappingEvidenceParams{SubjectType: typ, Ids: list})
 		if err != nil {
 			return in, fmt.Errorf("list mapping evidence: %w", err)
@@ -472,7 +472,7 @@ func netflixMapping(n sqlc.NetflixTitle) Mapping {
 }
 
 func evidenceFromRow(e sqlc.MappingEvidence) Evidence {
-	ev := Evidence{Subject: Subject{Type: e.SubjectType, ID: e.SubjectID}, Kind: e.Kind, Source: e.Source.String,
+	ev := Evidence{Type: e.SubjectType, ID: e.SubjectID, Kind: e.Kind, Source: e.Source.String,
 		IMDbID: e.ImdbID.String, ViaTitleID: e.ViaTitleID.Int64}
 	if e.TmdbID.String != "" && (e.TmdbKind.String == "movie" || e.TmdbKind.String == "tv") {
 		ev.Ref = TmdbRef{Kind: e.TmdbKind.String, ID: e.TmdbID.String}

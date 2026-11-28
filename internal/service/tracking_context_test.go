@@ -64,8 +64,8 @@ func makeVenue(t *testing.T, s *TrackingService, userID int64) (int64, int64) {
 	t.Helper()
 	ctx := context.Background()
 	out, err := s.CreateVenue(ctx, userID, VenueInput{
-		Name: "PVR Phoenix", Chain: tp("PVR INOX"), City: tp("Mumbai"), Country: tp("in"),
-		Latitude: tp(19.0995), Longitude: tp(72.9156), Timezone: tp("Asia/Kolkata"),
+		Name: "PVR Phoenix", Chain: new("PVR INOX"), City: new("Mumbai"), Country: new("in"),
+		Latitude: new(19.0995), Longitude: new(72.9156), Timezone: new("Asia/Kolkata"),
 		Refs: map[string]string{"wikidata_id": "Q123456"},
 	})
 	if err != nil {
@@ -73,8 +73,8 @@ func makeVenue(t *testing.T, s *TrackingService, userID int64) (int64, int64) {
 	}
 	venue := out["venue"].(repository.Venue)
 	screen, err := s.CreateScreen(ctx, venue.ID, ScreenInput{
-		Name: "Audi 1 IMAX", Number: tp(int64(1)), Seats: tp(int64(400)),
-		Width: tp(70.0), Height: tp(52.0), DimUnit: tp("ft"), AspectRatio: tp("1.43:1"),
+		Name: "Audi 1 IMAX", Number: new(int64(1)), Seats: new(int64(400)),
+		Width: new(70.0), Height: new(52.0), DimUnit: new("ft"), AspectRatio: new("1.43:1"),
 	})
 	if err != nil {
 		t.Fatalf("create screen: %v", err)
@@ -126,8 +126,7 @@ func TestCreateVenueRefusesADuplicateRef(t *testing.T) {
 	makeVenue(t, s, alice)
 	_, err := s.CreateVenue(context.Background(), alice, VenueInput{
 		Name: "PVR Phoenix (again)", Refs: map[string]string{"wikidata_id": "Q123456"}})
-	var ce *ConflictError
-	if !errors.As(err, &ce) {
+	if _, ok := errors.AsType[*ConflictError](err); !ok {
 		t.Fatalf("err = %v, want a ConflictError", err)
 	}
 }
@@ -140,18 +139,17 @@ func TestVenueValidation(t *testing.T) {
 		in   VenueInput
 	}{
 		{"no name", VenueInput{}},
-		{"bad country", VenueInput{Name: "X", Country: tp("India")}},
-		{"latitude without longitude", VenueInput{Name: "X", Latitude: tp(19.0)}},
-		{"latitude out of range", VenueInput{Name: "X", Latitude: tp(119.0), Longitude: tp(72.0)}},
-		{"bad timezone", VenueInput{Name: "X", Timezone: tp("Mars/Olympus")}},
-		{"bad status", VenueInput{Name: "X", Status: tp("demolished")}},
-		{"bad date", VenueInput{Name: "X", OpenedOn: tp("1997")}},
+		{"bad country", VenueInput{Name: "X", Country: new("India")}},
+		{"latitude without longitude", VenueInput{Name: "X", Latitude: new(19.0)}},
+		{"latitude out of range", VenueInput{Name: "X", Latitude: new(119.0), Longitude: new(72.0)}},
+		{"bad timezone", VenueInput{Name: "X", Timezone: new("Mars/Olympus")}},
+		{"bad status", VenueInput{Name: "X", Status: new("demolished")}},
+		{"bad date", VenueInput{Name: "X", OpenedOn: new("1997")}},
 		{"unknown ref source", VenueInput{Name: "X", Refs: map[string]string{"imdb": "tt1"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := s.CreateVenue(ctx, alice, tc.in)
-			var ve *ValidationError
-			if !errors.As(err, &ve) {
+			if _, ok := errors.AsType[*ValidationError](err); !ok {
 				t.Fatalf("err = %v, want a ValidationError", err)
 			}
 		})
@@ -168,11 +166,9 @@ func TestWatchAtAVenueSnapshotsItAndTakesItsZone(t *testing.T) {
 	e, _, err := s.LogWatch(ctx, alice, WatchInput{
 		Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-12T18:20:00Z",
 		Formats: []string{"imax", "imax-70mm", "dolby-atmos"},
-		WatchContextInput: WatchContextInput{
-			VenueID: &venueID, ScreenID: &screenID, Seat: tp("H14"),
-			ScreeningType: tp("regular"), PriceMinor: tp(int64(45000)), Currency: tp("inr"),
-			TicketsCount: tp(int64(2)), ContentAspectRatio: tp("1.43:1"), Dimension: tp("2d"),
-		},
+		VenueID: &venueID, ScreenID: &screenID, Seat: new("H14"),
+		ScreeningType: new("regular"), PriceMinor: new(int64(45000)), Currency: new("inr"),
+		TicketsCount: new(int64(2)), ContentAspectRatio: new("1.43:1"), Dimension: new("2d"),
 	})
 	if err != nil {
 		t.Fatalf("log watch: %v", err)
@@ -208,7 +204,7 @@ func TestWatchAtAVenueSnapshotsItAndTakesItsZone(t *testing.T) {
 	}
 
 	// Renaming the cinema does not touch the watch.
-	if _, err := s.UpdateVenue(ctx, venueID, VenueInput{Name: "Phoenix Palladium", City: tp("Mumbai")}); err != nil {
+	if _, err := s.UpdateVenue(ctx, venueID, VenueInput{Name: "Phoenix Palladium", City: new("Mumbai")}); err != nil {
 		t.Fatalf("rename venue: %v", err)
 	}
 	again, err := s.GetWatch(ctx, alice, e.ID)
@@ -236,17 +232,17 @@ func TestWatchContextValidation(t *testing.T) {
 		ctxt WatchContextInput
 		fmts []string
 	}{
-		{name: "unknown screening type", ctxt: WatchContextInput{ScreeningType: tp("sneak")}},
-		{name: "unknown media", ctxt: WatchContextInput{Media: tp("laserdisc")}},
-		{name: "unknown hdr", ctxt: WatchContextInput{HDR: tp("hdr11")}},
-		{name: "price without currency", ctxt: WatchContextInput{PriceMinor: tp(int64(450))}},
-		{name: "bad currency", ctxt: WatchContextInput{PriceMinor: tp(int64(450)), Currency: tp("rupees")}},
-		{name: "negative price", ctxt: WatchContextInput{PriceMinor: tp(int64(-1)), Currency: tp("INR")}},
-		{name: "zero tickets", ctxt: WatchContextInput{TicketsCount: tp(int64(0))}},
-		{name: "bad aspect ratio", ctxt: WatchContextInput{ContentAspectRatio: tp("very wide")}},
-		{name: "screen size without a unit", ctxt: WatchContextInput{ScreenWidth: tp(21.0)}},
-		{name: "bad unit", ctxt: WatchContextInput{ScreenWidth: tp(21.0), ScreenDimUnit: tp("cubits")}},
-		{name: "no such venue", ctxt: WatchContextInput{VenueID: tp(int64(99999))}},
+		{name: "unknown screening type", ctxt: WatchContextInput{ScreeningType: new("sneak")}},
+		{name: "unknown media", ctxt: WatchContextInput{Media: new("laserdisc")}},
+		{name: "unknown hdr", ctxt: WatchContextInput{HDR: new("hdr11")}},
+		{name: "price without currency", ctxt: WatchContextInput{PriceMinor: new(int64(450))}},
+		{name: "bad currency", ctxt: WatchContextInput{PriceMinor: new(int64(450)), Currency: new("rupees")}},
+		{name: "negative price", ctxt: WatchContextInput{PriceMinor: new(int64(-1)), Currency: new("INR")}},
+		{name: "zero tickets", ctxt: WatchContextInput{TicketsCount: new(int64(0))}},
+		{name: "bad aspect ratio", ctxt: WatchContextInput{ContentAspectRatio: new("very wide")}},
+		{name: "screen size without a unit", ctxt: WatchContextInput{ScreenWidth: new(21.0)}},
+		{name: "bad unit", ctxt: WatchContextInput{ScreenWidth: new(21.0), ScreenDimUnit: new("cubits")}},
+		{name: "no such venue", ctxt: WatchContextInput{VenueID: new(int64(99999))}},
 		{name: "screen without a venue", ctxt: WatchContextInput{ScreenID: &screenID}},
 		{name: "screen of another venue", ctxt: WatchContextInput{VenueID: &otherID, ScreenID: &screenID}},
 		{name: "unknown format", fmts: []string{"imax-42d"}},
@@ -256,8 +252,7 @@ func TestWatchContextValidation(t *testing.T) {
 			in.WatchContextInput = tc.ctxt
 			in.Formats = tc.fmts
 			_, _, err := s.LogWatch(ctx, alice, in)
-			var ve *ValidationError
-			if !errors.As(err, &ve) {
+			if _, ok := errors.AsType[*ValidationError](err); !ok {
 				t.Fatalf("err = %v, want a ValidationError", err)
 			}
 		})
@@ -280,14 +275,13 @@ func TestRetiredFormatsStayOnOldWatches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("format: %v", err)
 	}
-	if _, err := s.UpdateFormat(ctx, f.ID, FormatInput{Active: tp(false)}); err != nil {
+	if _, err := s.UpdateFormat(ctx, f.ID, FormatInput{Active: new(false)}); err != nil {
 		t.Fatalf("retire: %v", err)
 	}
 
 	_, _, err = s.LogWatch(ctx, alice, WatchInput{
 		Kind: "movie", TmdbID: "155", EndedAt: "2026-11-12T18:20:00Z", Formats: []string{"4dx"}})
-	var ve *ValidationError
-	if !errors.As(err, &ve) {
+	if _, ok := errors.AsType[*ValidationError](err); !ok {
 		t.Fatalf("logging with a retired format: %v, want a ValidationError", err)
 	}
 
@@ -337,8 +331,7 @@ func TestCreateFormatValidation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := s.CreateFormat(ctx, tc.in)
-			var ve *ValidationError
-			if !errors.As(err, &ve) {
+			if _, ok := errors.AsType[*ValidationError](err); !ok {
 				t.Fatalf("err = %v, want a ValidationError", err)
 			}
 		})
@@ -357,13 +350,12 @@ func TestDeleteVenueRefusedWhileInUse(t *testing.T) {
 
 	if _, _, err := s.LogWatch(ctx, alice, WatchInput{
 		Kind: "movie", TmdbID: "27205", EndedAt: "2026-11-12T18:20:00Z",
-		WatchContextInput: WatchContextInput{VenueID: &venueID}}); err != nil {
+		VenueID: &venueID}); err != nil {
 		t.Fatalf("log watch: %v", err)
 	}
 
 	err := s.DeleteVenue(ctx, venueID)
-	var ce *ConflictError
-	if !errors.As(err, &ce) {
+	if _, ok := errors.AsType[*ConflictError](err); !ok {
 		t.Fatalf("err = %v, want a ConflictError", err)
 	}
 
@@ -383,7 +375,7 @@ func TestVenueAliases(t *testing.T) {
 	ctx := context.Background()
 	venueID, _ := makeVenue(t, s, alice)
 
-	alias, err := s.AddVenueAlias(ctx, venueID, "Phoenix Mills Cinema", tp("2008-01-01"), tp("2019-06-30"))
+	alias, err := s.AddVenueAlias(ctx, venueID, "Phoenix Mills Cinema", new("2008-01-01"), new("2019-06-30"))
 	if err != nil {
 		t.Fatalf("add alias: %v", err)
 	}

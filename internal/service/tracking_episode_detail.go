@@ -96,7 +96,7 @@ func (s *TrackingService) Episode(ctx context.Context, userID int64, tmdbID stri
 
 	// The user's watches of this episode, newest first.
 	cursorOn, cursorID := "", int64(0)
-	for page := 0; page < maxEpisodeWatchPages; page++ {
+	for range maxEpisodeWatchPages {
 		rows, err := s.read.ListWatches(ctx, userID, repository.DiaryFilter{
 			Kind: "tv", TmdbID: tmdbID, SubjectKind: "episode", CursorOn: cursorOn, CursorID: cursorID, Limit: maxDiaryLimit,
 		})

@@ -271,7 +271,7 @@
   },
   {
    "name": "@babel/plugin-transform-export-namespace-from",
-   "version": "7.29.7",
+   "version": "7.29.15",
    "license": "MIT",
    "url": "https://github.com/babel/babel"
   },
@@ -451,7 +451,7 @@
   },
   {
    "name": "@expo/cli",
-   "version": "58.1.20",
+   "version": "58.1.22",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -463,13 +463,13 @@
   },
   {
    "name": "@expo/config",
-   "version": "58.0.12",
+   "version": "58.0.13",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
   {
    "name": "@expo/config-plugins",
-   "version": "58.0.13",
+   "version": "58.0.14",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -505,7 +505,7 @@
   },
   {
    "name": "@expo/fingerprint",
-   "version": "0.21.10",
+   "version": "0.22.0",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -517,7 +517,7 @@
   },
   {
    "name": "@expo/inline-modules",
-   "version": "0.2.10",
+   "version": "0.2.11",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -529,7 +529,7 @@
   },
   {
    "name": "@expo/local-build-cache-provider",
-   "version": "58.0.12",
+   "version": "58.0.13",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -553,13 +553,13 @@
   },
   {
    "name": "@expo/metro-config",
-   "version": "58.0.22",
+   "version": "58.0.24",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
   {
    "name": "@expo/metro-file-map",
-   "version": "58.0.6",
+   "version": "58.0.7",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -595,7 +595,7 @@
   },
   {
    "name": "@expo/prebuild-config",
-   "version": "58.0.20",
+   "version": "58.0.21",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -607,7 +607,7 @@
   },
   {
    "name": "@expo/router-server",
-   "version": "58.0.22",
+   "version": "58.0.24",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -637,13 +637,13 @@
   },
   {
    "name": "@expo/ui",
-   "version": "58.0.28",
+   "version": "58.0.30",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
   {
    "name": "@expo/ws-tunnel",
-   "version": "2.0.1",
+   "version": "2.1.1",
    "license": "MIT",
    "url": "https://www.npmjs.com/package/@expo/ws-tunnel"
   },
@@ -816,12 +816,6 @@
    "url": "https://github.com/radix-ui/primitives"
   },
   {
-   "name": "@react-native-masked-view/masked-view",
-   "version": "0.3.2",
-   "license": "MIT",
-   "url": "https://github.com/react-native-masked-view/masked-view"
-  },
-  {
    "name": "@react-native/asset-utils",
    "version": "0.88.1",
    "license": "MIT",
@@ -895,31 +889,31 @@
   },
   {
    "name": "@tanstack/query-async-storage-persister",
-   "version": "5.107.1",
+   "version": "5.108.4",
    "license": "MIT",
    "url": "https://github.com/TanStack/query"
   },
   {
    "name": "@tanstack/query-core",
-   "version": "5.107.1",
+   "version": "5.108.4",
    "license": "MIT",
    "url": "https://github.com/TanStack/query"
   },
   {
    "name": "@tanstack/query-persist-client-core",
-   "version": "5.107.1",
+   "version": "5.108.4",
    "license": "MIT",
    "url": "https://github.com/TanStack/query"
   },
   {
    "name": "@tanstack/react-query",
-   "version": "5.107.1",
+   "version": "5.108.4",
    "license": "MIT",
    "url": "https://github.com/TanStack/query"
   },
   {
    "name": "@tanstack/react-query-persist-client",
-   "version": "5.107.1",
+   "version": "5.108.4",
    "license": "MIT",
    "url": "https://github.com/TanStack/query"
   },
@@ -949,13 +943,13 @@
   },
   {
    "name": "@types/node",
-   "version": "24.19.2",
+   "version": "26.6.11",
    "license": "MIT",
    "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
   },
   {
    "name": "@types/react",
-   "version": "19.3.0",
+   "version": "19.3.3",
    "license": "MIT",
    "url": "https://github.com/DefinitelyTyped/DefinitelyTyped"
   },
@@ -1033,7 +1027,7 @@
   },
   {
    "name": "agent-cli-detector",
-   "version": "0.1.7",
+   "version": "0.1.8",
    "license": "MIT",
    "url": "https://github.com/expo/agent-cli-detector"
   },
@@ -1153,7 +1147,7 @@
   },
   {
    "name": "babel-preset-expo",
-   "version": "58.0.25",
+   "version": "58.0.27",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1591,7 +1585,7 @@
   },
   {
    "name": "expo",
-   "version": "58.0.25",
+   "version": "58.1.0",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1627,19 +1621,19 @@
   },
   {
    "name": "expo-crypto",
-   "version": "58.0.8",
+   "version": "58.0.9",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
   {
    "name": "expo-dev-client",
-   "version": "58.0.20",
+   "version": "58.0.22",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
   {
    "name": "expo-dev-launcher",
-   "version": "58.0.20",
+   "version": "58.1.0",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1669,7 +1663,7 @@
   },
   {
    "name": "expo-file-system",
-   "version": "58.0.13",
+   "version": "58.0.15",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1681,7 +1675,7 @@
   },
   {
    "name": "expo-glass-effect",
-   "version": "58.0.5",
+   "version": "58.0.6",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1699,7 +1693,7 @@
   },
   {
    "name": "expo-image",
-   "version": "58.0.18",
+   "version": "58.0.19",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1735,7 +1729,7 @@
   },
   {
    "name": "expo-location",
-   "version": "58.0.22",
+   "version": "58.0.23",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1759,13 +1753,13 @@
   },
   {
    "name": "expo-modules-core",
-   "version": "58.1.0",
+   "version": "58.2.0",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
   {
    "name": "expo-modules-jsi",
-   "version": "58.0.23",
+   "version": "58.0.24",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1777,19 +1771,19 @@
   },
   {
    "name": "expo-network",
-   "version": "58.0.5",
+   "version": "58.0.6",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
   {
    "name": "expo-notifications",
-   "version": "58.1.9",
+   "version": "58.1.10",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
   {
    "name": "expo-router",
-   "version": "58.0.31",
+   "version": "58.0.33",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1807,19 +1801,19 @@
   },
   {
    "name": "expo-sharing",
-   "version": "58.0.23",
+   "version": "58.0.24",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
   {
    "name": "expo-splash-screen",
-   "version": "58.0.14",
+   "version": "58.0.15",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
   {
    "name": "expo-sqlite",
-   "version": "58.0.17",
+   "version": "58.0.18",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1849,7 +1843,7 @@
   },
   {
    "name": "expo-updates",
-   "version": "58.0.22",
+   "version": "58.0.23",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1861,7 +1855,7 @@
   },
   {
    "name": "expo-widgets",
-   "version": "58.0.28",
+   "version": "58.0.30",
    "license": "MIT",
    "url": "https://github.com/expo/expo"
   },
@@ -1891,7 +1885,7 @@
   },
   {
    "name": "fetch-nodeshim",
-   "version": "0.4.10",
+   "version": "0.4.11",
    "license": "MIT",
    "url": "https://github.com/kitten/fetch-nodeshim"
   },
@@ -2202,12 +2196,6 @@
    "url": "https://github.com/isaacs/node-lru-cache"
   },
   {
-   "name": "makeerror",
-   "version": "1.0.12",
-   "license": "BSD-3-Clause",
-   "url": "https://github.com/daaku/nodejs-makeerror"
-  },
-  {
    "name": "mdn-data",
    "version": "2.0.14",
    "license": "CC0-1.0",
@@ -2377,7 +2365,7 @@
   },
   {
    "name": "multitars",
-   "version": "1.0.2",
+   "version": "1.0.3",
    "license": "MIT",
    "url": "https://github.com/expo/multitars"
   },
@@ -2425,7 +2413,7 @@
   },
   {
    "name": "noxcturnal",
-   "version": "0.1.13",
+   "version": "0.1.14",
    "license": "MIT",
    "url": "https://github.com/expo/noxcturnal"
   },
@@ -2557,7 +2545,7 @@
   },
   {
    "name": "postcss",
-   "version": "8.5.33",
+   "version": "8.5.34",
    "license": "MIT",
    "url": "https://github.com/postcss/postcss"
   },
@@ -2893,7 +2881,7 @@
   },
   {
    "name": "source-map-js",
-   "version": "1.2.2",
+   "version": "1.2.4",
    "license": "BSD-3-Clause",
    "url": "https://github.com/7rulnik/source-map-js"
   },
@@ -3024,12 +3012,6 @@
    "url": "https://github.com/SuperchupuDev/tinyglobby"
   },
   {
-   "name": "tmpl",
-   "version": "1.0.5",
-   "license": "BSD-3-Clause",
-   "url": "https://github.com/daaku/nodejs-tmpl"
-  },
-  {
    "name": "to-regex-range",
    "version": "5.0.1",
    "license": "MIT",
@@ -3073,7 +3055,7 @@
   },
   {
    "name": "undici-types",
-   "version": "7.24.6",
+   "version": "8.9.0",
    "license": "MIT",
    "url": "https://github.com/nodejs/undici"
   },
@@ -3148,12 +3130,6 @@
    "version": "1.0.1",
    "license": "MIT",
    "url": "https://github.com/Rich-Harris/vlq"
-  },
-  {
-   "name": "walker",
-   "version": "1.0.8",
-   "license": "Apache-2.0",
-   "url": "https://github.com/daaku/nodejs-walker"
   },
   {
    "name": "warn-once",

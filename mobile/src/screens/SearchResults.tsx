@@ -7,6 +7,7 @@ import { api } from '@/auth/session';
 import { Text } from '@/components/Text';
 import { TitleRow } from '@/components/TitleRow';
 import { useTitleSearch } from '@/data/queries';
+import { DiscoverRails } from '@/screens/DiscoverRails';
 import { year } from '@/lib/format';
 import { lookupQuery, parseShared } from '@/lib/share';
 import { useTheme } from '@/theme';
@@ -15,7 +16,8 @@ type Result = components['schemas']['TitleSearchResult'];
 
 /**
  * Results for a search: a pasted link or ID is looked up, anything else is
- * a title search. Shared by the Search sheet and iOS's search tab.
+ * a title search. Before anything is typed, the Discover rails. Shared by the
+ * Search sheet and iOS's search tab.
  */
 export function SearchResults({
   q,
@@ -23,14 +25,12 @@ export function SearchResults({
   contentInsetAdjustmentBehavior,
   insetLeft = 0,
   insetRight = 0,
-  empty,
 }: {
   q: string;
   onPick: (kind: 'movie' | 'tv', id: string, title?: string, poster?: string) => void;
   contentInsetAdjustmentBehavior?: FlatListProps<Result>['contentInsetAdjustmentBehavior'];
   insetLeft?: number;
   insetRight?: number;
-  empty?: string;
 }) {
   const { colors, gutter } = useTheme();
   const parsed = parseShared(q);
@@ -62,10 +62,8 @@ export function SearchResults({
           <ActivityIndicator color={colors.textMuted} style={{ marginVertical: 8 }} />
         ) : search.isError ? (
           <Text variant="muted">Search needs a connection.</Text>
-        ) : !q.trim() && empty ? (
-          <Text variant="muted" style={{ marginTop: 12 }}>
-            {empty}
-          </Text>
+        ) : !q.trim() ? (
+          <DiscoverRails onPick={onPick} />
         ) : undefined
       }
       renderItem={({ item: r }) => (

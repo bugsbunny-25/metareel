@@ -18,6 +18,7 @@
   import { stars } from '../lib/rows.js'
   import { addDays, localDay } from '../lib/dates.js'
   import { toast } from '../lib/toast.svelte.js'
+  import { fade } from 'svelte/transition'
 
   let { kind, id, onlog } = $props()
   // Netflix-style: the best place this title holds in a Top 10 in your country today.
@@ -103,6 +104,14 @@
     for (const p of here?.flatrate ?? []) if (!seen.has(p.provider_name)) seen.set(p.provider_name, p)
     const all = [...seen.values()]
     return all.filter((p) => !all.some((o) => o !== p && p.provider_name.startsWith(o.provider_name + ' ')))
+  })
+  // Warm the logos of the other countries in your order, so a switch doesn't wait on images.
+  $effect(() => {
+    const all = d?.ov.availability?.countries
+    if (!all) return
+    for (const c of whereOptions) {
+      for (const p of all[c]?.flatrate ?? []) if (p.logo_path) new Image().src = `https://image.tmdb.org/t/p/w92${p.logo_path}`
+    }
   })
   const lastRemoved = $derived((d?.offerHistory?.events ?? []).filter((e) => e.country === where && e.event === 'removed' && e.monetization === 'flatrate').at(-1) ?? null)
   const nfViews = $derived(d?.ov.netflix?.total_views || 0)
@@ -271,17 +280,26 @@
           {:else}
             <h2>Where to watch · {where}</h2>
           {/if}
+          <!-- A country's services fade in on a switch rather than jumping in. -->
+          {#key where}
+          <div class="where-body" in:fade={{ duration: 180 }}>
           {#if !d.catalogued}
             <p class="note">metareel hasn’t looked up where this streams yet.</p>
           {:else if errs.availability}
             <p class="note">Availability didn’t load.</p>
           {:else if streaming.length}
-            <p class="watch">{#each streaming as w (w.provider_name)}<ProviderLogo name={w.provider_name} logo={w.logo_path} link={w.url ?? w.link} size={40} />{/each}</p>
+            <ul class="watch">
+              {#each streaming as w (w.provider_name)}
+                <li><ProviderLogo name={w.provider_name} logo={w.logo_path} link={w.url ?? w.link} size={44} /><span class="svc">{w.provider_name}</span></li>
+              {/each}
+            </ul>
           {:else if lastRemoved}
             <p class="left">Left {lastRemoved.provider_name} on {dayMonth(lastRemoved.observed_at.slice(0, 10))}. Not on a subscription service here now.</p>
           {:else}
             <p class="note">Not on a subscription service in {countryName(where)} right now.</p>
           {/if}
+          </div>
+          {/key}
           <p class="source">{d.ov.availability?.attribution ?? 'Watch provider data by JustWatch, via TMDB'}</p>
         </section>
       </div>
@@ -345,7 +363,7 @@
   .source { margin: 0; padding: 0 12px; color: var(--text-muted); font-size: 12px; }
   .wh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
   .seg { display: inline-flex; flex-wrap: wrap; padding: 2px; border-radius: 9px; background: var(--bg-elevated); }
-  .seg button { height: 28px; padding: 0 11px; border: 0; border-radius: 7px; background: none; color: var(--text-muted); font: 600 13px/1 var(--font-sans); cursor: pointer; }
+  .seg button { height: 28px; padding: 0 11px; border: 0; border-radius: 7px; background: none; color: var(--text-muted); font: 600 13px/1 var(--font-sans); cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease; }
   .seg button[aria-pressed='true'] { background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); }
   .panel.pad .source { padding: 0; }
   .note { margin: 0; padding: 0 12px 6px; color: var(--text-muted); font: italic 400 15px/22px var(--font-display); }
@@ -367,7 +385,11 @@
   dd .muted { font-weight: 400; }
   dd.you { color: var(--accent-yours); }
   .stale { color: var(--status-stale); }
-  .watch { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; }
+  /* Each service: its logo, and its full name under it (wrapping, never cut off). */
+  .watch { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 14px 10px; margin: 0; padding: 0; list-style: none; }
+  .watch li { display: grid; justify-items: center; align-content: start; gap: 6px; min-width: 0; text-align: center; }
+  .svc { color: var(--text-muted); font-size: 12.5px; line-height: 1.25; overflow-wrap: anywhere; }
+  .where-body { display: grid; gap: 12px; }
   .left { margin: 0; color: var(--delta-down); font-weight: 600; }
 
   .credits { margin-top: 16px; gap: 14px; }

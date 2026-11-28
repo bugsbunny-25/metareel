@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"strconv"
 	"strings"
@@ -79,9 +80,7 @@ func (c *TMDBClient) NowPlaying(ctx context.Context, region string) ([]TMDBListI
 
 func (c *TMDBClient) list(ctx context.Context, what, url, kind string, params map[string]string) ([]TMDBListItem, error) {
 	q := map[string]string{"api_key": c.apiKey}
-	for k, v := range params {
-		q[k] = v
-	}
+	maps.Copy(q, params)
 	resp, err := c.http.R().SetContext(ctx).SetQueryParams(q).Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("tmdb %s: %w", what, redactErr(err))

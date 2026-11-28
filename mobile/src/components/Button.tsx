@@ -10,8 +10,15 @@ export function Button({
   kind = 'primary',
   busy,
   disabled,
+  grow,
   ...rest
-}: PressableProps & { title: string; kind?: 'primary' | 'quiet'; busy?: boolean }) {
+}: PressableProps & {
+  title: string;
+  kind?: 'primary' | 'quiet';
+  busy?: boolean;
+  /** Fill the row (a screen's action buttons): side by side they share it, wrapped they're each full width. */
+  grow?: boolean;
+}) {
   const { colors } = useTheme();
   const primary = kind === 'primary';
   return (
@@ -21,6 +28,7 @@ export function Button({
       disabled={disabled || busy}
       style={({ pressed }) => [
         styles.base,
+        grow && styles.grow,
         { backgroundColor: primary ? colors.accentPrimary : colors.bgElevated, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
       ]}
       {...rest}
@@ -38,4 +46,5 @@ export function Button({
 
 const styles = StyleSheet.create({
   base: { minHeight: 48, borderRadius: 24, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center' },
+  grow: { flexGrow: 1, minWidth: 120 },
 });

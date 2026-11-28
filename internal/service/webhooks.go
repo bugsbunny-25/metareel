@@ -870,15 +870,14 @@ func (s *WebhookService) send(ctx context.Context, rawURL, secret string, delive
 	req.Header.Set("X-Metareel-Signature", WebhookSignature(secret, s.now().Unix(), body))
 	resp, err := s.http.Do(req)
 	if err != nil {
-		var ue *url.Error
-		if errors.As(err, &ue) {
+		if ue, ok := errors.AsType[*url.Error](err); ok {
 			err = ue.Err
 		}
 		return 0, fmt.Errorf("request failed: %v", err)
 	}
 	defer resp.Body.Close()
+	// Close drains the (small) rest itself since Go 1.27, so the connection is reused.
 	snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		msg := strings.TrimSpace(string(snippet))
 		if msg != "" {

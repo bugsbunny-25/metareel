@@ -30,11 +30,13 @@ Diary (your last 4 films and 4 shows, your ratings, every watch grouped by its
 local day, this year's totals, a year heatmap from `/me/stats/calendar`, and
 edit and delete; deletes are permanent and ask first; each watch has a page,
 `#/watch/:id`, with every detail and its formats and discs as logos), TV
-(`#/tv`, as on mobile: To watch -- shows by stage from `/me/shows`, continue
+(`#/tv`, as on mobile: To watch -- shows by stage from `/me/shows`, new
+episodes (a series or season out within the stale window), continue
 watching, haven't watched in a while, not started, on hold, dropped, each with
 its next episode, progress and a one-click "Watched" -- and Upcoming, from
 `/me/upcoming` by day with episodes per week; as cards or a poster grid, the
-choice and the segment remembered per browser; an episode opens its page
+choice and the segment remembered per browser, each segment keeping its own
+scroll position; an episode opens its page
 first, `#/episode/:show/:season/:episode` from
 `/me/shows/{id}/episodes/{season}/{episode}`, with "View whole series"),
 Movies (`#/movies`: released watchlist films To watch and Upcoming ones by

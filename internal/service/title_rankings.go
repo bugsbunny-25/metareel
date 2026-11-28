@@ -38,7 +38,7 @@ func ParseTmdbRef(kind, id string) (TmdbRef, error) {
 // ParseTmdbRefList parses "movie:425,tv:154385".
 func ParseTmdbRefList(raw string) ([]TmdbRef, error) {
 	var refs []TmdbRef
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue

@@ -319,7 +319,8 @@ func TestTitleRankings(t *testing.T) {
 	})
 }
 
-func ptr(v int64) *int64 { return &v }
+//go:fix inline
+func ptr(v int64) *int64 { return new(v) }
 
 func equalPtr(a, b *int64) bool {
 	if a == nil || b == nil {

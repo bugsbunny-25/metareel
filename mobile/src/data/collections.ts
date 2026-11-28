@@ -30,9 +30,10 @@ export function countdownText(days: number): string {
 
 /** The show stages, in the order To watch lists them. */
 const STAGES: { stage: NonNullable<Show['stage']>; title: string; collapsed?: boolean }[] = [
+  { stage: 'new_episodes', title: 'New episodes' },
   { stage: 'watching', title: 'Continue watching' },
-  { stage: 'not_started', title: 'Not started' },
   { stage: 'stalled', title: "Haven't watched in a while", collapsed: true },
+  { stage: 'not_started', title: 'Not started' },
   { stage: 'on_hold', title: 'On hold', collapsed: true },
 ];
 

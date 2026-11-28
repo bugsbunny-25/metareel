@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-
 
 import type { components } from '@/api/schema';
 import { Button } from '@/components/Button';
+import { CertificationBadge } from '@/components/CertificationBadge';
 import { ConnectionNote } from '@/components/ConnectionNote';
 import { Icon } from '@/components/Icon';
 import { OutboxBanner } from '@/components/OutboxBanner';
@@ -44,7 +45,7 @@ export default function Tonight() {
     Promise.all([queue.refetch(), top10.refetch(), top10tv.refetch(), diary.refetch(), trending.refetch(), cinemas.refetch()]),
   );
   const recent = diary.data?.pages[0]?.watches?.slice(0, 5) ?? [];
-  const watching = (queue.data?.shows ?? []).filter((s) => s.stage === 'watching' && s.next_episode).slice(0, 4);
+  const watching = (queue.data?.shows ?? []).filter((s) => (s.stage === 'watching' || (s.stage === 'new_episodes' && !!s.watched_episodes)) && s.next_episode).slice(0, 4);
 
   return (
     <Screen
@@ -174,15 +175,15 @@ function ListRail({ title, hint, items, loading }: { title: string; hint: string
               />
               <View style={styles.railMeta}>
                 <Text variant="caption" num>
-                  {/* Shows say how many seasons and In cinemas the rating there, when metareel knows the title. */}
+                  {/* Shows say how many seasons; In cinemas adds the rating there (badge), when metareel knows the title. */}
                   {[
                     item.tmdb_kind === 'tv' ? (item.season_count ? `${item.season_count} ${item.season_count === 1 ? 'season' : 'seasons'}` : 'Series') : 'Film',
                     (item.release_date ?? '').slice(0, 4),
-                    item.certification ?? '',
                   ]
                     .filter(Boolean)
                     .join(' · ')}
                 </Text>
+                {item.certification ? <CertificationBadge rating={item.certification} /> : null}
                 {item.vote_count >= 20 ? (
                   <>
                     <RatingLogo source="tmdb" height={11} />

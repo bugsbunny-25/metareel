@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"path"
 	"regexp"
 	"sort"
@@ -227,11 +228,11 @@ func parseTVTimeTime(v string) int64 {
 // unixSuffix reads the unix time at the end of a TV Time range key such as
 // "watch-episode-1684012083" or "watch-date-1625290976".
 func unixSuffix(v string) int64 {
-	i := strings.LastIndex(v, "-")
-	if i < 0 || i == len(v)-1 {
+	_, suffix, ok := strings.CutLast(v, "-")
+	if !ok || suffix == "" {
 		return 0
 	}
-	n, err := strconv.ParseInt(v[i+1:], 10, 64)
+	n, err := strconv.ParseInt(suffix, 10, 64)
 	if err != nil || n <= 0 {
 		return 0
 	}
@@ -553,9 +554,7 @@ func importSummary(titles []importedTitle, extra map[string]any) map[string]any 
 		}
 	}
 	out := map[string]any{"movies": movies, "shows": shows}
-	for k, v := range extra {
-		out[k] = v
-	}
+	maps.Copy(out, extra)
 	return out
 }
 

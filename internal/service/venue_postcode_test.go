@@ -7,10 +7,10 @@ import (
 )
 
 func TestPostcodes(t *testing.T) {
-	if p := normPostcode(str("  sw1a   1aa ")); p == nil || *p != "SW1A 1AA" {
+	if p := normPostcode(new("  sw1a   1aa ")); p == nil || *p != "SW1A 1AA" {
 		t.Fatalf("norm = %v", p)
 	}
-	if normPostcode(str("  ")) != nil || normPostcode(nil) != nil {
+	if normPostcode(new("  ")) != nil || normPostcode(nil) != nil {
 		t.Fatal("blank postcode kept")
 	}
 	if osmPostcode(map[string]string{"addr:postcode": "123456789012345678901"}) != nil {

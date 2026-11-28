@@ -65,7 +65,7 @@ func collectRefs(v any, out *[]string) {
 
 func resolvePointer(doc map[string]any, pointer string) error {
 	var cur any = doc
-	for _, part := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
+	for part := range strings.SplitSeq(strings.TrimPrefix(pointer, "/"), "/") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return fmt.Errorf("%q is not an object", part)

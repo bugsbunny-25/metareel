@@ -112,15 +112,15 @@ func (m *SeasonMapper) TagRankings(ctx context.Context, from time.Time, rep *Sea
 			if r.Provider == "netflix" {
 				week := netflixWeekOf(r.Date)
 				if b, ok := best[r.TmdbID+"|"+r.Country+"|"+week]; ok {
-					num, source = int64p(b.Season), repository.SeasonSourceNetflix
+					num, source = new(b.Season), repository.SeasonSourceNetflix
 				} else if b, ok := best[r.TmdbID+"||"+week]; ok && !imported[r.Country+"|"+week] {
 					// The country's own week is not imported: use the global list.
-					num, source = int64p(b.Season), repository.SeasonSourceNetflix
+					num, source = new(b.Season), repository.SeasonSourceNetflix
 				}
 			}
 			if num == nil {
 				if n, ok := latestAiredSeason(tmdb[r.TmdbID], r.Date); ok {
-					num, source = int64p(n), repository.SeasonSourceTmdbAir
+					num, source = new(n), repository.SeasonSourceTmdbAir
 				}
 			}
 		}
@@ -220,24 +220,24 @@ func ResolveNetflixSeason(showTitle, seasonTitle, firstWeek string, tmdb []repos
 		return int64p(1), repository.SeasonSourceParsed
 	}
 	if n, ok := tmdbSeasonNamed(tmdb, suffix, seasonTitle); ok {
-		return int64p(n), repository.SeasonSourceTmdbName
+		return new(n), repository.SeasonSourceTmdbName
 	}
 	if n, ok := numberedSeason(suffix); ok && (tmdb == nil || hasSeason(tmdb, n)) {
-		return int64p(n), repository.SeasonSourceNumber
+		return new(n), repository.SeasonSourceNumber
 	}
 	if tmdb != nil {
 		if m := suffixDateRe.FindStringSubmatch(suffix); m != nil {
 			if d, err := time.Parse("January 2, 2006", m[1]+" "+m[2]+", "+m[3]); err == nil {
 				if n, ok := latestAiredSeason(tmdb, repository.FormatDate(d)); ok {
-					return int64p(n), repository.SeasonSourceTmdbAir
+					return new(n), repository.SeasonSourceTmdbAir
 				}
 			}
 		}
 		if n, ok := seasonAiredBefore(tmdb, firstWeek, airedSeasonWindow); ok {
-			return int64p(n), repository.SeasonSourceTmdbAir
+			return new(n), repository.SeasonSourceTmdbAir
 		}
 		if regular := regularSeasons(tmdb); len(regular) == 1 {
-			return int64p(int64(regular[0].Number)), repository.SeasonSourceTmdbSingle
+			return new(int64(regular[0].Number)), repository.SeasonSourceTmdbSingle
 		}
 	}
 	return nil, ""
@@ -361,7 +361,8 @@ func atoi64p(s string) *int64 {
 	return &n
 }
 
-func int64p(n int64) *int64 { return &n }
+//go:fix inline
+func int64p(n int64) *int64 { return new(n) }
 
 func sameInt(a, b *int64) bool {
 	if a == nil || b == nil {

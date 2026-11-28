@@ -530,11 +530,9 @@ func (r *DiscsRepository) Copies(ctx context.Context, userID int64, f CopyFilter
 	out := make([]DiscCopyRow, len(rows))
 	for i, row := range rows {
 		out[i] = DiscCopyRow{
-			DiscCopy: DiscCopy{
-				ID: row.ID, UserID: row.UserID, ReleaseID: row.ReleaseID, PurchasedOn: nullStringPtr(row.PurchasedOn),
-				PriceMinor: nullInt64Ptr(row.PriceMinor), Currency: nullStringPtr(row.Currency), Retailer: row.Retailer,
-				Condition: row.Condition, Notes: nullStringPtr(row.Notes), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-			},
+			ID: row.ID, UserID: row.UserID, ReleaseID: row.ReleaseID, PurchasedOn: nullStringPtr(row.PurchasedOn),
+			PriceMinor: nullInt64Ptr(row.PriceMinor), Currency: nullStringPtr(row.Currency), Retailer: row.Retailer,
+			Condition: row.Condition, Notes: nullStringPtr(row.Notes), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 			Title: row.Title, Edition: row.Edition, MediaFormat: row.MediaFormat, Packaging: row.Packaging,
 			Barcode: nullStringPtr(row.Barcode), Label: nullStringPtr(row.Label), Studio: row.Studio,
 			HasSlipcover: row.HasSlipcover != 0, Discs: row.Discs,

@@ -34,7 +34,7 @@ func TestTMDBTVSeasonEpisodes(t *testing.T) {
 		a := r.URL.Query().Get("append_to_response")
 		appends = append(appends, a)
 		var parts []string
-		for _, s := range strings.Split(a, ",") {
+		for s := range strings.SplitSeq(a, ",") {
 			n := strings.TrimPrefix(s, "season/")
 			if n == "3" {
 				continue // TMDB leaves out seasons it doesn't have

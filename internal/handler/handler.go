@@ -191,8 +191,7 @@ func (h *Handler) PatchTitle(c *echo.Context) error {
 	if err == nil {
 		return c.JSON(http.StatusOK, out)
 	}
-	var validationErr *service.ValidationError
-	if errors.As(err, &validationErr) {
+	if validationErr, ok := errors.AsType[*service.ValidationError](err); ok {
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": validationErr.Error()})
 	}
 	if errors.Is(err, sql.ErrNoRows) {

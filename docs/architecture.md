@@ -1094,9 +1094,13 @@ episode per show with a `ROW_NUMBER()` window, skipping specials.
 cached episodes (seasons 1+) flagged aired and seen, aggregated into counts,
 minutes left and the next air date, joined to the first aired unseen episode.
 `stageOf` then sorts each show into a stage in Go: a chosen `on_hold` or
-`dropped` wins, else no episode seen is `not_started` (a `completed` with
-nothing logged is `caught_up`), else no aired episode left is `caught_up`,
-else `last_watched_at` against `stale_days` picks `watching` or `stalled`.
+`dropped` wins, a `completed` with nothing logged is `caught_up`, no aired
+episode left is `caught_up` (or `not_started` with nothing seen), a next
+episode that is E1 of a season aired within `stale_days` with no watch since
+that day is `new_episodes` (`premieredSince`), else no episode seen is
+`not_started`, else `last_watched_at` against `stale_days` picks `watching`
+or `stalled`. The new-episodes window is the stale window, so a premiere left
+alone falls straight to `not_started` or `stalled` when it closes.
 Stages come from episodes rather than the stored status because a new episode
 can air after `advanceShowStatus` last ran. `Upcoming` (`GET /me/upcoming`)
 lists cached episodes after today for shows not on hold, dropped or unwanted.

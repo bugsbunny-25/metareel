@@ -161,7 +161,7 @@ func (s *PushService) Run(ctx context.Context, runLog func(level, msg string)) (
 	if err != nil {
 		return nil, fmt.Errorf("bad notification cursor %q: %w", cursor, err)
 	}
-	for page := 0; page < notifyPagesPerRun; page++ {
+	for range notifyPagesPerRun {
 		if err := ctx.Err(); err != nil {
 			return sum, err
 		}

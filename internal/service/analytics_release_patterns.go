@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -331,7 +332,7 @@ func medianF(v []int64) float64 {
 		return 0
 	}
 	s := append([]int64(nil), v...)
-	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	slices.Sort(s)
 	n := len(s)
 	if n%2 == 1 {
 		return float64(s[n/2])

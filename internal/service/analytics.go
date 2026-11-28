@@ -179,7 +179,7 @@ func (s *AnalyticsService) Decay(ctx context.Context, q AnalyticsQuery) (*DecayR
 			continue // on the chart's first stored date: can't tell if it was new
 		}
 		debuts++
-		for day := 0; day < decayDays; day++ {
+		for day := range decayDays {
 			d := debut.AddDate(0, 0, day)
 			if d.After(lastData) || !chartDates[k.chart][repository.FormatDate(d)] {
 				continue // chart not stored that day: no information
@@ -256,7 +256,7 @@ func (s *AnalyticsService) CountrySimilarity(ctx context.Context, q AnalyticsQue
 	for _, c := range countries {
 		out.Countries[c] = len(sets[c])
 	}
-	for i := 0; i < len(countries); i++ {
+	for i := range countries {
 		for j := i + 1; j < len(countries); j++ {
 			a, b := sets[countries[i]], sets[countries[j]]
 			shared := 0

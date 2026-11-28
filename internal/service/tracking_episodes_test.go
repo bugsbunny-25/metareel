@@ -24,8 +24,8 @@ func TestLogEpisodeWatch(t *testing.T) {
 	s, _, alice, _ := newTrackingEnv(t)
 
 	e, _, err := s.LogWatch(context.Background(), alice, WatchInput{
-		Kind: "tv", TmdbID: "1396", SeasonNumber: tp(int64(1)), EpisodeNumber: tp(int64(1)),
-		EndedAt: "2026-11-10T02:00:00Z", Rating: tp(int64(9)), Tags: []string{"pilot"},
+		Kind: "tv", TmdbID: "1396", SeasonNumber: new(int64(1)), EpisodeNumber: new(int64(1)),
+		EndedAt: "2026-11-10T02:00:00Z", Rating: new(int64(9)), Tags: []string{"pilot"},
 	})
 	if err != nil {
 		t.Fatalf("log episode: %v", err)
@@ -59,15 +59,14 @@ func TestLogEpisodeRejectsBadCoordinates(t *testing.T) {
 		in   WatchInput
 	}{
 		{"a show without an episode", WatchInput{Kind: "tv", TmdbID: "1396", EndedAt: "2026-11-10T02:00:00Z"}},
-		{"a season without an episode", WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: tp(int64(1)), EndedAt: "2026-11-10T02:00:00Z"}},
-		{"a movie with an episode", WatchInput{Kind: "movie", TmdbID: "27205", SeasonNumber: tp(int64(1)), EpisodeNumber: tp(int64(1)), EndedAt: "2026-11-10T02:00:00Z"}},
-		{"an episode TMDB does not have", WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: tp(int64(9)), EpisodeNumber: tp(int64(9)), EndedAt: "2026-11-10T02:00:00Z"}},
-		{"episode zero", WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: tp(int64(1)), EpisodeNumber: tp(int64(0)), EndedAt: "2026-11-10T02:00:00Z"}},
+		{"a season without an episode", WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: new(int64(1)), EndedAt: "2026-11-10T02:00:00Z"}},
+		{"a movie with an episode", WatchInput{Kind: "movie", TmdbID: "27205", SeasonNumber: new(int64(1)), EpisodeNumber: new(int64(1)), EndedAt: "2026-11-10T02:00:00Z"}},
+		{"an episode TMDB does not have", WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: new(int64(9)), EpisodeNumber: new(int64(9)), EndedAt: "2026-11-10T02:00:00Z"}},
+		{"episode zero", WatchInput{Kind: "tv", TmdbID: "1396", SeasonNumber: new(int64(1)), EpisodeNumber: new(int64(0)), EndedAt: "2026-11-10T02:00:00Z"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, err := s.LogWatch(context.Background(), alice, tc.in)
-			var ve *ValidationError
-			if !errors.As(err, &ve) {
+			if _, ok := errors.AsType[*ValidationError](err); !ok {
 				t.Fatalf("err = %v, want a ValidationError", err)
 			}
 		})
@@ -82,12 +81,12 @@ func TestMarkSeasonSkipsWatchedAndUnaired(t *testing.T) {
 
 	// Already seen S2E1.
 	if _, _, err := s.LogWatch(ctx, alice, WatchInput{Kind: "tv", TmdbID: "1396",
-		SeasonNumber: tp(int64(2)), EpisodeNumber: tp(int64(1)), EndedAt: "2026-11-01T20:00:00Z"}); err != nil {
+		SeasonNumber: new(int64(2)), EpisodeNumber: new(int64(1)), EndedAt: "2026-11-01T20:00:00Z"}); err != nil {
 		t.Fatalf("log S2E1: %v", err)
 	}
 
 	out, err := s.MarkEpisodes(ctx, alice, "1396", MarkEpisodesInput{
-		Scope: ScopeSeason, SeasonNumber: tp(int64(2)), EndedAt: "2026-11-12T20:00:00Z"})
+		Scope: ScopeSeason, SeasonNumber: new(int64(2)), EndedAt: "2026-11-12T20:00:00Z"})
 	if err != nil {
 		t.Fatalf("mark season 2: %v", err)
 	}
@@ -122,7 +121,7 @@ func TestMarkUpToCrossesSeasons(t *testing.T) {
 	ctx := context.Background()
 
 	out, err := s.MarkEpisodes(ctx, alice, "1396", MarkEpisodesInput{
-		Scope: ScopeUpTo, SeasonNumber: tp(int64(2)), EpisodeNumber: tp(int64(1)),
+		Scope: ScopeUpTo, SeasonNumber: new(int64(2)), EpisodeNumber: new(int64(1)),
 		EndedAt: "2026-11-12T20:00:00Z"})
 	if err != nil {
 		t.Fatalf("mark up to S2E1: %v", err)
@@ -172,7 +171,7 @@ func TestShowStatusFollowsProgress(t *testing.T) {
 	}
 
 	if _, err := s.MarkEpisodes(ctx, alice, "1396", MarkEpisodesInput{
-		Scope: ScopeSeason, SeasonNumber: tp(int64(1)), EndedAt: "2026-11-12T20:00:00Z"}); err != nil {
+		Scope: ScopeSeason, SeasonNumber: new(int64(1)), EndedAt: "2026-11-12T20:00:00Z"}); err != nil {
 		t.Fatalf("mark season 1: %v", err)
 	}
 	if got := status(); got != StatusWatching {
@@ -187,7 +186,7 @@ func TestShowStatusFollowsProgress(t *testing.T) {
 		t.Errorf("status after every aired episode = %q, want completed", got)
 	}
 
-	if _, err := s.UnmarkEpisodes(ctx, alice, "1396", ScopeEpisode, tp(int64(1)), tp(int64(1)), false); err != nil {
+	if _, err := s.UnmarkEpisodes(ctx, alice, "1396", ScopeEpisode, new(int64(1)), new(int64(1)), false); err != nil {
 		t.Fatalf("unmark S1E1: %v", err)
 	}
 	if got := status(); got != StatusWatching {
@@ -195,7 +194,7 @@ func TestShowStatusFollowsProgress(t *testing.T) {
 	}
 
 	// A status the user chose is not overwritten.
-	if _, err := s.SetTitleState(ctx, alice, "tv", "1396", TitleStateInput{Status: tp(StatusDropped)}); err != nil {
+	if _, err := s.SetTitleState(ctx, alice, "tv", "1396", TitleStateInput{Status: new(StatusDropped)}); err != nil {
 		t.Fatalf("drop: %v", err)
 	}
 	if _, err := s.MarkEpisodes(ctx, alice, "1396", MarkEpisodesInput{
@@ -217,7 +216,7 @@ func TestUnmarkEpisodes(t *testing.T) {
 		Scope: ScopeAll, IncludeSpecials: true, EndedAt: "2026-11-12T20:00:00Z"}); err != nil {
 		t.Fatalf("mark all: %v", err)
 	}
-	out, err := s.UnmarkEpisodes(ctx, alice, "1396", ScopeSeason, tp(int64(1)), nil, false)
+	out, err := s.UnmarkEpisodes(ctx, alice, "1396", ScopeSeason, new(int64(1)), nil, false)
 	if err != nil {
 		t.Fatalf("unmark season 1: %v", err)
 	}
@@ -265,7 +264,7 @@ func TestUpNext(t *testing.T) {
 	}
 
 	if _, err := s.MarkEpisodes(ctx, alice, "1396", MarkEpisodesInput{
-		Scope: ScopeUpTo, SeasonNumber: tp(int64(1)), EpisodeNumber: tp(int64(2)),
+		Scope: ScopeUpTo, SeasonNumber: new(int64(1)), EpisodeNumber: new(int64(2)),
 		EndedAt: "2026-11-12T20:00:00Z"}); err != nil {
 		t.Fatalf("mark up to S1E2: %v", err)
 	}
@@ -279,7 +278,7 @@ func TestUpNext(t *testing.T) {
 
 	// Rewatching an episode already seen does not move the queue on.
 	if _, _, err := s.LogWatch(ctx, alice, WatchInput{Kind: "tv", TmdbID: "1396",
-		SeasonNumber: tp(int64(1)), EpisodeNumber: tp(int64(1)), EndedAt: "2026-11-13T20:00:00Z"}); err != nil {
+		SeasonNumber: new(int64(1)), EpisodeNumber: new(int64(1)), EndedAt: "2026-11-13T20:00:00Z"}); err != nil {
 		t.Fatalf("rewatch S1E1: %v", err)
 	}
 	if got := next(alice); len(got) != 1 || got[0].EpisodeNumber != 3 {
@@ -324,7 +323,7 @@ func TestEpisodesAreCachedAndRolledUp(t *testing.T) {
 	// Watch one episode twice: two watches, one episode of progress.
 	for _, when := range []string{"2026-11-10T02:00:00Z", "2026-11-11T02:00:00Z"} {
 		if _, _, err := s.LogWatch(ctx, alice, WatchInput{Kind: "tv", TmdbID: "1396",
-			SeasonNumber: tp(int64(1)), EpisodeNumber: tp(int64(1)), EndedAt: when}); err != nil {
+			SeasonNumber: new(int64(1)), EpisodeNumber: new(int64(1)), EndedAt: when}); err != nil {
 			t.Fatalf("log %s: %v", when, err)
 		}
 	}
@@ -353,13 +352,12 @@ func TestMarkEpisodesRejectsBadScopes(t *testing.T) {
 	}{
 		{"unknown scope", MarkEpisodesInput{Scope: "everything"}},
 		{"season scope without a season", MarkEpisodesInput{Scope: ScopeSeason}},
-		{"up_to without an episode", MarkEpisodesInput{Scope: ScopeUpTo, SeasonNumber: tp(int64(1))}},
-		{"negative season", MarkEpisodesInput{Scope: ScopeSeason, SeasonNumber: tp(int64(-1))}},
+		{"up_to without an episode", MarkEpisodesInput{Scope: ScopeUpTo, SeasonNumber: new(int64(1))}},
+		{"negative season", MarkEpisodesInput{Scope: ScopeSeason, SeasonNumber: new(int64(-1))}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := s.MarkEpisodes(context.Background(), alice, "1396", tc.in)
-			var ve *ValidationError
-			if !errors.As(err, &ve) {
+			if _, ok := errors.AsType[*ValidationError](err); !ok {
 				t.Fatalf("err = %v, want a ValidationError", err)
 			}
 		})

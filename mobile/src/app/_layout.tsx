@@ -29,6 +29,8 @@ export default function RootLayout() {
     SourceSans3_700Bold,
     SourceSans3_800ExtraBold,
     BarlowCondensed_800ExtraBold,
+    // Age ratings only (CertificationBadge), as in tides.
+    MotionPictureRatings: require('../../assets/fonts/motion_picture_ratings.ttf'),
   });
   return (
     <SafeAreaProvider>

@@ -149,8 +149,8 @@ func (r *CreditsRepository) PersonCredits(ctx context.Context, id int64) ([]Pers
 	out := make([]PersonCredit, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, PersonCredit{Ref: TmdbRef{Kind: row.TmdbKind, ID: row.TmdbID}, Title: row.Title, ReleaseDate: row.ReleaseDate,
-			PosterPath: row.PosterPath, Credit: Credit{PersonID: id, Type: row.CreditType, Job: row.Job, Department: row.Department,
-				Character: row.Character, Order: row.CreditOrder, Episodes: nullInt64Ptr(row.Episodes)}})
+			PosterPath: row.PosterPath, PersonID: id, Type: row.CreditType, Job: row.Job, Department: row.Department,
+			Character: row.Character, Order: row.CreditOrder, Episodes: nullInt64Ptr(row.Episodes)})
 	}
 	return out, nil
 }

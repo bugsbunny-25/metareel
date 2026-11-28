@@ -407,8 +407,8 @@ func netflixSeasonSummaries(global, countries []repository.NetflixWeekRow) []Net
 		}
 		a := byTitle[*r.SeasonTitle]
 		if a == nil {
-			a = &acc{NetflixSeasonSummary: NetflixSeasonSummary{SeasonTitle: *r.SeasonTitle, SeasonNumber: r.SeasonNumber, SeasonSource: r.SeasonSource,
-				FirstWeek: r.Week, LastWeek: r.Week}, weeks: map[string]bool{}, countries: map[string]bool{}}
+			a = &acc{SeasonTitle: *r.SeasonTitle, SeasonNumber: r.SeasonNumber, SeasonSource: r.SeasonSource,
+				FirstWeek: r.Week, LastWeek: r.Week, weeks: map[string]bool{}, countries: map[string]bool{}}
 			byTitle[*r.SeasonTitle] = a
 			order = append(order, *r.SeasonTitle)
 		}
@@ -642,7 +642,7 @@ func ParseIncludes(raw string) (map[string]bool, error) {
 	for _, k := range append(append([]string{}, OverviewIncludes...), OverviewExtraIncludes...) {
 		valid[k] = true
 	}
-	for _, p := range strings.Split(raw, ",") {
+	for p := range strings.SplitSeq(raw, ",") {
 		p = strings.ToLower(strings.TrimSpace(p))
 		if p == "" {
 			continue

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -473,7 +474,7 @@ func billingDays(start, end, period string) []string {
 		return nil
 	}
 	var out []string
-	for k := 0; k < 1200; k++ {
+	for k := range 1200 {
 		y, m := s.Year(), int(s.Month())-1+k
 		if period == "year" {
 			y, m = s.Year()+k, int(s.Month())-1
@@ -521,7 +522,7 @@ func chainMatches(chain string, w repository.CinemaWatchCost) bool {
 
 func medianMinor(v []int64) *int64 {
 	s := append([]int64(nil), v...)
-	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	slices.Sort(s)
 	m := s[len(s)/2]
 	if len(s)%2 == 0 {
 		m = (s[len(s)/2-1] + s[len(s)/2]) / 2

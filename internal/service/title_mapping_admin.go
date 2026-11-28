@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -276,9 +277,7 @@ func externalIDs(meta *repository.TmdbMetadata, fps []repository.MappedFlixPatro
 	if meta != nil {
 		ids.IMDbID, ids.WikidataID, ids.RottenTomatoesID = meta.IMDbID, meta.WikidataID, meta.RottenTomatoesID
 		ids.NetflixID, ids.JustWatchID, ids.MetacriticID, ids.LetterboxdID = meta.NetflixID, meta.JustWatchID, meta.MetacriticID, meta.LetterboxdID
-		for k, v := range meta.IDSources {
-			ids.Sources[k] = v
-		}
+		maps.Copy(ids.Sources, meta.IDSources)
 	}
 	for _, t := range fps {
 		ids.FlixPatrolSlugs = append(ids.FlixPatrolSlugs, t.Slug)

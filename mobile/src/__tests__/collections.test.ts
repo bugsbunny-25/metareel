@@ -42,9 +42,10 @@ test('tvToWatch orders stages and drops shows with nothing aired', () => {
     { tmdb_id: 'b', stage: 'watching', next_episode: ep },
     { tmdb_id: 'c', stage: 'not_started', next_episode: null },
     { tmdb_id: 'd', stage: 'not_started', next_episode: ep },
+    { tmdb_id: 'e', stage: 'new_episodes', next_episode: ep },
   ]);
-  expect(groups.map((g) => g.key)).toEqual(['watching', 'not_started', 'stalled']);
-  expect(groups[1].data.map((s) => s.tmdb_id)).toEqual(['d']);
+  expect(groups.map((g) => g.key)).toEqual(['new_episodes', 'watching', 'stalled', 'not_started']);
+  expect(groups[3].data.map((s) => s.tmdb_id)).toEqual(['d']);
   expect(groups[2].collapsed).toBe(true);
 });
 

@@ -452,16 +452,14 @@ func (r *TrackingRepository) ListVenuesInBox(ctx context.Context, b VenueBox) ([
 	out := make([]BoxVenue, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, BoxVenue{
-			Venue: Venue{
-				ID: row.ID, Name: row.Name, Chain: nullStringPtr(row.Chain), Address: nullStringPtr(row.Address), Postcode: nullStringPtr(row.Postcode),
-				City: nullStringPtr(row.City), Region: nullStringPtr(row.Region), Country: nullStringPtr(row.Country),
-				Latitude: nullFloatPtr(row.Latitude), Longitude: nullFloatPtr(row.Longitude),
-				Timezone: nullStringPtr(row.Timezone), OpenedOn: nullStringPtr(row.OpenedOn),
-				ClosedOn: nullStringPtr(row.ClosedOn), Status: row.Status,
-				ReplacedByVenueID: nullInt64Ptr(row.ReplacedByVenueID), Note: nullStringPtr(row.Note),
-				CreatedBy: nullInt64Ptr(row.CreatedBy), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-				ScreenCount: row.ScreenCount,
-			},
+			ID: row.ID, Name: row.Name, Chain: nullStringPtr(row.Chain), Address: nullStringPtr(row.Address), Postcode: nullStringPtr(row.Postcode),
+			City: nullStringPtr(row.City), Region: nullStringPtr(row.Region), Country: nullStringPtr(row.Country),
+			Latitude: nullFloatPtr(row.Latitude), Longitude: nullFloatPtr(row.Longitude),
+			Timezone: nullStringPtr(row.Timezone), OpenedOn: nullStringPtr(row.OpenedOn),
+			ClosedOn: nullStringPtr(row.ClosedOn), Status: row.Status,
+			ReplacedByVenueID: nullInt64Ptr(row.ReplacedByVenueID), Note: nullStringPtr(row.Note),
+			CreatedBy: nullInt64Ptr(row.CreatedBy), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+			ScreenCount: row.ScreenCount,
 			YourWatches: row.YourWatches, YourLastWatch: row.YourLastWatch,
 		})
 	}

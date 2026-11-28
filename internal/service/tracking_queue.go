@@ -11,15 +11,16 @@ import (
 
 // Where a show stands for the user. The queue lists them in this order.
 const (
-	StageWatching   = "watching"    // part way through, watched recently
-	StageStalled    = "stalled"     // part way through, nothing watched for stale_days
-	StageNotStarted = "not_started" // on the watchlist (or watching) with no episode seen
-	StageOnHold     = "on_hold"     // the user put it on hold
-	StageDropped    = "dropped"     // the user stopped watching
-	StageCaughtUp   = "caught_up"   // every aired episode seen
+	StageNewEpisodes = "new_episodes" // a series or season premiered within stale_days, not watched since
+	StageWatching    = "watching"     // part way through, watched recently
+	StageStalled     = "stalled"      // part way through, nothing watched for stale_days
+	StageNotStarted  = "not_started"  // on the watchlist (or watching) with no episode seen
+	StageOnHold      = "on_hold"      // the user put it on hold
+	StageDropped     = "dropped"      // the user stopped watching
+	StageCaughtUp    = "caught_up"    // every aired episode seen
 )
 
-var stageOrder = []string{StageWatching, StageStalled, StageNotStarted, StageOnHold, StageDropped, StageCaughtUp}
+var stageOrder = []string{StageNewEpisodes, StageWatching, StageStalled, StageNotStarted, StageOnHold, StageDropped, StageCaughtUp}
 
 const (
 	defaultStaleDays    = 30
@@ -150,7 +151,10 @@ func (s *TrackingService) ShowQueue(ctx context.Context, userID int64, staleDays
 
 // stageOf decides where a show stands. A status the user chose (on hold,
 // dropped) wins; otherwise the episodes decide, so a "completed" show with
-// a new episode out is back to watching.
+// a new episode out is back to watching. A series or season that premiered
+// within the stale window and has not been watched since is new episodes;
+// once the window passes without a watch it falls to not started (nothing
+// seen) or stalled (seen before the premiere).
 func stageOf(r repository.ShowQueueRow, staleBefore time.Time) string {
 	switch r.Status {
 	case StatusOnHold:
@@ -158,14 +162,20 @@ func stageOf(r repository.ShowQueueRow, staleBefore time.Time) string {
 	case StatusDropped:
 		return StageDropped
 	}
-	if r.WatchedEpisodes == 0 {
-		if r.Status == StatusCompleted {
-			return StageCaughtUp
-		}
-		return StageNotStarted
+	if r.WatchedEpisodes == 0 && r.Status == StatusCompleted {
+		return StageCaughtUp
 	}
 	if r.NextEpisode == nil {
+		if r.WatchedEpisodes == 0 {
+			return StageNotStarted
+		}
 		return StageCaughtUp
+	}
+	if premieredSince(r, staleBefore) {
+		return StageNewEpisodes
+	}
+	if r.WatchedEpisodes == 0 {
+		return StageNotStarted
 	}
 	if r.LastWatchedAt != nil {
 		if at, err := repository.ParseTimestamp(*r.LastWatchedAt); err == nil && at.Before(staleBefore) {
@@ -175,9 +185,28 @@ func stageOf(r repository.ShowQueueRow, staleBefore time.Time) string {
 	return StageWatching
 }
 
-// sortQueue orders shows by stage, then within a stage: most recently
-// watched first while in progress, watchlist order (then newest added) for
-// not started, soonest next episode for caught up, latest change otherwise.
+// premieredSince reports whether the next episode opens a series or season
+// that aired on or after staleBefore's day, with nothing watched since it aired.
+func premieredSince(r repository.ShowQueueRow, staleBefore time.Time) bool {
+	ep := r.NextEpisode
+	if ep == nil || ep.EpisodeNumber != 1 || ep.SeasonNumber < 1 || ep.AirDate == nil || len(*ep.AirDate) < 10 {
+		return false
+	}
+	aired := (*ep.AirDate)[:10]
+	if aired < staleBefore.UTC().Format(time.DateOnly) {
+		return false
+	}
+	if r.LastWatchedAt == nil {
+		return true
+	}
+	at, err := repository.ParseTimestamp(*r.LastWatchedAt)
+	return err == nil && at.UTC().Format(time.DateOnly) < aired
+}
+
+// sortQueue orders shows by stage, then within a stage: latest premiere
+// first for new episodes, most recently watched first while in progress,
+// watchlist order (then newest added) for not started, soonest next episode
+// for caught up, latest change otherwise.
 func sortQueue(shows []ShowQueueItem) {
 	rank := make(map[string]int, len(stageOrder))
 	for i, st := range stageOrder {
@@ -195,6 +224,10 @@ func sortQueue(shows []ShowQueueItem) {
 			return rank[a.Stage] < rank[b.Stage]
 		}
 		switch a.Stage {
+		case StageNewEpisodes:
+			if x, y := str(a.NextEpisode.AirDate), str(b.NextEpisode.AirDate); x != y {
+				return x > y
+			}
 		case StageWatching, StageStalled:
 			if x, y := str(a.LastWatchedAt), str(b.LastWatchedAt); x != y {
 				return x > y

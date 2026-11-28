@@ -82,7 +82,7 @@ func ETag(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 func matchETag(header, etag string) bool {
-	for _, v := range strings.Split(header, ",") {
+	for v := range strings.SplitSeq(header, ",") {
 		v = strings.TrimSpace(v)
 		if v == "*" || strings.TrimPrefix(v, "W/") == etag {
 			return true

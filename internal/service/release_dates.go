@@ -362,7 +362,7 @@ func (s *ReleaseWindowsService) Windows(ctx context.Context, q ReleaseWindowsQue
 	for _, r := range rows {
 		it := items[r.TmdbID]
 		if it == nil {
-			it = &ReleaseWindowItem{TmdbID: r.TmdbID, Title: r.Title, CountryReleases: CountryReleases{Country: country}}
+			it = &ReleaseWindowItem{TmdbID: r.TmdbID, Title: r.Title, Country: country}
 			if r.PosterPath != "" {
 				p := r.PosterPath
 				it.PosterPath = &p
